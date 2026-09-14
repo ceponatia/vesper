@@ -9,6 +9,7 @@ import {
   startJob,
   withOwnerAdmin,
 } from "@/server/api";
+import { logDiagnostics } from "@/server/log";
 import {
   buildFaceRepairRunRequest,
   createImageGeneratorRun,
@@ -51,9 +52,11 @@ import {
  * action must be indistinguishable from a route that does not exist, so its
  * diagnostic still carries the real dotted code for the server log, but the
  * response body never says so. A per-request `DiagnosticCollector` carries
- * every pushed diagnostic for the duration of the request — nothing here
- * persists it further, matching the Generator run route this mirrors, which
- * threads no sink of its own either.
+ * every pushed diagnostic for the duration of the request; a `finally` drains
+ * it into the process log through `logDiagnostics` (docs/resilience.md §8),
+ * the `api/characters/[id]/avatar/route.ts` precedent for a sink no route
+ * response otherwise answers to — a refusal or a registry degradation must
+ * leave an operator something to find, not just a client-facing code.
  */
 
 export const GET = withOwnerAdmin(async () => {
@@ -65,6 +68,7 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
 
   if (!imageFaceRepairEnabled()) {
     sink.push(faceRepairDiagnostic("disabled", "face repair is not enabled"));
+    logDiagnostics("images.face_repair", sink.items);
     return jsonError("not_found", "not found", 404);
   }
 
@@ -72,100 +76,107 @@ export const POST = withOwnerAdmin(async (user, req: NextRequest) => {
   if (!body.ok) return body.response;
   const { characterId, sourceImageId, modelId } = body.value;
 
-  const [characterOwned, source] = await Promise.all([
-    isFaceRepairCharacterOwned(characterId, user.id),
-    loadFaceRepairSource(sourceImageId, user.id),
-  ]);
+  // Every pre-spend refusal and registry degradation below lands on `sink`
+  // rather than the response body alone; the `finally` is what gives an
+  // operator something to find for a request that produced no run row.
+  try {
+    const [characterOwned, source] = await Promise.all([
+      isFaceRepairCharacterOwned(characterId, user.id),
+      loadFaceRepairSource(sourceImageId, user.id),
+    ]);
 
-  const [sceneCast, identityPackEvidence] = await Promise.all([
-    source && (source.kind === "scene" || source.kind === "chat_place")
-      ? loadFaceRepairSceneCast(source.id)
-      : Promise.resolve(null),
-    loadFaceRepairIdentityPackEvidence(characterId, user.id, sink),
-  ]);
+    const [sceneCast, identityPackEvidence] = await Promise.all([
+      source && (source.kind === "scene" || source.kind === "chat_place")
+        ? loadFaceRepairSceneCast(source.id)
+        : Promise.resolve(null),
+      loadFaceRepairIdentityPackEvidence(characterId, user.id, sink),
+    ]);
 
-  const plan = planFaceRepair({
-    enabled: true,
-    characterId,
-    characterOwned,
-    source,
-    sceneCast,
-    identityPack: identityPackEvidence,
-  });
-  if (!plan.ok) {
-    sink.push(faceRepairDiagnostic(plan.code, plan.message, { characterId, sourceImageId }));
-    return jsonError(faceRepairDiagnosticCode(plan.code), plan.message, 400);
+    const plan = planFaceRepair({
+      enabled: true,
+      characterId,
+      characterOwned,
+      source,
+      sceneCast,
+      identityPack: identityPackEvidence,
+    });
+    if (!plan.ok) {
+      sink.push(faceRepairDiagnostic(plan.code, plan.message, { characterId, sourceImageId }));
+      return jsonError(faceRepairDiagnosticCode(plan.code), plan.message, 400);
+    }
+    if (!source) {
+      // Unreachable: `planFaceRepair` only answers `ok: true` when `source`
+      // was given. Kept as a real branch (never a cast) so a future refactor
+      // that breaks that invariant degrades to a refusal instead of a crash.
+      const message = "no source image matches that id";
+      sink.push(faceRepairDiagnostic("source_unavailable", message));
+      return jsonError(faceRepairDiagnosticCode("source_unavailable"), message, 400);
+    }
+
+    const resolvedProfile = await resolveImageProfileForTask("variant", modelId ?? null, sink);
+    if (!resolvedProfile) {
+      const message = "no image model profile is offered for a face repair";
+      sink.push(faceRepairDiagnostic("model_unavailable", message));
+      return jsonError(faceRepairDiagnosticCode("model_unavailable"), message, 400);
+    }
+
+    const pairedProfile = pairFaceRepairIdentityProfile(resolvedProfile);
+    const identityResult = await identityPackRenderReferences({
+      ownerId: user.id,
+      characterId,
+      profile: pairedProfile,
+      sink,
+    });
+    if (!identityResult.ok) {
+      sink.push(faceRepairDiagnostic("identity_unavailable", identityResult.error));
+      return jsonError(faceRepairDiagnosticCode("identity_unavailable"), identityResult.error, 400);
+    }
+
+    const methodResult = resolveFaceRepairMethod(resolvedProfile.model);
+    if (!methodResult.ok) {
+      sink.push(faceRepairDiagnostic(methodResult.code, methodResult.message));
+      return jsonError(faceRepairDiagnosticCode(methodResult.code), methodResult.message, 400);
+    }
+
+    const blocked = await imageRenderRejection(user, req, { outputKind: "generator_output", count: 1 });
+    if (blocked) return blocked;
+
+    const runRequest = buildFaceRepairRunRequest({
+      // `image_models.id` — what `createImageGeneratorRun` resolves through
+      // `loadImageModel`, NOT the profile id `resolveImageProfileForTask`
+      // accepted as `modelId` above (that parameter is the resolver's own
+      // loose vocabulary: a profile id, model id, or model slug).
+      modelId: resolvedProfile.model.id,
+      characterId,
+      sourceImageId: source.id,
+      identityReferenceImageIds: identityResult.references.map((reference) => reference.candidate.imageId),
+      method: methodResult.method,
+      subjectCheck: plan.subjectCheck,
+      identityReferences: identityResult.provenance,
+    });
+
+    const created = await createImageGeneratorRun({ ownerId: user.id, request: runRequest, sink });
+    if (!created.ok) return jsonError(created.refusal.code, created.refusal.message, 400);
+
+    const { run } = created;
+    const job = await startJob({
+      type: "generator_image",
+      ownerId: user.id,
+      payload: { runId: run.id },
+      run: async ({ reportProviderOutcome }) => {
+        const result = await runImageGeneratorRun(run.id, user.id);
+        reportProviderOutcome(result.providerOutcome);
+        return result;
+      },
+    });
+    if (!job.ok) {
+      // Undone through the service's own owner-scoped delete, exactly as the
+      // Generator run route undoes a refused job slot.
+      await deleteImageGeneratorRun(run.id, user.id);
+      return jobCapRejection(job, user, req);
+    }
+    return jsonOk({ run: toWireImageGeneratorRun(run) }, 201);
+  } finally {
+    logDiagnostics("images.face_repair", sink.items, { characterId, sourceImageId });
   }
-  if (!source) {
-    // Unreachable: `planFaceRepair` only answers `ok: true` when `source` was
-    // given. Kept as a real branch (never a cast) so a future refactor that
-    // breaks that invariant degrades to a refusal instead of a runtime crash.
-    const message = "no source image matches that id";
-    sink.push(faceRepairDiagnostic("source_unavailable", message));
-    return jsonError(faceRepairDiagnosticCode("source_unavailable"), message, 400);
-  }
-
-  const resolvedProfile = await resolveImageProfileForTask("variant", modelId ?? null, sink);
-  if (!resolvedProfile) {
-    const message = "no image model profile is offered for a face repair";
-    sink.push(faceRepairDiagnostic("model_unavailable", message));
-    return jsonError(faceRepairDiagnosticCode("model_unavailable"), message, 400);
-  }
-
-  const pairedProfile = pairFaceRepairIdentityProfile(resolvedProfile);
-  const identityResult = await identityPackRenderReferences({
-    ownerId: user.id,
-    characterId,
-    profile: pairedProfile,
-    sink,
-  });
-  if (!identityResult.ok) {
-    sink.push(faceRepairDiagnostic("identity_unavailable", identityResult.error));
-    return jsonError(faceRepairDiagnosticCode("identity_unavailable"), identityResult.error, 400);
-  }
-
-  const methodResult = resolveFaceRepairMethod(resolvedProfile.model);
-  if (!methodResult.ok) {
-    sink.push(faceRepairDiagnostic(methodResult.code, methodResult.message));
-    return jsonError(faceRepairDiagnosticCode(methodResult.code), methodResult.message, 400);
-  }
-
-  const blocked = await imageRenderRejection(user, req, { outputKind: "generator_output", count: 1 });
-  if (blocked) return blocked;
-
-  const runRequest = buildFaceRepairRunRequest({
-    // `image_models.id` — what `createImageGeneratorRun` resolves through
-    // `loadImageModel`, NOT the profile id `resolveImageProfileForTask`
-    // accepted as `modelId` above (that parameter is the resolver's own loose
-    // vocabulary: a profile id, model id, or model slug).
-    modelId: resolvedProfile.model.id,
-    characterId,
-    sourceImageId: source.id,
-    identityReferenceImageIds: identityResult.references.map((reference) => reference.candidate.imageId),
-    method: methodResult.method,
-    subjectCheck: plan.subjectCheck,
-    identityReferences: identityResult.provenance,
-  });
-
-  const created = await createImageGeneratorRun({ ownerId: user.id, request: runRequest, sink });
-  if (!created.ok) return jsonError(created.refusal.code, created.refusal.message, 400);
-
-  const { run } = created;
-  const job = await startJob({
-    type: "generator_image",
-    ownerId: user.id,
-    payload: { runId: run.id },
-    run: async ({ reportProviderOutcome }) => {
-      const result = await runImageGeneratorRun(run.id, user.id);
-      reportProviderOutcome(result.providerOutcome);
-      return result;
-    },
-  });
-  if (!job.ok) {
-    // Undone through the service's own owner-scoped delete, exactly as the
-    // Generator run route undoes a refused job slot.
-    await deleteImageGeneratorRun(run.id, user.id);
-    return jobCapRejection(job, user, req);
-  }
-  return jsonOk({ run: toWireImageGeneratorRun(run) }, 201);
 });

@@ -191,8 +191,8 @@ ambiguous source, an undersized crop) gets its identity-critical renders refused
 crop is fixed; a character with no accepted portrait still renders scenes from text, since there is no identity to
 preserve.
 
-The flagged owner-admin face-repair action (issue #246,
-[../image-generator/face-repair.md](../image-generator/face-repair.md)) is a fourth consumer,
+The flagged owner-admin face-repair action
+([../image-generator/face-repair.md](../image-generator/face-repair.md)) is a fourth consumer,
 reached through the same `identityPackRenderReferences` entry point with the same refusal
 vocabulary — it pairs its resolved profile with `canonical_then_face_detail` in memory rather than
 adding a fifth stored `referencePolicy.identityStrategy` value.
