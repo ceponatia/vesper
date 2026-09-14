@@ -28,9 +28,11 @@ provider spend:
 
 1. The flag is on.
 2. `characterId` names a character this admin owns.
-3. `sourceImageId` names an image this admin owns, `ready`, and not one of the hidden system kinds
-   (`identity_face_crop`, `identity_trial_output`, `lab_control`, `lab_output`, `generator_output`,
-   `reference_view`).
+3. `sourceImageId` names an image this admin owns, `ready`, and not one of the five hidden system
+   kinds a repair refuses (`identity_face_crop`, `identity_trial_output`, `lab_control`,
+   `lab_output`, `generator_output`). A reference view is hidden from the player-facing gallery for
+   an unrelated reason, but it is a genuine render of this character — the identity pack's own
+   accepted view — so a repair accepts it as a source.
 4. The multi-person check (below) passes.
 5. The identity references resolve (below).
 6. The repair method resolves (below).

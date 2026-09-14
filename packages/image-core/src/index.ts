@@ -455,6 +455,7 @@ export type {
 export {
   compileIdentityReferencePrompt,
   compileReferenceRolePrompt,
+  faceRepairInstruction,
   sceneReferenceListSchema,
   sceneReferenceModeSchema,
   sceneReferenceSchema,

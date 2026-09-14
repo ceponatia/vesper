@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   controlReferenceTransport,
+  faceRepairInstruction,
   parseImageWorldStateProvenance,
   type IdentityReferenceProvenance,
   type ImageModel,
@@ -22,13 +23,19 @@ import { getIdentityPackForOwner } from "./identity-pack-read";
  *
  * This module is split in two, deliberately kept in one file rather than two:
  * a PURE half (`planFaceRepair`, `resolveFaceRepairMethod`,
- * `pairFaceRepairIdentityProfile`, `faceRepairInstruction`,
- * `buildFaceRepairRunRequest`) that takes plain values and a database
- * connection touches nothing, and a LOADS half (the `loadFaceRepair*`
- * functions) that reads exactly the owner-scoped rows the route needs before
- * calling the pure half. The split is what makes the multi-person table in
- * the issue's design doc a fixture-per-row unit test instead of an
- * integration test — `face-repair.test.ts` never opens a database connection.
+ * `pairFaceRepairIdentityProfile`, `buildFaceRepairRunRequest`) that takes
+ * plain values and a database connection touches nothing, and a LOADS half
+ * (the `loadFaceRepair*` functions) that reads exactly the owner-scoped rows
+ * the route needs before calling the pure half. The split is what makes the
+ * multi-person table in the issue's design doc a fixture-per-row unit test
+ * instead of an integration test — `face-repair.test.ts` never opens a
+ * database connection.
+ *
+ * The repair instruction itself (`faceRepairInstruction`) is not authored
+ * here: a numbered slot label like "Image 2" is `packages/image-core`'s to
+ * write (`scripts/image-reference-numbering.test.ts`'s census forbids a new
+ * one under `server/images`), so it is imported from `@vesper/image-core`,
+ * beside that package's other numbered-reference instruction compilers.
  *
  * The route (`apps/web/src/app/api/admin/self/face-repair/route.ts`) is the
  * only caller: it loads, calls `planFaceRepair`, and on acceptance resolves
@@ -94,6 +101,21 @@ export type FaceRepairCreateRequest = z.infer<typeof faceRepairCreateRequestSche
 
 /** The scene/chat_place kinds whose cast lives in `image_references`. */
 const FACE_REPAIR_SCENE_KINDS: readonly ImageKind[] = ["scene", "chat_place"];
+
+/**
+ * The hidden system kinds a face-repair source refuses — every
+ * `HIDDEN_IMAGE_KINDS` entry except `reference_view`.
+ *
+ * `reference_view` sits in `HIDDEN_IMAGE_KINDS` for a different surface's
+ * reason entirely: it must stay out of the player-facing gallery. A
+ * reference view is still a genuine render of this character — the identity
+ * pack's own accepted view — so it is a legitimate repair source, and this
+ * subtracts it out here rather than editing `HIDDEN_IMAGE_KINDS` itself,
+ * which other surfaces rely on unchanged for gallery hiding.
+ */
+const FACE_REPAIR_REFUSED_HIDDEN_KINDS: readonly ImageKind[] = HIDDEN_IMAGE_KINDS.filter(
+  (kind) => kind !== "reference_view",
+);
 
 /** The source image row, exactly as loaded — no bytes, no provenance parsed yet. */
 export interface FaceRepairSourceRow {
@@ -162,7 +184,7 @@ export function planFaceRepair(input: PlanFaceRepairInput): PlanFaceRepairResult
   if (source.status !== "ready") {
     return { ok: false, code: "source_unavailable", message: "the source image is not ready" };
   }
-  if (HIDDEN_IMAGE_KINDS.some((kind) => kind === source.kind)) {
+  if (FACE_REPAIR_REFUSED_HIDDEN_KINDS.some((kind) => kind === source.kind)) {
     return {
       ok: false,
       code: "source_unavailable",
@@ -326,37 +348,8 @@ export function resolveFaceRepairMethod(model: ImageModel): ResolveFaceRepairMet
 }
 
 // ---------------------------------------------------------------------------
-// PURE: the instruction and the run-request assembly
+// PURE: the run-request assembly
 // ---------------------------------------------------------------------------
-
-const FACE_REPAIR_PRESERVE_CLAUSE =
-  "keep the pose, clothing, background, lighting and composition of Image 1 unchanged";
-
-/**
- * The repair instruction — the Generator's whole positive prompt for one
- * face-repair run. The Generator is a raw prompt/model bench with no dialect
- * compiler of its own (`docs/image-generator/README.md`), so this is plain
- * text rather than a compiled claim; it still follows the numbered-reference
- * wording `docs/image-models/models/qwen-image-edit-2511.md`
- * §Numbered-reference instruction policy sets for this family: name the
- * image, say what changes, say what stays fixed.
- *
- * Not named `build…Prompt`: `scripts/image-appearance-prose.test.ts` reserves
- * that export shape for character-appearance prose's one owner, and this
- * instruction never phrases anybody's appearance from their attributes — it
- * names numbered image slots and nothing else.
- */
-export function faceRepairInstruction(identityReferenceCount: number): string {
-  if (identityReferenceCount <= 0) {
-    // Unreachable through the route — the identity-reference lookup refuses
-    // before this is ever called with zero — but a stray call still states a
-    // coherent instruction rather than naming an image that was never sent.
-    return `Repair the face in Image 1; ${FACE_REPAIR_PRESERVE_CLAUSE}.`;
-  }
-  const lastSlot = identityReferenceCount + 1;
-  const referenceSpan = identityReferenceCount === 1 ? "Image 2" : `Images 2 through ${String(lastSlot)}`;
-  return `Repair the face in Image 1 to match the person shown in ${referenceSpan}; ${FACE_REPAIR_PRESERVE_CLAUSE}.`;
-}
 
 export interface BuildFaceRepairRunRequestInput {
   /** `image_models.id` — the registered model row, not the resolved profile's id. */
@@ -374,9 +367,10 @@ export interface BuildFaceRepairRunRequestInput {
  * The Generator create-run request a face repair submits: the source image
  * (the picture to repair) as the first primary reference under the neutral
  * `reference` role, the identity references after it under the `identity`
- * role in plan order, the numbered instruction above as the whole prompt, one
- * image, and the `purpose` bag the run's meta persists for provenance and for
- * the admin UI's repair-run filter.
+ * role in plan order, `faceRepairInstruction`'s numbered instruction (imported
+ * from `@vesper/image-core`, above) as the whole prompt, one image, and the
+ * `purpose` bag the run's meta persists for provenance and for the admin UI's
+ * repair-run filter.
  */
 export function buildFaceRepairRunRequest(input: BuildFaceRepairRunRequestInput): ImageGeneratorCreateRunRequest {
   const {
