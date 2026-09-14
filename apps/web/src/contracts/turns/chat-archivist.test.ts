@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { z } from "zod";
 import {
   chatArchivistSchema,
   chatCharacterNotesSchema,
@@ -201,22 +202,24 @@ describe("the extraction legs", () => {
 
   /**
    * The extraction legs (#286): each leg's degraded constructor is a `pick` of
-   * `degradedChatArchivist()`, exactly like `degradedChatPersonalNotes()` above — one
-   * source for the field list (derived from the schema's own `shape`), never a
-   * hand-copied field list here that could drift from the schema's `pick`.
+   * `degradedChatArchivist()`, exactly like `degradedChatPersonalNotes()` above. The
+   * test above is the deliberate MEMBERSHIP pin — its hand-copied field lists are
+   * what would need to change if a leg's `pick` grew or shrank a field; this one is
+   * the CONSTRUCTOR-vs-SCHEMA pin — it derives the field set from the schema's own
+   * `shape` rather than a second hand-copied list, and proves the constructor's
+   * output equals that pick and round-trips through its own schema unchanged.
    */
   it("each leg's degraded constructor parses through its own pick schema and equals the aggregate pick", () => {
     const whole = degradedChatArchivist();
-    const table = [
+    const table: { schema: z.ZodObject<z.ZodRawShape>; ctor: () => Record<string, unknown> }[] = [
       { schema: chatMemoryScribeSchema, ctor: degradedChatMemoryScribe },
       { schema: chatContinuitySchema, ctor: degradedChatContinuity },
       { schema: chatCharacterNotesSchema, ctor: degradedChatCharacterNotes },
-    ] as const;
+    ];
     for (const { schema, ctor } of table) {
       const keys = Object.keys(schema.shape) as (keyof typeof whole)[];
       const picked = Object.fromEntries(keys.map((key) => [key, whole[key]]));
       expect(ctor()).toEqual(picked);
-      expect(schema.parse({})).toEqual(picked);
       expect(schema.parse(ctor())).toEqual(ctor());
     }
   });

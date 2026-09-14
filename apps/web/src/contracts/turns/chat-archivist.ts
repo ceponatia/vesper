@@ -472,8 +472,8 @@ export type ChatCharacterNotes = z.infer<typeof chatCharacterNotesSchema>;
 
 /** Degraded default: the character-tracker leg's fields alone (a pick of `degradedChatArchivist()`). */
 export function degradedChatCharacterNotes(): ChatCharacterNotes {
-  const { openLoops, plans, driveUpdates, voiceExemplar, characterSlip, traitShifts } = degradedChatArchivist();
-  return { openLoops, plans, driveUpdates, voiceExemplar, characterSlip, traitShifts };
+  const { openLoops, driveUpdates, plans, voiceExemplar, characterSlip, traitShifts } = degradedChatArchivist();
+  return { openLoops, driveUpdates, plans, voiceExemplar, characterSlip, traitShifts };
 }
 
 /**
