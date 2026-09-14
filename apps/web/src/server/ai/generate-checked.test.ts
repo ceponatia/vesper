@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { RecordAgentFailureInput } from "./agent-failures";
 
 /**
  * The gateway's SPEND accounting needs a call to measure, so this suite scripts
@@ -15,7 +16,20 @@ const model = vi.hoisted(() => ({
   requests: [] as Record<string, unknown>[],
 }));
 
+/** Every failure the degrade path recorded, in order. */
+const failures = vi.hoisted(() => ({ recorded: [] as Record<string, unknown>[] }));
+
 vi.mock("../events", () => ({ logEvent: () => Promise.resolve() }));
+
+vi.mock("./agent-failures", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agent-failures")>();
+  return {
+    ...actual,
+    recordAgentFailure: (input: RecordAgentFailureInput) => {
+      failures.recorded.push({ ...input });
+    },
+  };
+});
 
 vi.mock("./provider", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./provider")>();
@@ -95,6 +109,7 @@ function accounting(cost: unknown): unknown {
 beforeEach(() => {
   model.script = [];
   model.requests = [];
+  failures.recorded = [];
 });
 
 describe("generateChecked — the usage-accounting request knob", () => {
@@ -171,5 +186,60 @@ describe("generateChecked — what the call spent", () => {
       // must not cost the other measurement.
       expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 1 });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The failure record's output cap
+// ---------------------------------------------------------------------------
+
+/**
+ * `maxOutputTokens` on a recorded failure is the Inspector's TRUNCATION signal —
+ * the number a human reads to answer "was the reply cut off?". It therefore has
+ * to be the cap the request actually carried.
+ *
+ * The two can differ now, and only since the model gateway landed: an adapted
+ * narration binds its own cap over the lane's, so Asmodeus turns the successor
+ * lane's 2,000 into 1,024. Recording the lane's number instead would point the
+ * question at a ceiling that was never in play, and the failure most likely to
+ * be diagnosed this way is exactly the one a cap causes.
+ */
+const ASMODEUS_ID = "DarkArtsForge/Asmodeus-24B-v3";
+
+/** One degraded call on an adapted model — a parse failure with the repair turned off. */
+function degradedCall(overrides: { maxOutputTokens: number; applyModelProfile?: boolean }) {
+  model.script.push({ text: "no object here" });
+  return generateChecked({
+    schema: SCHEMA,
+    system: "system",
+    prompt: "prompt",
+    modelId: ASMODEUS_ID,
+    repair: false,
+    code: "sim.narrator",
+    ...overrides,
+  });
+}
+
+describe("generateChecked — the cap a failure is recorded with", () => {
+  it("records the adapter's cap when the profile applied, not the lane's own", async () => {
+    const result = await degradedCall({ maxOutputTokens: 2_000, applyModelProfile: true });
+
+    expect(result.degraded).toBe(true);
+    // The exact-model profile outranks the lane default, so 1,024 is what the
+    // request carried...
+    expect(model.requests[0]?.maxOutputTokens).toBe(1_024);
+    // ...and the record has to agree with the request, not with the caller.
+    expect(failures.recorded[0]?.maxOutputTokens).toBe(1_024);
+  });
+
+  it("records the caller's own cap when the call is not narration", async () => {
+    const result = await degradedCall({ maxOutputTokens: 300 });
+
+    expect(result.degraded).toBe(true);
+    // No opt-in, so no profile: the deliberator's 300 is both what was sent and
+    // what is recorded. The mirror of the case above, and the reason the fix is
+    // "read the effective setting" rather than "hard-code the adapter".
+    expect(model.requests[0]?.maxOutputTokens).toBe(300);
+    expect(failures.recorded[0]?.maxOutputTokens).toBe(300);
   });
 });

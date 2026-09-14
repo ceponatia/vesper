@@ -315,7 +315,12 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     provider,
     latencyMs,
     promptChars: opts.system.length + opts.prompt.length,
-    maxOutputTokens: opts.maxOutputTokens ?? 4096,
+    // The EFFECTIVE cap, not the one this helper was asked for. An adapted
+    // narration binds its own — Asmodeus turns the successor lane's 2,000 into
+    // 1,024 — and this field is the Inspector's truncation signal, so recording
+    // a ceiling the request never carried points "was it cut off?" at a number
+    // that was never in play.
+    maxOutputTokens: settings.maxOutputTokens ?? opts.maxOutputTokens ?? 4096,
     reasoningProfile: opts.telemetry?.reasoningProfile,
     reasoningEnabled: opts.telemetry?.reasoningEnabled,
     detail: providerClassification?.detail ?? firstError,
