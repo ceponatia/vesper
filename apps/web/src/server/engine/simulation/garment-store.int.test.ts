@@ -245,7 +245,7 @@ async function runAcceptedSequence(ids: Case): Promise<void> {
     await submitDurableTransferItem(
       simCommand({
         branchId: ids.branchId,
-        name: "doff the shirt",
+        name: "doff-the-shirt",
         type: "transfer_item",
         principal: npcPrincipal(ids.actorId),
         payload: {
@@ -338,7 +338,7 @@ async function reserveMendingShirt(ids: Case): Promise<void> {
     await submitDurableStartActivity(
       simCommand({
         branchId: ids.branchId,
-        name: "start mending",
+        name: "start-mending",
         type: "start_activity",
         principal: npcPrincipal(ids.actorId),
         payload: { actionDefinitionId: "mend-a-garment", actorId: ids.actorId },
@@ -680,7 +680,7 @@ describe.runIf(harness.ready)("#296 — a rejected operation writes nothing", ()
       await submitDurableApplyGarmentOperation(
         simCommand({
           branchId: ids.branchId,
-          name: "reach into another wardrobe",
+          name: "reach-into-another-wardrobe",
           type: "apply_garment_operation",
           principal: npcPrincipal(ids.otherActorId),
           payload: {
@@ -700,7 +700,7 @@ describe.runIf(harness.ready)("#296 — a rejected operation writes nothing", ()
       await submitDurableApplyGarmentOperation(
         simCommand({
           branchId: ids.branchId,
-          name: "direct an uncontrolled actor",
+          name: "direct-an-uncontrolled-actor",
           type: "apply_garment_operation",
           principal: npcPrincipal(ids.otherActorId),
           payload: {

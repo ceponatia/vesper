@@ -1950,10 +1950,8 @@ describe.skipIf(!ready)("migration 0141 — history", () => {
     expect(entry).toBeDefined();
     expect(entry?.idx).toBe(141);
     expect(journal.entries.filter((candidate) => candidate.idx === 141)).toHaveLength(1);
-    // The HEAD assertion lives with the newest migration, so exactly one suite
-    // has to move when the next one lands. A duplicate index from a concurrent
-    // branch is what it catches.
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(141);
+    // The HEAD assertion lives with the newest migration — 0142's suite
+    // (`engine/simulation/garment-reads.int.test.ts`) owns it now.
 
     // The migrator applies in `when` order, so this file must be timestamped
     // after everything it expects to have run — asserted against the whole

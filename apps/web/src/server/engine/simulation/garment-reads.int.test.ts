@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
@@ -353,7 +355,7 @@ describe.runIf(harness.ready)("readActorGarmentInstances — the channel owners"
       await submitDurableTransferItem(
         simCommand({
           branchId: ids.branchId,
-          name: "don the tracked shirt",
+          name: "don-the-tracked-shirt",
           type: "transfer_item",
           expectedVersion: 0,
           principal: npcPrincipal(ids.actorId),
@@ -401,5 +403,37 @@ describe.runIf(harness.ready)("readActorGarmentInstances — the channel owners"
     // the same values item-condition initializes to.
     expect(untracked.instance.condition.base.cleanliness).toBe(GARMENT_UNIT_ONE);
     expect(untracked.instance.condition.base.wear).toBe(0);
+  });
+});
+
+// --- Migration 0142 — history -------------------------------------------------
+// The HEAD assertion lives with the newest migration, so exactly one suite has
+// to move when the next one lands (0141's block in
+// `images/image-model-seeds.int.test.ts` held it before this one). A duplicate
+// index from a concurrent branch, or a `when` stamped before an earlier entry —
+// which the migrator would silently skip on an already-migrated database — is
+// what it catches.
+const GARMENT_STATE_MIGRATION_TAG = "0142_successor-garment-state";
+
+describe.runIf(harness.ready)("migration 0142 — history", () => {
+  it("is the journal head, timestamped after every earlier entry, with a schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === GARMENT_STATE_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(142);
+    expect(journal.entries.filter((candidate) => candidate.idx === 142)).toHaveLength(1);
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(142);
+
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 142).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    // A schema migration: the snapshot exists (0132–0141 were data-only and shipped none).
+    const snapshot = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "0142_snapshot.json"), "utf8"),
+    ) as { tables?: Record<string, unknown> };
+    expect(snapshot.tables).toHaveProperty("public.sim_item_garment_state");
   });
 });

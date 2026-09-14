@@ -160,7 +160,7 @@ describe.runIf(ready)("readSimChatGarments — the shared clothing digest (#297)
       await submitDurableApplyGarmentOperation(
         simCommand({
           branchId: ids.branchId,
-          name: "unfasten the shirt",
+          name: "unfasten-the-shirt",
           type: "apply_garment_operation",
           principal: npcPrincipal(ids.primaryActorId),
           payload: {
