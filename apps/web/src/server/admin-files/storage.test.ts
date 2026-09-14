@@ -16,6 +16,7 @@ import {
   previewAdminDelete,
   renameAdminEntry,
   uploadAdminFile,
+  type AdminFilesBatchDeleteResult,
 } from "./storage";
 
 const symlinksAvailable = canCreateSymlinks();
@@ -266,6 +267,67 @@ describe("admin Files storage", () => {
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "reports a path routed through a file as one failure row rather than failing the batch",
+    async () => {
+      await uploadAdminFile("", "note.bin", bytes(1));
+      await uploadAdminFile("", "loose.bin", bytes(2));
+
+      // `lstat` of a path whose parent component is a FILE raises ENOTDIR, which
+      // is not an `AdminFilesError`: unmapped, `toFailure` rethrows it and the
+      // whole request answers 500, discarding the count of everything the batch
+      // had already removed. Mapped, it is one row and the rest still runs.
+      const result = await deleteAdminEntries(["note.bin/inside.bin", "loose.bin"]);
+
+      expect(result).toEqual({
+        deleted: 1,
+        failures: [expect.objectContaining({ path: "note.bin/inside.bin", code: "not_directory" })],
+      });
+      expect(await readDownload("note.bin")).toEqual([1]);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "reports a subtree it cannot read as one failure row and still deletes the rest of the batch",
+    async () => {
+      const root = await adminFilesRoot();
+      await createAdminFolder("", "vault");
+      await createAdminFolder("vault", "locked");
+      await uploadAdminFile("vault/locked", "secret.bin", bytes(1, 2));
+      await uploadAdminFile("", "loose.bin", bytes(3));
+      const locked = path.join(root, "vault", "locked");
+
+      let denial = "unset";
+      let result: AdminFilesBatchDeleteResult | undefined;
+      await fs.chmod(locked, 0o000);
+      try {
+        // Prove the fixture before the behaviour: mode bits deny nothing to
+        // root, and the refusal below would then read as a regression rather
+        // than as an environment that cannot stage an unreadable directory.
+        denial = await fs.readdir(locked).then(
+          () => "readable",
+          (error: unknown) => (error instanceof Error && "code" in error ? String(error.code) : "unknown"),
+        );
+        result = await deleteAdminEntries(["vault", "loose.bin"], true);
+      } finally {
+        // Restored before any assertion runs, so a failure cannot also break the
+        // sandbox teardown and bury itself under an unrelated cleanup error.
+        await fs.chmod(locked, 0o700);
+      }
+
+      expect(denial).toMatch(/^E(?:ACCES|PERM)$/u);
+      // Raw, the EACCES escaped `toFailure`, failed the whole request with a 500
+      // and threw away the count of what the batch had already removed.
+      expect(result).toEqual({
+        deleted: 1,
+        failures: [expect.objectContaining({ path: "vault", code: "unsafe_path" })],
+      });
+      // The subtree is validated before anything is unlinked, so the refusal
+      // costs the owner an error rather than the files that shared the tree.
+      expect(await readDownload("vault/locked/secret.bin")).toEqual([1, 2]);
     },
   );
 

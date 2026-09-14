@@ -60,6 +60,14 @@ describe("parentPathFor", () => {
   it("drops exactly the last segment", () => {
     expect(parentPathFor("a/b/c")).toBe("a/b");
   });
+
+  // The Files root's own parent is the case the page computes on every render
+  // there — `parentPath` feeds "Up one folder" and "Move to parent" — and the
+  // one the two-segment examples above never reach. It stays the root rather
+  // than climbing out of it or growing a stray separator.
+  it("keeps the Files root as its own parent", () => {
+    expect(parentPathFor("")).toBe("");
+  });
 });
 
 describe("joinPath", () => {
@@ -209,6 +217,16 @@ describe("isBlockedDestination", () => {
 
   it("never blocks the Files root, since a non-empty source path cannot equal or contain it", () => {
     expect(isBlockedDestination("", ["a", "a/b"])).toBe(false);
+  });
+
+  // `every` is vacuously true over an empty list, and here that reads the right
+  // way round: with nothing dragged there is no move to offer, so every
+  // destination is blocked rather than every destination being offered. The
+  // page guards the empty case before it asks, so this is the answer no caller
+  // should ever need — and exactly the one a refactor could invert unnoticed.
+  it("blocks every destination when there is nothing to move", () => {
+    expect(isBlockedDestination("box", [])).toBe(true);
+    expect(isBlockedDestination("", [])).toBe(true);
   });
 });
 

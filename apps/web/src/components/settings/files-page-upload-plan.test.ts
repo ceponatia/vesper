@@ -37,6 +37,32 @@ function fakeDir(name: string, reader: FileSystemDirectoryReaderLike): FileSyste
   };
 }
 
+/** A directory the browser will not enumerate: `readEntries` answers the error callback instead of a batch. */
+function failingDirectoryReader(message: string): FileSystemDirectoryReaderLike {
+  return {
+    readEntries: (successCallback, errorCallback) => {
+      if (errorCallback === undefined) successCallback([]);
+      else errorCallback(new Error(message));
+    },
+  };
+}
+
+/** A file the browser will not hand over — moved or deleted between dragstart and read. */
+function failingFileEntry(name: string, message: string): FileSystemEntryLike {
+  return {
+    name,
+    isFile: true,
+    isDirectory: false,
+    file: (successCallback, errorCallback) => {
+      if (errorCallback === undefined) successCallback(new File([], name));
+      else errorCallback(new Error(message));
+    },
+    createReader: () => {
+      throw new Error(`${name} is a file; it has no directory reader`);
+    },
+  };
+}
+
 describe("buildUploadPlan", () => {
   it("plans a flat file with no folders, using its own name as the relative path", async () => {
     const plan = await buildUploadPlan([fakeFile("photo.png")]);
@@ -86,5 +112,42 @@ describe("buildUploadPlan", () => {
   it("resolves with no folders or files for an empty drop", async () => {
     const plan = await buildUploadPlan([]);
     expect(plan).toEqual({ folders: [], files: [] });
+  });
+
+  // `readEntries` and `file()` are callback APIs with a SECOND, optional error
+  // callback. Passing only the success one is valid TypeScript and looks
+  // correct: every happy-path test above still passes, and a folder the browser
+  // refuses to enumerate simply never settles the promise — the drop hangs with
+  // the overlay stuck and nothing to report. These two are what make that
+  // refusal a rejection `files-page.tsx` can turn into its "That drop could not
+  // be read" banner instead.
+  it("rejects when the browser refuses to enumerate a dropped directory", async () => {
+    const reader = failingDirectoryReader("NotReadableError");
+    await expect(buildUploadPlan([fakeDir("unreadable", reader)])).rejects.toThrow("NotReadableError");
+  });
+
+  it("rejects when a dropped file cannot be read", async () => {
+    await expect(buildUploadPlan([failingFileEntry("moved.txt", "NotFoundError")])).rejects.toThrow("NotFoundError");
+  });
+
+  it("skips an entry that is neither a file nor a directory, rather than reading it as one", async () => {
+    // A shape with neither flag set has no `createReader()` to call; treating
+    // the non-file case as "therefore a directory" would throw and fail the
+    // whole drop over one item the walk can simply pass by.
+    const neither: FileSystemEntryLike = {
+      name: "odd",
+      isFile: false,
+      isDirectory: false,
+      file: () => {
+        throw new Error("odd is not a file");
+      },
+      createReader: () => {
+        throw new Error("odd is not a directory");
+      },
+    };
+
+    const plan = await buildUploadPlan([neither, fakeFile("a.txt")]);
+    expect(plan.folders).toEqual([]);
+    expect(plan.files.map((f) => f.relativePath)).toEqual(["a.txt"]);
   });
 });

@@ -167,6 +167,14 @@ describe("owner-admin Files routes", () => {
 
     response = await mutate({ action: "delete_many", paths: [] });
     await expectApiError(response, 400, "invalid_body");
+
+    // The ceiling is the other half of the same bound: one request must not be
+    // able to ask the process-wide mutation lock to walk an unbounded selection.
+    response = await mutate({
+      action: "delete_many",
+      paths: Array.from({ length: 501 }, (_, index) => `f${String(index)}.txt`),
+    });
+    await expectApiError(response, 400, "invalid_body");
   });
 
   it("moves a selection and reports a collision per path without failing the request", async () => {
@@ -305,6 +313,34 @@ describe("owner-admin Files media preview", () => {
   it.each(["notes.txt", "page.html", "clip.mkv", "avatar.png.html"])("refuses %s", async (name) => {
     expect((await upload("", name, "not previewable")).status).toBe(201);
     await expectApiError(await preview(name), 415, "unsupported_media_type");
+  });
+
+  it("carries nosniff on every refusal, not only the ones that reached the allowlist", async () => {
+    expect((await upload("", "logo.svg", "<svg/>")).status).toBe(201);
+    expect((await upload("", "clip.mp4", ALPHABET)).status).toBe(201);
+
+    // nosniff is what makes the allowlist sufficient rather than hopeful, so it
+    // is a property of this route rather than of its success path — a refusal
+    // that omitted it would be the one response here whose body a browser could
+    // still be talked into reading as a document. The first three leave through
+    // `expectedError`, which answered with a bare `jsonError` until #589's
+    // correction pass — the global header in `next.config.ts` was the only
+    // thing covering them.
+    const refusals = [
+      await preview("missing.png"),
+      await preview(""),
+      await preview("../escape.png"),
+      await preview("logo.svg"),
+      await preview("clip.mp4", { range: "bytes=99-" }),
+    ];
+
+    expect(refusals.map((response) => response.status)).toEqual([404, 400, 400, 415, 416]);
+    for (const response of refusals) {
+      expect(
+        response.headers.get("x-content-type-options"),
+        `the ${String(response.status)} refusal must carry nosniff`,
+      ).toBe("nosniff");
+    }
   });
 
   it("judges the path before it judges the type", async () => {
