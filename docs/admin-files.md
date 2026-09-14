@@ -6,9 +6,9 @@
 
 Files live under `DATA_ROOT/admin-files`. On the Fly deployment `DATA_ROOT` is pinned to `/app/data`, which is the mounted `vesper_data` Fly Volume, so files survive ordinary application restarts and deploys until the owner deletes them.
 
-Uploads stage in `DATA_ROOT/.admin-files-upload-tmp` and become visible only after the request completes. The completed temporary file is then published into the managed tree atomically (or replaces an existing file only after the caller explicitly requests overwrite). Failed/interrupted uploads are removed from the staging area and never appear in the Files browser as completed files.
+Uploads stage in `DATA_ROOT/.admin-files-upload-tmp` and become visible only after the request completes. The completed temporary file is then published into the managed tree atomically (or replaces an existing file only after the caller explicitly requests overwrite). Failed/interrupted uploads are removed from the staging area when the process remains alive. If a Machine exit or deploy prevents that cleanup from running, later Files access scavenges `.part` files older than 24 hours; active uploads in the current process are excluded from reclamation.
 
-This relies on the current **single always-on Fly Machine + one attached volume** deployment. Fly Volumes are machine-local; if Vesper is later scaled to multiple application Machines, this utility must either stay pinned to the Machine owning the volume or move behind shared object storage.
+This relies on the current **single always-on Fly Machine + one attached volume** deployment. Fly Volumes are machine-local; if Vesper is later scaled to multiple application Machines, this utility must either stay pinned to the Machine owning the volume or move behind shared object storage. Short destination-changing mutations are serialized inside the current process so create/rename/delete/upload-publication requests cannot race one another into an unintended overwrite; upload byte streaming itself does not hold that lock.
 
 ## API
 
@@ -29,7 +29,7 @@ Compressed request bodies are refused because this utility promises to preserve 
 
 The managed tree is rooted at `DATA_ROOT/admin-files`. Relative paths are validated segment-by-segment; absolute paths, `..`, slash/backslash-bearing names, NUL/control characters, and symbolic-link traversal are rejected server-side. The API never executes uploaded content.
 
-Downloads always use `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and private/no-store caching. Uploading HTML, JavaScript, an executable, or any other arbitrary file therefore does not turn it into an application route or executable server artifact.
+Downloads always use `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and private/no-store caching. The server opens the requested file before deriving `Content-Length` and streams from that same descriptor, so a concurrent replacement cannot make headers describe one file while response bytes come from another. Uploading HTML, JavaScript, an executable, or any other arbitrary file therefore does not turn it into an application route or executable server artifact.
 
 Deleting a non-empty folder is refused with `folder_not_empty`; the owner must delete its contents first. Rename never silently overwrites an existing entry.
 
@@ -45,5 +45,7 @@ The account menu exposes **Files** only to admins. The page supports:
 - download
 - rename
 - confirmed delete
+
+Directory reads use the shared generation-guarded client loader, so a slower response for a folder the owner has already left cannot replace the listing for the current breadcrumbs. A multi-file batch also reloads the directory after stopping on a later-file failure, preserving visibility of files that were successfully published earlier in the batch.
 
 There are intentionally no public links, previews, content scanning, quotas, per-file permissions, database records, retention jobs, or normal-user surfaces. If Vesper later needs a product-level asset system, it should be designed separately rather than extending this temporary utility by accident.
