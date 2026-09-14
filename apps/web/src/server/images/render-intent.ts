@@ -212,6 +212,7 @@ function resolvedAttemptShape(plan: PlannedImageRender, result: RenderWithModelR
     expectedAspect: shape.expectedAspect,
     returned: result.outputDimensions ?? null,
     crop: shape.crop,
+    providerSize: shape.providerSize,
   };
 }
 

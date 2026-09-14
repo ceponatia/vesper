@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ResolvedImageAttemptShape } from "../render-intent";
+import type { ResolvedImageAttemptCrop, ResolvedImageAttemptShape } from "../render-intent";
 import { identityBlurScore, toGrayscale, type RawPixels } from "../identity/identity-pack-quality";
 
 /**
@@ -67,16 +67,28 @@ export const renderAdvisorySchema = z.object({
 });
 export const renderAdvisoryListSchema = z.array(renderAdvisorySchema);
 
-/** The measurement behind a `harmful_crop_loss` judgment. */
+/**
+ * The measurement behind a `harmful_crop_loss` judgment.
+ *
+ * `basis` names which of two ways `trimmedFraction` was computed:
+ *
+ * - `"performed"` — the actual pixels: `1 - (crop.rect area) / (providerSize
+ *   area)`, using the shape record's own `providerSize` (the provider's pixel
+ *   size BEFORE the local crop) against the crop's own kept rect. Exact,
+ *   whatever the source of the mismatch between what was expected and what
+ *   the provider actually returned.
+ * - `"planned"` — the fallback when `providerSize` is absent (an older
+ *   stored render, or a decode that could not read it): the ratio identity
+ *   `1 - min(a,b)/max(a,b)` against `expectedAspect` and the crop's own
+ *   target ratio, which gives the exact area fraction a crop-to-ratio
+ *   removes when the provider returns exactly the aspect it was expected to
+ *   — a real answer, but not what THIS render actually cut if the provider's
+ *   real output disagreed with that expectation.
+ */
 export interface CropLossMeasurement {
-  /** The share of the pre-crop frame's area the crop removed — computed from
-   * the two ASPECT RATIOS the shape record already carries, never from pixel
-   * counts: the pre-crop buffer's own pixel dimensions are not persisted (only
-   * the post-crop `returned` size is), but the ratio identity
-   * `1 - min(a,b)/max(a,b)` gives the exact area fraction a crop-to-ratio
-   * removes regardless of resolution. */
   trimmedFraction: number;
   placement: "focal" | "top" | "center";
+  basis: "performed" | "planned";
 }
 
 /**
@@ -162,29 +174,61 @@ export const BLUR_MEASUREMENT_WIDTH = 256;
 export const SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR = 50;
 
 /**
+ * The exact trimmed-area fraction from real pixels: `1 - (kept rect area) /
+ * (provider's pre-crop area)`. Null when `providerSize` is absent (the shape
+ * record could not read the provider's pre-crop dimensions) or when the
+ * numbers cannot describe a real crop (either area non-positive, or the kept
+ * area somehow exceeds the provider's own — a data inconsistency this
+ * function refuses to turn into a fabricated negative loss).
+ */
+function performedTrimmedFraction(
+  crop: ResolvedImageAttemptCrop,
+  providerSize: { width: number; height: number } | null,
+): number | null {
+  if (!providerSize) return null;
+  const providerArea = providerSize.width * providerSize.height;
+  const keptArea = crop.rect.width * crop.rect.height;
+  if (!(providerArea > 0) || !(keptArea > 0) || keptArea > providerArea) return null;
+  return 1 - keptArea / providerArea;
+}
+
+/**
+ * The ratio-identity fallback: `1 - min(a,b)/max(a,b)` against the render's
+ * EXPECTED pre-crop aspect and the crop's own target ratio — exact only when
+ * the provider actually returned the aspect it was expected to; a real
+ * answer either way, but the reason this basis is named `"planned"` rather
+ * than `"performed"`. Null when `expectedAspect` is unknown, the same
+ * MEASURING/JUDGING rule as everywhere else in this module: an absent
+ * measurement skips rather than fabricating a judgment.
+ */
+function plannedTrimmedFraction(expectedAspect: number | null, targetRatio: number): number | null {
+  if (expectedAspect === null || !(expectedAspect > 0) || !(targetRatio > 0)) return null;
+  return 1 - Math.min(expectedAspect, targetRatio) / Math.max(expectedAspect, targetRatio);
+}
+
+/**
  * Crop-loss advisory from the render's own shape record — no pixels read.
  *
- * Null (no advisory, not even a sub-threshold measurement recorded) when: no
- * crop was performed (`shape.crop` absent — nothing was trimmed), or the
- * pre-crop aspect this render expected is unknown (`shape.expectedAspect`
- * null — "nothing could say what shape was coming" is not evidence of harm,
- * it is an absence of measurement, and the MEASURING/JUDGING split means an
- * absent measurement skips rather than fabricating a judgment). This mirrors
- * `evaluateIdentityPackIntrinsic`'s rule that a null measurement is skipped,
- * never treated as a failure.
+ * Prefers the `"performed"` basis (real pixels) whenever the shape record's
+ * `providerSize` is available, and falls back to the `"planned"` basis
+ * (the expected-vs-target ratio identity) only when it is absent. Null (no
+ * advisory, not even a sub-threshold measurement recorded) when: no crop was
+ * performed (`shape.crop` absent — nothing was trimmed), or BOTH bases come
+ * up empty (no `providerSize` AND no `expectedAspect`) — an absent
+ * measurement skips rather than fabricating a judgment, the same rule
+ * `evaluateIdentityPackIntrinsic` follows for a null measurement.
  */
 export function evaluateCropLoss(shape: ResolvedImageAttemptShape | null): RenderAdvisory | null {
   const crop = shape?.crop ?? null;
   if (!crop) return null;
-  const expected = shape?.expectedAspect ?? null;
-  if (expected === null || !(expected > 0)) return null;
-  const target = crop.targetRatio;
-  if (!(target > 0)) return null;
 
-  const trimmedFraction = 1 - Math.min(expected, target) / Math.max(expected, target);
+  const performed = performedTrimmedFraction(crop, shape?.providerSize ?? null);
+  const basis: CropLossMeasurement["basis"] = performed !== null ? "performed" : "planned";
+  const trimmedFraction = performed ?? plannedTrimmedFraction(shape?.expectedAspect ?? null, crop.targetRatio);
+  if (trimmedFraction === null) return null;
   if (trimmedFraction < CROP_LOSS_ADVISORY_FRACTION) return null;
 
-  const evidence: CropLossMeasurement = { trimmedFraction, placement: crop.placement };
+  const evidence: CropLossMeasurement = { trimmedFraction, placement: crop.placement, basis };
   return {
     version: RENDER_ADVISORY_VERSION,
     code: "harmful_crop_loss",

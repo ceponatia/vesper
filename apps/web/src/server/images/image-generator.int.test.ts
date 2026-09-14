@@ -452,7 +452,7 @@ describe.skipIf(!ready)("image generator runs", () => {
     expect(output?.chatId).toBeNull();
   });
 
-  it("records advisory annotations from the representative render on the run's own meta (#249 correction round 1)", async () => {
+  it("records advisory annotations on both the run's own meta and the output image row (#249 correction rounds 1-2)", async () => {
     // The Generator builds its own meta shape rather than calling
     // `renderAttemptMeta` — this proves `image-generator-settle.ts` threads
     // `representative.advisories` into it the same way every other lane
@@ -495,6 +495,14 @@ describe.skipIf(!ready)("image generator runs", () => {
 
     const row = await storedRow(id);
     expect(imageMeta(row?.meta).advisories).toEqual([advisory]);
+
+    // The OUTPUT IMAGE row carries its own copy too (#249 correction round
+    // 2) — the run's meta above is a second, independent record, not the
+    // source of truth for the summary route or a lightbox fed from the row.
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const outputId = run?.resultImageId ?? "";
+    const [output] = await db().select().from(images).where(eq(images.id, outputId)).limit(1);
+    expect(imageMeta(output?.meta).advisories).toEqual([advisory]);
   });
 
   it("sends a primary reference under the neutral role, with purpose as provenance only", async () => {

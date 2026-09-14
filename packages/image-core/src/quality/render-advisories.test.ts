@@ -48,6 +48,10 @@ function shapeWithCrop(over: {
   expectedAspect: number | null;
   targetRatio: number;
   placement?: "focal" | "top" | "center";
+  /** Absent by default — every case built through this helper exercises the
+   * "planned" (expectedAspect-only) basis unless a case sets it. */
+  providerSize?: { width: number; height: number } | null;
+  rect?: { left: number; top: number; width: number; height: number };
 }): ResolvedImageAttemptShape {
   return {
     mode: "target_ratio",
@@ -57,22 +61,23 @@ function shapeWithCrop(over: {
     sentValue: `${over.targetRatio}`,
     expectedAspect: over.expectedAspect,
     returned: { width: 100, height: 100 },
+    providerSize: over.providerSize ?? null,
     crop: {
       targetRatio: over.targetRatio,
       placement: over.placement ?? "top",
-      rect: { left: 0, top: 0, width: 100, height: 100 },
+      rect: over.rect ?? { left: 0, top: 0, width: 100, height: 100 },
       focalSource: "none",
     },
   };
 }
 
 describe("evaluateCropLoss", () => {
-  it("does not trigger on an 832x1216 model default trimmed to 3:4 (~0.088 trimmed)", () => {
+  it("PLANNED basis: does not trigger on an 832x1216 model default trimmed to 3:4 (~0.088 trimmed)", () => {
     const shape = shapeWithCrop({ expectedAspect: 832 / 1216, targetRatio: 3 / 4 });
     expect(evaluateCropLoss(shape)).toBeNull();
   });
 
-  it("triggers on a square render trimmed to 3:4 (exactly 0.25 trimmed)", () => {
+  it("PLANNED basis: triggers on a square render trimmed to 3:4 (exactly 0.25 trimmed)", () => {
     const shape = shapeWithCrop({ expectedAspect: 1, targetRatio: 3 / 4, placement: "center" });
     const advisory = requireAdvisory(evaluateCropLoss(shape));
     expect(advisory.code).toBe("harmful_crop_loss");
@@ -82,9 +87,50 @@ describe("evaluateCropLoss", () => {
     if (advisory.code !== "harmful_crop_loss") throw new Error("unreachable");
     expect(advisory.evidence.trimmedFraction).toBeCloseTo(0.25, 10);
     expect(advisory.evidence.placement).toBe("center");
+    expect(advisory.evidence.basis).toBe("planned");
   });
 
-  it("sits exactly at the documented threshold boundary", () => {
+  it("PERFORMED basis: prefers real pixels over the planned ratio when providerSize is present, and they disagree", () => {
+    // The reviewer's example (#249 correction round 2): the render EXPECTED
+    // an 832x1216 shape, but the provider actually returned 1024x1024 before
+    // the local crop kept 768x1024 to reach 3:4. The planned basis (using
+    // 832/1216) would answer ~0.088 and NOT trigger; the performed basis
+    // (real pixels: 1 - (768*1024)/(1024*1024)) answers exactly 0.25 and
+    // DOES — proving performed is read first, not averaged or ignored.
+    const shape = shapeWithCrop({
+      expectedAspect: 832 / 1216,
+      targetRatio: 3 / 4,
+      placement: "center",
+      providerSize: { width: 1024, height: 1024 },
+      rect: { left: 128, top: 0, width: 768, height: 1024 },
+    });
+    const advisory = requireAdvisory(evaluateCropLoss(shape));
+    expect(advisory.code).toBe("harmful_crop_loss");
+    if (advisory.code !== "harmful_crop_loss") throw new Error("unreachable");
+    expect(advisory.evidence.basis).toBe("performed");
+    expect(advisory.evidence.trimmedFraction).toBeCloseTo(0.25, 10);
+  });
+
+  it("PERFORMED basis: does not trigger when the real pixels show an ordinary aspect correction", () => {
+    // Same 832x1216-to-3:4 correction as the planned non-trigger case above,
+    // but measured from real pixels instead of the expected ratio.
+    const shape = shapeWithCrop({
+      expectedAspect: 832 / 1216,
+      targetRatio: 3 / 4,
+      providerSize: { width: 832, height: 1216 },
+      rect: { left: 0, top: 53, width: 832, height: 1109 },
+    });
+    expect(evaluateCropLoss(shape)).toBeNull();
+  });
+
+  it("falls back to PLANNED when providerSize is absent, even though a crop exists", () => {
+    const shape = shapeWithCrop({ expectedAspect: 1, targetRatio: 3 / 4, providerSize: null });
+    const advisory = requireAdvisory(evaluateCropLoss(shape));
+    if (advisory.code !== "harmful_crop_loss") throw new Error("unreachable");
+    expect(advisory.evidence.basis).toBe("planned");
+  });
+
+  it("sits exactly at the documented threshold boundary (planned basis)", () => {
     // 1 - min(a,b)/max(a,b) = CROP_LOSS_ADVISORY_FRACTION when target/expected
     // = 1 - CROP_LOSS_ADVISORY_FRACTION.
     const expected = 1 - CROP_LOSS_ADVISORY_FRACTION;
@@ -101,12 +147,13 @@ describe("evaluateCropLoss", () => {
       sentValue: null,
       expectedAspect: null,
       returned: { width: 100, height: 100 },
+      providerSize: null,
       crop: null,
     };
     expect(evaluateCropLoss(shape)).toBeNull();
   });
 
-  it("skips (never judges) when the pre-crop expected aspect is unknown", () => {
+  it("skips (never judges) when both bases are unavailable (no providerSize, no expected aspect)", () => {
     const shape = shapeWithCrop({ expectedAspect: null, targetRatio: 3 / 4 });
     expect(evaluateCropLoss(shape)).toBeNull();
   });

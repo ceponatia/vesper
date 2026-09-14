@@ -34,22 +34,28 @@ Every evaluator splits into two steps, and the split is permanent even when a th
 ### `harmful_crop_loss`
 
 Reads the shape record `providers/render-intents.md` already writes on every render
-(`images.meta.render.shape`) — no pixels are read. The trimmed-area fraction is computed from the
-two ASPECT RATIOS the shape record carries (`shape.expectedAspect`, the pre-crop ratio, and
-`shape.crop.targetRatio`, the ratio the crop reached), using the ratio identity
-`1 - min(a,b)/max(a,b)`, which gives the exact area fraction a crop-to-ratio removes regardless of
-resolution — the pre-crop buffer's own pixel dimensions are not persisted, only its ratio and the
-post-crop size are.
+(`images.meta.render.shape`) — no pixels are read. The trimmed-area fraction is computed one of
+two ways, named by `evidence.basis`:
 
-`CROP_LOSS_ADVISORY_FRACTION = 0.15` (`packages/image-core/src/quality/render-advisories.ts`).
-An 832×1216 model default trimmed to 3:4 removes ≈0.088 of the frame and does not trigger — an
-ordinary aspect-ratio correction, not a loss. A square render trimmed to 3:4 removes exactly 0.25
-and does trigger. The evidence recorded is `{ trimmedFraction, placement }`; the offer is
-`new_variation` only — retrying the same source crops the same way, so `retry_same` is
-meaningless here.
+- **`"performed"`** — real pixels: `1 - (crop.rect area) / (providerSize area)`, using the shape
+  record's `providerSize` (the provider's own pixel size BEFORE the local crop,
+  [providers/shape.md](providers/shape.md) §What the renderer reports back) against the crop's own
+  kept rect. Exact, whatever the source of any mismatch between what was expected and what the
+  provider actually returned.
+- **`"planned"`** — the fallback when `providerSize` is absent (an older stored render, or an
+  undecodable buffer): the ratio identity `1 - min(a,b)/max(a,b)` against `shape.expectedAspect`
+  (the pre-crop ratio the render expected) and `shape.crop.targetRatio` (the ratio the crop
+  reached) — exact only when the provider actually returned the aspect it was expected to.
 
-Skipped (no advisory, not even a sub-threshold record) when no crop was performed, or when the
-render's pre-crop expected aspect is unknown.
+`CROP_LOSS_ADVISORY_FRACTION = 0.15` (`packages/image-core/src/quality/render-advisories.ts`)
+applies to either basis. An 832×1216 model default trimmed to 3:4 removes ≈0.088 of the frame on
+either basis and does not trigger — an ordinary aspect-ratio correction, not a loss. A render whose
+real pre-crop pixels are square and gets trimmed to 3:4 removes exactly 0.25 and does trigger. The
+evidence recorded is `{ trimmedFraction, placement, basis }`; the offer is `new_variation` only —
+retrying the same source crops the same way, so `retry_same` is meaningless here.
+
+Skipped (no advisory, not even a sub-threshold record) when no crop was performed, or when BOTH
+bases are unavailable (no `providerSize` and no `expectedAspect`).
 
 ### `blank_output` and `severe_blur`
 
@@ -122,17 +128,18 @@ most recently reviewed rows. `apps/web/src/app/settings/image-advisories/page.ts
 
 A recorded verdict, written from that table, states one of three things for a signal:
 
-- **Annotate** — the signal's agreement rate is high enough that it should keep annotating renders
-  as it does today.
+- **Annotate** — the signal's agreement rate supports continuing to annotate renders with it.
 - **Reject** — the signal's disagreement rate, or a recorded misleading result, means it should
   stop annotating.
 - **Propose a narrowly defined promotion check** — the evidence supports a specific, bounded gate
-  proposal for a future change; the advisory itself remains a signal, not a gate, until that
-  proposal is separately reviewed and implemented.
+  proposal, named and scoped in the verdict.
 
-No automatic gate or model substitution exists anywhere in this design, at any signal-agreement
-rate: a verdict is written by the owner from the comparison record, never computed from a
-threshold.
+An advisory is a signal, never a gate, and this page describes no path where agreement alone turns
+one into a refusal: a signal that has earned enough agree verdicts to justify becoming a refusal is
+a SEPARATE change, with its own owner and its own description, reviewed on its own terms — not a
+consequence this comparison record produces by itself. No automatic gate or model substitution
+exists anywhere in this design, at any signal-agreement rate: a verdict is written by the owner
+from the comparison record, never computed from a threshold.
 
 ## Diagnostics
 
