@@ -19,14 +19,16 @@ const MENU_ITEM_CLASS = "block px-3 py-2 text-sm text-paper-200 transition-color
  * page holds. Each page re-checks the role and every backing API is role-gated
  * server-side, so hiding the links is tidiness rather than access control.
  *
- * The list holds the three image benches, the Narrator Prompt Lab (handwritten
- * narrator instruction prompts), and the Engine Comparison review screen.
+ * The list holds the temporary Files utility, the three image benches, the
+ * Narrator Prompt Lab (handwritten narrator instruction prompts), and the Engine
+ * Comparison review screen.
  *
  * The `/settings/*` tools still answer at those routes. Only the navigation
  * moved; relocating the URLs is deliberate future work, so existing
  * `?run=` / `?experiment=` / `?prompt=` links keep resolving.
  */
 const ADMIN_LINKS = [
+  { href: "/settings/files", label: "Files" },
   { href: "/settings/image-generator", label: "Image generator" },
   { href: "/settings/image-lab", label: "Image lab" },
   { href: "/settings/image-models", label: "Image models" },
