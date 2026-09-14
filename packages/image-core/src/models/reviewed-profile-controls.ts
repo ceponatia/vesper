@@ -1,5 +1,6 @@
-import type { ImageModelControlBindings } from "../capabilities/image-model-capabilities";
-import type { ImageControlDefaults } from "./image-model-profiles";
+import { mapImageRenderControls, type DroppedImageControlReason } from "../capabilities/image-control-mapping";
+import type { ImageModelAdvancedCapabilities } from "../capabilities/image-model-capabilities";
+import type { ImageControlDefaults, ImageRenderControls } from "./image-model-profiles";
 import { baseImageModelSlug, type ImageModel } from "./image-models";
 
 /**
@@ -390,8 +391,14 @@ export function reviewedImageProfilePinnedFields(model: ImageModel): string[] {
   return [...fields];
 }
 
+/** One reviewed setting this version cannot send, and the mapper's own reason. */
+export interface ReviewedControlDefect {
+  control: string;
+  reason: DroppedImageControlReason;
+}
+
 /**
- * The reviewed controls a configuration states that ONE version cannot carry.
+ * The reviewed settings a configuration states that ONE version cannot send.
  *
  * Asked at both moments a version and a profile are judged together: saving a
  * profile ({@link import("./image-model-profile-admin").validateImageProfileConfiguration})
@@ -400,15 +407,27 @@ export function reviewedImageProfilePinnedFields(model: ImageModel): string[] {
  * disagree about the same row — a save refusing what an activation waves
  * through is how a reviewed correction goes missing between them.
  *
+ * Judged by running the MAPPER over the values, rather than by checking that a
+ * binding exists. Presence is not the question: a version that keeps
+ * `customWidth` but narrows it to a 1024 minimum accepts the binding and refuses
+ * the reviewed 832, and a presence test passed that configuration at save and at
+ * activation only for `mapImageRenderControls` to drop it as `invalid` at render
+ * — the same silent loss, one layer further down. The mapper is the thing that
+ * will actually decide, so it is the thing that answers here, and its reason
+ * travels with the refusal.
+ *
  * Scoped twice over, and both narrowings are the point. Only a REVIEWED model is
  * asked — an operator's own profile may say whatever the control vocabulary can
  * say, and a control the version drops is an ordinary recorded drop there. And
- * only the controls that model's reviewed policy actually names are checked, so
- * a curated profile's own `steps` on the same row is nobody's business here.
+ * only the controls that model's reviewed policy actually names are judged, so a
+ * curated profile's own `steps` on the same row is nobody's business here.
  *
- * `resolution` is never among them: it sends no field at all, it is the GATE
- * that makes a width/height pair a request, and it is dropped with a reason on
- * every version that binds no tier — including all four reviewed models today.
+ * The values judged are the ROW's, not the table's: seeding puts the reviewed
+ * value there, but an admin may have stated their own, and what ships is what
+ * the row says. `resolution` is never among them — it sends no field at all, it
+ * is the GATE that makes a width/height pair a request, and it is dropped with a
+ * reason on every version that binds no tier, including all four reviewed models
+ * today.
  *
  * Written member by member over the reviewed vocabulary rather than looping a
  * name map, for the reason the reviewed table itself is: a control added to that
@@ -417,32 +436,26 @@ export function reviewedImageProfilePinnedFields(model: ImageModel): string[] {
  */
 export function reviewedUnboundControls(
   slug: string,
-  bindings: ImageModelControlBindings,
+  capabilities: ImageModelAdvancedCapabilities,
   stated: ImageControlDefaults,
-): string[] {
+): ReviewedControlDefect[] {
   const reviewed = reviewedImageProfileControls(baseImageModelSlug(slug))?.controlDefaults;
   if (!reviewed) return [];
-  const checks: { control: string; carried: boolean; bound: boolean }[] = [
-    { control: "steps", carried: carries(stated.steps, reviewed.steps), bound: bindings.steps !== undefined },
-    {
-      control: "guidance",
-      carried: carries(stated.guidance, reviewed.guidance),
-      bound: bindings.guidance !== undefined,
-    },
-    {
-      control: "negativePrompt",
-      carried: carries(stated.negativePrompt, reviewed.negativePrompt),
-      bound: bindings.negativePrompt !== undefined,
-    },
-    {
-      control: "fastMode",
-      carried: carries(stated.fastMode, reviewed.fastMode),
-      bound: bindings.fastMode !== undefined,
-    },
-    { control: "width", carried: carries(stated.width, reviewed.width), bound: bindings.customWidth !== undefined },
-    { control: "height", carried: carries(stated.height, reviewed.height), bound: bindings.customHeight !== undefined },
-  ];
-  return checks.filter((check) => check.carried && !check.bound).map((check) => check.control);
+  const request: ImageRenderControls = {
+    ...(carries(stated.steps, reviewed.steps) ? { steps: stated.steps } : {}),
+    ...(carries(stated.guidance, reviewed.guidance) ? { guidance: stated.guidance } : {}),
+    ...(carries(stated.negativePrompt, reviewed.negativePrompt) ? { negativePrompt: stated.negativePrompt } : {}),
+    ...(carries(stated.fastMode, reviewed.fastMode) ? { fastMode: stated.fastMode } : {}),
+    ...(carries(stated.width, reviewed.width) ? { width: stated.width } : {}),
+    ...(carries(stated.height, reviewed.height) ? { height: stated.height } : {}),
+  };
+  // Only the reviewed settings go in, so every drop that comes back is about one
+  // of them: the mapper's own `unsupported` rows and its LoRA arm have nothing
+  // to fire on.
+  return mapImageRenderControls({ controls: request, capabilities }).dropped.map((drop) => ({
+    control: drop.control,
+    reason: drop.reason,
+  }));
 }
 
 /**

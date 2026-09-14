@@ -275,6 +275,27 @@ describe("a created profile's reviewed settings, as the save path composes them"
     expect(issues[0]?.message).toContain("re-probe it first");
   });
 
+  it("refuses a reviewed value the version's binding range rejects", () => {
+    // Presence was never the question. A version that KEEPS `customWidth` but
+    // narrows it past the reviewed 832 accepts the binding and refuses the
+    // value, and `mapImageRenderControls` is what decides that at render time —
+    // so it is what decides here, and its reason travels with the refusal.
+    const narrowed = imageModelAdvancedCapabilitiesSchema.parse({
+      controls: {
+        guidance: { field: "cfg", type: "number", minimum: 1, maximum: 20 },
+        customWidth: { field: "width", type: "integer", minimum: 1024, maximum: 1536 },
+        customHeight: { field: "height", type: "integer", minimum: 64, maximum: 1536 },
+      },
+      knownInputFields: ["cfg", "face_weight", "height", "method", "width"],
+    });
+    const { issues } = saved(
+      model({ slug: "nsfw-api/sdxl-pulid:83bea6", advancedCapabilities: narrowed }),
+      request(),
+    );
+    expect(unbound(issues)).toEqual(["width"]);
+    expect(issues[0]).toMatchObject({ kind: "reviewed_control_unbound", control: "width", reason: "invalid" });
+  });
+
   it("says nothing about an ordinary profile's own controls on an unprobed model", () => {
     // The narrowing that keeps this from becoming a second, stricter contract:
     // only a REVIEWED model's REVIEWED controls are asked. A curated profile is
