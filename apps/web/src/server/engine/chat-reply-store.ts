@@ -1,10 +1,10 @@
 import { and, asc, desc, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  type ChatReplyFailure,
-  type ChatReplyFailureCause,
-  type ChatReplyFailureCode,
-  type DiagnosticSink,
+import type {
+  ChatReplyFailure,
+  ChatReplyFailureCause,
+  ChatReplyFailureCode,
+  DiagnosticSink,
 } from "@/contracts";
 import {
   isNarratorInput,
