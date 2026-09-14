@@ -49,6 +49,7 @@ import { log } from "@/server/log";
  * one failure mode an exact-id registry cannot detect for itself.
  */
 export {
+  ASMODEUS_24B_V3_ID,
   DARKIDOL_QWEN38_ID,
   FABLE_FUSION_711_ID,
   F451_ULTRA_PRO_WRITER_ID,
