@@ -170,8 +170,9 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
   same clothes, now as instances — behavior-neutral), so they carry handles
   from the NEXT exchange on. The free-text fold still runs as a degraded bridge
   (`chat_garments.legacy_outfit_bridge`) for a member the exchange did not
-  enumerate through typed operations (no handle in the table, or a lane that
-  never resolved one); a member it DID enumerate that way has their own
+  enumerate through typed operations (no handle in the table, or an exchange
+  whose continuity leg proposed no typed operation at all); a member it DID
+  enumerate that way has their own
   personal pass skip its free-text outfit fold for the exchange instead
   (`chat_garments.ensemble_outfit_typed_lane`) — the same one-path-per-exchange
   rule the primary and player already follow

@@ -19,14 +19,6 @@ import {
 import { foldRelationshipArc, appendSecretMilestones } from "./character-fold";
 import type { EnsembleWardrobeReport } from "./finalize-types";
 
-// Re-exported so existing consumers of this module keep one import site;
-// the implementation lives in the leaf module `ensemble-roster.ts` so
-// `finalize-agents.ts` and `wardrobe-fold.ts` can depend on it without
-// completing the finalize-agents -> ensemble -> character-fold ->
-// finalize-agents cycle this module's OWN `character-fold` import would
-// otherwise close.
-export { presentEnsembleMembers, type EnsembleRosterMember } from "./ensemble-roster";
-
 /**
  * Fold one ensemble member's exchange results into their state (followups rulings
  * 10-11). PURE. Two halves:
@@ -175,7 +167,7 @@ export function settleEnsembleMember(args: {
 // from, and whether their personal pass's own free-text outfit fold must sit
 // out this exchange because a typed operation already moved that wardrobe.
 // (Which present members join the handle enumeration + materialization pass is
-// `presentEnsembleMembers`, re-exported above from the leaf module.)
+// `presentEnsembleMembers` in the `ensemble-roster` leaf module.)
 
 /**
  * The member's pre-settle state, with `wornItemIds` swapped for the shared
