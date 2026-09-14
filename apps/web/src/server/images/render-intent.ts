@@ -214,7 +214,11 @@ function resolvedAttempt(
     profileId: profile.id,
     task: profile.task,
     promptStrategy: profile.promptStrategy,
-    requestedVersionId: intent.versionId ?? null,
+    // The version the transport was actually asked for: an explicit pin on
+    // this intent, else the app's own currently pinned version for this
+    // model — never the provider's echo, which `executedVersionId` alone
+    // owns (issue #248 correction round 2, finding 1).
+    requestedVersionId: intent.versionId ?? pinnedImageModelVersion(model),
     seed,
     appliedControls: plan.appliedControls,
     droppedControls: plan.droppedControls,

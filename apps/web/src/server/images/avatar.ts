@@ -377,26 +377,40 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
 
   // The full eligibility check (issue #248 acceptance #2–#3: a changed model,
   // version or world state — appearance, wardrobe, prompt — must never pass
-  // silently as "the same composition"). Only meaningful once a program
-  // actually compiled, since there is no fingerprint to compare against
-  // otherwise — and the row already fails for THAT reason regardless of any
-  // replay request, so the two checks never both fire.
+  // silently as "the same composition"). Demo mode renders a placeholder, not
+  // a composition — there is no program to compile a fingerprint from — so a
+  // same-composition request there refuses outright, through the same
+  // refusal path and diagnostic, rather than falling through to a silent
+  // fresh placeholder (correction round 2, finding 3). Otherwise the check is
+  // only meaningful once a program actually compiled, since there is no
+  // fingerprint to compare against — and the row already fails for THAT
+  // reason regardless of any replay request, so the two checks never both
+  // fire.
   const replayEligibility: AvatarReplayEligibility | null =
-    retry?.mode === "same_composition" && compiled && resolved
-      ? avatarReplayEligibility({
-          source: retrySourceRow,
-          ownerId: input.userId,
-          characterId: input.characterId,
-          current: {
-            modelSlug: resolved.model.slug,
-            profileId: resolved.profile.id,
-            executedVersionId: pinnedImageModelVersion(resolved.model),
-          },
-          programFingerprint: imagePromptProgramProvenanceSchema.safeParse(
-            compiled.meta[IMAGE_PROMPT_PROGRAM_META_KEY],
-          ).data?.programFingerprint,
-        })
-      : null;
+    retry?.mode !== "same_composition"
+      ? null
+      : demo
+        ? { ok: false, reason: "demo_mode" }
+        : compiled && resolved
+          ? avatarReplayEligibility({
+              source: retrySourceRow,
+              ownerId: input.userId,
+              characterId: input.characterId,
+              current: {
+                modelSlug: resolved.model.slug,
+                profileId: resolved.profile.id,
+                pinnedVersionId: pinnedImageModelVersion(resolved.model),
+              },
+              // A parse failure degrades to `null` — never `undefined` — so a
+              // program whose provenance cannot be read refuses as
+              // `program_unrecorded` instead of silently skipping the
+              // world-state check it was meant to gate (correction round 2,
+              // finding 2: the degradation direction must fail closed).
+              programFingerprint:
+                imagePromptProgramProvenanceSchema.safeParse(compiled.meta[IMAGE_PROMPT_PROGRAM_META_KEY]).data
+                  ?.programFingerprint ?? null,
+            })
+          : null;
   // Pushes `images.avatar.replay_refused` with the reason code and returns the
   // row's failure sentence — never a silent fallback to a new variation.
   const replayPrecondition = avatarReplayPrecondition(replayEligibility, input.characterId, input.sink);
@@ -458,6 +472,11 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
                   mode: retry.mode,
                   ...(retrySourceIdForRow ? { sourceImageId: retrySourceIdForRow } : {}),
                   ...(retrySeed !== null ? { seed: retrySeed } : {}),
+                  // Whether THIS replay held a version pin, and which one —
+                  // present (even as `null`) only for an eligible
+                  // same-composition replay, so the row says whether the
+                  // version was held (correction round 2, finding 1).
+                  ...(replayEligibility?.ok === true ? { pinnedVersionId: replayEligibility.version.pinned } : {}),
                 },
               }
             : {}),

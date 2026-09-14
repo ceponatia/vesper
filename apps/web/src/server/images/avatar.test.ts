@@ -371,7 +371,15 @@ describe("generateAvatar program wiring", () => {
     const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
     expect(opts?.failedPrecondition ?? null).toBeNull();
     expect(opts?.asset.sourceImageId).toBe("img-source");
-    expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition", sourceImageId: "img-source", seed: 777 });
+    // `pinnedVersionId` records whether THIS replay held a version pin
+    // (correction round 2, finding 1) — null here since the lane probe's
+    // fixture model pins none.
+    expect(opts?.asset.meta?.retry).toEqual({
+      mode: "same_composition",
+      sourceImageId: "img-source",
+      seed: 777,
+      pinnedVersionId: null,
+    });
     const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
     expect(intent?.controls?.seed).toBe(777);
   });
@@ -423,6 +431,52 @@ describe("generateAvatar program wiring", () => {
     // leave that id on a failed row, nor let a caller probe its existence.
     expect(opts?.asset.sourceImageId).toBeUndefined();
     expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition" });
+  });
+
+  /**
+   * Correction round 2, finding 3: demo mode compiles no program at all, so
+   * the ordinary eligibility table has nothing to check against — without
+   * this refusal a `same_composition` request in demo mode fell through to
+   * `generateAvatar`'s demo branch and rendered a fresh, unrelated monogram
+   * with `meta.retry: { mode: "same_composition" }` and NO refusal, which is
+   * exactly the silent fallback this lane's own rule forbids.
+   */
+  it("a same-composition retry in demo mode refuses before rendering a placeholder, naming demo_mode", async () => {
+    prime({ demo: true, profile: lindaProfile(), name: "Linda" });
+    const sink = new DiagnosticCollector();
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      sink,
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "same_composition", sourceImageId: "img-source" },
+    });
+    expect(result.imageIds).toHaveLength(1);
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition).toBe(AVATAR_REPLAY_REFUSAL_TEXT.demo_mode);
+    expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
+    expectDiagnostic(sink, "images.avatar.replay_refused");
+    expect(sink.items.find((d) => d.code === "images.avatar.replay_refused")?.context).toMatchObject({
+      characterId: "chr-1",
+      reason: "demo_mode",
+    });
+    // Never a silent fallback: no source id and no seed land on the row.
+    expect(opts?.asset.sourceImageId).toBeUndefined();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition" });
+  });
+
+  it("a new-variation retry in demo mode still renders the placeholder (only same_composition refuses in demo)", async () => {
+    prime({ demo: true, profile: lindaProfile(), name: "Linda" });
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "new_variation" },
+    });
+    expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1"] });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "new_variation" });
   });
 
   /**

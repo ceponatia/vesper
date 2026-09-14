@@ -48,9 +48,10 @@ exists, **Regenerate portrait** keeps its usual primary/ghost emphasis and defau
 sampling attempt (a "new variation"); a small secondary **Same composition** control beside it
 asks instead to reuse this portrait's exact settings, disabled with a short reason (no seed was
 recorded, the model or its version changed) when the list's cheap eligibility check already knows
-it cannot succeed; a world-state change surfaces only as the request's own failure toast, since it
-is only detectable once the render actually compiles. Every ready avatar tile's caption also
-states its seed status — *Unseeded variation*, or the seed itself.
+it cannot succeed; a world-state change, an unreadable prompt program, or a demo-mode request each
+surface only as the request's own failure toast, since none of the three is detectable from the
+list's cheap check. Every ready avatar tile's caption also states its seed status — *Unseeded
+variation*, or the seed itself.
 
 Below the portrait cards, the **Identity reference** block appears when an accepted image exists
 (`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust

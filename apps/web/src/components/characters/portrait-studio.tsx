@@ -99,6 +99,11 @@ const REPLAY_REASON_LABEL: Record<string, string> = {
   model_changed: "the model changed",
   version_changed: "the model version changed",
   world_changed: "the character changed",
+  // Correction round 2: defensive-only in practice (the compile step's own
+  // output), but the disabled menu item still needs SOME words if it ever
+  // is reached rather than falling back to "not available" silently.
+  program_unrecorded: "the prompt program can't be compared",
+  demo_mode: "demo mode has no composition to replay",
   source_unavailable: "unavailable",
 };
 

@@ -124,10 +124,16 @@ active bindings do not describe.
 
 Every generating lane then records the attempt under `images.meta.render` — model, profile, task,
 prompt strategy, resolved seed, applied and dropped controls, the reference roles actually sent
-(truncated to what the byte budget let through), the prediction id, and the version the provider
-says it executed — on failures too where the lane's failure shape returns rather than throws. That
-record is what a retry of the same composition reads. The character-fact lanes file a second,
-sibling provenance key beside it — `images.meta.visualState`, the visual-digest record
+(truncated to what the byte budget let through), the prediction id, the version the provider says
+it executed (`executedVersionId`), and the version the transport was actually ASKED for
+(`requestedVersionId`: an explicit pin on the intent, else the app's own currently pinned version
+for that model, else `null` when the app pins nothing) — on failures too where the lane's failure
+shape returns rather than throws. `requestedVersionId` and `executedVersionId` answer different
+questions and must never stand in for each other: a retry that compares a PIN against an ECHO
+either refuses a model the app pins whose transport happens to echo no version, or approves a
+model the app does not pin whose provider happens to echo a hash. That record is what a retry of
+the same composition reads. The character-fact lanes file a second, sibling provenance key beside
+it — `images.meta.visualState`, the visual-digest record
 ([../pipelines/README.md](../pipelines/README.md)).
 
 Alongside it sits `shape` — the render's own answer to "was the frame cut, where, and why"
@@ -143,9 +149,13 @@ that the provider returns identical bytes. The portrait lane is the first caller
 same-composition retry reads the source row's `meta.render.seed` and sends it back as an
 explicit `controls.seed`, but only when the eligibility table in
 [../pipelines/avatars.md](../pipelines/avatars.md) §Same-composition eligibility holds — an
-unrecorded seed, a changed model or version, or a world that moved since the source rendered must
-never pass silently as "the same composition"; each fails the row before provider spend, naming
-why. Portraits send no references at all (every portrait profile's reference policy allows none),
+unrecorded seed, a changed model or version, an unreadable prompt program, a demo-mode request, or
+a world that moved since the source rendered must never pass silently as "the same composition";
+each fails the row before provider spend, naming why. On a model the app does not pin at all, a
+replay reuses the seed against whatever version the provider currently serves, and the record says
+so (`meta.retry.pinnedVersionId: null`) rather than refusing outright — still a reproducibility
+request, never a pixel guarantee. Portraits send no references at all (every portrait profile's
+reference policy allows none),
 so a "reference went missing" refusal cannot arise on this lane — there is nothing to go missing.
 
 ## Selection stays fail-visible

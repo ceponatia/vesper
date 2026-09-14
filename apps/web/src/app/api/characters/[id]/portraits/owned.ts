@@ -2,7 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { pinnedImageModelVersion } from "@vesper/image-core";
 import { db, images } from "@/server/db";
 import {
-  avatarReplayEligibility,
+  avatarReplayCheapEligibility,
   resolveImageProfileForTask,
   type AvatarReplayEligibility,
   type AvatarReplaySourceRow,
@@ -107,11 +107,11 @@ export async function avatarReplayMapForPortraits(
   const current = {
     modelSlug: resolved.model.slug,
     profileId: resolved.profile.id,
-    executedVersionId: pinnedImageModelVersion(resolved.model),
+    pinnedVersionId: pinnedImageModelVersion(resolved.model),
   };
   const map: AvatarReplayMap = {};
   for (const row of rows) {
-    const eligibility: AvatarReplayEligibility = avatarReplayEligibility({ source: row, ownerId, characterId, current });
+    const eligibility: AvatarReplayEligibility = avatarReplayCheapEligibility({ source: row, ownerId, characterId, current });
     map[row.id] = eligibility.ok ? { ok: true } : { ok: false, reason: eligibility.reason };
   }
   return map;

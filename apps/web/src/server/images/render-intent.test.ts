@@ -233,6 +233,23 @@ describe("attempt provenance", () => {
     expect(result.attempt?.requestedVersionId).toBe("v-pinned");
   });
 
+  it("falls back to the app's own currently pinned version when the intent carries none (issue #248 correction round 2, finding 1)", async () => {
+    // No caller ever sets `intent.versionId` on the production portrait lane —
+    // recording `requestedVersionId` as a bare `null` there made every replay
+    // eligibility check compare a pin against an echo. A model whose SLUG pins
+    // a version must record that pin as what was requested, even though
+    // nothing on the intent said so explicitly.
+    const pinnedSlugProfile = resolved();
+    pinnedSlugProfile.model = { ...pinnedSlugProfile.model, slug: "vesper-test/render-intent:v-slug-pin" };
+    const result = await renderImageIntent(intent({ profile: pinnedSlugProfile }));
+    expect(result.attempt?.requestedVersionId).toBe("v-slug-pin");
+  });
+
+  it("records null when the intent carries no pin and the app pins nothing for this model", async () => {
+    const result = await renderImageIntent(intent());
+    expect(result.attempt?.requestedVersionId).toBeNull();
+  });
+
   it("is absent when the render was refused before a plan existed", async () => {
     // A required role the intent cannot supply refuses pre-plan — there is no
     // attempt to describe, and nothing must pretend otherwise.
