@@ -97,6 +97,17 @@ export function dragSourcePaths(selected: ReadonlySet<string>, rowPath: string):
  * its own descendant, and this guards both the "Move to…" picker's disabled
  * rows and the drag-onto-folder highlight/drop.
  */
+/**
+ * Whether a drag in flight has nowhere to land on `destination` — it carries
+ * nothing, or the destination is one {@link isBlockedDestination} refuses.
+ *
+ * Separate from the component because the handlers read the drag payload out of
+ * a ref, and a closure built during render may not touch one.
+ */
+export function isBlockedDragDestination(destination: string, paths: readonly string[]): boolean {
+  return paths.length === 0 || isBlockedDestination(destination, paths);
+}
+
 export function isBlockedDestination(candidatePath: string, sourcePaths: readonly string[]): boolean {
   if (sourcePaths.some((source) => isPathWithin(candidatePath, source))) return true;
   // A destination every source already sits in is a no-op the server can only

@@ -7,6 +7,7 @@ import {
   hasFolder,
   isAllSelected,
   isBlockedDestination,
+  isBlockedDragDestination,
   isPathWithin,
   isSelectionPartial,
   joinPath,
@@ -186,6 +187,17 @@ describe("dragSourcePaths", () => {
 
   it("acts on just the row when nothing at all is selected", () => {
     expect(dragSourcePaths(new Set(), "a")).toEqual(["a"]);
+  });
+});
+
+describe("isBlockedDragDestination", () => {
+  it("blocks a drag that carries nothing", () => {
+    expect(isBlockedDragDestination("box", [])).toBe(true);
+  });
+
+  it("defers to isBlockedDestination when the drag carries paths", () => {
+    expect(isBlockedDragDestination("a/b", ["a"])).toBe(true);
+    expect(isBlockedDragDestination("box", ["loose.txt"])).toBe(false);
   });
 });
 

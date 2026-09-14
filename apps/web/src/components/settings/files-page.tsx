@@ -30,6 +30,7 @@ import {
   hasFolder,
   isAllSelected,
   isBlockedDestination,
+  isBlockedDragDestination,
   isSelectionPartial,
   joinPath,
   parentPathFor,
@@ -235,24 +236,28 @@ export function FilesPage() {
     setMovingToParent(false);
   };
 
-  /** Drop-target handlers shared by every internal-move surface: a folder row, a breadcrumb, and "Up one folder". */
+  /**
+   * Drop-target handlers shared by every internal-move surface: a folder row, a
+   * breadcrumb, and "Up one folder".
+   *
+   * A destination the move would refuse must not light up or take the pointer —
+   * the drop was already refused, but silently, so the row highlighted, accepted
+   * the cursor, and then nothing happened. The payload comes from `dragPathsRef`
+   * because `dataTransfer.getData` stays empty until the drop, and it is read
+   * inside each handler rather than in a closure built here: this function runs
+   * during render, and `react-hooks/refs` rightly refuses a ref read on that path.
+   */
   function dropTargetHandlers(destination: string) {
-    // A destination the move would refuse must not light up or take the pointer.
-    // The drop was already refused, but silently: the row highlighted, accepted
-    // the cursor, and then nothing happened. `dragPathsRef` is the payload of the
-    // drag in flight, since `dataTransfer.getData` is empty until the drop.
-    const blocked = () => {
-      const paths = dragPathsRef.current;
-      return paths.length === 0 || isBlockedDestination(destination, paths);
-    };
     return {
       onDragEnter: (event: DragEvent) => {
-        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE) || blocked()) return;
+        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE)) return;
+        if (isBlockedDragDestination(destination, dragPathsRef.current)) return;
         event.preventDefault();
         setDragOverTargetPath(destination);
       },
       onDragOver: (event: DragEvent) => {
-        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE) || blocked()) return;
+        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE)) return;
+        if (isBlockedDragDestination(destination, dragPathsRef.current)) return;
         event.preventDefault();
       },
       onDragLeave: () => setDragOverTargetPath((current) => (current === destination ? null : current)),

@@ -443,22 +443,30 @@ function removableKind(stat: Awaited<ReturnType<typeof fs.lstat>>): RemovableKin
  * path. It would silently unlink exactly the entries this system refuses to
  * manage, and that refusal is the documented contract.
  */
-async function assertSubtreeRemovable(absoluteDirectory: string): Promise<void> {
-  let entries: Awaited<ReturnType<typeof fs.readdir>>;
+/**
+ * `readdir` for the removal walk, with the one failure that is an entry's
+ * problem rather than the request's mapped into the batch's own vocabulary.
+ * Left raw, EACCES/EPERM escaped `toFailure`, failed the whole batch with a
+ * 500, and discarded the count of everything already removed.
+ *
+ * The return type is inferred from the call rather than annotated: naming it
+ * through `ReturnType<typeof fs.readdir>` picks the Buffer overload, not the
+ * `withFileTypes` one this passes.
+ */
+async function readdirForRemoval(absoluteDirectory: string) {
   try {
-    entries = await fs.readdir(absoluteDirectory, { withFileTypes: true });
+    return await fs.readdir(absoluteDirectory, { withFileTypes: true });
   } catch (error) {
-    // A subtree this process cannot read is one entry's problem, not the
-    // request's. Left raw, EACCES/EPERM escaped `toFailure`, failed the whole
-    // batch with a 500, and discarded the count of everything already removed.
     const code = nodeErrorCode(error);
     if (code === "EACCES" || code === "EPERM") {
       throw new AdminFilesError("unsafe_path", "the folder contains an entry this server cannot read", 409);
     }
     throw error;
   }
+}
 
-  for (const entry of entries) {
+async function assertSubtreeRemovable(absoluteDirectory: string): Promise<void> {
+  for (const entry of await readdirForRemoval(absoluteDirectory)) {
     const absoluteEntry = path.join(absoluteDirectory, entry.name);
     const stat = await lstatOrNull(absoluteEntry);
     if (stat === null) continue;
