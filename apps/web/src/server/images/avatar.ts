@@ -333,7 +333,7 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
         input.sink,
       );
       if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
-      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
+      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt, result.advisories) };
     },
     onReady: async (asset) => {
       // The CANDIDATE pointer, and nothing else. A generated portrait is a

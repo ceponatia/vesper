@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { z } from "zod";
 import type { ResolvedImageAttemptShape } from "../render-intent";
 import type { RawPixels } from "../identity/identity-pack-quality";
 import {
@@ -8,8 +9,25 @@ import {
   SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR,
   evaluateCropLoss,
   evaluateOutputPixels,
+  renderAdvisorySchema,
   type RenderAdvisory,
 } from "./render-advisories";
+
+/**
+ * Compile-time-only: every `RenderAdvisory` the evaluators can produce must be
+ * a value `renderAdvisorySchema` would accept — one-directional, not a full
+ * type equality, because the schema's `evidence` is deliberately a loose
+ * `Record<string, unknown>` (docs/resilience.md §1) while the TS union's
+ * `evidence` is the precise `CropLossMeasurement | OutputPixelMeasurement`;
+ * the reverse direction (the loose schema type extending the precise union)
+ * can never hold, and asserting it would make this a check that always fails.
+ * What this line actually catches: a code added to `RenderAdvisory` without a
+ * matching schema arm (or vice versa) fails to COMPILE, before any fixture
+ * below runs.
+ */
+type AdvisoryMatchesSchema = RenderAdvisory extends z.infer<typeof renderAdvisorySchema> ? true : never;
+const advisoryMatchesSchema: AdvisoryMatchesSchema = true;
+void advisoryMatchesSchema;
 
 /**
  * Kills two classes of defect: (1) a crop-loss threshold that fires on an
@@ -114,6 +132,11 @@ describe("evaluateOutputPixels", () => {
     expect(advisory.offers).toEqual(["retry_same", "new_variation"]);
     if (advisory.code !== "blank_output") throw new Error("unreachable");
     expect(advisory.evidence.grayVariance).toBeLessThan(BLANK_OUTPUT_GRAY_VARIANCE_FLOOR);
+    // The thumbnail's OWN measured size, not the resize target — what makes a
+    // stored laplacianVariance interpretable after BLUR_MEASUREMENT_WIDTH or
+    // the floor is recalibrated.
+    expect(advisory.evidence.measuredWidth).toBe(8);
+    expect(advisory.evidence.measuredHeight).toBe(8);
   });
 
   it("flags a smooth gradient (high tonal variance, zero Laplacian response) as severe_blur, not blank", () => {

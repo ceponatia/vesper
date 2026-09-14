@@ -457,15 +457,13 @@ export type {
  */
 export {
   BLANK_OUTPUT_GRAY_VARIANCE_FLOOR,
+  BLUR_MEASUREMENT_WIDTH,
   CROP_LOSS_ADVISORY_FRACTION,
   RENDER_ADVISORY_VERSION,
   SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR,
   evaluateCropLoss,
   evaluateOutputPixels,
-  renderAdvisoryCodeSchema,
   renderAdvisoryCodes,
-  renderAdvisoryListSchema,
-  renderAdvisoryOfferSchema,
   renderAdvisoryOffers,
   renderAdvisorySchema,
 } from "./quality/render-advisories";

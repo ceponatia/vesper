@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import {
+  BLUR_MEASUREMENT_WIDTH,
   effectiveImageLoraSelection,
   evaluateCropLoss,
   evaluateOutputPixels,
@@ -246,17 +247,6 @@ function resolvedAttempt(
 }
 
 /**
- * Correlates one call's computed advisories with the `attempt` object
- * `renderImageIntent` hands back for it, so `renderAttemptMeta` can find them
- * from the SAME single argument every lane already passes
- * (`renderAttemptMeta(result.attempt)`) — no lane needs to change to also
- * thread `result.advisories` through. Safe because `resolvedAttempt` builds a
- * fresh object literal on every call: no two attempts ever share an identity,
- * and an unreferenced entry is reclaimed with its attempt rather than leaking.
- */
-const attemptAdvisories = new WeakMap<ResolvedImageAttempt, RenderAdvisory[]>();
-
-/**
  * Advisory signals for one successful render — crop loss from the shape
  * record already on `attempt`, plus blank/blur read from the returned pixels.
  *
@@ -279,7 +269,7 @@ async function measureRenderAdvisories(
   if (cropAdvisory) advisories.push(cropAdvisory);
   try {
     const { data, info } = await sharp(result.image, SHARP_DECODE_LIMITS)
-      .resize({ width: 256, withoutEnlargement: true })
+      .resize({ width: BLUR_MEASUREMENT_WIDTH, withoutEnlargement: true })
       .grayscale()
       .raw()
       .toBuffer({ resolveWithObject: true });
@@ -298,14 +288,18 @@ async function measureRenderAdvisories(
 
 /**
  * The produce-meta fragment recording one attempt under the row's `render`
- * key, plus its advisories under the sibling `advisories` key when this
- * attempt's render measured any — looked up by the attempt's own identity
- * (see `attemptAdvisories`), so a clean render's meta stays byte-identical to
- * before this key existed.
+ * key, plus its advisories under the sibling `advisories` key when the
+ * caller passes a non-empty list — explicit threading, not identity lookup:
+ * every caller that has `result.advisories` passes it alongside
+ * `result.attempt`, the same way it already threads `result.image`. A caller
+ * with no advisories argument (or an empty one) gets exactly the meta shape
+ * this looked like before advisories existed.
  */
-export function renderAttemptMeta(attempt: ResolvedImageAttempt | undefined): { meta?: Record<string, unknown> } {
+export function renderAttemptMeta(
+  attempt: ResolvedImageAttempt | undefined,
+  advisories?: RenderAdvisory[],
+): { meta?: Record<string, unknown> } {
   if (!attempt) return {};
-  const advisories = attemptAdvisories.get(attempt);
   return { meta: { render: attempt, ...(advisories && advisories.length > 0 ? { advisories } : {}) } };
 }
 
@@ -414,7 +408,6 @@ export async function renderImageIntent(
   );
   const attempt = resolvedAttempt(seeded.intent, plan, seeded.seed, result);
   const advisories = await measureRenderAdvisories(attempt, result, sink);
-  if (advisories.length > 0) attemptAdvisories.set(attempt, advisories);
   return { ...result, attempt, advisories };
 }
 

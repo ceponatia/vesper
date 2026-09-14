@@ -12,9 +12,9 @@ never does.
 
 - Owns: the two shipped signals and their thresholds, where an advisory attaches, the owner
   review affordance, and the comparison summary that review produces.
-- Does not own: the render pipeline itself, `images.meta.render` (the attempt record) or
-  `images.meta.shape` (the crop/shape record) — [providers/render-intents.md](providers/render-intents.md)
-  §Seeds and the render record owns those; the identity-pack quality contract (blur score, face
+- Does not own: the render pipeline itself, `images.meta.render` (the attempt record, whose own
+  `shape` field records the crop) — [providers/render-intents.md](providers/render-intents.md)
+  §Seeds and the render record owns that; the identity-pack quality contract (blur score, face
   measurement) — [identity-packs.md](identity-packs.md) owns that.
 
 ## Measuring versus judging
@@ -79,23 +79,22 @@ Both signals are versioned together under `RENDER_ADVISORY_VERSION = 1`
 
 Duplicated faces and extra people are the failure with the most recorded evidence in this
 codebase — the `single_subject_integrity` negative block, the `character_duplicated` lab verdict,
-the identity pack's `ambiguous_faces` rule — but no signal for it ships today. The production
-identity detector is a deliberate null seam (`packages/image-core/src/identity/identity-pack-detector.ts`,
-a privacy stance, not a gap to fill), and the only image-understanding path in this codebase is an
-OpenRouter VLM call that sends the image off-machine and needs its own review before it can feed
-an advisory. A face-count signal stays a recorded candidate, not a shipped one, until one of those
-two facts changes.
+the identity pack's `ambiguous_faces` rule. Vesper measures no face-count signal for it: the
+production identity detector is a deliberate null seam
+(`packages/image-core/src/identity/identity-pack-detector.ts`, a privacy stance), and the only
+image-understanding path in this codebase is an OpenRouter VLM call that sends the image
+off-machine and needs its own review before it can feed an advisory.
 
 ## Where an advisory attaches
 
 `apps/web/src/server/images/render-intent.ts` is the one seam: after a successful render,
 `renderImageIntent` runs both evaluators and returns the result carrying `advisories` beside
-`attempt`. `renderAttemptMeta` writes `images.meta.advisories` as a THIRD sibling key beside
-`images.meta.render` and `images.meta.shape` ([providers/render-intents.md](providers/render-intents.md)
-§Seeds and the render record) — present only when the list is non-empty, so a clean render's
-`meta` stays byte-identical to a render with no advisory support at all. No lane file reads
-`advisories` to refuse anything: a render carrying every advisory this module can produce still
-returns successfully and is still stored.
+`attempt`. `renderAttemptMeta` writes `images.meta.advisories` as a third sibling key beside
+`images.meta.render` (whose own `shape` field records the crop) and `images.meta.visualState`
+([providers/render-intents.md](providers/render-intents.md) §Seeds and the render record) —
+present only when the list is non-empty. No lane file reads `advisories` to refuse anything: a
+render carrying every advisory this module can produce still returns successfully and is still
+stored.
 
 ## Owner review
 
@@ -106,11 +105,13 @@ unknown code — one this render never measured — is a 404, the same shape as 
 image. A second review on an entry that already has one REPLACES it; reviews never stack or
 average.
 
-`components/ui/image-lightbox.tsx` shows one quiet line per advisory for the image's owner,
-outside the admin-only provenance panel: the code's copy
+`components/ui/image-lightbox.tsx` shows one quiet line per advisory, gated on the same
+`useIsAdmin` signal as the provenance panel — a DIFFERENT region from that panel (not inside its
+desktop-only aside), but the same audience, on any surface that passes `meta`: the code's copy
 (`components/images/advisory-copy.ts`, an exhaustive switch — a code without copy is a compile
 error), its offers as short text, and Agree/Disagree buttons. A reviewed advisory shows its
-recorded verdict instead of the buttons.
+recorded verdict instead of the buttons. Display and write are gated independently: only the
+image's actual owner can record a verdict, regardless of who can see the line.
 
 ## The comparison record
 

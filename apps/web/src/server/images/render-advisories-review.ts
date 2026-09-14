@@ -61,7 +61,7 @@ export function mergeRenderAdvisoryReview(
   reviewedAt: string,
 ): RenderAdvisoryReviewOutcome {
   const meta = imageMeta(rawMeta);
-  const advisories = parseOr(storedAdvisoryListSchema, meta.advisories, []);
+  const advisories = parseOr(storedAdvisoryListSchema, meta.advisories, [], undefined, "images.meta.advisories");
   const index = advisories.findIndex((advisory) => advisory.code === request.code);
   if (index === -1) return { ok: false };
 

@@ -377,17 +377,13 @@ describe("LoRA credential completion", () => {
 });
 
 describe("renderAttemptMeta", () => {
-  it("wraps an attempt under the render key and vanishes without one", async () => {
-    // The mocked transport's `Buffer.from("img")` cannot decode, so this
-    // render's advisories measure empty — the exact case that must leave
-    // `meta` byte-identical to before advisories existed.
+  it("wraps an attempt under the render key and vanishes without one — a one-argument call stays valid", async () => {
     const result = await renderImageIntent(intent({ controls: { seed: 5 } }));
-    expect(result.advisories).toEqual([]);
     expect(renderAttemptMeta(result.attempt)).toEqual({ meta: { render: result.attempt } });
     expect(renderAttemptMeta(undefined)).toEqual({});
   });
 
-  it("adds the advisories key beside render when this attempt measured any", async () => {
+  it("lands the second argument as meta.advisories when the caller threads it, and omits the key when the caller does not", async () => {
     mockRender.mockResolvedValue({
       ok: true,
       image: await solidGrayPng(8, 128),
@@ -396,9 +392,15 @@ describe("renderAttemptMeta", () => {
     } satisfies RenderWithModelResult);
     const result = await renderImageIntent(intent({ controls: { seed: 5 } }));
     expect(result.advisories).toHaveLength(1);
-    expect(renderAttemptMeta(result.attempt)).toEqual({
+    // Explicit threading (#249 correction round 1): a caller that has
+    // `result.advisories` and passes it gets the sibling key...
+    expect(renderAttemptMeta(result.attempt, result.advisories)).toEqual({
       meta: { render: result.attempt, advisories: result.advisories },
     });
+    // ...and a caller that does not pass it (an older call site, or one that
+    // deliberately ignores advisories) gets exactly the pre-advisories shape,
+    // even though this same attempt DID measure some.
+    expect(renderAttemptMeta(result.attempt)).toEqual({ meta: { render: result.attempt } });
   });
 });
 

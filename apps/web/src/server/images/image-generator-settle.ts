@@ -246,6 +246,12 @@ export async function settleGeneratorRender(
   // stored image, and what stopped the ones that produced none.
   const attemptMeta = {
     ...(representative.attempt ? { attempt: representative.attempt } : {}),
+    // The sibling `advisories` key `renderAttemptMeta` writes for every other
+    // lane (#249) — threaded explicitly here too, since the Generator builds
+    // its own meta shape rather than calling `renderAttemptMeta`.
+    ...(representative.advisories && representative.advisories.length > 0
+      ? { advisories: representative.advisories }
+      : {}),
     ...(attempts.length > 0 ? { providerAttempts: attempts } : {}),
     ...trimmed,
     outputs,

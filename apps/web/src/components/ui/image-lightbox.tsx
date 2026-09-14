@@ -3,12 +3,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
-import { imageUrl, type ImageRecord } from "@/lib/client/api";
-// `imageAdvisoriesApi` is not yet re-exported through the top `lib/client/api`
-// barrel (out of this change's owned paths) — imported from its own module
-// path until that barrel line is added.
-import { imageAdvisoriesApi, type ClientRenderAdvisory } from "@/lib/client/api/images";
+import { imageAdvisoriesApi, imageUrl, type ClientRenderAdvisory, type ImageRecord } from "@/lib/client/api";
 import { renderAdvisoryCodeCopy, renderAdvisoryOfferCopy } from "@/components/images/advisory-copy";
+import { renderAdvisoryCodes, renderAdvisoryOffers, type RenderAdvisoryCode, type RenderAdvisoryOffer } from "@vesper/image-core";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
@@ -90,13 +87,19 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
   const promptText = prompt?.trim() ?? "";
   const provenance = provenanceLines(meta);
   const showPrompt = isAdmin && (promptText.length > 0 || provenance.length > 0);
-  // Owner-visible regardless of `isAdmin` — deliberately outside the
-  // admin/dev-only provenance panel above. Not gated on ownership of THIS
-  // image either: the server-side review route already refuses (404) a
-  // caller who does not own the render, so a stranger viewing a shared
-  // public entity's portrait can see the quiet line but cannot record a
-  // verdict on it.
-  const advisories = meta?.advisories ?? [];
+  // Gated on the same `isAdmin` signal as the provenance panel, at any
+  // width (docs/ui/conventions.md §Image lightbox) — a DIFFERENT region from
+  // that panel (it is not inside `showPrompt`/the desktop-only aside), but
+  // the same audience. The PATCH route stays per-user-owned regardless: only
+  // the image's actual owner can record a verdict, admin display or not.
+  const advisories = isAdmin ? (meta?.advisories ?? []) : [];
+  // Only a code this deployment's copy switch recognizes is safe to render —
+  // an entry the client schema let through with an unrecognized `code` (the
+  // loose parse no longer restricts it to the known enum) falls back to
+  // showing nothing rather than an unsafe cast into the exhaustive switch.
+  const knownAdvisories = advisories.filter((advisory) =>
+    (renderAdvisoryCodes as readonly string[]).includes(advisory.code),
+  );
 
   async function submitAdvisoryReview(advisory: ClientRenderAdvisory, verdict: "agree" | "disagree") {
     if (!imageId) return;
@@ -147,14 +150,18 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
           <LightboxImage key={JSON.stringify([viewKey, imageId, comparisonImageId])} imageId={imageId} alt={alt} emptyMessage={emptyMessage}
             onStatusChange={(status) => setViewState((previous) => updateLightboxImageStatus(previous, view, status))} />
           {caption ? <p className="shrink-0 text-center text-sm text-paper-300">{caption}</p> : null}
-          {advisories.length > 0 ? (
+          {knownAdvisories.length > 0 ? (
             <div className="flex w-full max-w-md shrink-0 flex-col gap-2">
-              {advisories.map((advisory) => {
-                const review = reviewOverrides[advisory.code] ?? advisory.review;
-                const offersText = advisory.offers.map(renderAdvisoryOfferCopy).join(" or ");
+              {knownAdvisories.map((advisory) => {
+                const code = advisory.code as RenderAdvisoryCode;
+                const review = reviewOverrides[code] ?? advisory.review;
+                const knownOffers = advisory.offers.filter((offer): offer is RenderAdvisoryOffer =>
+                  (renderAdvisoryOffers as readonly string[]).includes(offer),
+                );
+                const offersText = knownOffers.map(renderAdvisoryOfferCopy).join(" or ");
                 return (
-                  <div key={advisory.code} className="rounded-card border border-ink-700 bg-ink-900/70 px-3 py-2 text-left text-xs text-paper-300">
-                    <p>{renderAdvisoryCodeCopy(advisory.code)}</p>
+                  <div key={code} className="rounded-card border border-ink-700 bg-ink-900/70 px-3 py-2 text-left text-xs text-paper-300">
+                    <p>{renderAdvisoryCodeCopy(code)}</p>
                     {offersText ? <p className="mt-1 text-paper-500">{`You could ${offersText}.`}</p> : null}
                     {review ? (
                       <p className="mt-2 text-paper-500">{`You ${review.verdict === "agree" ? "agreed" : "disagreed"} with this.`}</p>

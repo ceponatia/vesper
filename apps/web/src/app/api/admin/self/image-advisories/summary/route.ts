@@ -4,7 +4,7 @@ import { renderAdvisoryCodes } from "@vesper/image-core";
 import { db, images } from "@/server/db";
 import { jsonOk, withOwnerAdmin } from "@/server/api";
 import { imageMeta } from "@/server/images";
-import { parseOr } from "@/lib/parse";
+import { parseOrNull } from "@/lib/parse";
 
 /**
  * GET /api/admin/self/image-advisories/summary — the comparison record issue
@@ -31,7 +31,6 @@ const storedAdvisorySchema = z
       .optional(),
   })
   .loose();
-const storedAdvisoryListSchema = z.array(storedAdvisorySchema);
 
 interface CodeCounts {
   annotated: number;
@@ -72,7 +71,14 @@ export const GET = withOwnerAdmin(async (user) => {
   const reviewed: ReviewedRow[] = [];
   for (const row of rows) {
     const meta = imageMeta(row.meta);
-    const advisories = parseOr(storedAdvisoryListSchema, meta.advisories, []);
+    // Parsed PER ENTRY, not as one array: a single malformed advisory (an
+    // older or newer deploy's shape this route does not recognize) costs
+    // that one entry, never the whole row's evidence.
+    const rawAdvisories = Array.isArray(meta.advisories) ? meta.advisories : [];
+    const advisories = rawAdvisories.flatMap((raw) => {
+      const parsed = parseOrNull(storedAdvisorySchema, raw, undefined, "images.meta.advisories");
+      return parsed ? [parsed] : [];
+    });
     for (const advisory of advisories) {
       bump(advisory.code, "annotated");
       if (!advisory.review) {

@@ -5,7 +5,7 @@ import {
   portraitVariantKinds,
   type PortraitVariantKind,
 } from "@/contracts";
-import { renderAdvisorySchema, sceneReferenceSchema } from "@vesper/image-core";
+import { sceneReferenceSchema } from "@vesper/image-core";
 
 import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "./http";
 import {
@@ -24,15 +24,31 @@ import {
  * on here, the one place the client reads a reviewed advisory.
  */
 const renderAdvisoryReviewSchema = z.object({
-  verdict: z.enum(["agree", "disagree"]),
-  note: z.string().optional(),
-  at: z.string(),
+  verdict: z.enum(["agree", "disagree"]).catch("agree"),
+  note: z.string().optional().catch(undefined),
+  at: z.string().catch(""),
 });
 
-/** One stored render advisory as the client reads it: the producer shape
- * plus the optional owner review. */
-export const clientRenderAdvisorySchema = renderAdvisorySchema.extend({
-  review: renderAdvisoryReviewSchema.optional(),
+/**
+ * One stored render advisory as the client reads it — LOOSE, the same rule
+ * as `render`/`visualState` above: every field degrades independently rather
+ * than failing the whole entry, so a version bump, a renamed field, or a
+ * code this deployment does not recognize costs that field alone. Not built
+ * on the producer-side `renderAdvisorySchema` (`@vesper/image-core`) on
+ * purpose — that schema pins `version` to a literal and `code`/`level`/
+ * `offers` to enums, which is exactly the shape that made a stored
+ * advisory unparsable the moment `RENDER_ADVISORY_VERSION` moved, or the
+ * PATCH review route's own echoed response fail to parse as `ok:false`
+ * (issue #249 correction round 1).
+ */
+export const clientRenderAdvisorySchema = z.object({
+  version: z.number().catch(1),
+  code: z.string().catch(""),
+  level: z.string().catch("advisory"),
+  reason: z.string().catch(""),
+  evidence: z.record(z.string(), z.unknown()).catch({}),
+  offers: z.array(z.string()).catch([]),
+  review: renderAdvisoryReviewSchema.optional().catch(undefined),
 });
 export type ClientRenderAdvisory = z.infer<typeof clientRenderAdvisorySchema>;
 
@@ -90,13 +106,12 @@ export const imageRowMetaSchema = z
     /**
      * Advisory annotations this render measured (issue #249) — harmful crop
      * loss, a blank or severely blurred output — each with the owner's
-     * agree/disagree review once one is given. The producer shape
-     * (`renderAdvisorySchema`, `@vesper/image-core`) extended with the
-     * review the PATCH route merges on; loose and `.catch`, the same rule as
-     * every member here, so a row a newer or older deploy wrote degrades to
-     * "no advisories" rather than an unparsable image.
+     * agree/disagree review once one is given. `arrayOf` catches PER ENTRY:
+     * one advisory a newer or older deploy wrote in a shape this client does
+     * not recognize is dropped on its own, its known sibling survives, and
+     * the row is never punished for a field it does not carry.
      */
-    advisories: z.array(clientRenderAdvisorySchema).optional().catch(undefined),
+    advisories: arrayOf(clientRenderAdvisorySchema),
   })
   .catch({});
 

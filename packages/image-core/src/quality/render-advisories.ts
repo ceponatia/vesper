@@ -79,7 +79,16 @@ export interface CropLossMeasurement {
   placement: "focal" | "top" | "center";
 }
 
-/** The measurement behind a `blank_output` or `severe_blur` judgment. */
+/**
+ * The measurement behind a `blank_output` or `severe_blur` judgment.
+ *
+ * `measuredWidth`/`measuredHeight` are the thumbnail's OWN pixel size, not
+ * necessarily `BLUR_MEASUREMENT_WIDTH` — a source narrower than that resize
+ * width is left alone (`withoutEnlargement: true`). Recording them is what
+ * keeps a stored `laplacianVariance` interpretable after the resize width or
+ * floor is recalibrated: the raw number means nothing without the pixel
+ * count it scaled with.
+ */
 export interface OutputPixelMeasurement {
   /** Variance of the grayscale pixel values themselves — near zero for a flat,
    * near-uniform fill. */
@@ -87,6 +96,10 @@ export interface OutputPixelMeasurement {
   /** Variance of the Laplacian response (`identityBlurScore`) — null when the
    * thumbnail was too small to convolve. */
   laplacianVariance: number | null;
+  /** The thumbnail's actual pixel width, as measured. */
+  measuredWidth: number;
+  /** The thumbnail's actual pixel height, as measured. */
+  measuredHeight: number;
 }
 
 export type RenderAdvisory =
@@ -129,12 +142,22 @@ export const CROP_LOSS_ADVISORY_FRACTION = 0.15;
 export const BLANK_OUTPUT_GRAY_VARIANCE_FLOOR = 4;
 
 /**
- * Below this, the Laplacian variance of the 256px-wide measurement thumbnail
- * reads as "no edges anywhere" rather than "soft edges somewhere" — a smooth
- * gradient with zero second-derivative response measures at 0, while a
- * genuinely sharp render's edges (a face, hair, fabric) put it in the
- * thousands at this same resize width. A placeholder pending calibration
- * against real output, same spirit as the identity pack's v1 thresholds.
+ * The width the caller resizes a render's output to before measuring it
+ * (`withoutEnlargement: true`, so a narrower source is left at its own size).
+ * Named beside `SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR` because the two travel
+ * together: that floor is calibrated at THIS resize width, and moving one
+ * without the other silently changes what the floor means.
+ */
+export const BLUR_MEASUREMENT_WIDTH = 256;
+
+/**
+ * Below this, the Laplacian variance of the `BLUR_MEASUREMENT_WIDTH`-wide
+ * measurement thumbnail reads as "no edges anywhere" rather than "soft edges
+ * somewhere" — a smooth gradient with zero second-derivative response
+ * measures at 0, while a genuinely sharp render's edges (a face, hair,
+ * fabric) put it in the thousands at this same resize width. A placeholder
+ * pending calibration against real output, same spirit as the identity
+ * pack's v1 thresholds.
  */
 export const SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR = 50;
 
@@ -189,7 +212,12 @@ export function evaluateOutputPixels(pixels: RawPixels): RenderAdvisory | null {
 
   const grayVariance = varianceOf(gray);
   const laplacianVariance = identityBlurScore(pixels);
-  const evidence: OutputPixelMeasurement = { grayVariance, laplacianVariance };
+  const evidence: OutputPixelMeasurement = {
+    grayVariance,
+    laplacianVariance,
+    measuredWidth: pixels.width,
+    measuredHeight: pixels.height,
+  };
 
   if (grayVariance < BLANK_OUTPUT_GRAY_VARIANCE_FLOOR) {
     return {

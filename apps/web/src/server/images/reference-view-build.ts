@@ -431,9 +431,9 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       if (!edit.ok || !edit.image) {
         const error = edit.error ?? `${resolved.model.slug} returned no image`;
         failure = error;
-        return { ok: false, error, ...renderAttemptMeta(edit.attempt) };
+        return { ok: false, error, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       }
-      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
+      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
     },
     onThrown: ({ message }) => {
       failure = message;

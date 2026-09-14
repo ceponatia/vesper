@@ -452,6 +452,51 @@ describe.skipIf(!ready)("image generator runs", () => {
     expect(output?.chatId).toBeNull();
   });
 
+  it("records advisory annotations from the representative render on the run's own meta (#249 correction round 1)", async () => {
+    // The Generator builds its own meta shape rather than calling
+    // `renderAttemptMeta` — this proves `image-generator-settle.ts` threads
+    // `representative.advisories` into it the same way every other lane
+    // threads them through `renderAttemptMeta`'s second argument.
+    const advisory = {
+      version: 1,
+      code: "blank_output",
+      level: "advisory",
+      reason: "flat fill",
+      evidence: { grayVariance: 0, laplacianVariance: 0, measuredWidth: 8, measuredHeight: 12 },
+      offers: ["retry_same", "new_variation"],
+    } as const;
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_generator_1",
+        executedVersionId: EXECUTED_VERSION,
+        attempt: {
+          modelId: PINNED_MODEL_ID,
+          modelSlug: PINNED_SLUG,
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: PINNED_VERSION,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_generator_1",
+          executedVersionId: EXECUTED_VERSION,
+        },
+        advisories: [advisory],
+      };
+    });
+    const { id, sink } = await createRun();
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const row = await storedRow(id);
+    expect(imageMeta(row?.meta).advisories).toEqual([advisory]);
+  });
+
   it("sends a primary reference under the neutral role, with purpose as provenance only", async () => {
     stubSuccessfulRenderer();
     const sourceId = await seedReadyImage();

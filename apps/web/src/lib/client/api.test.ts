@@ -6,6 +6,7 @@ import {
   createdRefSchema,
   detailOf,
   emptyCharacterDraft,
+  imageAdvisoriesApi,
   imageRecordSchema,
   imageUrl,
   itemDetailSchema,
@@ -111,15 +112,66 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.advisories).toEqual(advisories);
   });
 
-  it("degrades a malformed advisories entry to absent rather than failing the record", () => {
-    // A code outside the known enum (a stale client reading a row a newer or
-    // older deploy wrote) must miss cleanly, the same rule every other
-    // member of `imageRowMetaSchema` follows.
+  it("survives a code outside today's known enum — a future or older deploy's advisory (correction round 1)", () => {
+    // The client schema is deliberately LOOSE on `code` (a plain string, not
+    // the producer's strict enum): a version bump or a code this deployment
+    // does not recognize yet must not make the whole entry unparsable, which
+    // is exactly the bug a strict `renderAdvisorySchema.extend(...)` caused —
+    // a review already written for it would come back `ok:false`.
     const parsed = imageRecordSchema.parse({
       id: "img-4",
-      meta: { advisories: [{ code: "not_a_real_code" }] },
+      meta: { advisories: [{ version: 2, code: "some_future_code", level: "advisory", reason: "r", evidence: {}, offers: [] }] },
     });
-    expect(parsed.meta.advisories).toBeUndefined();
+    expect(parsed.meta.advisories).toHaveLength(1);
+    expect(parsed.meta.advisories?.[0]?.code).toBe("some_future_code");
+    expect(parsed.meta.advisories?.[0]?.version).toBe(2);
+  });
+
+  it("drops an unparseable advisories entry and keeps its known sibling, rather than failing the whole list", () => {
+    const known = {
+      version: 1,
+      code: "blank_output",
+      level: "advisory",
+      reason: "flat fill",
+      evidence: { grayVariance: 1 },
+      offers: ["retry_same"],
+    };
+    const parsed = imageRecordSchema.parse({
+      id: "img-5",
+      meta: { advisories: [known, "not an advisory object", null, 42] },
+    });
+    expect(parsed.meta.advisories).toEqual([known]);
+  });
+});
+
+describe("imageAdvisoriesApi.review", () => {
+  it("reports ok:true on a PATCH response carrying a newer advisory version (issue #249 correction round 1)", async () => {
+    // Regression: the response schema used to be `renderAdvisorySchema.extend(...)`,
+    // pinned to `version: z.literal(1)` — a review the server had already
+    // recorded, echoed back at a bumped version, parsed as a failure and the
+    // lightbox reported "Could not record your review" for a write that
+    // actually succeeded.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          advisory: {
+            version: 2,
+            code: "blank_output",
+            level: "advisory",
+            reason: "flat fill",
+            evidence: { grayVariance: 1 },
+            offers: ["retry_same"],
+            review: { verdict: "agree", at: "2026-09-13T00:00:00.000Z" },
+          },
+        }),
+      ),
+    );
+    const result = await imageAdvisoriesApi.review("img-1", { code: "blank_output", verdict: "agree" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.advisory.version).toBe(2);
+    expect(result.data.advisory.review?.verdict).toBe("agree");
   });
 });
 
