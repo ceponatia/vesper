@@ -1030,16 +1030,39 @@ const activeConditionValue: CharacterKindRenderer = (input) => {
 };
 
 /**
- * A meter's ruled visible effect (issue #427), stated as one current-state
- * clause. `effects` already carries the registry's own words — "glassy,
- * unfocused eyes", "lank, greasy hair" — so the renderer only joins them; it
- * never re-derives wording from the band or the meter id, and the value's
+ * `a`, `a and b`, `a, b and c` — never `a and b and c`, which reads wrong once
+ * a third item joins. Mirrors the dialects' own `listWords`
+ * (`@vesper/image-core`'s `dialect-qwen-prose.ts`) exactly; not imported
+ * because that function is not re-exported across the package boundary
+ * (`packages/image-core/src/index.ts`), so the same shape is restated here
+ * rather than reached into the package's internals.
+ */
+function joinWithAnd(parts: readonly string[]): string {
+  const clean = parts.filter((part) => part.length > 0);
+  if (clean.length <= 1) return clean[0] ?? "";
+  return `${clean.slice(0, -1).join(", ")} and ${clean[clean.length - 1]}`;
+}
+
+/**
+ * A meter's ruled visible effect (issue #427), stated as a TRAILING CLAUSE —
+ * "with glassy, unfocused eyes", never a bare "glassy, unfocused eyes".
+ *
+ * `effects` already carries the registry's own words — this renderer never
+ * re-derives wording from the band or the meter id — but a bare join used to
+ * reach the dialects as a predicate complement: wrapped in the ordinary
+ * subject frame that read "She is glassy, unfocused eyes." (and "She is
+ * parted lips."), the #544 F1 defect class every OTHER current-state
+ * renderer avoids by returning a predicate complement ("blindfolded") or a
+ * `with …` clause ("damp at the hair", the wardrobe readings). A leading
+ * `with ` is what `isTrailingClause` (`dialect-qwen-2511.ts`) and the value
+ * shape both dialects recognize for `subject.current_state`, so this is the
+ * one change that makes every dialect's frame grammatical. The value's
  * schema (`min(1)`) guarantees at least one phrase to join.
  */
 const meterVisibleEffectValue: CharacterKindRenderer = (input) => {
   const parsed = visualStateMeterVisibleEffectValueSchema.safeParse(input.value);
   if (!parsed.success) return null;
-  return parsed.data.effects.join(", ");
+  return `with ${joinWithAnd(parsed.data.effects)}`;
 };
 
 /**
