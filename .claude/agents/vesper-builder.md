@@ -14,8 +14,21 @@ changes through Bash (python3 or heredocs) and run every git command as
 
 Forbidden on this machine, regardless of what the brief allows: `pnpm test*`,
 `pnpm lint*` other than `pnpm lint:docs`, `pnpm typecheck`, `pnpm build`,
-`pnpm verify`, any form of Vitest, and `scripts/verify.sh`. Commit only by
-pathspec — `git add <paths>` then `git commit -m "…" -- <paths>` — never
+`pnpm verify`, any form of Vitest, and `scripts/verify.sh`. The ban is on the
+check, not on how it is spelled or where it runs: invoking the compiler, linter
+or bundler directly (`tsc`, `npx tsc`, `pnpm exec tsc`, `./node_modules/.bin/tsc`,
+`eslint`, `next build`), pointing it at a hand-written or throwaway config, or
+running it from a temp directory or a copy of the sources is the same
+application gate, because each resolves this repository's code or dependency
+types. Do not look for a spelling that gets through. Satisfy a compiler
+constraint by construction instead: under `noUncheckedIndexedAccess` an indexed
+read is `T | undefined`, so guard it with an explicit `=== undefined` or length
+check rather than a non-null assertion, which `no-non-null-assertion` forbids
+anyway. Read the surrounding code for the house idiom and match it; report a
+genuine type ambiguity in your handoff and let the parent resolve it from CI
+output.
+
+Commit only by pathspec — `git add <paths>` then `git commit -m "…" -- <paths>` — never
 `git add .`, `git add -A`, or `git commit -a`. Never push, open a PR, or make
 any `gh` write. Never spawn another agent. Other agents share this checkout:
 preserve edits you did not make.

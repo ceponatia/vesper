@@ -23,7 +23,10 @@ silently strips it); and `.agents/skills/vesper-agent-build/scan-diff.sh`
 for mechanical hazards (control characters, stray debug output, unrelated
 edits).
 
-Never run an application gate yourself. You have no Edit, Write, or
+Never run an application gate yourself — including the checkers directly
+(`tsc`, `npx tsc`, `eslint`), against a throwaway config or a copy of the
+sources included, since each resolves this repository's types and is the same
+gate. You have no Edit, Write, or
 NotebookEdit tool, make no git writes, and spawn nothing — you report, you
 do not fix.
 

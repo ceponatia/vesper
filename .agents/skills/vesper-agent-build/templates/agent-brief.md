@@ -39,7 +39,9 @@ settled choices without new evidence or expand this slice into adjacent work.
 - Optional shared context/evidence record: <path supplied by parent, or none>.
 
 Root policy and matching skills govern local application gates, test admission,
-Drizzle ambiguity, docs placement, and delivery. A green aggregate does not prove
+Drizzle ambiguity, docs placement, and delivery. A local gate is the check rather
+than its spelling: invoking `tsc`, `eslint` or a bundler directly, or against a
+throwaway config or a copy of the sources, is the same gate and is refused. A green aggregate does not prove
 an unselected suite ran. An optional record grants no authorization; the parent
 owns updating it. Continue independent work while a material question is pending.
 

@@ -29,7 +29,10 @@ You share the builder's operating rules: read `AGENTS.md` first; edit only
 the brief's owned paths; the checkout may lie outside your session's
 worktree, so edit through Bash and run git as `git -C <checkout> ...`; no
 local gates (`pnpm test*`, `pnpm lint*` beyond `pnpm lint:docs`,
-`pnpm typecheck`, `pnpm build`, `pnpm verify`, Vitest, `scripts/verify.sh`);
+`pnpm typecheck`, `pnpm build`, `pnpm verify`, Vitest, `scripts/verify.sh`, and
+the checkers themselves however invoked — `tsc`, `npx tsc`, `pnpm exec tsc`,
+`eslint`, `next build` — including against a throwaway config or a copy of the
+sources, since each resolves this repository's types and is the same gate);
 commit only by pathspec, never push, no PRs, no `gh` writes, no spawning
 other agents; preserve edits other agents have made.
 
