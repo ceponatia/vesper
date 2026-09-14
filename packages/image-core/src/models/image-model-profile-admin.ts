@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validateProviderOverrides } from "../capabilities/image-control-mapping";
+import { validateProviderOverrides, type DroppedImageControlReason } from "../capabilities/image-control-mapping";
 import { reservedImageInputFields } from "../capabilities/reserved-image-input-fields";
 import type { ImageModel } from "./image-models";
 import {
@@ -109,12 +109,14 @@ export type ImageModelProfileUpdateRequest = z.infer<typeof imageModelProfileUpd
  * fixes: `ineligible` means the task/operation pair is wrong for this model
  * (pick another model, or another operation), `override_rejected` names the
  * specific provider key the escape hatch refused, and `reviewed_control_unbound`
- * names a reviewed setting this version cannot carry — a re-probe, not an edit.
+ * names a reviewed setting this version cannot SEND — whether because it binds
+ * no field for it or because the binding it does declare refuses the value — a
+ * re-probe, not an edit. It carries the mapper's own reason.
  */
 export type ImageProfileConfigurationIssue =
   | { kind: "ineligible"; reason: ImageProfileIneligibility; message: string }
   | { kind: "override_rejected"; field: string; reason: "reserved" | "unknown_field"; message: string }
-  | { kind: "reviewed_control_unbound"; control: string; message: string };
+  | { kind: "reviewed_control_unbound"; control: string; reason: DroppedImageControlReason; message: string };
 
 /** The eligibility refusals, in an operator's words rather than the enum's. */
 function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<ImageModelProfile, "task" | "operation">): string {
@@ -151,8 +153,10 @@ function ineligibilityMessage(reason: ImageProfileIneligibility, profile: Pick<I
  *    activation apply. Empty means the probe recorded nothing, not that
  *    everything is permitted; the fix is a re-probe, and the message says so.
  * 3. **Reviewed controls** ({@link reviewedUnboundControls}): on a REVIEWED
- *    model, a reviewed setting this row carries that the version declares no
- *    binding for is refused. A control is otherwise a render-time question —
+ *    model, a reviewed setting this row carries that the version cannot send is
+ *    refused — judged by the render-time mapper itself, so a binding that exists
+ *    but refuses the value (a `customWidth` narrowed past the reviewed 832)
+ *    counts exactly as a missing one does. A control is otherwise a render-time question —
  *    the mapper drops it with a recorded reason — and that is still the right
  *    answer for an ordinary curated profile, which may legitimately state a
  *    control a later version stops binding. It is the wrong answer for a
@@ -200,12 +204,15 @@ export function validateImageProfileConfiguration(
     }
   }
 
-  const unbound = reviewedUnboundControls(model.slug, model.advancedCapabilities.controls, profile.controlDefaults);
-  for (const control of unbound) {
+  const reviewed = reviewedUnboundControls(model.slug, model.advancedCapabilities, profile.controlDefaults);
+  for (const { control, reason } of reviewed) {
     issues.push({
       kind: "reviewed_control_unbound",
       control,
-      message: `the reviewed “${control}” setting has no binding on this model's probed version, so every render would drop it — re-probe it first`,
+      reason,
+      message:
+        `the reviewed “${control}” setting cannot be sent on this model's probed version (${reason}) — ` +
+        "every render would drop it, so re-probe it first",
     });
   }
 

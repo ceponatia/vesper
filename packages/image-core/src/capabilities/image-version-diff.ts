@@ -334,8 +334,10 @@ const CONTROL_DEFAULT_BINDINGS: ReadonlyArray<{
  * - a `controlDefaults.lora` selection while the candidate exposes no usable
  *   LoRA weights/scale pair (`resolveImageLoraBindingPair`) — missing, or the
  *   two fields disagreeing on shape;
- * - a REVIEWED control the profile carries that the candidate binds nowhere
- *   (`reviewedUnboundControls`). It shares the override key's level for the
+ * - a REVIEWED control the profile carries that the candidate cannot SEND
+ *   (`reviewedUnboundControls`, which asks the render-time mapper — so a binding
+ *   the candidate narrows past the reviewed value counts as much as one it drops
+ *   altogether). It shares the override key's level for the
  *   override key's reason: since #244 the task profile is the ONLY thing
  *   carrying Vesper's reviewed corrections, so activating a version that
  *   strands one leaves an identity-critical model silently running the provider
@@ -409,13 +411,16 @@ export function validateImageProfileForCandidate(
     });
   }
 
-  const reviewedUnbound = new Set(reviewedUnboundControls(modelSlug, controls, profile.controlDefaults));
-  for (const control of reviewedUnbound) {
+  const reviewedDefects = reviewedUnboundControls(modelSlug, candidate.advancedCapabilities, profile.controlDefaults);
+  const reviewedUnbound = new Set(reviewedDefects.map((defect) => defect.control));
+  for (const { control, reason } of reviewedDefects) {
     findings.push({
       level: "blocking",
       code: "reviewed_control_unbound",
-      message: `the reviewed "${control}" setting has no binding on the candidate version, so every render would drop it`,
-      context: { control, slug: modelSlug },
+      message:
+        `the reviewed "${control}" setting cannot be sent on the candidate version (${reason}) — ` +
+        "every render would drop it",
+      context: { control, reason, slug: modelSlug },
     });
   }
 
