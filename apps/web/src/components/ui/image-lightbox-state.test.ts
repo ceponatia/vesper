@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lightboxStateForView, updateLightboxImageStatus, type LightboxView } from "./image-lightbox-state";
+import { advisoryReviewKey, lightboxStateForView, updateLightboxImageStatus, type LightboxView } from "./image-lightbox-state";
 
 const first: LightboxView = { viewKey: "front:attempt-1", imageId: "reference-1", comparisonImageId: "portrait", visible: true };
 
@@ -37,5 +37,10 @@ describe("lightbox view state", () => {
       const state = lightboxStateForView(null, view);
       expect(updateLightboxImageStatus(state, view, "loaded")).toBe(state);
     }
+  });
+
+  it("advisoryReviewKey never collides across images sharing a code (#249 Codex round finding A)", () => {
+    expect(advisoryReviewKey("reference-1", "blank_output")).not.toBe(advisoryReviewKey("reference-2", "blank_output"));
+    expect(advisoryReviewKey("reference-1", "blank_output")).toBe(advisoryReviewKey("reference-1", "blank_output"));
   });
 });

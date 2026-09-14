@@ -27,6 +27,16 @@ const reviewRequestSchema = z.object({
  * `withAuthorizedResource` on the same "image" resolver `images/[id]/file`
  * uses — a missing row and a row owned by someone else collapse to the same
  * 404 before this handler ever runs.
+ *
+ * The read-merge-write runs inside ONE transaction with the row locked
+ * (`SELECT … FOR UPDATE`, the `character-save.ts` precedent) — issue #249
+ * Codex round finding B: two requests reviewing DIFFERENT codes on the same
+ * image at once both read the same stale `meta`, and the last `UPDATE` to
+ * land would otherwise overwrite the other's merged review even though both
+ * report success. Locking the row before reading it makes the second
+ * request wait for the first's commit and merge over its ACTUAL result,
+ * never its own stale read. `mergeRenderAdvisoryReview` itself stays pure
+ * and unchanged — only what surrounds it changed.
  */
 export const PATCH = withAuthorizedResource<Params, ImageRow>(
   "image",
@@ -35,16 +45,28 @@ export const PATCH = withAuthorizedResource<Params, ImageRow>(
     const body = await readBody(req, reviewRequestSchema);
     if (!body.ok) return body.response;
 
-    const outcome = mergeRenderAdvisoryReview(row.meta, body.value, new Date().toISOString());
-    if (!outcome.ok) return jsonError("not_found", "advisory not found", 404);
+    const outcome = await db().transaction(async (tx) => {
+      const [locked] = await tx
+        .select()
+        .from(images)
+        .where(and(eq(images.id, row.id), eq(images.ownerId, user.id)))
+        .for("update");
+      if (!locked) return { ok: false as const, message: "image not found" };
 
-    const [updated] = await db()
-      .update(images)
-      .set({ meta: outcome.meta })
-      .where(and(eq(images.id, row.id), eq(images.ownerId, user.id)))
-      .returning({ id: images.id, meta: images.meta });
-    if (!updated) return jsonError("not_found", "image not found", 404);
+      const merged = mergeRenderAdvisoryReview(locked.meta, body.value, new Date().toISOString());
+      if (!merged.ok) return { ok: false as const, message: "advisory not found" };
 
+      const [updated] = await tx
+        .update(images)
+        .set({ meta: merged.meta })
+        .where(and(eq(images.id, row.id), eq(images.ownerId, user.id)))
+        .returning({ id: images.id, meta: images.meta });
+      if (!updated) return { ok: false as const, message: "image not found" };
+
+      return { ok: true as const, advisory: merged.advisory };
+    });
+
+    if (!outcome.ok) return jsonError("not_found", outcome.message, 404);
     return jsonOk({ advisory: outcome.advisory });
   },
 );

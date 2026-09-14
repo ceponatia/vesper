@@ -9,7 +9,7 @@ import { renderAdvisoryCodes, renderAdvisoryOffers, type RenderAdvisoryCode, typ
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
-import { lightboxStateForView, updateLightboxImageStatus, type LightboxImageStatus, type LightboxView } from "./image-lightbox-state";
+import { advisoryReviewKey, lightboxStateForView, updateLightboxImageStatus, type LightboxImageStatus, type LightboxView } from "./image-lightbox-state";
 import { useToast } from "./toast";
 
 export interface ImageLightboxProps {
@@ -66,7 +66,10 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
   // component has no way to ask its caller to refetch `meta`, so a submitted
   // review shows immediately here and reconciles with the stored one (which
   // wins on the next real load) rather than waiting on a round trip nobody
-  // triggers.
+  // triggers. Keyed by `advisoryReviewKey(imageId, code)`, not code alone: a
+  // caller (the Gallery) commonly keeps one instance of this component
+  // mounted across several images, so a bare-code key let one image's
+  // verdict or in-flight submit read as another image's.
   const [reviewOverrides, setReviewOverrides] = useState<Record<string, { verdict: "agree" | "disagree" }>>({});
   const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const visible = open ?? Boolean(imageId);
@@ -103,11 +106,12 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
 
   async function submitAdvisoryReview(advisory: ClientRenderAdvisory, verdict: "agree" | "disagree") {
     if (!imageId) return;
-    setSubmittingCode(advisory.code);
+    const key = advisoryReviewKey(imageId, advisory.code);
+    setSubmittingCode(key);
     const result = await imageAdvisoriesApi.review(imageId, { code: advisory.code, verdict });
     setSubmittingCode(null);
     if (result.ok) {
-      setReviewOverrides((previous) => ({ ...previous, [advisory.code]: { verdict } }));
+      setReviewOverrides((previous) => ({ ...previous, [key]: { verdict } }));
     } else {
       toast.push({ title: "Could not record your review", description: result.error.message, tone: "error" });
     }
@@ -154,11 +158,21 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
             <div className="flex w-full max-w-md shrink-0 flex-col gap-2">
               {knownAdvisories.map((advisory) => {
                 const code = advisory.code as RenderAdvisoryCode;
-                const review = reviewOverrides[code] ?? advisory.review;
+                // Composite key (#249 Codex round finding A): this component
+                // instance commonly outlives one image (the Gallery keeps it
+                // mounted across opens/closes), so a bare `code` key let one
+                // image's verdict or in-flight submit leak onto a different
+                // image carrying the same code.
+                const review = reviewOverrides[advisoryReviewKey(imageId, code)] ?? advisory.review;
                 const knownOffers = advisory.offers.filter((offer): offer is RenderAdvisoryOffer =>
                   (renderAdvisoryOffers as readonly string[]).includes(offer),
                 );
                 const offersText = knownOffers.map(renderAdvisoryOfferCopy).join(" or ");
+                // Disabled while ANY advisory on this image is submitting, not
+                // only a matching one (#249 Codex round finding B): closes the
+                // window for two concurrent reviews on the same image racing
+                // the read-merge-write on the server.
+                const disabled = submittingCode !== null;
                 return (
                   <div key={code} className="rounded-card border border-ink-700 bg-ink-900/70 px-3 py-2 text-left text-xs text-paper-300">
                     <p>{renderAdvisoryCodeCopy(code)}</p>
@@ -170,7 +184,7 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={submittingCode === advisory.code}
+                          disabled={disabled}
                           onClick={() => void submitAdvisoryReview(advisory, "agree")}
                         >
                           Agree
@@ -178,7 +192,7 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={submittingCode === advisory.code}
+                          disabled={disabled}
                           onClick={() => void submitAdvisoryReview(advisory, "disagree")}
                         >
                           Disagree
