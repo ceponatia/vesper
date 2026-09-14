@@ -270,17 +270,30 @@ export function validateGarmentBlueprint(
   return { ok: issues.length === 0, issues };
 }
 
-/** Validation issues as persistable diagnostics (the codes ARE the stable codes). */
+/**
+ * Validation issues as persistable diagnostics (the codes ARE the stable codes).
+ *
+ * `context` is the CALLING BOUNDARY's identifying facts — the definition id a
+ * seed came from, the stored map key an entry sits under — merged under the
+ * issue's own `partId` so one code can be traced back to the row that carries
+ * the bad graph. Boundaries never mint a parallel code for "my graph was
+ * invalid": there is one vocabulary for that, and it is this one.
+ */
 export function garmentBlueprintDiagnostics(
   validation: GarmentBlueprintValidation,
   path?: string,
+  context?: Record<string, unknown>,
 ): Diagnostic[] {
-  return validation.issues.map((issue) =>
-    diag("warn", issue.code, issue.message, {
+  return validation.issues.map((issue) => {
+    const merged: Record<string, unknown> = {
+      ...context,
+      ...(issue.partId === undefined ? {} : { partId: issue.partId }),
+    };
+    return diag("warn", issue.code, issue.message, {
       path,
-      ...(issue.partId === undefined ? {} : { context: { partId: issue.partId } }),
-    }),
-  );
+      ...(Object.keys(merged).length === 0 ? {} : { context: merged }),
+    });
+  });
 }
 
 /**

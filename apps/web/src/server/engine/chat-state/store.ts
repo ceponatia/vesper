@@ -12,6 +12,7 @@ import {
   emptyChatPlayerState,
   chatGarmentStoreSchema,
   emptyChatGarmentStore,
+  validateGarmentStoreBlueprints,
   chatEnvironmentSchema,
   emptyChatEnvironment,
   affordanceCueStateSchema,
@@ -151,7 +152,21 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     // A corrupt store degrades to the EMPTY, unseeded one (fixture F17): the read
     // seam then falls back to the `wornItemIds` projection column and the turn
     // completes — the store is re-materialized on the next write.
-    garments: parseOr(chatGarmentStoreSchema, row.garments, emptyChatGarmentStore(), sink, "character_chats.garments"),
+    //
+    // The shape parse is only half the boundary. A stored blueprint can be
+    // perfectly shaped and still structurally impossible (a `part_of` cycle, a
+    // lost root, a body location outside the registry), and the visibility
+    // resolver would read such a graph as covering less than the garment does —
+    // a clothed body narrated and rendered bare. So the structural pass runs on
+    // every durable read: a failing entry becomes the MARKED degraded root, its
+    // instances resolve `reliable: false`, and that wearer's exposure degrades
+    // to covered. Per entry — one bad snapshot never costs a sibling, an
+    // instance, or `seeded`.
+    garments: validateGarmentStoreBlueprints(
+      parseOr(chatGarmentStoreSchema, row.garments, emptyChatGarmentStore(), sink, "character_chats.garments"),
+      sink,
+      "character_chats.garments.blueprints",
+    ),
     // `?? {}` because these two columns are NULLABLE (added by migration 0091): a
     // pre-feature row is `null`, which is "nothing recorded yet", not a corrupt
     // value — parsing it would file a `parse.boundary_failed` on every legacy
