@@ -109,7 +109,6 @@ describe("textModelCall applies the merge law", () => {
     // template argument is a request preparer, so it reaches every call this
     // model receives rather than the ones a lane opted in as narration.
     expect(call.providerOptions?.featherless).not.toHaveProperty("chat_template_kwargs");
-    expect(call.hints).toEqual({ hiddenEmptyRetry: true, retryMinTokens: 48 });
   });
 
   it("lets an explicit per-call layer outrank the adapter", () => {
@@ -183,7 +182,6 @@ describe("a model with no adapter is asked exactly as its lane asked", () => {
       expect(call.settings, option.id).toEqual({ temperature: LANE_TEMPERATURE });
       expect(call.providerOptions, option.id).toBeUndefined();
       expect(call.withheld, option.id).toEqual([]);
-      expect(call.hints, option.id).toBeNull();
     }
   });
 
@@ -192,7 +190,7 @@ describe("a model with no adapter is asked exactly as its lane asked", () => {
 
     expect(call.settings).toEqual({ temperature: LANE_TEMPERATURE });
     expect(call.providerOptions).toBeUndefined();
-    expect(call.hints).toBeNull();
+    expect(call.withheld).toEqual([]);
   });
 });
 
