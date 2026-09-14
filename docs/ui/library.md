@@ -40,17 +40,17 @@ Accepting names the image on screen, so a portrait that changed in another tab i
 accepting a picture nobody looked at.
 
 A **Candidates** field beside the image model picker offers *One portrait* (default) or *Two
-candidates* (issue #248) — the player ceiling. Two candidates compile one program and render both
+candidates* — the player ceiling. Two candidates compile one program and render both
 sequentially; neither claims the portrait pointer, so both land in **Portrait history** captioned
 *Candidate 1 of 2* / *Candidate 2 of 2*, with a header line explaining the choice and **Use this
 one** (the same promote action as any other variant) in place of **Promote**. Once a portrait
-exists, **Regenerate portrait** becomes a menu of two explicit actions instead of one implicit
-retry: **New variation** asks for a fresh sampling attempt, and **Same composition** asks to
-reuse this portrait's exact settings — disabled with a short reason (no seed was recorded, the
-model or its version changed) when the list's cheap eligibility check already knows it cannot
-succeed; a world-state change surfaces only as the request's own failure toast, since it is only
-detectable once the render actually compiles. Every ready avatar tile's caption also states its
-seed status — *Unseeded variation*, or the seed itself.
+exists, **Regenerate portrait** keeps its usual primary/ghost emphasis and defaults to a fresh
+sampling attempt (a "new variation"); a small secondary **Same composition** control beside it
+asks instead to reuse this portrait's exact settings, disabled with a short reason (no seed was
+recorded, the model or its version changed) when the list's cheap eligibility check already knows
+it cannot succeed; a world-state change surfaces only as the request's own failure toast, since it
+is only detectable once the render actually compiles. Every ready avatar tile's caption also
+states its seed status — *Unseeded variation*, or the seed itself.
 
 Below the portrait cards, the **Identity reference** block appears when an accepted image exists
 (`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust

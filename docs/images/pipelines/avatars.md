@@ -222,18 +222,16 @@ an uploaded image (`meta.source: "upload"`, which carries no generation prompt).
 
 ## Best-of-two candidates and explicit retries
 
-A player may ask for **one portrait** (the default) or **two candidates**
-(issue #248) — the player ceiling; three or more stays admin-only, and
-best-of-N never runs automatically for scenes. Two candidates compile the
-program **once** and run `runImagePipeline` **twice, sequentially** (so a
-failed first render never orphans a group), each reserving its own row with
-`meta.candidates: { group, index, of: 2 }` under one freshly minted group id.
-Neither candidate's `onReady` claims `characters.avatarImageId`: a
-two-candidate request claims **nothing**, and the player chooses between the
-two through the studio's existing **promote** action, exactly the way a
-variant is promoted to canonical. A single-candidate generation — the common
-case, including every plain "Generate portrait" and "New variation" retry —
-keeps today's auto-claim byte for byte.
+A player may ask for **one portrait** (the default) or **two candidates** — the player ceiling;
+three or more stays admin-only, and best-of-N never runs automatically for scenes. Two
+candidates compile the program **once** and run `runImagePipeline` **twice, sequentially** (so
+a failed first render never orphans a group), each reserving its own row with `meta.candidates:
+{ group, index, of: 2 }` under one freshly minted group id. Neither candidate's `onReady`
+claims `characters.avatarImageId`: a two-candidate request claims **nothing**, and the player
+chooses between the two through the studio's existing **promote** action, exactly the way a
+variant is promoted to canonical. A single-candidate generation — the common case, including
+every plain "Generate portrait" and "New variation" retry — keeps today's auto-claim byte for
+byte.
 
 **Regenerating** offers two explicit semantics, never a silent default. **New
 variation** asks for a fresh sampling attempt (an optional lineage pointer
@@ -247,12 +245,16 @@ image; asking for two candidates of the same composition is refused
 (`avatar.replay_single`) before anything is reserved, because a replay is one
 render by definition.
 
-Every retry records its lineage and which semantics it used on the row's
-`meta.retry: { mode, sourceImageId?, seed? }`, regardless of whether the
-render that follows succeeds. `meta.render.seed` stays the render's own
-effective seed — `null` when the endpoint has no seed binding for this
-model, which the studio's tile caption states as **"Unseeded variation"**
-rather than implying a seed was silently dropped.
+Every retry records which semantics it used on the row's `meta.retry: { mode, sourceImageId?,
+seed? }`, regardless of whether the render that follows succeeds — but the source is recorded
+only once it is trusted: an eligible same-composition replay's source, or a `new_variation`
+pointer this owner's character actually owns. A REFUSED same-composition attempt records its
+mode alone — never the named source or a seed — so a request naming another owner's, or a
+nonexistent, image id never leaves that id (or the fact that it was probed) on
+`images.source_image_id` or `meta.retry.sourceImageId`. `meta.render.seed` stays the render's
+own effective seed — `null` when the endpoint has no seed binding for this model, which the
+studio's tile caption states as **"Unseeded variation"** rather than implying a seed was
+silently dropped.
 
 ### Same-composition eligibility
 

@@ -417,6 +417,12 @@ describe("generateAvatar program wiring", () => {
     expect(opts?.failedPrecondition).toBe(AVATAR_REPLAY_REFUSAL_TEXT.model_changed);
     expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
     expectDiagnostic(sink, "images.avatar.replay_refused");
+    // Correction round: a REFUSED replay must never write the named source
+    // anywhere on the row — `images.source_image_id` carries no FK, so a
+    // request naming another owner's (or a nonexistent) image id must not
+    // leave that id on a failed row, nor let a caller probe its existence.
+    expect(opts?.asset.sourceImageId).toBeUndefined();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition" });
   });
 });
 
