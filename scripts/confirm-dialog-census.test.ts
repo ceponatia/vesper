@@ -100,26 +100,43 @@ describe("raw Dialog importer census", () => {
  *
  * Every other adopter is covered by construction: it imports no raw `Dialog`
  * at all, so hand-rolling one there ADDS an importer the census rejects. That
- * is why this list is short rather than a second census — it is exactly the
+ * is why this map is short rather than a second census — it is exactly the
  * intersection of `ALLOWED_DIALOG_IMPORTERS` with the `ConfirmDialog`
- * adopters, and the assertion below keeps it honest if the allowlist moves.
+ * adopters.
+ *
+ * That last sentence is a claim, so the first test below DERIVES the
+ * intersection from the repo and asserts this map equals it. Writing the two
+ * files out by hand and checking only that they are allowlisted would leave
+ * the blind spot open at its other end: an allowlisted raw-`Dialog` component
+ * that ADOPTS `ConfirmDialog` later becomes mixed-use, and an unpinned
+ * mixed-use file is exactly the hole this map exists to close.
  */
 const MIXED_USE_CONFIRM_SITES: ReadonlyMap<string, number> = new Map([
   ["apps/web/src/components/chat/chat-conversation.tsx", 1],
   ["apps/web/src/components/chat/chats-page.tsx", 1],
 ]);
 
+/** `<ConfirmDialog` sites in `file`, comments blanked so prose never counts. */
+function confirmDialogSites(file: string): number {
+  const source = stripComments(fs.readFileSync(path.join(process.cwd(), file), "utf8"));
+  return source.match(/<ConfirmDialog\b/g)?.length ?? 0;
+}
+
 describe("mixed-use allowlisted components", () => {
+  it("are pinned exhaustively, so a newly mixed-use file cannot enter the blind spot unnoticed", () => {
+    const derived = ALLOWED_DIALOG_IMPORTERS.filter((file) => confirmDialogSites(file) > 0).sort();
+
+    expect(derived, "every allowlisted file that adopts ConfirmDialog must be pinned below").toEqual(
+      [...MIXED_USE_CONFIRM_SITES.keys()].sort(),
+    );
+  });
+
   it("keep their destructive confirmations on ConfirmDialog", () => {
     for (const [file, expected] of MIXED_USE_CONFIRM_SITES) {
       expect(
-        ALLOWED_DIALOG_IMPORTERS,
-        `${file} is pinned here as mixed-use, so it must still hold a raw Dialog`,
-      ).toContain(file);
-
-      const source = stripComments(fs.readFileSync(path.join(process.cwd(), file), "utf8"));
-      const sites = source.match(/<ConfirmDialog\b/g)?.length ?? 0;
-      expect(sites, `${file} must still route ${expected} confirmation(s) through ConfirmDialog`).toBe(expected);
+        confirmDialogSites(file),
+        `${file} must still route ${expected} confirmation(s) through ConfirmDialog`,
+      ).toBe(expected);
     }
   });
 });
@@ -186,19 +203,37 @@ function handlerBody(source: string, name: string): string {
 }
 
 /**
- * True when `body` closes only while `busy` is FALSE, in either idiomatic
- * shape of that guard: a negated condition around the call, or an early
- * `if (busy) return`.
+ * True when `body` reaches `onClose()` only while `busy` is FALSE, in either
+ * idiomatic shape of that guard: the call sits in the consequent of
+ * `if (!busy)`, or a leading `if (busy) return` precedes it.
  *
- * Polarity is the whole assertion. An inverted `if (busy) onClose()` still
- * contains `busy` and `onClose()`, so token presence cannot tell the guard
- * from its exact opposite — the one that dismisses a running deletion and
- * refuses to dismiss an idle dialog.
+ * Two things have to hold, and the second is easy to lose. POLARITY, because
+ * an inverted `if (busy) onClose()` still contains `busy` and `onClose()` — so
+ * token presence cannot tell the guard from its exact opposite, the one that
+ * dismisses a running deletion and refuses to dismiss an idle dialog. And
+ * BINDING, because a condition that does not govern the call guards nothing:
+ * `onClose(); if (busy) return;` names an idle/busy test and closes
+ * unconditionally, so the predicate must prove the call is downstream of the
+ * guard rather than merely in the same function.
  */
 function closesOnlyWhenIdle(body: string): boolean {
-  const negatedCondition = /if\s*\(\s*!\s*busy\s*\)/.test(body);
-  const earlyReturnWhileBusy = /if\s*\(\s*busy\s*\)\s*\{?\s*return\b/.test(body);
-  return negatedCondition || earlyReturnWhileBusy;
+  const negated = /if\s*\(\s*!\s*busy\s*\)\s*/.exec(body);
+  if (negated !== null) {
+    const consequent = negated.index + negated[0].length;
+    if (body.startsWith("{", consequent)) {
+      // A braced consequent may hold more than the call; match it and look inside.
+      const end = matchDelimiter(body, consequent, "{", "}");
+      if (end !== -1 && body.slice(consequent, end + 1).includes("onClose()")) return true;
+    } else if (/^onClose\s*\(\)/.test(body.slice(consequent))) {
+      return true;
+    }
+  }
+
+  // A leading `if (busy) return` makes every later close unreachable while
+  // busy. Position is the whole point: the same return AFTER the call is inert.
+  const earlyReturn = /if\s*\(\s*busy\s*\)\s*\{?\s*return\b/.exec(body);
+  const close = body.indexOf("onClose()");
+  return earlyReturn !== null && close !== -1 && earlyReturn.index < close;
 }
 
 /** The attribute text of the `<Button>` that fires `onConfirm`. */
