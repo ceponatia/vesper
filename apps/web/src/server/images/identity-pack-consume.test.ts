@@ -137,6 +137,7 @@ describe("identityPackRenderReferences", () => {
     expect(result.references.map((entry) => entry.reference.priority)).toEqual([2, 1]);
     expect(result.references.map((entry) => entry.reference.buffer)).toEqual([portrait, crop]);
     expect(result.references.map((entry) => entry.source)).toEqual(["uploaded", "generated"]);
+    expect(result.provenance.map((entry) => entry.imageId)).toEqual(["imgportrait", "imgfacecrop"]);
     // The appearance the CANONICAL PORTRAIT depicts, carried on every role in
     // the pack (issue #551) — the face crop renders nothing and stamps nothing,
     // so a per-role answer would be a different fact about the same moment.

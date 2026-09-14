@@ -761,6 +761,60 @@ describe("hair the headwear fully hides", () => {
   });
 
   /**
+   * A CURRENT reference does not give the binding its hair back when the
+   * headwear hides it (issue #551, the #312 invariant arriving from the other
+   * direction).
+   *
+   * The appearance revision digests attributes; hair occlusion is wardrobe. So
+   * a character who has not changed an inch since her anchor was minted, now in
+   * a hijab, compares `matches` on the honest reading of the stamp — and the
+   * wider preserve clause would then ask the model to keep her hair "exactly as
+   * shown" in the same prompt as the sentence saying no hair is visible, over
+   * text the selection has already dropped. That is the #544 F4 ambiguity the
+   * lock was narrowed to end, and it is invisible in the output: the render
+   * simply paints hair through the headwear.
+   *
+   * The seam downgrades a `full`-band subject to `unknown` before the verdict
+   * is spent, so BOTH halves move together — the ordinary lock and the
+   * concealment sentence, which is exactly what the band compiled before this
+   * contract existed. Falsified against the stamp being honoured at `full`.
+   */
+  it("never takes the wider preserve set for a covered head, however current the reference is", () => {
+    const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: "full" }]);
+    expect(cut.hairOcclusion).toBe("full");
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          cuts: [
+            {
+              subjectId: LANE_PROBE_SUBJECT_ID,
+              name: LANE_PROBE_NAME,
+              digest: cut.digest,
+              attributes: cut.resolved,
+              exposure: cut.exposure,
+              hairOcclusion: cut.hairOcclusion,
+              realizedBody: cut.realizedBody,
+            },
+          ],
+          // The reference depicts EXACTLY this cut's appearance: on the stamp
+          // alone this is the `matches` case.
+          references: [{ ...reference("identity"), appearanceRevision: appearanceRevisionOf(cut.resolved) }],
+        }),
+      ),
+    );
+
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    // The one assertion the defect fails: nothing asks for hair back.
+    expect(program.prompt).not.toMatch(/\bkeep\b[^.]*\bhair\b/i);
+    expect(program.prompt).toContain(VARIANT_CONCEALED);
+    // And no appearance-moved correction either — nothing about her HAS moved.
+    expect(program.prompt).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+    const references = parseImagePromptProgramProvenance(program.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["unknown"]);
+  });
+
+  /**
    * ISSUE #450 checklist item 5: a fact the existing projection already
    * suppressed — here, hair the headwear fully hides — cannot re-enter
    * through the new request-aware selection. The withholding happens before
