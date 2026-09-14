@@ -126,7 +126,7 @@ them writes another's channel:
 | Channel                                           | Owner                                                     |
 | ------------------------------------------------- | --------------------------------------------------------- |
 | identity and placement                            | `sim_items` / `sim_item_holdings`                         |
-| construction — parts, behaviors, baseline coverage | the `sim_items.garment_blueprint` static                  |
+| construction: parts, behaviors, baseline coverage | the `sim_items.garment_blueprint` static                  |
 | cleanliness and wear                              | `item-condition-v1` meters, integrated on read            |
 | presentation, wetness, crease, deposits, damage   | the `sim_item_garment_state` projection                   |
 

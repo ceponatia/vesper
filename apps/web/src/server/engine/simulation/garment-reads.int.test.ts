@@ -22,7 +22,7 @@ import {
   SIM_GARMENT_BLUEPRINT_UNREADABLE,
   SIM_GARMENT_SLOT_UNMAPPED,
 } from "./garment-reads";
-import { upsertItemGarmentStateRow } from "./garment-rows";
+import { upsertItemGarmentStateRow, SIM_GARMENT_STATE_UNREADABLE } from "./garment-rows";
 import { submitDurableTransferItem } from "./material-store";
 import { advanceBranchStoryTime } from "./scheduler-store";
 
@@ -322,7 +322,7 @@ describe.runIf(harness.ready)("readActorGarmentInstances — the channel owners"
       .values({ branchId: ids.branchId, itemId: ids.shirtId, presentation: "nonsense", condition: 7 });
 
     const read = await readDurableActorGarments(ids.branchId, ids.actorId);
-    expect(read.diagnostics.map((diagnostic) => diagnostic.code)).toContain("sim_garment.state_unreadable");
+    expect(read.diagnostics.map((diagnostic) => diagnostic.code)).toContain(SIM_GARMENT_STATE_UNREADABLE);
     expect(read.garments).toHaveLength(1);
     expect(read.garments[0]!.instance.presentation).toEqual({ closure: {}, roll: {}, tuck: {}, displacement: [] });
     expect(read.garments[0]!.instance.condition.base.cleanliness).toBe(GARMENT_UNIT_ONE);

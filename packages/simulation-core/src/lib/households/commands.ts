@@ -477,6 +477,7 @@ export function resolvePromoteItemFromStockFromView(
         ownerActorId: item.ownerActorId,
         ...(item.container === undefined ? {} : { container: item.container }),
         ...(item.consumptionEffects === undefined ? {} : { consumptionEffects: item.consumptionEffects }),
+        ...(item.garmentBlueprint === undefined ? {} : { garmentBlueprint: item.garmentBlueprint }),
         conditionTracked: item.conditionTracked,
         locus: { kind: "held", actorId },
       },

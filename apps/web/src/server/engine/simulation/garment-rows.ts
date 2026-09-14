@@ -13,6 +13,9 @@ import { parseOrNull } from "@/lib/parse";
 import { simItemGarmentState } from "@/server/db";
 import type { SimTx } from "./trigger-projector";
 
+/** Diagnostic code for a garment-state row that would not parse. Stable: consumers and tests key on it. */
+export const SIM_GARMENT_STATE_UNREADABLE = "sim_garment.state_unreadable";
+
 /**
  * The garment-state ROW layer over `sim_item_garment_state`: the two JSONB
  * columns parsed both directions, and the one upsert the projector writes
@@ -92,7 +95,7 @@ export async function loadItemGarmentStateRows(
       sink?.push(
         diag(
           "warn",
-          "sim_garment.state_unreadable",
+          SIM_GARMENT_STATE_UNREADABLE,
           `garment state for item ${row.itemId} would not parse — read as neutral presentation and pristine condition`,
           { path: "sim_garment.state", context: { itemId: row.itemId } },
         ),
