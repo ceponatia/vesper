@@ -411,6 +411,7 @@ function stubSuccessfulRenderer(): void {
       predictionId: "pred_generator_1",
       executedVersionId: EXECUTED_VERSION,
       attempt: {
+        shape: null,
         modelId: PINNED_MODEL_ID,
         modelSlug: PINNED_SLUG,
         profileId: "image-generator/run",
@@ -514,6 +515,7 @@ describe.skipIf(!ready)("image generator runs", () => {
         predictionId: "pred_generator_1",
         executedVersionId: EXECUTED_VERSION,
         attempt: {
+          shape: null,
           modelId: PINNED_MODEL_ID,
           modelSlug: PINNED_SLUG,
           profileId: "image-generator/run",
@@ -997,7 +999,7 @@ describe.skipIf(!ready)("image generator output shape", () => {
 
     await runImageGeneratorRun(id, ownerId, sink);
 
-    expect(captured.at(0)?.intent.target.aspectRatio).toBeNull();
+    expect(captured.at(0)?.intent.target?.aspectRatio).toBeNull();
     expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
       shape: { mode: "provider_default", field: null, value: null },
       postprocess: { cropTarget: null },
@@ -1010,7 +1012,7 @@ describe.skipIf(!ready)("image generator output shape", () => {
 
     await runImageGeneratorRun(id, ownerId, sink);
 
-    expect(captured.at(0)?.intent.target.aspectRatio).toBe(1);
+    expect(captured.at(0)?.intent.target?.aspectRatio).toBe(1);
     expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
       shape: { mode: "explicit", requestedAspect: "1:1", field: "aspect_ratio", value: "1:1" },
     });
@@ -1585,6 +1587,7 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
         predictionId: "pred_klein_1",
         executedVersionId: requested,
         attempt: {
+          shape: null,
           modelId: KLEIN_DISTILLED_ID,
           modelSlug: "black-forest-labs/flux-2-klein-4b",
           profileId: "image-generator/run",
@@ -1698,6 +1701,7 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
         predictionId: "pred_klein_moved",
         executedVersionId: provider,
         attempt: {
+          shape: null,
           modelId: KLEIN_DISTILLED_ID,
           modelSlug: "black-forest-labs/flux-2-klein-4b",
           profileId: "image-generator/run",
@@ -2019,6 +2023,7 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.1 Kontext Dev row"
         predictionId: "pred_kontext_1",
         executedVersionId: requested,
         attempt: {
+          shape: null,
           modelId: KONTEXT_ID,
           modelSlug: KONTEXT_SLUG,
           profileId: "image-generator/run",

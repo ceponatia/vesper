@@ -200,7 +200,7 @@ describe("attempt provenance", () => {
       image: Buffer.from("img"),
       predictionId: "pred-1",
       executedVersionId: "v-exec",
-      shape: { mode: "provider_default", field: null, value: null, expectedAspect: null, cropTarget: null, crop: null },
+      shape: { mode: "provider_default", providerSize: null, field: null, value: null, expectedAspect: null, cropTarget: null, crop: null },
     } satisfies RenderWithModelResult);
     const result = await renderImageIntent(intent({ target: { aspectRatio: null } }));
     expect(result.attempt?.shape?.requestedAspect).toBeNull();
@@ -218,6 +218,7 @@ describe("attempt provenance", () => {
       outputDimensions: { width: 768, height: 1024 },
       shape: {
         mode: "target_ratio",
+        providerSize: null,
         field: "aspect_ratio",
         value: "3:4",
         expectedAspect: 3 / 4,
@@ -467,6 +468,7 @@ describe("render advisories (#249)", () => {
       executedVersionId: "v-exec",
       shape: {
         mode: "target_ratio",
+        providerSize: null,
         field: "aspect_ratio",
         value: "3:4",
         expectedAspect: 1,

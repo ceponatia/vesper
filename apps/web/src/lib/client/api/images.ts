@@ -132,7 +132,7 @@ export const imageRowMetaSchema = z
      * not recognize is dropped on its own, its known sibling survives, and
      * the row is never punished for a field it does not carry.
      */
-    advisories: arrayOf(clientRenderAdvisorySchema),
+    advisories: arrayOf(clientRenderAdvisorySchema).optional(),
   })
   .catch({});
 
