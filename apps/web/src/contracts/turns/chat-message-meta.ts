@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { diag, diagnosticSchema, type Diagnostic, type DiagnosticSink } from "../diagnostics";
+import { diag, type DiagnosticSink } from "../diagnostics";
 import { narratorRunProvenanceSchema, type NarratorRunProvenance } from "../narrator-prompts";
 import { chatActionIdSchema, type ChatActionId } from "./chat-pulse";
 import type { CompositionFallbackCode } from "./composition-fallback";
@@ -36,9 +36,9 @@ import type { CompositionFallbackCode } from "./composition-fallback";
  *
  *   The guarantee reaches TOP-LEVEL keys and the two nested objects this module
  *   owns (`attachments` and `worldBeat`, both loose). It does NOT reach inside
- *   `narratorRun` or `renderDiagnostics`: those shapes belong to
- *   `contracts/narrator-prompts/provenance.ts` and the diagnostic contract, and
- *   they stay strict, so an unknown key nested in one is stripped by its owner.
+ *   `narratorRun`: that shape belongs to
+ *   `contracts/narrator-prompts/provenance.ts` and stays strict, so an unknown key
+ *   nested in it is stripped by its owner.
  * - **A failed parse is never an exception.** An unreadable bag degrades to
  *   {@link emptyChatMessageMeta} and records a diagnostic. A fallback is never a
  *   positive claim: an unreadable `inputMode` is UNKNOWN, and every consumer
@@ -160,8 +160,15 @@ const FIELD_SCHEMAS = {
    * reader rewrite a newer code into a wrong one on the next merge.
    */
   compositionFallbacks: z.array(z.string().min(1)),
-  /** The solo render's own stable diagnostic codes, kept with the reply they describe. */
-  renderDiagnostics: z.array(diagnosticSchema),
+  /**
+   * The solo render's own stable diagnostic CODES, kept with the reply they
+   * describe. Codes, not `Diagnostic` records, for the same two reasons as
+   * `compositionFallbacks`: this key rides a row the client reads, so it must never
+   * carry a diagnostic's message or context, and the only writer has always stored
+   * codes — a record-shaped schema here would reject every solo reply already on
+   * disk. The vocabulary's owners are the render legs that emit the codes.
+   */
+  renderDiagnostics: z.array(z.string().min(1)),
 } satisfies Record<string, z.ZodType>;
 
 type KnownKey = keyof typeof FIELD_SCHEMAS;
@@ -204,7 +211,7 @@ export interface ChatMessageMeta {
   worldBeat?: ChatMessageWorldBeat;
   narratorRun?: NarratorRunProvenance;
   compositionFallbacks?: string[];
-  renderDiagnostics?: Diagnostic[];
+  renderDiagnostics?: string[];
   /** Unmodelled keys, carried through every read-modify-write untouched. */
   extra: Record<string, unknown>;
 }
@@ -425,7 +432,7 @@ export function successorReplyMeta(input: {
   confirmStatus?: string;
   narratorRun?: NarratorRunProvenance;
   compositionFallbacks?: readonly CompositionFallbackCode[] | readonly string[];
-  renderDiagnostics?: readonly Diagnostic[];
+  renderDiagnostics?: readonly string[];
 }): ChatMessageMeta {
   return compact({
     simTurn: true,

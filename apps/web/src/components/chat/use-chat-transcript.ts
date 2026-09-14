@@ -1,10 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
-import {
-  emptyChatMessageMeta,
-  isNarratorInput,
-} from "@/contracts/turns/chat-message-meta";
+import { isNarratorInput } from "@/contracts/turns/chat-message-meta";
 import { chatsApi, type ChatMessage, type ChatTranscript } from "@/lib/client/api";
 import type { ChatLine } from "@/components/characters/chat-message";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -13,7 +10,9 @@ import { PER_CHAT_DEFAULTS } from "./chat-conversation-state";
 
 /** Project an API transcript row onto the renderable line shape (takes + stopped + attachments ride along). */
 const toLine = (m: ChatMessage): ChatLine => {
-  const meta = m.meta ?? emptyChatMessageMeta();
+  // Always present: the schema's transform runs even on a missing key, so an absent
+  // bag arrives here as the empty meta rather than as `undefined`.
+  const meta = m.meta;
   return {
     id: m.id,
     role: m.role,
