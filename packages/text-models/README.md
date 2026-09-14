@@ -89,6 +89,13 @@ carry more by adding one dialect row.
 `mergeTextCallSettings` states the merge law once: the lane's default, then the
 adapter's profile, then any explicit per-call option.
 
+`bindTextProfileValues(values, host)` binds a handful of values with no adapter
+to read them off — `bindTextModelProfile` is that function with an adapter's
+declared values read out in declaration order. It is for the layer above a
+profile: a value one call asks for, such as a retry's minimum-token floor.
+Without it the application would spell that value's wire field itself, and wire
+spellings would stop living in the dialects alone.
+
 ### The registry — which model gets which adapter
 
 `adapterForTextModel(id)` resolves the **exact** model id, with no normalization
@@ -97,9 +104,14 @@ only in a suffix are asked differently the moment either is measured, so a
 lookup that fell back to a shared prefix would hand a model somebody else's
 measurements and report nothing.
 
-The registry is empty. A registered adapter is a claim that a specific model has
-been measured, and an entry added without that measurement is exactly the
-model-card guessing that exact-id keying exists to prevent.
+The registry stays short, and each adapter supplies its own key, so an exact id
+is written once in the definition that owns it and published from the package
+root alongside the registry — a model id is a persisted value, and a second
+spelling of one reads as "no adapter" rather than as a failure. A registered
+adapter is a claim that a specific model has been measured, and an entry added
+without that measurement is exactly the model-card guessing that exact-id keying
+exists to prevent. Definitions live under `src/families/<family>/`, one file per
+checkpoint unless several were deliberately measured as one.
 
 ## Boundary
 

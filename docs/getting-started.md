@@ -68,6 +68,12 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
   scene composer, embeddings and vision stay OpenRouter-only. Absent ⇒ a Featherless
   narrator pick falls back to the lane default and logs `ai.chat_narrative_model`; the
   stored pick survives, so setting the token later restores it with no re-choosing.
+- **`VESPER_TEXT_MODEL_HOST`** — which host an exact-model profile is bound for
+  (`featherless`, `openrouter`, `self-hosted`); no default, and unset is the ordinary
+  state. The transport that serves a model already decides its dialect, so this confirms
+  that choice rather than changing it: a value naming any other host, or a value that is
+  not a known host, is logged and ignored. **Selecting a host does not create a transport
+  for it** — see [text-models](text-models/README.md) for what a host binding decides.
 - **`REPLICATE_API_TOKEN`** — **the image backend**; no default. Every image (avatars,
   portrait variants, chat scenes, item/location shots) renders through Replicate
   ([images/providers/README.md](images/providers/README.md)). Absent outside demo mode ⇒ every render fails the
