@@ -28,6 +28,15 @@ function bytes(...values: number[]): ReadableStream<Uint8Array> {
   return new Blob([new Uint8Array(values)]).stream();
 }
 
+async function readDownload(relativePath: string): Promise<number[]> {
+  const download = await getAdminFileDownload(relativePath);
+  try {
+    return [...await download.handle.readFile()];
+  } finally {
+    await download.handle.close().catch(() => undefined);
+  }
+}
+
 describe("admin Files storage", () => {
   it("creates folders, streams arbitrary bytes, lists them, renames them, and deletes them", async () => {
     const folder = await createAdminFolder("", "phone share");
@@ -39,9 +48,7 @@ describe("admin Files storage", () => {
     const listing = await listAdminFiles("phone share");
     expect(listing).toHaveLength(1);
     expect(listing[0]).toMatchObject({ name: "payload.bin", size: 5 });
-
-    const download = await getAdminFileDownload("phone share/payload.bin");
-    expect([...await fs.readFile(download.absolutePath)]).toEqual([0, 255, 1, 2, 3]);
+    expect(await readDownload("phone share/payload.bin")).toEqual([0, 255, 1, 2, 3]);
 
     const renamed = await renameAdminEntry("phone share/payload.bin", "renamed.dat");
     expect(renamed.path).toBe("phone share/renamed.dat");
@@ -57,12 +64,38 @@ describe("admin Files storage", () => {
       code: "already_exists",
       status: 409,
     });
-    let download = await getAdminFileDownload("same.bin");
-    expect([...await fs.readFile(download.absolutePath)]).toEqual([1, 2, 3]);
+    expect(await readDownload("same.bin")).toEqual([1, 2, 3]);
 
     await uploadAdminFile("", "same.bin", bytes(9, 9), true);
-    download = await getAdminFileDownload("same.bin");
-    expect([...await fs.readFile(download.absolutePath)]).toEqual([9, 9]);
+    expect(await readDownload("same.bin")).toEqual([9, 9]);
+  });
+
+  it("serializes rename against a competing destination create so exactly one mutation wins", async () => {
+    await uploadAdminFile("", "source.bin", bytes(1, 2, 3));
+
+    const results = await Promise.allSettled([
+      renameAdminEntry("source.bin", "destination.bin"),
+      uploadAdminFile("", "destination.bin", bytes(9, 8, 7)),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const destination = await readDownload("destination.bin");
+    expect([[1, 2, 3], [9, 8, 7]]).toContainEqual(destination);
+  });
+
+  it("keeps download metadata and bytes pinned to one opened file across replacement", async () => {
+    await uploadAdminFile("", "stable.bin", bytes(1, 2, 3, 4));
+    const opened = await getAdminFileDownload("stable.bin");
+    expect(opened.size).toBe(4);
+
+    try {
+      await uploadAdminFile("", "stable.bin", bytes(9, 9), true);
+      expect([...await opened.handle.readFile()]).toEqual([1, 2, 3, 4]);
+      expect(await readDownload("stable.bin")).toEqual([9, 9]);
+    } finally {
+      await opened.handle.close().catch(() => undefined);
+    }
   });
 
   it("refuses to delete a non-empty folder", async () => {
@@ -94,6 +127,22 @@ describe("admin Files storage", () => {
       code: "upload_failed",
     });
     expect(await listAdminFiles("")).toEqual([]);
+  });
+
+  it("reclaims stale staged uploads left behind by a prior process", async () => {
+    await adminFilesRoot();
+    const tempRoot = path.join(temp.root, ".admin-files-upload-tmp");
+    const stale = path.join(tempRoot, "stale.part");
+    const fresh = path.join(tempRoot, "fresh.part");
+    await fs.writeFile(stale, "abandoned");
+    await fs.writeFile(fresh, "recent");
+
+    const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    await fs.utimes(stale, twoDaysAgo, twoDaysAgo);
+
+    await listAdminFiles("");
+    await expect(fs.stat(stale)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await fs.stat(fresh)).isFile()).toBe(true);
   });
 
   it.skipIf(!symlinksAvailable)("rejects a symlink escape planted under the managed root", async () => {
