@@ -45,13 +45,14 @@ export const GUIDANCE_MAX_CONSTRAINTS = 3;
  * produce, and the producer bounds its own emission to this same number so the
  * two can never disagree about what fits.
  *
- * A future producer of OPTIONAL descriptive transitions (the parked
- * `CHAT_PHYSICAL_TRANSITIONS` experiment) may NOT simply share this headroom.
- * The tier has no priority concept — `PhysicalStateTransition` carries
+ * A producer of OPTIONAL descriptive transitions may NOT simply share this
+ * headroom. The tier has no priority concept — `PhysicalStateTransition` carries
  * `relevance`, not `mandatory` — so optional detail would compete with a binding
- * stop on relevance and then on a fingerprint tie-break, and could win. Giving
- * transitions a priority rank is design work that experiment owes; it is
- * deliberately not assumed here.
+ * stop on relevance and then on a fingerprint tie-break, and could win. The
+ * optional-detail experiment once parked here as `CHAT_PHYSICAL_TRANSITIONS` was
+ * declined by owner ruling (#238): change-gated positive detail belongs to the
+ * visual-state narration lane, so no such producer exists and a priority rank
+ * is deliberately not assumed here.
  */
 export const GUIDANCE_MAX_TRANSITIONS = 4;
 // Generic descriptive opportunities have NO constant on purpose: the design
