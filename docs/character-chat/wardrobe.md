@@ -164,7 +164,13 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
   **Reading**, every durable and rollback parse of the store runs
   `validateGarmentStoreBlueprints`: a stored entry that parses but fails is replaced under its
   own key by the marked degraded root, so its instances resolve `reliable: false` and their
-  wearer degrades to covered. One entry degrades alone — siblings, `instances` and `seeded`
+  wearer degrades to covered. An entry the SHAPE parse already truncated — a malformed node
+  dropped, the rest kept and the blueprint marked `degraded` — is normalized to that same
+  root and reported once as `chat_garments.blueprint_degraded`: the parse itself files
+  nothing (it is handed no sink), and its surviving nodes still carry coverage that every
+  consumer reading the blueprint without checking `reliable` would enumerate. An entry that
+  is ALREADY that canonical root passes silently, so a corruption is reported once rather
+  than on every load. One entry degrades alone — siblings, `instances` and `seeded`
   are untouched, a store with nothing to replace comes back unchanged, and a damaged entry
   files ONE diagnostic rather than one per broken rule. That repair is DURABLE, not
   per-read: the load hands the degraded store to the exchange, which persists it, and an

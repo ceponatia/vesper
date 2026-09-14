@@ -963,12 +963,52 @@ describe("the durable read's structural gate", () => {
     expectCleanSink(sink);
   });
 
-  it("leaves an entry the parse already marked degraded alone, and reports it once at most", () => {
+  it("normalizes a PARSE-degraded entry that kept parts, reports it once, then goes quiet", () => {
+    // `chatGarmentStoreSchema` drops a malformed node, keeps the rest and marks
+    // the blueprint `degraded` — pushing no diagnostic, because it is handed no
+    // sink. The remainder still carries coverage that `garmentBlueprintFor`
+    // enumerates for every consumer that never consults `reliable`, so it is a
+    // partial graph, NOT the marked safe root.
+    const partial = garmentBlueprintSchema.parse({
+      rootNodeId: "root",
+      nodes: [
+        { id: "root", kind: "root", baselineCoverage: ["chest"] },
+        { id: "", kind: "panel", baselineCoverage: ["waist"] },
+      ],
+      edges: [],
+      behaviors: [],
+    });
+    expect(isDegradedGarmentBlueprint(partial)).toBe(true);
+    expect(partial.nodes.flatMap((n) => n.baselineCoverage)).toEqual(["chest"]);
+
+    const store = storeHolding(partial);
+    const hash = garmentBlueprintHash(partial);
+    const sink = new DiagnosticCollector();
+    const after = validateGarmentStoreBlueprints(store, sink, "character_chats.garments.blueprints");
+
+    // Reported — in the wardrobe's own family, not a structural-rule code: the
+    // shape parse truncated the graph, so no validator rule is the story.
+    expectDiagnostics(sink, ["chat_garments.blueprint_degraded"]);
+    expect(sink.items[0]?.path).toBe("character_chats.garments.blueprints");
+    expect(sink.items[0]?.context ?? {}).toMatchObject({ blueprintHash: hash, nodeCount: 1 });
+    // …and normalized, so the leftover coverage is no longer enumerable.
+    const kept = after.blueprints[hash];
+    expect(kept?.nodes.flatMap((n) => n.baselineCoverage)).toEqual([]);
+    const instance = after.instances[0];
+    expect(instance && resolveGarmentBlueprint(after, instance).reliable).toBe(false);
+
+    // Once, not once per load: the exchange persists the normalized store and
+    // the next read finds the canonical sentinel and says nothing.
+    const second = new DiagnosticCollector();
+    expect(validateGarmentStoreBlueprints(after, second)).toBe(after);
+    expectCleanSink(second);
+  });
+
+  it("passes the canonical sentinel through untouched and unreported", () => {
+    // A dangling-hash fill, or an entry a previous load already normalized.
     const store = storeHolding(degradedGarmentBlueprint());
     const sink = new DiagnosticCollector();
     const after = validateGarmentStoreBlueprints(store, sink);
-    // Already the marked state this pass produces — the parse recorded the loss,
-    // so a later load does not re-file the same warning.
     expect(after).toBe(store);
     expectCleanSink(sink);
     const instance = after.instances[0];
