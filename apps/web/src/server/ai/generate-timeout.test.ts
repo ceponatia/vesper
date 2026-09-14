@@ -119,7 +119,12 @@ describe("generateCheckedBounded", () => {
   });
 
   it("a normal resolution passes the value through unchanged", async () => {
-    generateTextImpl.run = () => Promise.resolve({ text: '{"ok":true}', usage: {}, providerMetadata: undefined });
+    generateTextImpl.run = () =>
+      Promise.resolve({
+        text: '{"ok":true}',
+        usage: {},
+        providerMetadata: { openrouter: { provider: "TestProvider" } },
+      });
 
     const result = await generateCheckedBounded(
       {
@@ -135,5 +140,12 @@ describe("generateCheckedBounded", () => {
 
     expect(result.value).toEqual({ ok: true });
     expect(result.degraded).toBe(false);
+    // Proves the tap-before-race ordering in generateCheckedBounded: it
+    // subscribes to `work` for provider/latency BEFORE handing the same
+    // promise to `withGenerateTimeout`, whose own result type drops both
+    // fields even on success. Swapping that order would silently zero these
+    // out in the portrait evidence envelope and the narrator provenance.
+    expect(result.provider).toBe("TestProvider");
+    expect(typeof result.latencyMs).toBe("number");
   });
 });

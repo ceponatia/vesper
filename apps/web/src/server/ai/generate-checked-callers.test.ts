@@ -23,6 +23,12 @@ import { repoRelative, sourceFilesUnder } from "@/server/test-support";
  * tooling an operator runs and can interrupt themselves — not a request or
  * job a player or a queue can stall on — so they are out of this issue's
  * "reachable leg" scope and out of this census.
+ *
+ * Blind spot (known, accepted): a file is exempt the moment it imports
+ * `generateCheckedBounded` or `withGenerateTimeout` ANYWHERE in it — a SECOND,
+ * genuinely unbounded `generateChecked(` call added later to an
+ * already-bounded file is invisible to this test. It catches a new unbounded
+ * FILE, not a new unbounded CALL SITE inside a file that already has one.
  */
 
 const ROOT = path.join(process.cwd(), "apps/web/src");
@@ -52,14 +58,28 @@ function importedNames(source: string): Set<string> {
 
 describe("generateChecked callers stay bounded (#192)", () => {
   it("every production file importing generateChecked also imports its bounding helper", () => {
+    const scanned: string[] = [];
     const unbounded: string[] = [];
     for (const absolute of sourceFilesUnder(ROOT)) {
       const file = repoRelative(absolute);
       if (EXEMPT_FILES.has(file) || file.includes("/test-support/")) continue;
       const names = importedNames(fs.readFileSync(absolute, "utf8"));
       if (!names.has("generateChecked")) continue;
+      scanned.push(file);
       if (!names.has("generateCheckedBounded") && !names.has("withGenerateTimeout")) unbounded.push(file);
     }
+    scanned.sort();
+    unbounded.sort();
+    // A census that scans zero files proves nothing — this floor fails loudly
+    // if the root moves, an import style changes (e.g. `import * as ai`), or
+    // `sourceFilesUnder`'s filters widen enough to skip every real caller.
+    // 7 is today's exact count of already-bounded legacy pairings
+    // (chat-vision/chat-memory/chat-meanwhile/chat-scene-sketch/
+    // chat-npc-scene-decision/chat-permission-decision/chat-state/pulse-agent);
+    // a caller migrating to `generateCheckedBounded` drops out of `scanned`
+    // (it no longer imports the bare `generateChecked`), so this floor only
+    // ever needs lowering, never raising, as the legacy pairing is retired.
+    expect(scanned.length).toBeGreaterThanOrEqual(7);
     expect(unbounded).toEqual([]);
   });
 });

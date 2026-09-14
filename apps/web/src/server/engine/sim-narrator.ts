@@ -493,6 +493,21 @@ export async function renderSoloNarration(
 }
 
 /**
+ * Grace the deliberator's own deadline holds OVER the arbiter's bare `timeout`
+ * race below: that race is the NORMAL decider (it starts its `setTimeout` at
+ * construction, strictly before this deadline's clock even starts), so a
+ * model answering at, say, 4.5s already lost the race and the arbiter already
+ * took its deterministic branch — an expected, non-exceptional outcome. Without
+ * this grace the inner deadline would then fire moments later anyway and
+ * record a `sim.deliberator` timeout failure for that designed-normal case,
+ * and since this leg passes no `telemetry`, it would NEVER record a success —
+ * the Agent-health panel would show a leg that only ever times out. A recorded
+ * timeout now means a genuine stall PAST the arbiter's own race, not merely
+ * losing it.
+ */
+const DELIBERATION_TIMEOUT_GRACE_MS = 2_000;
+
+/**
  * The live deliberator behind its budget and
  * deterministic fallback. The arbiter admits deliberation only for a rare,
  * consequential, ambiguous departure (score gap under the threshold); this
@@ -516,10 +531,13 @@ export function buildLiveDeliberation(options: {
     }),
     deliberate: async (request) => {
       // The bare `timeout` promise above already races this against timeoutMs
-      // for the arbiter's own fallback decision; that race alone never aborted
-      // the provider call, leaving it to run to completion in the background.
-      // Composing the SAME timeoutMs here as the deadline means a trip now
-      // aborts the in-flight call instead of orphaning it.
+      // for the arbiter's own fallback decision — that race alone never
+      // aborted the provider call, leaving it to run to completion in the
+      // background. Composing timeoutMs (plus a grace — see
+      // DELIBERATION_TIMEOUT_GRACE_MS) here as the deadline means a genuine
+      // stall now aborts the in-flight call instead of orphaning it, without
+      // this leg recording a timeout for every ordinary loss of the arbiter's
+      // own race.
       const generated = await generateCheckedBounded(
         {
           schema: deliberatorResponseSchema,
@@ -539,7 +557,7 @@ export function buildLiveDeliberation(options: {
           maxOutputTokens: 300,
           code: "sim.deliberator",
         },
-        { timeoutMs, timeoutCode: "sim.deliberator.timeout" },
+        { timeoutMs: timeoutMs + DELIBERATION_TIMEOUT_GRACE_MS, timeoutCode: "sim.deliberator.timeout" },
       );
       return generated.value;
     },

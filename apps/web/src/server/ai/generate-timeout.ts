@@ -116,7 +116,14 @@ export async function withGenerateTimeout<T>(
  */
 export type GenerateCheckedBoundedResult<T> = GenerateTimeoutResult<T> & Pick<GenerateCheckedResult<T>, "provider" | "latencyMs">;
 
-/** The deadline half of a `generateCheckedBounded` call — everything `generateChecked` itself already owns (schema, prompt, fallback, sink, telemetry, signal) travels in `opts`. */
+/**
+ * The deadline half of a `generateCheckedBounded` call — everything
+ * `generateChecked` itself already owns (schema, prompt, fallback, sink,
+ * telemetry, signal) travels in `opts`. `opts.fallback` MUST be pure and
+ * idempotent: `generateChecked`'s own degrade path may already have called it
+ * once before this helper's timeout/abort branch calls it again (see the
+ * function doc below) — calling it twice must be safe and side-effect-free.
+ */
 export interface GenerateCheckedBound<T> {
   /** Hard wall-clock budget for the call, its repair round-trip included. */
   timeoutMs: number;
@@ -130,45 +137,64 @@ export interface GenerateCheckedBound<T> {
  * Compose `generateChecked` with `withGenerateTimeout` in one call — the shape
  * every non-streaming structured leg needs (docs/resilience.md §3): a bounded
  * `AbortController` drives both the deadline and, when the caller supplies one,
- * its own `opts.signal`. An already-aborted caller signal aborts the controller
- * immediately; a later abort calls `controller.abort()` as soon as it fires; the
- * listener is always removed in `finally` so a long-lived caller signal never
- * accumulates one. `controller.signal` — never the caller's own — is what
- * actually reaches `generateChecked`.
+ * its own `opts.signal`. An already-aborted caller signal short-circuits
+ * BEFORE `generateChecked` is even called — building the prompt, serializing
+ * the schema and entering the SDK for a call already known to be moot is
+ * wasted work, and nothing guarantees the SDK treats an already-aborted signal
+ * as a no-op rather than a call it still attempts. A LATER abort calls
+ * `controller.abort()` as soon as it fires; the listener is always removed in
+ * `finally` so a long-lived caller signal never accumulates one.
+ * `controller.signal` — never the caller's own — is what actually reaches
+ * `generateChecked`.
  *
  * The race itself, its timeout diagnostic, the recorded `timeout` failure and
  * the success-run record all stay exactly where they live today, in
  * `withGenerateTimeout` — this function adds no telemetry of its own. The one
- * thing it adds on top: a timeout or a caller abort resolves with
- * `{ value: null, degraded: true }` — the caller's OWN fallback rule
- * (`opts.fallback`, the same one `generateChecked`'s degrade path applies) is
- * not otherwise reachable from that branch, since the controller's abort
- * orphans the in-flight `generateChecked` call, which then returns silently by
- * design (its `abandoned()` contract — see generate-checked.ts). This function
- * fills that gap so every caller keeps its documented degraded result whether
- * the miss was a parse failure, a timeout, or a caller abort.
+ * thing it adds on top: a timeout or a caller abort resolves with the caller's
+ * OWN `opts.fallback` (or `null` without one) — not otherwise reachable from
+ * that branch, since the controller's abort orphans the in-flight
+ * `generateChecked` call, which then returns silently by design (its
+ * `abandoned()` contract — see generate-checked.ts). This replays only the
+ * FIRST of `generateChecked`'s own degrade rungs (`opts.fallback`), never the
+ * second (`schema.safeParse({})`): a timeout has no model response for a
+ * schema to default fields FROM, so there is nothing for that rung to do —
+ * `null` (or the caller's own fallback) is the honest answer, not a
+ * schema-shaped guess. This function fills the gap so every caller keeps its
+ * documented degraded result whether the miss was a parse failure, a timeout,
+ * or a caller abort.
  */
 export async function generateCheckedBounded<T>(
   opts: GenerateCheckedOptions<T>,
   bound: GenerateCheckedBound<T>,
 ): Promise<GenerateCheckedBoundedResult<T>> {
-  const controller = new AbortController();
   const callerSignal = opts.signal;
-  const onCallerAbort = () => controller.abort();
+  // Short-circuit before touching generateChecked at all — see the doc above.
   if (callerSignal?.aborted) {
-    controller.abort();
-  } else {
-    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    return { value: opts.fallback ? opts.fallback() : null, degraded: true };
   }
+  const controller = new AbortController();
+  const onCallerAbort = () => controller.abort();
+  callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
   // Observed off the SAME promise `withGenerateTimeout` races — a second
   // subscriber, not a second call — so a completed call's provider/latency
   // survive the race even though `GenerateTimeoutResult` itself drops them.
   let observed: Pick<GenerateCheckedResult<T>, "provider" | "latencyMs"> = {};
   try {
     const work = generateChecked({ ...opts, signal: controller.signal });
-    void work.then((r) => {
-      observed = { provider: r.provider, latencyMs: r.latencyMs };
-    });
+    // The second argument is load-bearing, not decoration: generateChecked can
+    // reject outside its own try blocks (demo mode's degrade() calls
+    // opts.fallback() first and a fallback like a schema .parse() can throw),
+    // and a derived promise with no rejection handler is an unhandled
+    // rejection — fatal by default on Node ≥22. withGenerateTimeout guards
+    // the SAME promise with its own `.catch()`; this subscriber needs the
+    // identical guard independently, since each `.then`/`.catch` call
+    // registers its own handler on the settlement.
+    void work.then(
+      (r) => {
+        observed = { provider: r.provider, latencyMs: r.latencyMs };
+      },
+      () => {},
+    );
     const result = await withGenerateTimeout(work, controller, bound.timeoutMs, bound.timeoutCode, opts.sink, opts.telemetry, bound.describe);
     const value = result.degraded && result.value == null ? (opts.fallback ? opts.fallback() : null) : result.value;
     return { ...result, value, ...observed };
