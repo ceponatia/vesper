@@ -22,6 +22,7 @@ import {
   type ImageRenderReference,
   type ProviderRenderResult,
   referenceCapacity,
+  type RenderAdvisory,
   type ResolvedImageAttempt,
   type ResolvedImageProfile,
   routeSceneAttempts,
@@ -230,6 +231,18 @@ export interface RenderResolvedSceneInput {
   plan: SceneRenderPlan;
   references: SceneVisualReference[];
   referenceBuffers: Map<string, Buffer>;
+  /**
+   * What each stored reference image DEPICTS — its appearance revision, keyed by
+   * the same image id the buffers are (issue #551,
+   * `contracts/images/appearance-revision.ts`).
+   *
+   * Supplied by the caller that resolved the references, because only it knows
+   * whether a cast member anchored on a freshly minted look or on an older
+   * accepted portrait. A missing entry — every caller before this field existed,
+   * every uploaded portrait — compares as `unknown` and compiles the prompt this
+   * lane compiled then.
+   */
+  referenceAppearanceRevisions?: ReadonlyMap<string, string>;
   linkage: SceneAssetLinkage;
   mode?: SceneReferenceMode;
   /** The resolved scene profile and its model; null when none is offered. */
@@ -744,10 +757,17 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         // identity images bound to one subject say "this is Mira" twice, and a
         // model reading two photographs of one person as two people paints two.
         const description = describeByReference.get(reference);
+        // Recovered from the stored image id the reference already carries, so
+        // nothing has to re-derive which slot came from which row (issue #551).
+        const appearanceRevision =
+          reference.sourceImageId === undefined
+            ? undefined
+            : input.referenceAppearanceRevisions?.get(reference.sourceImageId);
         return {
           reference,
           ...(subjectId === undefined ? {} : { subjectId }),
           ...(description === undefined ? {} : { description }),
+          ...(appearanceRevision === undefined ? {} : { appearanceRevision }),
         };
       }),
       // The cast size the render ASSERTS — what arms the single-subject
@@ -958,11 +978,15 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           // scene keeps its prediction id and provenance. Walked from the deep
           // end because later rungs overwrite nothing: each rung keys its own
           // attempt, and the deepest one recorded is the last that ran.
-          const lastAttempt = [...runnableChain]
+          const lastEntry = [...runnableChain]
             .reverse()
             .map((id) => ctx.attempts.get(id))
-            .find((attempt) => attempt !== undefined);
-          return { ok: false, error: sceneFailureMessage(collected.items), ...renderAttemptMeta(lastAttempt) };
+            .find((entry) => entry !== undefined);
+          return {
+            ok: false,
+            error: sceneFailureMessage(collected.items),
+            ...renderAttemptMeta(lastEntry?.attempt, lastEntry?.advisories),
+          };
         }
         if (outcome.attemptId !== primary) {
           // The reserve-time program described the PRIMARY rung's request, and
@@ -985,7 +1009,12 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         // runs AFTER the fallback correction above rewrote the row, so the two
         // writes never fight: the correction describes the rung, and this is the
         // same rung's attempt record.
-        return { ok: true, image: outcome.image, ...renderAttemptMeta(ctx.attempts.get(outcome.attemptId)) };
+        const winningEntry = ctx.attempts.get(outcome.attemptId);
+        return {
+          ok: true,
+          image: outcome.image,
+          ...renderAttemptMeta(winningEntry?.attempt, winningEntry?.advisories),
+        };
       },
       onSettled: ({ imageId, status, startedMs }) => input.logResult(imageId, status, startedMs),
       onThrown: ({ imageId, startedMs }) => input.logResult(imageId, "failed", startedMs),
@@ -1006,12 +1035,14 @@ interface SceneAttemptContext {
   /** The caller-resolved LoRA every rung of this chain carries, when there is one. */
   resolvedLora?: ImageLoraRenderBinding;
   /**
-   * Each rung's latest attempt provenance, written by {@link runSceneProvider}.
-   * Keyed by rung so the produce step can record the one that actually won —
-   * a retry within a rung overwrites, which is correct: the surviving image
-   * came from the LAST run of that rung.
+   * Each rung's latest attempt provenance, written by {@link runSceneProvider}
+   * — the attempt AND its advisories together, so the produce step's
+   * read-back can thread both into `renderAttemptMeta` the same way every
+   * other lane does. Keyed by rung so the produce step can record the one
+   * that actually won — a retry within a rung overwrites, which is correct:
+   * the surviving image came from the LAST run of that rung.
    */
-  attempts: Map<SceneAttemptId, ResolvedImageAttempt>;
+  attempts: Map<SceneAttemptId, { attempt: ResolvedImageAttempt; advisories?: RenderAdvisory[] }>;
   sink?: DiagnosticSink;
 }
 
@@ -1129,7 +1160,7 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
     },
     ctx.sink,
   );
-  if (result.attempt) ctx.attempts.set(id, result.attempt);
+  if (result.attempt) ctx.attempts.set(id, { attempt: result.attempt, advisories: result.advisories });
   if (result.ok && result.image) return { ok: true, image: result.image };
   const message = result.error ?? `${ctx.profile.model.slug} returned no image`;
   return { ok: false, failure: { reason: classifyImageFailure(message), message } };

@@ -224,6 +224,10 @@ export function activeVariantProgram(inputs: VariantProgramInputs): CharacterPro
     references: packSelection.references.map((entry) => ({
       reference: entry.reference,
       subjectId: input.characterId,
+      // What the accepted portrait behind this pack depicts (issue #551) — the
+      // seam compares it with the cut being drawn and decides whether the
+      // reference is still authoritative for hair and build.
+      appearanceRevision: entry.appearanceRevision,
     })),
     operation: variantChangeOperation(input.kind, input.instruction),
     // An identity-critical lane refuses on a lost anchor rather than rendering a
@@ -440,9 +444,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         );
         // Provenance rides the failure too — a failed prediction's id is what
         // an operator traces at the provider.
-        return { ok: false, error, ...renderAttemptMeta(edit.attempt) };
+        return { ok: false, error, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       }
-      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
+      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
     },
     // Every branch past the character check logs — including the two failures,
     // which carry `durationMs` here where avatar/entity's thrown line does not.

@@ -67,6 +67,7 @@ other — application code is the bridge that reads simulated state and emits an
 | [prompt-programs.md](prompt-programs.md)          | Technical reference: world digests, positive claims, guarded negatives, endpoint dialect |
 | [character-prompts.md](character-prompts.md)      | The character seam: projection, cast, references, identity anchor                        |
 | [identity-packs.md](identity-packs.md)            | Derived face crops: derivation, lifecycle, surfaces, trial harness                       |
+| [render-advisories.md](render-advisories.md)      | Advisory render-quality signals: thresholds, owner review, the comparison record         |
 | [media-jobs.md](media-jobs.md)                    | Owner-scoped portrait, variant, identity, and reference job status                       |
 | [vision.md](vision.md)                            | Models reading stored images: portrait→attributes, chat photo reads                      |
 

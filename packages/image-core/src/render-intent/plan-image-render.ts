@@ -18,6 +18,7 @@ import {
   planIntentReferences,
   resolveImageRenderPolicy,
 } from "./render-intent";
+import { resolveRenderTarget, type RenderTargetSource } from "./render-target";
 
 /**
  * THE production render planner — everything decided before a byte leaves the
@@ -183,8 +184,15 @@ export interface PlannedImageRender {
    * The shape this render asked for, or `null` for the model's own default
    * (`ImageRenderTarget`). Null travels all the way to the transport
    * wrapper, where it means "write no aspect/size key and do not crop".
+   *
+   * Resolved by {@link resolveRenderTarget} rather than read off the intent
+   * directly — a profile's own declared shape (`profile.controlDefaults.aspectRatio`)
+   * already outranks the lane's own number here, which is what lets a profile
+   * change a render's shape with no lane edited.
    */
   targetRatio: number | null;
+  /** Which precedence rung {@link PlannedImageRender.targetRatio} came from. */
+  targetSource: RenderTargetSource;
   /**
    * The compile step's dimension-resolver inputs (operation, merged
    * resolution/width/height, the mapped custom pair). `renderWithModel` hands
@@ -251,6 +259,10 @@ export type PlanImageRenderResult = { ok: true; plan: PlannedImageRender } | { o
  */
 export function planImageRender(intent: ImageRenderIntent, runtime: ImageRenderRuntimeFacts): PlanImageRenderResult {
   const { profile, model } = intent.profile;
+  // Resolved up front, beside `profile`/`model`: cheap and pure, and only the
+  // final plan below reads it today, but a future refusal that cares about the
+  // resolved shape would find it already sitting here.
+  const target = resolveRenderTarget({ intentTarget: intent.target, profile, task: profile.task });
   const planned = planIntentReferences(model, profile.referencePolicy, intent.references);
   const { primary, dedicated, dropped } = planned;
 
@@ -396,7 +408,8 @@ export function planImageRender(intent: ImageRenderIntent, runtime: ImageRenderR
       typedControlFields: compiled.plan.typedControlFields,
       appliedControls: compiled.plan.appliedControls,
       droppedControls: compiled.plan.resolvedControls.droppedControls,
-      targetRatio: intent.target.aspectRatio,
+      targetRatio: target.aspectRatio,
+      targetSource: target.source,
       dimensionFacts: compiled.plan.dimensionFacts,
       policy: resolveImageRenderPolicy(intent.policy),
       timeoutMs: profile.timeoutMs,

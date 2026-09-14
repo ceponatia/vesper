@@ -219,3 +219,96 @@ Failed non-canonical avatar attempts stay in the Portrait history grid with
 read-only box between the generation controls and the variant form, sourced from
 `images.prompt` and updated when a variant is promoted — null when there is no avatar or it is
 an uploaded image (`meta.source: "upload"`, which carries no generation prompt).
+
+## Best-of-two candidates and explicit retries
+
+A player may ask for **one portrait** (the default) or **two candidates** — the player ceiling;
+three or more stays admin-only, and best-of-N never runs automatically for scenes. Two
+candidates compile the program **once** and run `runImagePipeline` **twice, sequentially** (so
+a failed first render never orphans a group), each reserving its own row with `meta.candidates:
+{ group, index, of: 2 }` under one freshly minted group id. Neither candidate's `onReady`
+claims `characters.avatarImageId`: a two-candidate request claims **nothing**, and the player
+chooses between the two through the studio's existing **promote** action, exactly the way a
+variant is promoted to canonical. A single-candidate generation — the common case, including
+every plain "Generate portrait" and "New variation" retry — keeps today's auto-claim byte for
+byte.
+
+The request also carries an optional caller-minted id, stamped on every row it reserves as
+`meta.request: { id, candidates }`. Nothing server-side reads it back — it exists so a caller (the
+portrait studio) can judge ITS OWN request's completion by which rows carry the id it just sent,
+rather than the canonical pointer (which a two-candidate request never claims) or a snapshot of
+what existed before the request (wrongly empty before that caller's own view of the history has
+ever loaded).
+
+**Regenerating** offers two explicit semantics, never a silent default. **New
+variation** asks for a fresh sampling attempt (an optional lineage pointer
+in `images.sourceImageId` and `meta.retry.sourceImageId`, no seed replay).
+**Same composition** asks to reuse a specific prior portrait's exact
+settings, including its seed when the eligibility table below allows it — a
+**reproducibility request, never a pixel guarantee**
+([../providers/render-intents.md](../providers/render-intents.md) §Seeds and
+the render record). A same-composition request always renders exactly one
+image; asking for two candidates of the same composition is refused
+(`avatar.replay_single`) before anything is reserved, because a replay is one
+render by definition. Demo mode compiles no program at all, so a
+same-composition request there has nothing to check against; it refuses as
+`demo_mode` through the same path rather than rendering an unrelated
+placeholder and calling it a replay.
+
+Every retry records which semantics it used on the row's `meta.retry: { mode, sourceImageId?,
+seed?, pinnedVersionId? }`, regardless of whether the render that follows succeeds — but the
+source is recorded only once it is trusted: an eligible same-composition replay's source, or a
+`new_variation` pointer this owner's character actually owns. `pinnedVersionId` is present
+(even as `null`) only on an eligible same-composition replay: it is the exact version the replay
+sent as `intent.versionId` — the source's own recorded version, whatever the app currently pins
+— or `null` when the source ran with none recorded, in which case the replay follows the
+floating latest exactly like the source did. A REFUSED same-composition attempt records its mode
+alone — never the named source, a seed, or a pin — so a request naming another owner's, or a
+nonexistent, image id never leaves that id (or the fact that it was probed) on
+`images.source_image_id` or `meta.retry.sourceImageId`. `meta.render.seed` stays the render's own
+effective seed — `null` when the endpoint has no seed binding for this model, which the studio's
+tile caption states as **"Unseeded variation"** rather than implying a seed was silently dropped.
+
+### Same-composition eligibility
+
+A same-composition retry is refused, before any provider spend, unless every
+row of this table holds. Demo mode compiles no program at all, so `generateAvatar`
+(`server/images/avatar.ts`) decides `demo_mode` itself, before there is anything
+for the table below (`server/images/avatar-replay.ts`) to check:
+
+| condition                                                                                                                                           | refusal (if not met) |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| the request is not in demo mode (checked by the caller, not the table)                                                                              | `demo_mode`          |
+| the source is a ready `avatar`-kind row of this character, owned by this caller                                                                     | `source_unavailable` |
+| its `meta.render.seed` is a recorded number                                                                                                         | `no_recorded_seed`   |
+| its `meta.render.modelSlug` and `.profileId` equal the currently resolved model and profile                                                         | `model_changed`      |
+| when the app pins a version today, it equals the version that produced the source (its provider echo, falling back to what it originally requested) | `version_changed`    |
+| the freshly compiled program's fingerprint could be read at all                                                                                     | `program_unrecorded` |
+| that fingerprint equals the source's `meta.promptProgram.programFingerprint` (appearance, wardrobe, world state or prompt has not moved)            | `world_changed`      |
+
+A same-composition replay PINS EXPLICITLY: it sends the version that provably produced the source
+(`meta.render.executedVersionId`, the provider's own echo, falling back to `requestedVersionId` for
+a row whose provider echoed nothing) as `intent.versionId`, so the wire runs exactly those weights
+rather than hoping a bare slug's floating latest still matches. The version_changed refusal fires
+only the OTHER direction — the app has since committed to a DIFFERENT version than the one that
+produced the source (a probed version, a slug pin, or both agreeing) — because holding the source's
+old version would then silently run weights the app no longer endorses. An app that pins nothing
+today is always eligible on this dimension and simply replays the source's own version, whatever it
+was, including "nothing recorded" (`meta.retry.pinnedVersionId: null`), which floats along exactly
+like the source render did — still a reproducibility request, never a pixel guarantee.
+
+A refusal fails the row with the reason's sentence and records
+`images.avatar.replay_refused` — never a silent fallback to a new variation.
+The portrait studio's `GET /api/characters/:id/portraits` reports the CHEAP
+half of this table per row as `replay` (seed recorded; model, profile and
+version still current) — never `world_changed` or `program_unrecorded`, since
+no program is compiled at list time — so the Regenerate menu can disable
+"Same composition" with a reason before the player even asks; a world-state
+change surfaces only as the request's own refusal, once a program actually
+compiles. That resolution follows an optional `modelId` query value, the
+studio's current profile-picker selection, so a portrait rendered on a
+non-default profile is judged against the profile actually in use rather
+than always the task default; omitted, it keeps resolving the task default.
+Portraits send no references at all (every portrait profile's reference
+policy allows none), so the issue's "missing reference" refusal arm is
+structurally impossible on this lane.

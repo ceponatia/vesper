@@ -18,6 +18,41 @@ import {
 } from "./shared";
 
 /**
+ * The owner's agree/disagree verdict on one advisory, merged on by
+ * `PATCH /api/images/:imageId/advisories`. Not part of the producer-side
+ * `renderAdvisorySchema` (that module knows nothing about review) — layered
+ * on here, the one place the client reads a reviewed advisory.
+ */
+const renderAdvisoryReviewSchema = z.object({
+  verdict: z.enum(["agree", "disagree"]).catch("agree"),
+  note: z.string().optional().catch(undefined),
+  at: z.string().catch(""),
+});
+
+/**
+ * One stored render advisory as the client reads it — LOOSE, the same rule
+ * as `render`/`visualState` above: every field degrades independently rather
+ * than failing the whole entry, so a version bump, a renamed field, or a
+ * code this deployment does not recognize costs that field alone. Not built
+ * on the producer-side `renderAdvisorySchema` (`@vesper/image-core`) on
+ * purpose — that schema pins `version` to a literal and `code`/`level`/
+ * `offers` to enums, which is exactly the shape that made a stored
+ * advisory unparsable the moment `RENDER_ADVISORY_VERSION` moved, or the
+ * PATCH review route's own echoed response fail to parse as `ok:false`
+ * (issue #249 correction round 1).
+ */
+export const clientRenderAdvisorySchema = z.object({
+  version: z.number().catch(1),
+  code: z.string().catch(""),
+  level: z.string().catch("advisory"),
+  reason: z.string().catch(""),
+  evidence: z.record(z.string(), z.unknown()).catch({}),
+  offers: z.array(z.string()).catch([]),
+  review: renderAdvisoryReviewSchema.optional().catch(undefined),
+});
+export type ClientRenderAdvisory = z.infer<typeof clientRenderAdvisorySchema>;
+
+/**
  * One image row's `meta`, as every client surface reads it.
  *
  * Shared between the image DTO and the Gallery's, because the lightbox's
@@ -68,6 +103,46 @@ export const imageRowMetaSchema = z
       )
       .optional()
       .catch(undefined),
+    /** Which explicit retry semantics produced this row, and from which source
+     * (issue #248) — absent for an ordinary generation. Kept loose: a new mode
+     * a future deploy adds must not fail an older client's parse. */
+    retry: z
+      .object({
+        mode: z.string().catch(""),
+        sourceImageId: z.string().optional().catch(undefined),
+        seed: z.number().optional().catch(undefined),
+      })
+      .optional()
+      .catch(undefined),
+    /** This row's position in a best-of-two candidate group (issue #248) —
+     * absent for a single-candidate generation. */
+    candidates: z
+      .object({
+        group: z.string().catch(""),
+        index: z.number().catch(1),
+        of: z.number().catch(1),
+      })
+      .optional()
+      .catch(undefined),
+    /** Which client-minted request produced this row, and how many
+     * candidates that request asked for (codex review round 2, threads
+     * 3–4) — absent for a caller that sent no request id at all. */
+    request: z
+      .object({
+        id: z.string().catch(""),
+        candidates: z.number().catch(1),
+      })
+      .optional()
+      .catch(undefined),
+    /**
+     * Advisory annotations this render measured (issue #249) — harmful crop
+     * loss, a blank or severely blurred output — each with the owner's
+     * agree/disagree review once one is given. `arrayOf` catches PER ENTRY:
+     * one advisory a newer or older deploy wrote in a shape this client does
+     * not recognize is dropped on its own, its known sibling survives, and
+     * the row is never punished for a field it does not carry.
+     */
+    advisories: arrayOf(clientRenderAdvisorySchema).optional(),
   })
   .catch({});
 
@@ -118,6 +193,22 @@ export type ImageRecord = z.infer<typeof imageRecordSchema>;
 export function imageUrl(imageId: string): string {
   return `/api/images/${imageId}/file`;
 }
+
+/**
+ * The portraits list's per-row same-composition hint (issue #248): whether
+ * "Same composition" is offered for that row's retry menu, and why not when
+ * it isn't. Cheap and advisory — the server re-verifies everything against the
+ * request's own resolution regardless of what this said, so a stale hint
+ * degrades to a refused request with its own explanation, never a silently
+ * wrong render.
+ */
+export const avatarReplayHintSchema = z.union([
+  z.object({ ok: z.literal(true) }),
+  z.object({ ok: z.literal(false), reason: z.string().catch("unavailable") }),
+]);
+export type AvatarReplayHint = z.infer<typeof avatarReplayHintSchema>;
+export const avatarReplayMapSchema = z.record(z.string(), avatarReplayHintSchema).catch({});
+export type AvatarReplayMap = z.infer<typeof avatarReplayMapSchema>;
 
 // The variant kinds are a pure contract (`contracts/images/portrait-variant`) —
 // the studio dropdown, the POST body schema and the prompt builder all read that
@@ -189,4 +280,44 @@ export const galleryApi = {
     apiPost(z.object({ deleted: z.number().catch(0) }), "/api/gallery/delete", {
       ids,
     }),
+};
+
+// ---------------------------------------------------------------------------
+// Render advisories (issue #249) — NOT re-exported through the top
+// `lib/client/api.ts` barrel today, since that curated list is out of this
+// change's owned paths; import from this module path directly
+// (`@/lib/client/api/images`) until the barrel line is added.
+// ---------------------------------------------------------------------------
+
+/** Per-code counts plus the most recently reviewed rows — the comparison
+ * record an owner reads to write a verdict (annotate / reject / propose a
+ * narrow promotion check) for each advisory signal. */
+export const imageAdvisorySummarySchema = z.object({
+  codes: arrayOf(
+    z.object({
+      code: z.string(),
+      annotated: z.number().catch(0),
+      agreed: z.number().catch(0),
+      disagreed: z.number().catch(0),
+      unreviewed: z.number().catch(0),
+    }),
+  ),
+  reviewed: arrayOf(
+    z.object({
+      imageId: idSchema,
+      code: z.string(),
+      verdict: z.enum(["agree", "disagree"]).catch("agree"),
+      note: z.string().nullable().catch(null),
+      reviewedAt: z.string().nullable().catch(null),
+    }),
+  ),
+});
+export type ImageAdvisorySummary = z.infer<typeof imageAdvisorySummarySchema>;
+
+export const imageAdvisoriesApi = {
+  /** Record the owner's agree/disagree verdict on one render advisory. */
+  review: (imageId: string, body: { code: string; verdict: "agree" | "disagree"; note?: string }) =>
+    apiPatch(z.object({ advisory: clientRenderAdvisorySchema }), `/api/images/${imageId}/advisories`, body),
+  /** The comparison-record table (#249's acceptance bullet 1). */
+  summary: () => apiGet(imageAdvisorySummarySchema, "/api/admin/self/image-advisories/summary"),
 };

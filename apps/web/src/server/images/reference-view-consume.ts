@@ -1,4 +1,5 @@
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { readAppearanceRevision } from "@/contracts/images/appearance-revision";
 import {
   referenceViewAngleById,
   referenceViewFaceVisibility,
@@ -69,6 +70,17 @@ export type LoadConsumableReferenceViewResult =
       readonly sourceImageId: string;
       /** How much of the face this angle shows; `hidden` is what earns the anchor substitution. */
       readonly faceVisibility: SceneFaceVisibility;
+      /**
+       * The appearance this view DEPICTS — the revision of the cut it was
+       * rendered from, stamped on its own asset row (issue #551).
+       *
+       * A view can be perfectly consumable and still predate an appearance
+       * change: consumability asks whether the view was rendered from the
+       * portrait the character has accepted right now, and the portrait itself
+       * is exactly the thing that can be out of date. Null for a view built
+       * before this contract existed, and for an uploaded one.
+       */
+      readonly appearanceRevision: string | null;
     }
   | { readonly ok: false; readonly reason: ReferenceViewUnavailableReason };
 
@@ -127,7 +139,7 @@ export async function loadConsumableReferenceView(
     return { ok: false, reason };
   };
 
-  return withLockedReferenceViewSet(characterId, ownerId, sink, async ({ set, readReadyBytes }) => {
+  return withLockedReferenceViewSet(characterId, ownerId, sink, async ({ set, readReadyAsset }) => {
     // The profile plan, accepted portrait, attempt, and asset row are read under
     // the same character lock. An apparent-age save cannot cross this read and
     // let an old approved bare image escape after it became ineligible.
@@ -139,15 +151,16 @@ export async function loadConsumableReferenceView(
       return refuse(reasonOf(summary.state));
     }
 
-    const buffer = await readReadyBytes(summary.imageId);
-    if (buffer === null) return refuse("missing_bytes");
+    const asset = await readReadyAsset(summary.imageId);
+    if (asset === null) return refuse("missing_bytes");
 
     const angle = referenceViewAngleById(view.angle);
     return {
       ok: true,
       imageId: summary.imageId,
-      buffer,
+      buffer: asset.buffer,
       sourceImageId: set.acceptedImageId,
+      appearanceRevision: readAppearanceRevision(asset.meta, characterId),
       // An angle the registry dropped promises no face — the fail-closed answer
       // the registry itself gives, rather than a second mapping here.
       faceVisibility: angle === undefined ? "hidden" : referenceViewFaceVisibility(angle),

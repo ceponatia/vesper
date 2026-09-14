@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { imageReferenceRoleSchema, type ImageReferenceRole } from "../capabilities/image-model-capabilities";
 import { identityReferenceStrategySchema } from "../identity/identity-pack";
-import { imageModelOffersSurface, type ImageModel, type ImageModelSurface } from "./image-models";
+import { imageModelOffersSurface, parseAspectValue, type ImageModel, type ImageModelSurface } from "./image-models";
 
 /**
  * Task profiles beneath a registered model (the `image_model_profiles` rows).
@@ -223,8 +223,29 @@ export type ImageRenderControls = z.infer<typeof imageRenderControlsSchema>;
  * `seedPolicy` defaults to `random`, which is what sending no seed key already
  * does at every provider, so the seeded `'{}'::jsonb` defaults change nothing.
  */
+/**
+ * A profile's own intended shape, as a `W:H` string (`parseAspectValue`'s
+ * verbatim spelling) — `"3:4"`, not the numeric ratio. A profile that declares
+ * one is asking for a specific shape regardless of which lane renders it:
+ * `resolveRenderTarget` (`render-intent/render-target.ts`) gives it precedence
+ * over a lane's own explicit request, which is what lets a profile whose custom
+ * width/height already IS its own bucket (a reviewed 832×1216 portrait pair,
+ * say) ask to be judged against that shape instead of a generic 3:4 that would
+ * crop it.
+ *
+ * Absent (the default for every profile before this field existed) means "the
+ * lane decides" — exactly `seedPolicy`'s own precedent for a defaults-only
+ * member. The control mapper never sees it: it is not an `ImageRenderControls`
+ * member, so a normalized-control walk that does not know this field skips it
+ * exactly as it already skips `seedPolicy`.
+ */
+const imageProfileAspectRatioSchema = z.string().refine((value) => parseAspectValue(value) !== null, {
+  message: 'aspectRatio must be a parseable "W:H" ratio, e.g. "3:4"',
+});
+
 export const imageControlDefaultsSchema = imageRenderControlsSchema.omit({ seed: true }).extend({
   seedPolicy: imageSeedPolicySchema.default("random"),
+  aspectRatio: imageProfileAspectRatioSchema.optional(),
 });
 export type ImageControlDefaults = z.infer<typeof imageControlDefaultsSchema>;
 

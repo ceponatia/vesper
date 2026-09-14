@@ -211,7 +211,7 @@ describe("activeChatLookProgram — a function of the look key's inputs alone", 
       },
       cut,
       resolved,
-      [identity],
+      { references: [identity], appearanceRevision: null },
       sink,
     );
     if (!isCharacterPromptCompiled(program)) throw new Error(`expected a compiled program, got ${program.kind}`);

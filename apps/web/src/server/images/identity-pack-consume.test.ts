@@ -117,7 +117,13 @@ describe("identityPackRenderReferences", () => {
         [candidate("face_detail", false, "imgfacecrop"), record("face_detail", "imgfacecrop")],
       ]),
     );
-    rowQueue.push([{ id: "imgportrait", meta: { source: "upload" } }], [{ id: "imgfacecrop", meta: {} }]);
+    // The accepted portrait's own stamp is read once, ahead of any candidate's
+    // bytes: every role in one pack shows the same person at the same moment.
+    rowQueue.push(
+      [{ meta: { appearanceRevisions: { charaaaaaaaaaaaaaaaaaaaa: "v1:1a2b3c4d" } } }],
+      [{ id: "imgportrait", meta: { source: "upload" } }],
+      [{ id: "imgfacecrop", meta: {} }],
+    );
     const portrait = Buffer.from("portrait");
     const crop = Buffer.from("crop");
     mockReadBytes.mockResolvedValueOnce(portrait).mockResolvedValueOnce(crop);
@@ -132,13 +138,17 @@ describe("identityPackRenderReferences", () => {
     expect(result.references.map((entry) => entry.reference.buffer)).toEqual([portrait, crop]);
     expect(result.references.map((entry) => entry.source)).toEqual(["uploaded", "generated"]);
     expect(result.provenance.map((entry) => entry.imageId)).toEqual(["imgportrait", "imgfacecrop"]);
+    // The appearance the CANONICAL PORTRAIT depicts, carried on every role in
+    // the pack (issue #551) — the face crop renders nothing and stamps nothing,
+    // so a per-role answer would be a different fact about the same moment.
+    expect(result.references.map((entry) => entry.appearanceRevision)).toEqual(["v1:1a2b3c4d", "v1:1a2b3c4d"]);
   });
 
   it("refuses when a REQUIRED candidate's bytes cannot be read, with the fetch diagnostic", async () => {
     mockEvaluate.mockResolvedValue(
       eligible([[candidate("canonical_identity", true, "imgportrait"), record("canonical_identity", "imgportrait")]]),
     );
-    rowQueue.push([]); // owned/ready read misses
+    rowQueue.push([], []); // the portrait's stamp read finds nothing, then the owned/ready read misses
     const sink = new DiagnosticCollector();
     const result = await identityPackRenderReferences({ ...baseInput(), sink });
     expect(result.ok).toBe(false);
@@ -154,7 +164,7 @@ describe("identityPackRenderReferences", () => {
         [candidate("face_detail", false, "imgfacecrop"), record("face_detail", "imgfacecrop")],
       ]),
     );
-    rowQueue.push([{ id: "imgportrait", meta: {} }], []); // crop row gone
+    rowQueue.push([], [{ id: "imgportrait", meta: {} }], []); // no stamp; then the crop row is gone
     mockReadBytes.mockResolvedValueOnce(Buffer.from("portrait"));
     const sink = new DiagnosticCollector();
 
@@ -163,6 +173,8 @@ describe("identityPackRenderReferences", () => {
     if (!result.ok) return;
     expect(result.references.map((entry) => entry.reference.sourceImageId)).toEqual(["imgportrait"]);
     expect(result.provenance.map((entry) => entry.imageId)).toEqual(["imgportrait"]);
+    // An unstamped portrait is `unknown`, never a guess (issue #551).
+    expect(result.references.map((entry) => entry.appearanceRevision)).toEqual([null]);
     expect(sink.items.map((d) => d.code)).toContain("images.identity_pack.reference_fetch_failed");
   });
 });

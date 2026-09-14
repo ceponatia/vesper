@@ -32,7 +32,7 @@ import {
   type AuthoredEdgeRecord,
   libraryRelationshipsSchema,
 } from "./chat-schemas";
-import { imageRecordSchema } from "./images";
+import { avatarReplayMapSchema, imageRecordSchema } from "./images";
 
 import {
   arrayOf,
@@ -414,8 +414,43 @@ export const charactersApi = {
       `/api/characters/${id}/attributes/from-portrait`,
       source,
     ),
-  generateAvatar: (id: string, body: { authoringRevision?: number; modelId?: string } = {}) =>
-    apiPost(z.unknown(), `/api/characters/${id}/avatar`, body),
+  /**
+   * `candidates` requests best-of-two portrait candidates (issue #248) — the
+   * player ceiling; the server clamps anything else to one. `retry` states
+   * explicit retry semantics for a regeneration; absent for a first-ever
+   * generation. Reuse a source's exact settings with `retry: { mode:
+   * "same_composition", sourceImageId }` (refused beside `candidates: 2` — a
+   * replay is one render by definition), or ask for a fresh, differently
+   * seeded attempt with `retry: { mode: "new_variation", sourceImageId? }`.
+   */
+  generateAvatar: (
+    id: string,
+    body: {
+      authoringRevision?: number;
+      modelId?: string;
+      candidates?: 1 | 2;
+      retry?:
+        | { mode: "new_variation"; sourceImageId?: string }
+        | { mode: "same_composition"; sourceImageId: string };
+      /**
+       * The caller's own completion-tracking token (`crypto.randomUUID()`
+       * in the studio), stamped on every row this request reserves — codex
+       * review round 2, threads 3–4: judging completion from a client-side
+       * snapshot of what existed before the request undercounts when the
+       * portraits list has not loaded yet, and drops the OLD request's rows
+       * out from under it once a new one starts.
+       */
+      requestId?: string;
+    } = {},
+  ) =>
+    apiPost(
+      // The queuing job's id, for a caller that judges the request's own
+      // completion rather than the character's canonical pointer (the
+      // portrait studio, best-of-two — codex review round 1, finding A).
+      z.object({ jobId: idSchema.catch(""), requestId: idSchema.optional().catch(undefined) }).catch({ jobId: "" }),
+      `/api/characters/${id}/avatar`,
+      body,
+    ),
   uploadAvatar: (id: string, image: string) =>
     apiPost(
       z.object({ avatarImageId: idSchema }),
@@ -426,16 +461,24 @@ export const charactersApi = {
    * The studio list (avatar + variants, newest first) plus whether a portrait
    * job is live server-side (`rendering` — true through the pre-reserve reads
    * BEFORE the pending row exists, so the studio doesn't go blind there).
+   *
+   * `modelId` is the studio's current profile-picker selection — the same
+   * stored-pick value `generateAvatar` sends — so the per-row same-composition
+   * hint (`replay`) is judged against what a retry right now would actually
+   * resolve to rather than always the task default (codex review round 1,
+   * finding B). Omitted, the server falls back to the task default.
    */
-  portraits: (id: string) =>
+  portraits: (id: string, options: { modelId?: string } = {}) =>
     apiGet(
       z
         .object({
           portraits: arrayOf(imageRecordSchema),
           rendering: z.boolean().catch(false),
+          /** The cheap per-row same-composition hint (issue #248) — keyed by image id. */
+          replay: avatarReplayMapSchema,
         })
-        .catch({ portraits: [], rendering: false }),
-      `/api/characters/${id}/portraits`,
+        .catch({ portraits: [], rendering: false, replay: {} }),
+      withQuery(`/api/characters/${id}/portraits`, { modelId: options.modelId }),
     ),
   createPortrait: (
     id: string,

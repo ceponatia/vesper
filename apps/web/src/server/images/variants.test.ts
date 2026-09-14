@@ -102,6 +102,9 @@ function packSelection(): Extract<IdentityPackRenderReferencesResult, { ok: true
         provenance: record("canonical_identity", "img-probe-nyx"),
         candidate: candidate("canonical_identity", true, "img-probe-nyx"),
         source: "uploaded",
+        // An uploaded portrait carries no appearance stamp (issue #551), which
+        // is what every pre-contract reference compares as: `unknown`.
+        appearanceRevision: null,
       },
     ],
     provenance: [record("canonical_identity", "img-probe-nyx")],

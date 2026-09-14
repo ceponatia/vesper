@@ -79,6 +79,7 @@ export {
   REPLICATE_VERSION_UNDISCLOSED,
   baseImageModelSlug,
   chooseAspect,
+  chooseCropPlacement,
   chooseDimensions,
   fitReferences,
   imageAspectInputField,
@@ -122,10 +123,15 @@ export {
   withReviewedProfileDefaults,
 } from "./models";
 export type {
+  ChooseCropPlacementInput,
+  CropPlacement,
+  CropRect,
   DimensionChoice,
   ImageAspectMode,
   ImageControlDefaults,
   ImageDimensionRequest,
+  ImageFocalBox,
+  ImageFocalSource,
   ImageLoraSelection,
   ImageModel,
   ImageModelProfile,
@@ -289,6 +295,12 @@ export {
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
   qwenImageEdit2511Dialect,
+  // The current-look lock scope/coverage predicate (issue #551 Codex finding):
+  // the one question the dialect and `character-prompt-program.ts` must answer
+  // identically about whether the emitted lock preserves a subject's hair and
+  // build.
+  currentLookLockCoversSubject,
+  currentLookLockScope,
   registerImageNegativePack,
   registerImagePositivePack,
   registerImagePromptBinding,
@@ -302,9 +314,14 @@ export {
   // The 2511 identity-lock byte contract with `@vesper/image-models` — public so
   // the app's program suite (character-prompt-program.test.ts) can pin the
   // exact bytes.
+  QWEN_2511_APPEARANCE_MOVED_NOTICE,
+  QWEN_2511_GROUPED_APPEARANCE_MOVED_NOTICE,
+  QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
+  QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
   // The register a dialect may be asked to speak in — wording, never a
@@ -317,6 +334,7 @@ export type {
   CompileImagePromptProgramInput,
   CompileImagePromptProgramResult,
   CompiledImagePromptProgram,
+  CurrentLookLockScope,
   HiddenPromptSource,
   ImageAngleBand,
   ImageCameraFact,
@@ -396,6 +414,7 @@ export {
   fitImagePromptSegments,
   reportImagePromptFitting,
   identityCandidateReferenceSpecs,
+  IMAGE_TASK_TARGET_ASPECTS,
   imagePromptBudgetFromBinding,
   imagePromptSegmentKinds,
   imageEmptyPromptPolicies,
@@ -409,7 +428,9 @@ export {
   orderImagePromptSegments,
   planImageRender,
   planIntentReferences,
+  renderTargetSources,
   resolveImageRenderPolicy,
+  resolveRenderTarget,
 } from "./render-intent";
 export type {
   ControlReferenceTransport,
@@ -433,8 +454,38 @@ export type {
   PlanImageRenderResult,
   PlannedControlReference,
   PlannedImageRender,
+  RenderTargetSource,
+  ResolveRenderTargetInput,
   ResolvedImageAttempt,
+  ResolvedImageAttemptCrop,
+  ResolvedImageAttemptShape,
+  ResolvedRenderTarget,
 } from "./render-intent";
+/**
+ * Advisory signals recorded beside a render's provenance (issue #249) — a
+ * sibling reading order to `render-intent`, not a member of its barrel: these
+ * evaluators consume a resolved attempt's `shape` and a caller-decoded pixel
+ * buffer, but they judge nothing about whether a render may proceed.
+ */
+export {
+  BLANK_OUTPUT_GRAY_VARIANCE_FLOOR,
+  BLUR_MEASUREMENT_WIDTH,
+  CROP_LOSS_ADVISORY_FRACTION,
+  RENDER_ADVISORY_VERSION,
+  SEVERE_BLUR_LAPLACIAN_VARIANCE_FLOOR,
+  evaluateCropLoss,
+  evaluateOutputPixels,
+  renderAdvisoryCodes,
+  renderAdvisoryOffers,
+  renderAdvisorySchema,
+} from "./quality/render-advisories";
+export type {
+  CropLossMeasurement,
+  OutputPixelMeasurement,
+  RenderAdvisory,
+  RenderAdvisoryCode,
+  RenderAdvisoryOffer,
+} from "./quality/render-advisories";
 export {
   MAX_TRIAL_PREDICTION_MS,
   TRIAL_FALLBACK_PREDICTION_MS,
@@ -455,6 +506,7 @@ export type {
 export {
   compileIdentityReferencePrompt,
   compileReferenceRolePrompt,
+  faceRepairInstruction,
   sceneReferenceListSchema,
   sceneReferenceModeSchema,
   sceneReferenceSchema,

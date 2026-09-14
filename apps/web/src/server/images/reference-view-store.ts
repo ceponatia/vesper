@@ -673,18 +673,28 @@ export async function withLockedReferenceViewSet<T>(
   sink: DiagnosticSink | undefined,
   operation: (snapshot: {
     set: ReferenceViewSetSummary;
-    readReadyBytes: (imageId: string) => Promise<Buffer | null>;
+    /**
+     * The ready view asset: its bytes, and the row's own `meta`.
+     *
+     * The meta rides along because a view's APPEARANCE REVISION lives there
+     * (issue #551) and this is the read that already has the row open under the
+     * lock; a caller that re-read it to ask what the view depicts could see a
+     * different row than the one whose bytes it is about to send.
+     */
+    readReadyAsset: (imageId: string) => Promise<{ buffer: Buffer; meta: unknown } | null>;
   }) => Promise<T>,
 ): Promise<T> {
   return withReferenceViewLock(characterId, async (tx) => {
     const set = await getReferenceViewSet(characterId, ownerId, sink, tx);
-    const readReadyBytes = async (imageId: string): Promise<Buffer | null> => {
+    const readReadyAsset = async (imageId: string): Promise<{ buffer: Buffer; meta: unknown } | null> => {
       const [asset] = await tx.select().from(images).where(and(
         eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
       )).limit(1);
-      return asset?.status === "ready" ? readImageBytes(asset) : null;
+      if (asset?.status !== "ready") return null;
+      const buffer = await readImageBytes(asset);
+      return buffer === null ? null : { buffer, meta: asset.meta };
     };
-    return operation({ set, readReadyBytes });
+    return operation({ set, readReadyAsset });
   });
 }
 

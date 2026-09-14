@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY, type ResolvedImageProfile } from "@vesper/image-core";
+import {
+  IMAGE_PROMPT_PROGRAM_META_KEY,
+  IMAGE_WORLD_STATE_META_KEY,
+  pinnedImageModelVersion,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
 import { FULLY_COVERED } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { CharacterProfile } from "@/contracts/world/profile";
@@ -41,6 +46,7 @@ import {
   loadDefaultWardrobeWithRevisions,
   wardrobeOutfitText,
 } from "./avatar";
+import { AVATAR_REPLAY_REFUSAL_TEXT } from "./avatar-replay";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { buildStandaloneLaneCut } from "./standalone-subject-visual";
@@ -191,7 +197,7 @@ describe("generateAvatar program wiring", () => {
   it("demo mode compiles nothing: the row reserves with meta.visualState, the monogram's label as its prompt and no refusal", async () => {
     prime({ demo: true, profile: {} });
     const sink = new DiagnosticCollector();
-    await expect(generate(sink)).resolves.toBe("img-1");
+    await expect(generate(sink)).resolves.toEqual({ imageId: "img-1", imageIds: ["img-1"] });
     const opts = reserved();
     expect(opts?.failedPrecondition ?? null).toBeNull();
     expect(opts?.asset.prompt).toBe("Mira");
@@ -205,7 +211,7 @@ describe("generateAvatar program wiring", () => {
   it("sends the saved platinum hair and blue eyes in exactly the prompt the row stores", async () => {
     prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
     const sink = new DiagnosticCollector();
-    await expect(generate(sink)).resolves.toBe("img-1");
+    await expect(generate(sink)).resolves.toEqual({ imageId: "img-1", imageIds: ["img-1"] });
     const opts = reserved();
     expect(opts?.failedPrecondition ?? null).toBeNull();
     const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
@@ -264,9 +270,390 @@ describe("generateAvatar program wiring", () => {
       throw new Error("boom");
     });
     const sink = new DiagnosticCollector();
-    await expect(generate(sink)).resolves.toBe("img-1");
+    await expect(generate(sink)).resolves.toEqual({ imageId: "img-1", imageIds: ["img-1"] });
     expect(reserved()?.failedPrecondition).toMatch(/could not be assembled/);
     expectDiagnostic(sink, AVATAR_CUT_FAILED);
+  });
+
+  /**
+   * Best-of-two (issue #248 acceptance #1 and #5): two candidates from ONE
+   * compiled program, as two independent `runImagePipeline` reserves — the
+   * defect this kills is a shared row (one candidate silently overwriting the
+   * other) or a claimed pointer nobody chose.
+   */
+  it("a two-candidate request renders both candidates of one group, with no explicit seed, and claims no pointer", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    let call = 0;
+    vi.mocked(runImagePipeline).mockImplementation(async (opts) => {
+      call += 1;
+      const id = `img-${call}`;
+      if ((opts.failedPrecondition ?? null) !== null) return { imageId: id, status: "failed" };
+      const produced = await opts.produce({ id } as unknown as ImageRow);
+      return { imageId: id, status: produced.ok ? "ready" : "failed" };
+    });
+    const result = await generateAvatar({ characterId: "chr-1", userId: "u-1", candidates: 2, requestId: "req-xyz" });
+    expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1", "img-2"] });
+    expect(vi.mocked(runImagePipeline)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(renderImageIntent)).toHaveBeenCalledTimes(2);
+    for (const intentCall of vi.mocked(renderImageIntent).mock.calls) {
+      expect(intentCall[0]?.controls?.seed).toBeUndefined();
+    }
+    const [firstOpts, secondOpts] = vi.mocked(runImagePipeline).mock.calls.map((c) => c[0]);
+    const group = (firstOpts?.asset.meta?.candidates as { group?: unknown } | undefined)?.group;
+    expect(typeof group).toBe("string");
+    expect(firstOpts?.asset.meta?.candidates).toEqual({ group, index: 1, of: 2 });
+    expect(secondOpts?.asset.meta?.candidates).toEqual({ group, index: 2, of: 2 });
+    // The client's completion-tracking id (codex review round 2, threads
+    // 3–4) lands on BOTH candidate rows, with the candidate count each row's
+    // own — the studio judges best-of-two completion by this stamp, never a
+    // client-side snapshot of what existed before the request.
+    expect(firstOpts?.asset.meta?.request).toEqual({ id: "req-xyz", candidates: 2 });
+    expect(secondOpts?.asset.meta?.request).toEqual({ id: "req-xyz", candidates: 2 });
+    // A two-candidate request claims NOTHING — no `onReady` at all, so there is
+    // no pointer write to assert against.
+    expect(firstOpts?.onReady).toBeUndefined();
+    expect(secondOpts?.onReady).toBeUndefined();
+  });
+
+  it("stamps no meta.request at all when the caller sends no requestId", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    await generateAvatar({ characterId: "chr-1", userId: "u-1" });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.asset.meta?.request).toBeUndefined();
+  });
+
+  /**
+   * Same-composition retry (issue #248 acceptance #2): the eligibility table
+   * lives in `avatar-replay.test.ts`; this proves `generateAvatar` actually
+   * WIRES it — the current model/profile/version and the freshly compiled
+   * program's own fingerprint, not a stand-in.
+   */
+  it("an eligible same-composition retry replays the source's exact seed and records the retry's lineage", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    const source = { name: "Linda", profile: lindaProfile(), revision: "4" };
+
+    // First, an ordinary generation establishes the REAL compiled fingerprint
+    // for this exact character+profile — hand-picking one would test nothing
+    // but the test's own guess.
+    await generateAvatar({ characterId: "chr-1", userId: "u-1", source });
+    const establishing = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    const programMeta = establishing?.asset.meta?.[IMAGE_PROMPT_PROGRAM_META_KEY] as { programFingerprint: string };
+    expect(programMeta?.programFingerprint).toBeTruthy();
+
+    vi.mocked(runImagePipeline).mockClear();
+    vi.mocked(renderImageIntent).mockClear();
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                limit: () =>
+                  Promise.resolve([
+                    {
+                      id: "img-source",
+                      ownerId: "u-1",
+                      entityKind: "character",
+                      entityId: "chr-1",
+                      kind: "avatar",
+                      status: "ready",
+                      meta: {
+                        render: {
+                          seed: 777,
+                          modelSlug: bound.model.slug,
+                          profileId: bound.profile.id,
+                          executedVersionId: pinnedImageModelVersion(bound.model),
+                        },
+                        promptProgram: { programFingerprint: programMeta.programFingerprint },
+                      },
+                    },
+                  ]),
+              }),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source,
+      retry: { mode: "same_composition", sourceImageId: "img-source" },
+    });
+    expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1"] });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.sourceImageId).toBe("img-source");
+    // `pinnedVersionId` records whether THIS replay held a version pin
+    // (correction round 2, finding 1) — null here since the lane probe's
+    // fixture model pins none.
+    expect(opts?.asset.meta?.retry).toEqual({
+      mode: "same_composition",
+      sourceImageId: "img-source",
+      seed: 777,
+      pinnedVersionId: null,
+    });
+    const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
+    expect(intent?.controls?.seed).toBe(777);
+    // The lane probe's fixture model pins nothing today, so the replay
+    // follows the source's own (also unpinned) version — no explicit
+    // `versionId` reaches the transport.
+    expect(intent?.versionId).toBeUndefined();
+  });
+
+  /**
+   * Codex review round 2, thread 1: a same-composition replay PINS
+   * EXPLICITLY. Comparing a pin to a provider echo used to refuse every
+   * replay of a model the app pins whose transport echoes no version, and
+   * approve every replay of an unpinned model whose provider happens to
+   * echo a hash; sending the source's own recorded version through as
+   * `intent.versionId` makes the wire agree with the row's own provenance
+   * regardless of which shape the model is.
+   */
+  it("an eligible same-composition retry pins the transport to the source's own executed version", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    const source = { name: "Linda", profile: lindaProfile(), revision: "4" };
+
+    await generateAvatar({ characterId: "chr-1", userId: "u-1", source });
+    const establishing = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    const programMeta = establishing?.asset.meta?.[IMAGE_PROMPT_PROGRAM_META_KEY] as { programFingerprint: string };
+    expect(programMeta?.programFingerprint).toBeTruthy();
+
+    vi.mocked(runImagePipeline).mockClear();
+    vi.mocked(renderImageIntent).mockClear();
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                limit: () =>
+                  Promise.resolve([
+                    {
+                      id: "img-source",
+                      ownerId: "u-1",
+                      entityKind: "character",
+                      entityId: "chr-1",
+                      kind: "avatar",
+                      status: "ready",
+                      meta: {
+                        render: {
+                          seed: 777,
+                          modelSlug: bound.model.slug,
+                          profileId: bound.profile.id,
+                          // The provider's own echo — the version that
+                          // PROVABLY produced the row — not a stand-in for
+                          // whatever the app currently pins.
+                          executedVersionId: "v-source-exact",
+                        },
+                        promptProgram: { programFingerprint: programMeta.programFingerprint },
+                      },
+                    },
+                  ]),
+              }),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+
+    await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source,
+      retry: { mode: "same_composition", sourceImageId: "img-source" },
+    });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.meta?.retry).toMatchObject({ pinnedVersionId: "v-source-exact" });
+    const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
+    expect(intent?.versionId).toBe("v-source-exact");
+  });
+
+  it("a same-composition retry against a model-changed source fails the row before provider spend, with the reason code", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                limit: () =>
+                  Promise.resolve([
+                    {
+                      id: "img-source",
+                      ownerId: "u-1",
+                      entityKind: "character",
+                      entityId: "chr-1",
+                      kind: "avatar",
+                      status: "ready",
+                      meta: {
+                        render: { seed: 5, modelSlug: "replicate/some-other-model", profileId: bound.profile.id, executedVersionId: null },
+                        promptProgram: { programFingerprint: "whatever" },
+                      },
+                    },
+                  ]),
+              }),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+    const sink = new DiagnosticCollector();
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      sink,
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "same_composition", sourceImageId: "img-source" },
+    });
+    expect(result.imageIds).toHaveLength(1);
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition).toBe(AVATAR_REPLAY_REFUSAL_TEXT.model_changed);
+    expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
+    expectDiagnostic(sink, "images.avatar.replay_refused");
+    // Correction round: a REFUSED replay must never write the named source
+    // anywhere on the row — `images.source_image_id` carries no FK, so a
+    // request naming another owner's (or a nonexistent) image id must not
+    // leave that id on a failed row, nor let a caller probe its existence.
+    expect(opts?.asset.sourceImageId).toBeUndefined();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition" });
+  });
+
+  /**
+   * Correction round 2, finding 3: demo mode compiles no program at all, so
+   * the ordinary eligibility table has nothing to check against — without
+   * this refusal a `same_composition` request in demo mode fell through to
+   * `generateAvatar`'s demo branch and rendered a fresh, unrelated monogram
+   * with `meta.retry: { mode: "same_composition" }` and NO refusal, which is
+   * exactly the silent fallback this lane's own rule forbids.
+   */
+  it("a same-composition retry in demo mode refuses before rendering a placeholder, naming demo_mode", async () => {
+    prime({ demo: true, profile: lindaProfile(), name: "Linda" });
+    const sink = new DiagnosticCollector();
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      sink,
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "same_composition", sourceImageId: "img-source" },
+    });
+    expect(result.imageIds).toHaveLength(1);
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition).toBe(AVATAR_REPLAY_REFUSAL_TEXT.demo_mode);
+    expect(vi.mocked(renderImageIntent)).not.toHaveBeenCalled();
+    expectDiagnostic(sink, "images.avatar.replay_refused");
+    expect(sink.items.find((d) => d.code === "images.avatar.replay_refused")?.context).toMatchObject({
+      characterId: "chr-1",
+      reason: "demo_mode",
+    });
+    // Never a silent fallback: no source id and no seed land on the row.
+    expect(opts?.asset.sourceImageId).toBeUndefined();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition" });
+  });
+
+  it("a new-variation retry in demo mode still renders the placeholder (only same_composition refuses in demo)", async () => {
+    prime({ demo: true, profile: lindaProfile(), name: "Linda" });
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "new_variation" },
+    });
+    expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1"] });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "new_variation" });
+  });
+
+  /**
+   * THE `new_variation` LINEAGE POINTER, AND ITS SCOPE CHECK (issue #248).
+   *
+   * `new_variation` is the studio's MAIN regenerate button once a portrait
+   * exists, so every ordinary regeneration now writes `images.source_image_id`
+   * and `meta.retry` on an avatar row. Unlike `same_composition` it needs no
+   * eligibility at all — a fresh seed is the whole point — so an id it cannot
+   * vouch for is DROPPED rather than refused, and that silence is exactly what
+   * makes the scope check untestable from the outside: a build that wrote the
+   * id verbatim renders an identical picture and fails nothing.
+   *
+   * `images.source_image_id` carries no foreign key, so writing an id this
+   * caller does not own would leave another owner's image id on the row and
+   * let a caller probe whether that id exists at all — the same argument the
+   * refused-replay case above makes, on the branch that never refuses.
+   */
+  function withSourceRow(row: Record<string, unknown>): void {
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({ where: () => ({ limit: () => Promise.resolve([row]) }) }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+  }
+
+  const sourceRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: "img-source",
+    ownerId: "u-1",
+    entityKind: "character",
+    entityId: "chr-1",
+    kind: "avatar",
+    status: "ready",
+    meta: {},
+    ...over,
+  });
+
+  it("records a new-variation retry's lineage when the named source is this owner's own portrait of this character", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    withSourceRow(sourceRow());
+
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "new_variation", sourceImageId: "img-source" },
+    });
+
+    expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1"] });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.sourceImageId).toBe("img-source");
+    // No seed: a new variation is a DIFFERENT composition of the same subject,
+    // so the lane leaves `resolveIntentSeed` to draw its own.
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "new_variation", sourceImageId: "img-source" });
+    expect(vi.mocked(renderImageIntent).mock.calls[0]?.[0]?.controls?.seed).toBeUndefined();
+  });
+
+  /** Every way the named row fails the pointer's ownership/scope check. */
+  const unvouchable: ReadonlyArray<[string, Record<string, unknown>]> = [
+    ["another owner's image", { ownerId: "u-2" }],
+    ["another character's portrait", { entityId: "chr-2" }],
+    ["a row that is not a character asset", { entityKind: null, entityId: null }],
+    ["a kind that is neither an avatar nor a portrait variant", { kind: "scene" }],
+  ];
+
+  it.each(unvouchable)("drops a new-variation pointer at %s, and still renders", async (_label, over) => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    withSourceRow(sourceRow(over));
+    const sink = new DiagnosticCollector();
+
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      sink,
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "new_variation", sourceImageId: "img-source" },
+    });
+
+    expect(result.imageIds).toHaveLength(1);
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    // Dropped, not refused: the render proceeds and the provider is reached.
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(vi.mocked(renderImageIntent)).toHaveBeenCalledTimes(1);
+    // The unvouchable id appears NOWHERE on the row — not as the column, not
+    // inside the retry bag.
+    expect(opts?.asset.sourceImageId).toBeUndefined();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "new_variation" });
+    expect(JSON.stringify(opts?.asset.meta)).not.toContain("img-source");
   });
 });
 

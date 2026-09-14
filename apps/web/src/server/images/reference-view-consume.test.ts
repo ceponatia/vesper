@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { allReferenceViews, type ReferenceViewSetSummary, type ReferenceViewState } from "@/contracts";
+import { APPEARANCE_REVISION_META_KEY } from "@/contracts/images/appearance-revision";
 import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
 
 /**
@@ -32,9 +33,10 @@ import { withLockedReferenceViewSet } from "./reference-view-store";
 import { loadConsumableReferenceView, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
 
 const VIEW = { angle: "back_full", wardrobe: "clothed" } as const;
+const CHARACTER = "chr1";
 const PORTRAIT = "img-portrait";
 const VIEW_ASSET = "img-back-clothed";
-const readReadyBytes = vi.fn<(imageId: string) => Promise<Buffer | null>>();
+const readReadyAsset = vi.fn<(imageId: string) => Promise<{ buffer: Buffer; meta: unknown } | null>>();
 
 /** The sheet as the store projects it, with this one slot forced into a state. */
 function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): ReferenceViewSetSummary {
@@ -66,13 +68,13 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
 
 beforeEach(() => {
   vi.resetAllMocks();
-  readReadyBytes.mockResolvedValue(Buffer.from("view-bytes"));
+  readReadyAsset.mockResolvedValue({ buffer: Buffer.from("view-bytes"), meta: {} });
 });
 
 function project(set: ReferenceViewSetSummary) {
   vi.mocked(withLockedReferenceViewSet).mockImplementation(
     (async (_characterId, _ownerId, _sink, operation) =>
-      operation({ set, readReadyBytes })) as typeof withLockedReferenceViewSet,
+      operation({ set, readReadyAsset })) as typeof withLockedReferenceViewSet,
   );
 }
 
@@ -83,7 +85,7 @@ describe("loadConsumableReferenceView", () => {
 
     const loaded = await loadConsumableReferenceView({
       ownerId: "user1",
-      characterId: "chr1",
+      characterId: CHARACTER,
       view: VIEW,
       sink,
     });
@@ -95,8 +97,47 @@ describe("loadConsumableReferenceView", () => {
       // The accepted portrait IS the view's source — that equality is the
       // consumability rule, so provenance reads it rather than a second column.
       sourceImageId: PORTRAIT,
+      // An asset row with no stamp is `null`, never a guess (issue #551): every
+      // view built before the contract existed, and every uploaded one.
+      appearanceRevision: null,
       faceVisibility: "hidden",
     });
+    expectCleanSink(sink);
+  });
+
+  /**
+   * PROTECTS: a consumable view reports the appearance IT depicts, read off the
+   * same asset row whose bytes are about to be sent (issue #551).
+   *
+   * The defect it kills is silent in the output and invisible to every other
+   * assertion here: a loader that returned the bytes but dropped the stamp
+   * hands the scene lane `null`, the prompt seam compares `unknown`, and the
+   * render restates hair the reference already carries — which is exactly what
+   * this contract exists to stop. Nothing fails, nothing is logged, and the
+   * happy-path case above still passes, because `null` is a perfectly ordinary
+   * answer for a view nothing is known about.
+   *
+   * Read under the same lock as the bytes rather than from a second query: a
+   * re-read could answer about a different row than the one being sent.
+   */
+  it("carries the stamp the view's own asset row records, for this character", async () => {
+    project(sheet("approved"));
+    readReadyAsset.mockResolvedValue({
+      buffer: Buffer.from("view-bytes"),
+      meta: { [APPEARANCE_REVISION_META_KEY]: { [CHARACTER]: "v1:1a2b3c4d", "chr-other": "v1:deadbeef" } },
+    });
+    const sink = new DiagnosticCollector();
+
+    const loaded = await loadConsumableReferenceView({
+      ownerId: "user1",
+      characterId: CHARACTER,
+      view: VIEW,
+      sink,
+    });
+
+    // This character's entry, not the row's first — a scene's other cast member
+    // may share nothing with this one but the picture they were both drawn in.
+    expect(loaded).toMatchObject({ ok: true, appearanceRevision: "v1:1a2b3c4d" });
     expectCleanSink(sink);
   });
 
@@ -114,21 +155,21 @@ describe("loadConsumableReferenceView", () => {
     project(sheet(state));
     const sink = new DiagnosticCollector();
 
-    const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: "chr1", view: VIEW, sink });
+    const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: CHARACTER, view: VIEW, sink });
 
     expect(loaded).toEqual({ ok: false, reason });
     // The bytes are never even read: a slot that may not be sent is not an
     // asset this render is allowed to open.
-    expect(readReadyBytes).not.toHaveBeenCalled();
+    expect(readReadyAsset).not.toHaveBeenCalled();
     expectDiagnostic(sink, REFERENCE_VIEW_UNAVAILABLE);
   });
 
   it("degrades when an approved view's bytes will not read", async () => {
     project(sheet("approved"));
-    readReadyBytes.mockResolvedValue(null);
+    readReadyAsset.mockResolvedValue(null);
     const sink = new DiagnosticCollector();
 
-    const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: "chr1", view: VIEW, sink });
+    const loaded = await loadConsumableReferenceView({ ownerId: "user1", characterId: CHARACTER, view: VIEW, sink });
 
     expect(loaded).toEqual({ ok: false, reason: "missing_bytes" });
     expectDiagnostic(sink, REFERENCE_VIEW_UNAVAILABLE);

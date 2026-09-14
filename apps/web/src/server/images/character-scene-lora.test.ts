@@ -204,11 +204,49 @@ beforeEach(() => {
   // No failed row by default: a selfie's first attempt succeeded and nothing retries.
   stubDb([]);
   vi.mocked(resolveImageProfileForTask).mockResolvedValue(stockProfile);
-  vi.mocked(latestChatLook).mockResolvedValue({ imageId: "img-look", buffer: Buffer.from("look") });
+  vi.mocked(latestChatLook).mockResolvedValue({
+    imageId: "img-look",
+    buffer: Buffer.from("look"),
+    appearanceRevision: null,
+  });
   mockCompose.mockResolvedValue(plan("lying_beneath_viewer"));
   mockRender.mockResolvedValue("img-scene");
   mockModels.mockResolvedValue([intimateModel()]);
   mockResolveLora.mockResolvedValue({ ok: true, binding });
+});
+
+/**
+ * THE LOOK ANCHOR'S APPEARANCE STAMP REACHES THE RENDER (issue #551).
+ *
+ * The scene lane is the only place that knows WHICH stored image each cast
+ * member anchored on, so it is the only place that can tell the prompt seam what
+ * that image depicts. The chain is three hops — the look row's meta, this lane's
+ * image-id-keyed map, and the scene render's lookup by `sourceImageId` — and a
+ * break anywhere in it is silent: every render simply compiles `unknown`, which
+ * is a perfectly ordinary answer, so no diagnostic and no failed row would ever
+ * report that the feature had stopped working.
+ */
+describe("the look anchor's appearance revision", () => {
+  it("carries the minted look's stamp to the scene render, keyed by the anchor's image id", async () => {
+    vi.mocked(latestChatLook).mockResolvedValue({
+      imageId: "img-look",
+      buffer: Buffer.from("look"),
+      appearanceRevision: "v1:1a2b3c4d",
+    });
+
+    await render({});
+
+    expect(requestAt(0).referenceAppearanceRevisions?.get("img-look")).toBe("v1:1a2b3c4d");
+  });
+
+  it("carries nothing for an anchor nothing is known about", async () => {
+    // An uploaded portrait and every look minted before the stamp existed. The
+    // map has no entry rather than a placeholder, so the seam compares
+    // `unknown` and compiles what it compiled before this contract.
+    await render({});
+
+    expect(requestAt(0).referenceAppearanceRevisions?.get("img-look")).toBeUndefined();
+  });
 });
 
 describe("the intimate staged render", () => {

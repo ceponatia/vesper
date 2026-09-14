@@ -282,6 +282,11 @@ export {
   type GeneratorRenderRequest,
   setImageGeneratorRendererForTesting,
 } from "./image-generator-render";
+// Issue #246 — the flagged owner-admin face-repair action, over the Generator
+// run path above. `face-repair-flag.ts` is the env gate; `face-repair.ts` is
+// the pure decision logic plus the owner-scoped loads the route composes.
+export { imageFaceRepairEnabled } from "./face-repair-flag";
+export * from "./face-repair";
 export {
   createImageLabExperiment,
   type CreateImageLabExperimentInput,
@@ -367,6 +372,7 @@ export {
   type CharacterPromptTask,
 } from "./character-prompt-program";
 export * from "./avatar";
+export * from "./avatar-replay";
 export {
   buildStandaloneLaneCut,
   buildStandaloneSubjectCut,
@@ -382,3 +388,8 @@ export * from "./upload";
 export * from "./entity";
 export * from "./scene";
 export * from "./character-scene";
+export {
+  mergeRenderAdvisoryReview,
+  type RenderAdvisoryReviewOutcome,
+  type RenderAdvisoryReviewRequest,
+} from "./render-advisories-review";

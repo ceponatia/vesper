@@ -112,7 +112,7 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
         input.sink,
       );
       if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
-      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
+      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt, result.advisories) };
     },
     onReady: async (asset) => {
       await setEntityImage(input.entityKind, input.entityId, input.userId, asset.id);

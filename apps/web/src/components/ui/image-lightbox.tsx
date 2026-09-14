@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
-import { imageUrl, type ImageRecord } from "@/lib/client/api";
+import { imageAdvisoriesApi, imageUrl, type ClientRenderAdvisory, type ImageRecord } from "@/lib/client/api";
+import { renderAdvisoryCodeCopy, renderAdvisoryOfferCopy } from "@/components/images/advisory-copy";
+import { renderAdvisoryCodes, renderAdvisoryOffers, type RenderAdvisoryCode, type RenderAdvisoryOffer } from "@vesper/image-core";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
-import { lightboxStateForView, updateLightboxImageStatus, type LightboxImageStatus, type LightboxView } from "./image-lightbox-state";
+import { advisoryReviewKey, lightboxStateForView, updateLightboxImageStatus, type LightboxImageStatus, type LightboxView } from "./image-lightbox-state";
+import { useToast } from "./toast";
 
 export interface ImageLightboxProps {
   /** Image to enlarge, or null to render nothing. */
@@ -58,6 +61,17 @@ export interface ImageLightboxProps {
 export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, prompt, meta, comparisonImageId, controls, emptyMessage, onPrevious, onNext }: ImageLightboxProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useIsAdmin();
+  const toast = useToast();
+  // Optimistic overlay for THIS session's own Agree/Disagree clicks — the
+  // component has no way to ask its caller to refetch `meta`, so a submitted
+  // review shows immediately here and reconciles with the stored one (which
+  // wins on the next real load) rather than waiting on a round trip nobody
+  // triggers. Keyed by `advisoryReviewKey(imageId, code)`, not code alone: a
+  // caller (the Gallery) commonly keeps one instance of this component
+  // mounted across several images, so a bare-code key let one image's
+  // verdict or in-flight submit read as another image's.
+  const [reviewOverrides, setReviewOverrides] = useState<Record<string, { verdict: "agree" | "disagree" }>>({});
+  const [submittingCode, setSubmittingCode] = useState<string | null>(null);
   const visible = open ?? Boolean(imageId);
   const view: LightboxView = { viewKey, imageId, comparisonImageId, visible };
   const [viewState, setViewState] = useState(() => lightboxStateForView(null, view));
@@ -76,6 +90,32 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
   const promptText = prompt?.trim() ?? "";
   const provenance = provenanceLines(meta);
   const showPrompt = isAdmin && (promptText.length > 0 || provenance.length > 0);
+  // Gated on the same `isAdmin` signal as the provenance panel, at any
+  // width (docs/ui/conventions.md §Image lightbox) — a DIFFERENT region from
+  // that panel (it is not inside `showPrompt`/the desktop-only aside), but
+  // the same audience. The PATCH route stays per-user-owned regardless: only
+  // the image's actual owner can record a verdict, admin display or not.
+  const advisories = isAdmin ? (meta?.advisories ?? []) : [];
+  // Only a code this deployment's copy switch recognizes is safe to render —
+  // an entry the client schema let through with an unrecognized `code` (the
+  // loose parse no longer restricts it to the known enum) falls back to
+  // showing nothing rather than an unsafe cast into the exhaustive switch.
+  const knownAdvisories = advisories.filter((advisory) =>
+    (renderAdvisoryCodes as readonly string[]).includes(advisory.code),
+  );
+
+  async function submitAdvisoryReview(advisory: ClientRenderAdvisory, verdict: "agree" | "disagree") {
+    if (!imageId) return;
+    const key = advisoryReviewKey(imageId, advisory.code);
+    setSubmittingCode(key);
+    const result = await imageAdvisoriesApi.review(imageId, { code: advisory.code, verdict });
+    setSubmittingCode(null);
+    if (result.ok) {
+      setReviewOverrides((previous) => ({ ...previous, [key]: { verdict } }));
+    } else {
+      toast.push({ title: "Could not record your review", description: result.error.message, tone: "error" });
+    }
+  }
 
   return createPortal(
     <div
@@ -114,6 +154,56 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
           <LightboxImage key={JSON.stringify([viewKey, imageId, comparisonImageId])} imageId={imageId} alt={alt} emptyMessage={emptyMessage}
             onStatusChange={(status) => setViewState((previous) => updateLightboxImageStatus(previous, view, status))} />
           {caption ? <p className="shrink-0 text-center text-sm text-paper-300">{caption}</p> : null}
+          {knownAdvisories.length > 0 ? (
+            <div className="flex w-full max-w-md shrink-0 flex-col gap-2">
+              {knownAdvisories.map((advisory) => {
+                const code = advisory.code as RenderAdvisoryCode;
+                // Composite key (#249 Codex round finding A): this component
+                // instance commonly outlives one image (the Gallery keeps it
+                // mounted across opens/closes), so a bare `code` key let one
+                // image's verdict or in-flight submit leak onto a different
+                // image carrying the same code.
+                const review = reviewOverrides[advisoryReviewKey(imageId, code)] ?? advisory.review;
+                const knownOffers = advisory.offers.filter((offer): offer is RenderAdvisoryOffer =>
+                  (renderAdvisoryOffers as readonly string[]).includes(offer),
+                );
+                const offersText = knownOffers.map(renderAdvisoryOfferCopy).join(" or ");
+                // Disabled while ANY advisory on this image is submitting, not
+                // only a matching one (#249 Codex round finding B): closes the
+                // window for two concurrent reviews on the same image racing
+                // the read-merge-write on the server.
+                const disabled = submittingCode !== null;
+                return (
+                  <div key={code} className="rounded-card border border-ink-700 bg-ink-900/70 px-3 py-2 text-left text-xs text-paper-300">
+                    <p>{renderAdvisoryCodeCopy(code)}</p>
+                    {offersText ? <p className="mt-1 text-paper-500">{`You could ${offersText}.`}</p> : null}
+                    {review ? (
+                      <p className="mt-2 text-paper-500">{`You ${review.verdict === "agree" ? "agreed" : "disagreed"} with this.`}</p>
+                    ) : (
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={disabled}
+                          onClick={() => void submitAdvisoryReview(advisory, "agree")}
+                        >
+                          Agree
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={disabled}
+                          onClick={() => void submitAdvisoryReview(advisory, "disagree")}
+                        >
+                          Disagree
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
         {comparisonImageId ? (
           <div className={cx("min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2", showComparison ? "flex" : "hidden md:flex")} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -195,5 +285,31 @@ function provenanceLines(meta: ImageRecord["meta"] | null | undefined): string[]
     const parts = [view.angle, view.wardrobe, view.substitutedAnchor ? "replaced anchor" : "extra reference"];
     lines.push(`View: ${parts.filter(Boolean).join(" · ")}`);
   }
+  const cropLine = renderCropLine(meta.render);
+  if (cropLine) lines.push(cropLine);
   return lines;
+}
+
+/**
+ * "Cropped to 3:4, top-anchored" from `meta.render.shape.crop`, when the row
+ * carries one. `meta.render` is a loose `Record<string, unknown>` — a newer
+ * deploy's shape must degrade to "no crop line" here, never to a thrown render.
+ */
+function renderCropLine(render: Record<string, unknown> | undefined): string | null {
+  const shape = render && typeof render === "object" ? (render as Record<string, unknown>).shape : undefined;
+  const crop = shape && typeof shape === "object" ? (shape as Record<string, unknown>).crop : undefined;
+  if (!crop || typeof crop !== "object") return null;
+  const { targetRatio, placement } = crop as Record<string, unknown>;
+  if (typeof placement !== "string") return null;
+  const anchor = placement === "focal" ? "focal crop" : placement === "top" ? "top-anchored" : "centered";
+  const ratio = typeof targetRatio === "number" ? `${ratioLabel(targetRatio)}, ` : "";
+  return `Cropped to ${ratio}${anchor}`;
+}
+
+/** `0.75` as `"3:4"` for the three ratios this app actually asks for; otherwise a plain decimal. */
+function ratioLabel(ratio: number): string {
+  if (Math.abs(ratio - 0.75) < 0.001) return "3:4";
+  if (Math.abs(ratio - 1.5) < 0.001) return "3:2";
+  if (Math.abs(ratio - 1) < 0.001) return "1:1";
+  return ratio.toFixed(2);
 }

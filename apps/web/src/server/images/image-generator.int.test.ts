@@ -1,10 +1,12 @@
 import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it } from "vitest";
+import type { RenderAdvisory } from "@vesper/image-core";
 import { eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   type ImageGeneratorControls,
   type ImageGeneratorCreateRunRequest,
   imageGeneratorDiagnosticCode,
+  type ImageGeneratorRunPurpose,
 } from "@/contracts/images/image-generator";
 import {
   imageGeneratorRunOutputImageIds,
@@ -410,6 +412,7 @@ function stubSuccessfulRenderer(): void {
       predictionId: "pred_generator_1",
       executedVersionId: EXECUTED_VERSION,
       attempt: {
+        shape: null,
         modelId: PINNED_MODEL_ID,
         modelSlug: PINNED_SLUG,
         profileId: "image-generator/run",
@@ -490,6 +493,63 @@ describe.skipIf(!ready)("image generator runs", () => {
     // No entity or chat association — bench evidence, not a library asset.
     expect(output?.entityId).toBeNull();
     expect(output?.chatId).toBeNull();
+  });
+
+  it("records advisory annotations on both the run's own meta and the output image row (#249 correction rounds 1-2)", async () => {
+    // The Generator builds its own meta shape rather than calling
+    // `renderAttemptMeta` — this proves `image-generator-settle.ts` threads
+    // `representative.advisories` into it the same way every other lane
+    // threads them through `renderAttemptMeta`'s second argument.
+    // Typed as the producer's own union rather than frozen `as const`: the
+    // renderer result wants a mutable `offers` array, which a readonly tuple
+    // is not.
+    const advisory: RenderAdvisory = {
+      version: 1,
+      code: "blank_output",
+      level: "advisory",
+      reason: "flat fill",
+      evidence: { grayVariance: 0, laplacianVariance: 0, measuredWidth: 8, measuredHeight: 12 },
+      offers: ["retry_same", "new_variation"],
+    };
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_generator_1",
+        executedVersionId: EXECUTED_VERSION,
+        attempt: {
+          shape: null,
+          modelId: PINNED_MODEL_ID,
+          modelSlug: PINNED_SLUG,
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: PINNED_VERSION,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_generator_1",
+          executedVersionId: EXECUTED_VERSION,
+        },
+        advisories: [advisory],
+      };
+    });
+    const { id, sink } = await createRun();
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const row = await storedRow(id);
+    expect(imageMeta(row?.meta).advisories).toEqual([advisory]);
+
+    // The OUTPUT IMAGE row carries its own copy too (#249 correction round
+    // 2) — the run's meta above is a second, independent record, not the
+    // source of truth for the summary route or a lightbox fed from the row.
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const outputId = run?.resultImageId ?? "";
+    const [output] = await db().select().from(images).where(eq(images.id, outputId)).limit(1);
+    expect(imageMeta(output?.meta).advisories).toEqual([advisory]);
   });
 
   it("sends a primary reference under the neutral role, with purpose as provenance only", async () => {
@@ -943,7 +1003,7 @@ describe.skipIf(!ready)("image generator output shape", () => {
 
     await runImageGeneratorRun(id, ownerId, sink);
 
-    expect(captured.at(0)?.intent.target.aspectRatio).toBeNull();
+    expect(captured.at(0)?.intent.target?.aspectRatio).toBeNull();
     expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
       shape: { mode: "provider_default", field: null, value: null },
       postprocess: { cropTarget: null },
@@ -956,7 +1016,7 @@ describe.skipIf(!ready)("image generator output shape", () => {
 
     await runImageGeneratorRun(id, ownerId, sink);
 
-    expect(captured.at(0)?.intent.target.aspectRatio).toBe(1);
+    expect(captured.at(0)?.intent.target?.aspectRatio).toBe(1);
     expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
       shape: { mode: "explicit", requestedAspect: "1:1", field: "aspect_ratio", value: "1:1" },
     });
@@ -1240,9 +1300,13 @@ describe.skipIf(!ready)("image generator run claim", () => {
     ]);
 
     expect(captured).toHaveLength(1);
-    const outcomes = [first.status ?? first.skipped, second.status ?? second.skipped];
-    expect(outcomes).toContain("succeeded");
-    expect(outcomes.filter((outcome) => outcome === "succeeded")).toHaveLength(1);
+    // The loser answers with `skipped` carrying the row's status as it re-read
+    // it AFTER losing the claim — already `succeeded` whenever the winner
+    // settled first — so the two deliveries are told apart by which field
+    // they answer with, never by the status value itself.
+    const results = [first, second];
+    expect(results.filter((result) => result.skipped !== undefined)).toHaveLength(1);
+    expect(results.filter((result) => result.skipped === undefined && result.status === "succeeded")).toHaveLength(1);
   });
 });
 
@@ -1251,6 +1315,51 @@ describe.skipIf(!ready)("image generator run claim", () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!ready)("image generator records", () => {
+  /**
+   * PROTECTS: a run's `purpose` survives from create to the finished record
+   * (issue #246).
+   *
+   * The face-repair action's whole provenance — which character, which source
+   * image, which repair method, which multi-person evidence — travels as this
+   * one bag, and `createImageGeneratorRun` writes it into the SAME create-time
+   * meta column that every later settle rewrites (`generatorRunMeta` merges
+   * over the stored bag). Two ways to lose it are one-line edits that break
+   * nothing else: dropping it from the insert, and a settle that replaces the
+   * bag instead of merging into it. Either way the repair still renders and
+   * the run still succeeds — the only symptom is a finished row that cannot
+   * say it was a repair, which no other assertion in this suite would notice.
+   *
+   * Round-tripped through the real column rather than asserted on the create
+   * result, because the settle is the half that can silently drop it.
+   */
+  it("carries a run's purpose from create through settlement to the wire record", async () => {
+    stubSuccessfulRenderer();
+    const purpose: ImageGeneratorRunPurpose = {
+      kind: "face_repair",
+      characterId: "chr-face-repair",
+      sourceImageId: "img-face-repair-source",
+      method: "full_frame_identity_edit",
+      subjectCheck: { method: "none", subjects: null },
+      identityReferences: [],
+    };
+    const { id, sink } = await createRun({ purpose });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.status).toBe("succeeded");
+    expect(run?.purpose).toEqual(purpose);
+  });
+
+  it("reports no purpose for an ordinary bench run", async () => {
+    // `null`, not an empty bag: the Generator is a freeform bench first, and a
+    // reader filtering for repair runs must be able to tell the two apart.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun();
+    await runImageGeneratorRun(id, ownerId, sink);
+    expect((await getImageGeneratorRunDetail(id, ownerId, sink))?.purpose).toBeNull();
+  });
+
   it("deletes a run and the hidden output it points at", async () => {
     stubSuccessfulRenderer();
     const { id, sink } = await createRun();
@@ -1482,6 +1591,7 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
         predictionId: "pred_klein_1",
         executedVersionId: requested,
         attempt: {
+          shape: null,
           modelId: KLEIN_DISTILLED_ID,
           modelSlug: "black-forest-labs/flux-2-klein-4b",
           profileId: "image-generator/run",
@@ -1595,6 +1705,7 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.2 klein 4B rows", 
         predictionId: "pred_klein_moved",
         executedVersionId: provider,
         attempt: {
+          shape: null,
           modelId: KLEIN_DISTILLED_ID,
           modelSlug: "black-forest-labs/flux-2-klein-4b",
           profileId: "image-generator/run",
@@ -1916,6 +2027,7 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.1 Kontext Dev row"
         predictionId: "pred_kontext_1",
         executedVersionId: requested,
         attempt: {
+          shape: null,
           modelId: KONTEXT_ID,
           modelSlug: KONTEXT_SLUG,
           profileId: "image-generator/run",

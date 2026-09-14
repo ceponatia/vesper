@@ -12,6 +12,7 @@ import {
   type SceneCameraSpec,
   type VisualImageDigest,
 } from "@/contracts";
+import { readAppearanceRevision } from "@/contracts/images/appearance-revision";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { fnv1aHex } from "@/lib/hash";
 import { logDiagnostics } from "@/server/log";
@@ -155,7 +156,7 @@ export async function latestChatLook(
   chatId: string,
   characterId: string,
   lookKey: string,
-): Promise<{ imageId: string; buffer: Buffer } | null> {
+): Promise<{ imageId: string; buffer: Buffer; appearanceRevision: string | null } | null> {
   const [row] = await db()
     .select()
     .from(images)
@@ -172,7 +173,12 @@ export async function latestChatLook(
   if (!row) return null;
   if (imageMeta(row.meta).lookKey !== lookKey) return null;
   const buffer = await readImageBytes(row);
-  return buffer ? { imageId: row.id, buffer } : null; // no bytes — the sweep reconciles; fall back to the avatar
+  // The appearance this anchor DEPICTS, stamped when the mint compiled it
+  // (issue #551). It rides beside the bytes because the scene lane is where the
+  // comparison happens and the row is only open here; a look whose key still
+  // matches can still predate an appearance change the key does not hash.
+  const appearanceRevision = readAppearanceRevision(row.meta, characterId);
+  return buffer ? { imageId: row.id, buffer, appearanceRevision } : null; // no bytes — the sweep reconciles; fall back to the avatar
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +394,12 @@ export interface RenderChatLookInput {
 interface ChatLookIdentity {
   references: ImageRenderReference[];
   provenance: IdentityReferenceProvenance[];
+  /**
+   * What the accepted portrait behind these references depicts (issue #551).
+   * One value for the whole set: every role in one pack shows the same person at
+   * the same moment.
+   */
+  appearanceRevision: string | null;
 }
 
 /**
@@ -413,7 +425,11 @@ async function chatLookIdentity(
     sink,
   });
   if (!pack.ok) return null;
-  return { references: pack.references.map((entry) => entry.reference), provenance: pack.provenance };
+  return {
+    references: pack.references.map((entry) => entry.reference),
+    provenance: pack.provenance,
+    appearanceRevision: pack.references[0]?.appearanceRevision ?? null,
+  };
 }
 
 /**
@@ -448,7 +464,7 @@ export function activeChatLookProgram(
   input: RenderChatLookInput,
   cut: ChatLookCut,
   resolved: ResolvedImageProfile,
-  references: readonly ImageRenderReference[],
+  identity: { readonly references: readonly ImageRenderReference[]; readonly appearanceRevision?: string | null },
   sink: DiagnosticSink,
 ): CharacterPromptProgramResult {
   const outfit = input.outfit.trim();
@@ -471,7 +487,14 @@ export function activeChatLookProgram(
     // minted token would throw that away.
     read: { kind: "committed_cut", token: input.visual?.cutId ?? "" },
     // Every reference this mint sends is the subject's own identity pack.
-    references: references.map((reference) => ({ reference, subjectId: input.characterId })),
+    references: identity.references.map((reference) => ({
+      reference,
+      subjectId: input.characterId,
+      // What that pack's accepted portrait depicts (issue #551). A look minted
+      // from an appearance the portrait no longer shows is exactly the render
+      // whose hair must stay text-authoritative.
+      appearanceRevision: identity.appearanceRevision ?? null,
+    })),
     operation: (subjects) =>
       characterChatLookImageOperation({
         change: characterChangeContract(
@@ -559,7 +582,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
     // pushes the lane's here, because the seam records nothing for an ordinary
     // "no row". Either way this lane's refusal shape applies: no row, no mint,
     // retry on the next outfit or appearance change.
-    const program = activeChatLookProgram(input, cut, resolved, identity.references, sink);
+    const program = activeChatLookProgram(input, cut, resolved, identity, sink);
     if (program.kind === "unbound") {
       sink.push(
         diag("warn", CHAT_LOOK_PROGRAM_UNBOUND, characterPromptUnboundRefusal(program), {
@@ -604,7 +627,7 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
         // A failure still THROWS (this lane's ruled failure shape), so provenance
         // is recorded only on success — a thrown produce has no meta channel.
         if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
-        return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
+        return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       },
       // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
       // files. Scoped by `entityId` for the same reason the loader above is — a
@@ -680,7 +703,7 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
         // A failure still THROWS (this lane's ruled failure shape), so provenance
         // is recorded only on success — a thrown produce has no meta channel.
         if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
-        return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt) };
+        return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt, shot.advisories) };
       },
       failureDiagnostic: { code: "images.chat_place.failed" },
       sink,

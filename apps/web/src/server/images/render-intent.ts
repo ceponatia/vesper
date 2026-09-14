@@ -1,5 +1,9 @@
+import sharp from "sharp";
 import {
+  BLUR_MEASUREMENT_WIDTH,
   effectiveImageLoraSelection,
+  evaluateCropLoss,
+  evaluateOutputPixels,
   type ImageInputBinding,
   type ImageReferenceRole,
   type ImageRenderIntent,
@@ -7,9 +11,12 @@ import {
   pinnedImageModelVersion,
   planImageRender,
   type PlannedImageRender,
+  type RenderAdvisory,
   type ResolvedImageAttempt,
+  type ResolvedImageAttemptShape,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { SHARP_DECODE_LIMITS } from "./asset-storage";
 import { resolveImageLoraForRender } from "./image-loras";
 import { withLoraDownloadCredential } from "./lora-credentials";
 import { imageRenderRuntimeFacts } from "./model-adapters";
@@ -171,6 +178,60 @@ export interface RenderImageIntentResult extends RenderWithModelResult {
    * resolution, a plan refusal), where there is no attempt to describe.
    */
   attempt?: ResolvedImageAttempt;
+  /**
+   * Advisory annotations measured on this attempt's output (issue #249):
+   * harmful crop loss, a blank or severely blurred image. Present alongside
+   * `attempt` whenever a plan was compiled — empty on a failed render (there
+   * is no output to measure) and on a clean success alike — and absent only
+   * when `attempt` itself is, on a pre-plan refusal. No lane reads this field
+   * to refuse anything; it exists for `renderAttemptMeta` to persist beside
+   * the attempt and for an owner-facing surface to display, never to gate.
+   */
+  advisories?: RenderAdvisory[];
+}
+
+/**
+ * Build `meta.render.shape` from the plan's own target resolution and the
+ * transport's shape outcome — the two halves neither side can produce alone:
+ * the plan knows WHY this render wants the ratio it does (`targetSource`), and
+ * the transport knows what actually reached the provider and came back.
+ *
+ * Null only when the transport reports no shape outcome at all, which a real
+ * render never does — every `renderWithModel` return path builds one. A test
+ * double that skips it is the only caller this ever protects.
+ */
+function resolvedAttemptShape(plan: PlannedImageRender, result: RenderWithModelResult): ResolvedImageAttemptShape | null {
+  const shape = result.shape;
+  if (!shape) return null;
+  return {
+    mode: shape.mode,
+    requestedAspect: plan.targetRatio,
+    targetSource: plan.targetSource,
+    sentField: shape.field,
+    sentValue: shape.value,
+    expectedAspect: shape.expectedAspect,
+    returned: result.outputDimensions ?? null,
+    crop: shape.crop,
+    providerSize: shape.providerSize,
+  };
+}
+
+/**
+ * The version pin baked into the model's OWN slug (`owner/name:version`), or
+ * null when the slug carries none.
+ *
+ * Deliberately narrower than `pinnedImageModelVersion` (which also honours a
+ * PROBED version): `replicatePredictionTarget`
+ * (`packages/image-replicate/src/prediction.ts`) sends an explicit
+ * `versionId` or a slug pin to `/predictions`, and otherwise reaches
+ * `/models/<owner>/<name>/predictions` — the provider's floating latest,
+ * ignoring the probed id entirely. Recording the probed id here as
+ * `requestedVersionId` claimed the wire pinned a version it never asked for
+ * (issue #248 codex review round 2, thread 1).
+ */
+function slugVersionPin(slug: string): string | null {
+  const pinned = slug.split(":")[1]?.trim() ?? "";
+  return pinned.length > 0 ? pinned : null;
 }
 
 /** Assemble the provenance record from the plan, the resolved seed, and the provider's echo. */
@@ -188,7 +249,12 @@ function resolvedAttempt(
     profileId: profile.id,
     task: profile.task,
     promptStrategy: profile.promptStrategy,
-    requestedVersionId: intent.versionId ?? null,
+    // The version the transport was actually asked for: an explicit pin on
+    // this intent, else the slug's OWN `:version` pin — never the app's
+    // merely-probed version, which the transport never sends unless the slug
+    // also pins it, and never the provider's echo, which `executedVersionId`
+    // alone owns (issue #248 codex review round 2, thread 1).
+    requestedVersionId: intent.versionId ?? slugVersionPin(model.slug),
     seed,
     appliedControls: plan.appliedControls,
     droppedControls: plan.droppedControls,
@@ -200,12 +266,65 @@ function resolvedAttempt(
       result.sentReferenceCount !== undefined ? plannedRoles.slice(0, result.sentReferenceCount) : plannedRoles,
     predictionId: result.predictionId ?? null,
     executedVersionId: result.executedVersionId ?? null,
+    shape: resolvedAttemptShape(plan, result),
   };
 }
 
-/** The produce-meta fragment recording one attempt under the row's `render` key. */
-export function renderAttemptMeta(attempt: ResolvedImageAttempt | undefined): { meta?: Record<string, unknown> } {
-  return attempt ? { meta: { render: attempt } } : {};
+/**
+ * Advisory signals for one successful render — crop loss from the shape
+ * record already on `attempt`, plus blank/blur read from the returned pixels.
+ *
+ * Decodes the returned buffer exactly once, at a small fixed size, purely to
+ * measure it: nothing here changes what is stored as the image, and nothing
+ * here can fail the render. A decode failure (a transport double that returns
+ * bytes `sharp` cannot read, as every mocked-transport test in this suite
+ * does) reports `images.advisory.unmeasured` and yields no advisories — never
+ * a thrown error. Never a gate: called only after `result.ok` is already
+ * decided, and its answer changes nothing about it.
+ */
+async function measureRenderAdvisories(
+  attempt: ResolvedImageAttempt,
+  result: RenderWithModelResult,
+  sink?: DiagnosticSink,
+): Promise<RenderAdvisory[]> {
+  if (!result.ok || !result.image) return [];
+  const advisories: RenderAdvisory[] = [];
+  const cropAdvisory = evaluateCropLoss(attempt.shape);
+  if (cropAdvisory) advisories.push(cropAdvisory);
+  try {
+    const { data, info } = await sharp(result.image, SHARP_DECODE_LIMITS)
+      .resize({ width: BLUR_MEASUREMENT_WIDTH, withoutEnlargement: true })
+      .grayscale()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const pixelAdvisory = evaluateOutputPixels({ data, width: info.width, height: info.height, channels: info.channels });
+    if (pixelAdvisory) advisories.push(pixelAdvisory);
+  } catch (error) {
+    sink?.push(
+      diag("warn", "images.advisory.unmeasured", "could not decode this render's output to measure advisory signals", {
+        path: "image_render_advisories",
+        context: { message: error instanceof Error ? error.message : String(error) },
+      }),
+    );
+  }
+  return advisories;
+}
+
+/**
+ * The produce-meta fragment recording one attempt under the row's `render`
+ * key, plus its advisories under the sibling `advisories` key when the
+ * caller passes a non-empty list — explicit threading, not identity lookup:
+ * every caller that has `result.advisories` passes it alongside
+ * `result.attempt`, the same way it already threads `result.image`. A caller
+ * with no advisories argument (or an empty one) gets exactly the meta shape
+ * this looked like before advisories existed.
+ */
+export function renderAttemptMeta(
+  attempt: ResolvedImageAttempt | undefined,
+  advisories?: RenderAdvisory[],
+): { meta?: Record<string, unknown> } {
+  if (!attempt) return {};
+  return { meta: { render: attempt, ...(advisories && advisories.length > 0 ? { advisories } : {}) } };
 }
 
 /**
@@ -286,6 +405,12 @@ export async function renderImageIntent(
       referenceRoles: roleNames(plan.sentReferences),
       controlReferences: plan.controlReferences,
       targetRatio: plan.targetRatio,
+      // The one fact `chooseCropPlacement` needs beyond the pixels themselves:
+      // whether a too-tall trim should anchor to the top. `focal` is left
+      // unset — no caller has a subject location to offer yet (the identity
+      // pipeline's detector seam is a deliberate null), and `renderWithModel`
+      // treats an absent one exactly like an explicit `null`.
+      task: intent.profile.profile.task,
       dimensionFacts: plan.dimensionFacts,
       controlInput: plan.controlInput,
       typedControlFields: plan.typedControlFields,
@@ -305,7 +430,9 @@ export async function renderImageIntent(
     },
     sink,
   );
-  return { ...result, attempt: resolvedAttempt(seeded.intent, plan, seeded.seed, result) };
+  const attempt = resolvedAttempt(seeded.intent, plan, seeded.seed, result);
+  const advisories = await measureRenderAdvisories(attempt, result, sink);
+  return { ...result, attempt, advisories };
 }
 
 /** The roles a diagnostic is about, in the order they were given or sent. */

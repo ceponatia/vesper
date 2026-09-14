@@ -124,11 +124,48 @@ active bindings do not describe.
 
 Every generating lane then records the attempt under `images.meta.render` — model, profile, task,
 prompt strategy, resolved seed, applied and dropped controls, the reference roles actually sent
-(truncated to what the byte budget let through), the prediction id, and the version the provider
-says it executed — on failures too where the lane's failure shape returns rather than throws. That
-record is what a retry of the same composition reads. The character-fact lanes file a second,
-sibling provenance key beside it — `images.meta.visualState`, the visual-digest record
+(truncated to what the byte budget let through), the prediction id, the version the provider says
+it executed (`executedVersionId`), and the version the transport was actually ASKED for
+(`requestedVersionId`: an explicit pin on the intent, else the model's OWN slug pin
+(`owner/name:version`), else `null` when neither the intent nor the slug pins one). A registry
+row's separately PROBED version — which schema informed its stored capability bindings — is never
+recorded here: a bare, unpinned slug reaches the provider's floating-latest endpoint regardless of
+what was probed, so claiming that id as what was "asked for" would describe a request the transport
+never sent. `requestedVersionId` and `executedVersionId` answer different questions and must never
+stand in for each other — one is the ask, the other is the provider's own echo of what actually
+ran — on failures too where the lane's failure shape returns rather than throws. That record is
+what a retry of the same composition reads. The character-fact lanes file a second, sibling
+provenance key beside it — `images.meta.visualState`, the visual-digest record
 ([../pipelines/README.md](../pipelines/README.md)).
+
+Alongside it sits `shape` — the render's own answer to "was the frame cut, where, and why"
+([shape.md](shape.md)): the resolved target ratio and which precedence rung it came from, the
+provider field and value actually sent, the ratio the provider was expected to return, the returned
+image's own pixel size, and the crop actually performed (`null` when none was needed, else the
+target ratio, the placement, the exact rect, and where the focal box came from — `"none"` on every
+render today).
+
+A third sibling key, `images.meta.advisories`, carries ADVISORY annotations measured on the same
+successful render — never a gate, never a substituted model
+([../render-advisories.md](../render-advisories.md)) — present only when at least one signal
+triggered.
+
+**"Same composition" is a reproducibility REQUEST, never a pixel guarantee.** Replaying a stored
+`controls.seed` is honest reuse of the settings that produced a prior row — it is not a promise
+that the provider returns identical bytes. The portrait lane is the first caller of this: a
+same-composition retry reads the source row's `meta.render.seed` and sends it back as an
+explicit `controls.seed`, but only when the eligibility table in
+[../pipelines/avatars.md](../pipelines/avatars.md) §Same-composition eligibility holds — an
+unrecorded seed, a changed model or version, an unreadable prompt program, a demo-mode request, or
+a world that moved since the source rendered must never pass silently as "the same composition";
+each fails the row before provider spend, naming why. The replay PINS EXPLICITLY too: it sends the
+source row's own version (`meta.render.executedVersionId`, falling back to `requestedVersionId` for
+a row whose provider echoed nothing) as `intent.versionId`, so the wire runs exactly the weights
+that produced the source rather than hoping a bare slug's floating latest still matches — and the
+row's own `meta.retry.pinnedVersionId` says which version that was, `null` meaning the replay
+floats along exactly like the source render did. Portraits send no references at all (every
+portrait profile's reference policy allows none), so a "reference went missing" refusal cannot
+arise on this lane — there is nothing to go missing.
 
 ## Selection stays fail-visible
 

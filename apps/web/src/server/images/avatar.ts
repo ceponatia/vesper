@@ -1,12 +1,20 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { characters, db, items } from "../db";
+import { characters, db, images, items } from "../db";
 import { isDemoMode, qualifiedImageModelIdentity } from "../ai";
 import { logEvent } from "../events";
+import { newId } from "@/lib/ids";
 import { runInBatches } from "@/lib/batches";
 import { parseOr } from "@/lib/parse";
 import { outfitItems, type SceneCameraSpec } from "@/contracts";
-import { IMAGE_TARGET_ASPECT, type ImageSourceRevision, type ResolvedImageProfile } from "@vesper/image-core";
+import {
+  IMAGE_PROMPT_PROGRAM_META_KEY,
+  IMAGE_TARGET_ASPECT,
+  imagePromptProgramProvenanceSchema,
+  pinnedImageModelVersion,
+  type ImageSourceRevision,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts/world/profile";
@@ -17,6 +25,7 @@ import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel, hairOcclusionForItem } from "@/contracts/items/subtypes";
 import { HAIR_OCCLUSION_NONE, hairOcclusionSchema } from "@/contracts/items/hair-occlusion";
 import { runImagePipeline } from "./assets";
+import type { ImageRow } from "./asset-storage";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
@@ -33,6 +42,23 @@ import {
   type StandaloneLaneCutInput,
   type StandaloneSubjectCut,
 } from "./standalone-subject-visual";
+import {
+  avatarReplayEligibility,
+  avatarReplayPrecondition,
+  type AvatarReplayEligibility,
+  type AvatarReplaySourceRow,
+} from "./avatar-replay";
+
+/**
+ * Explicit retry semantics (issue #248): `new_variation` asks for a fresh
+ * sampling attempt (an optional lineage pointer, no seed replay);
+ * `same_composition` asks to reuse the source's exact settings, including its
+ * seed when the eligibility table (`avatar-replay.ts`) allows it — a
+ * reproducibility REQUEST, never a pixel guarantee.
+ */
+export type AvatarRetryRequest =
+  | { readonly mode: "new_variation"; readonly sourceImageId?: string }
+  | { readonly mode: "same_composition"; readonly sourceImageId: string };
 
 export interface GenerateAvatarInput {
   characterId: string;
@@ -47,6 +73,29 @@ export interface GenerateAvatarInput {
     readonly revision: string;
   };
   sink?: DiagnosticSink;
+  /**
+   * The player ceiling is two (issue #248); three or more stays admin-only and
+   * is not accepted here. Defaults to one, which keeps every existing caller
+   * byte-for-byte unchanged: one row, one auto-claimed pointer.
+   */
+  candidates?: 1 | 2;
+  /** Absent for an ordinary generation — the common case, unchanged. */
+  retry?: AvatarRetryRequest;
+  /**
+   * The client-minted token this request stamps on every row it reserves
+   * (`meta.request.id`), so the studio can judge best-of-two completion by
+   * which rows belong to THIS request rather than a client-side snapshot of
+   * what existed before it (codex review round 2, threads 3–4). Absent for
+   * a caller with no completion-tracking need of its own.
+   */
+  requestId?: string;
+}
+
+export interface GenerateAvatarResult {
+  /** The first (or only) candidate's image id. */
+  imageId: string;
+  /** Every candidate's image id, in generation order — length 1 or 2. */
+  imageIds: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +275,7 @@ function avatarProgramPrecondition(
  * `style`/`model`/`demo`: a thrown produce carries no meta, and the visual
  * moment that shaped the prompt must survive a failed render.
  */
-export async function generateAvatar(input: GenerateAvatarInput): Promise<string> {
+export async function generateAvatar(input: GenerateAvatarInput): Promise<GenerateAvatarResult> {
   const style = input.style ?? "realistic";
   const demo = isDemoMode();
   const resolved = demo ? null : await resolveImageProfileForTask("portrait", input.modelId, input.sink);
@@ -289,79 +338,254 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<string
   const monogramLabel = character?.name ?? "";
   const prompt = compiled?.prompt ?? (demo ? monogramLabel : "");
 
-  const { imageId } = await runImagePipeline({
-    asset: {
-      ownerId: input.userId,
-      kind: "avatar",
-      entityKind: "character",
-      entityId: input.characterId,
-      prompt,
-      meta: {
-        style,
-        model: demo ? "demo" : qualifiedImageModelIdentity(model),
-        demo,
-        ...(cut?.digestMeta ?? {}),
-        // The compiled program's own provenance, exactly as the entity lane
-        // records it. Absent on a render that compiled none.
-        ...(compiled?.meta ?? {}),
-      },
-    },
-    // A cut that would not assemble is checked FIRST: a program is never built
-    // over a cut that does not exist, so the two answers cannot both arise.
-    failedPrecondition: character
-      ? cut === null
-        ? "the avatar's visual cut could not be assembled"
-        : (programPrecondition ?? (demo || model ? null : "no image model is registered for portraits"))
-      : `character ${input.characterId} not found`,
-    // Text-to-image at Vesper's 3:4, with no references — the simplest intent
-    // there is. A failure still THROWS (this lane's ruled failure shape: the
-    // shell's warn diagnostic plus the error-carrying event line), which is why
-    // render provenance is recorded only on success — a thrown produce has no
-    // meta channel. The cut provenance already landed at reserve time.
-    produce: async () => {
-      if (demo || !resolved) return { ok: true, image: monogramSvg(monogramLabel) };
-      // Every other answer failed the row above, so a production render reaches
-      // the provider only with a compiled program.
-      if (compiled === null) throw new Error("avatar render reached the provider with no compiled prompt program");
-      const result = await renderImageIntent(
-        {
-          profile: resolved,
-          ...characterPromptTransport(compiled),
-          references: [],
-          target: { aspectRatio: IMAGE_TARGET_ASPECT },
+  // Issue #248 — best-of-two candidates and explicit retry semantics. The
+  // route already refuses `same_composition` beside `candidates: 2` with its
+  // own 400 (a replay is one render by definition), and the invariant is
+  // repeated here so no caller of this function can slip a second,
+  // differently-seeded frame past a request that asked to replay exactly one.
+  const retry = input.retry;
+  const candidateCount: 1 | 2 = retry?.mode === "same_composition" ? 1 : input.candidates === 2 ? 2 : 1;
+
+  // The row named by a retry request, fetched once and never trusted until
+  // either the eligibility table below (`same_composition`) or a plain
+  // ownership/scope check (`new_variation`'s optional lineage pointer) says
+  // so. Demo mode renders nothing real, so nothing here is worth a query.
+  const retrySourceRow: AvatarReplaySourceRow | undefined =
+    !demo && retry?.sourceImageId
+      ? await db()
+          .select({
+            id: images.id,
+            ownerId: images.ownerId,
+            entityKind: images.entityKind,
+            entityId: images.entityId,
+            kind: images.kind,
+            status: images.status,
+            meta: images.meta,
+          })
+          .from(images)
+          .where(eq(images.id, retry.sourceImageId))
+          .limit(1)
+          .then((rows) => rows[0])
+      : undefined;
+
+  // Lineage only, for a `new_variation` retry: an unowned or foreign id just
+  // omits the pointer rather than refusing a request that needs no
+  // eligibility at all. `same_composition` reads the row through the
+  // eligibility table below instead, which reports WHY rather than silently
+  // dropping it.
+  const lineageSourceId: string | undefined =
+    retry?.mode === "new_variation" &&
+    retrySourceRow !== undefined &&
+    retrySourceRow.ownerId === input.userId &&
+    retrySourceRow.entityKind === "character" &&
+    retrySourceRow.entityId === input.characterId &&
+    (retrySourceRow.kind === "avatar" || retrySourceRow.kind === "portrait_variant")
+      ? retrySourceRow.id
+      : undefined;
+
+  // The full eligibility check (issue #248 acceptance #2–#3: a changed model,
+  // version or world state — appearance, wardrobe, prompt — must never pass
+  // silently as "the same composition"). Demo mode renders a placeholder, not
+  // a composition — there is no program to compile a fingerprint from — so a
+  // same-composition request there refuses outright, through the same
+  // refusal path and diagnostic, rather than falling through to a silent
+  // fresh placeholder (correction round 2, finding 3). Otherwise the check is
+  // only meaningful once a program actually compiled, since there is no
+  // fingerprint to compare against — and the row already fails for THAT
+  // reason regardless of any replay request, so the two checks never both
+  // fire.
+  const replayEligibility: AvatarReplayEligibility | null =
+    retry?.mode !== "same_composition"
+      ? null
+      : demo
+        ? { ok: false, reason: "demo_mode" }
+        : compiled && resolved
+          ? avatarReplayEligibility({
+              source: retrySourceRow,
+              ownerId: input.userId,
+              characterId: input.characterId,
+              current: {
+                modelSlug: resolved.model.slug,
+                profileId: resolved.profile.id,
+                pinnedVersionId: pinnedImageModelVersion(resolved.model),
+              },
+              // A parse failure degrades to `null` — never `undefined` — so a
+              // program whose provenance cannot be read refuses as
+              // `program_unrecorded` instead of silently skipping the
+              // world-state check it was meant to gate (correction round 2,
+              // finding 2: the degradation direction must fail closed).
+              programFingerprint:
+                imagePromptProgramProvenanceSchema.safeParse(compiled.meta[IMAGE_PROMPT_PROGRAM_META_KEY]).data
+                  ?.programFingerprint ?? null,
+            })
+          : null;
+  // Pushes `images.avatar.replay_refused` with the reason code and returns the
+  // row's failure sentence — never a silent fallback to a new variation.
+  const replayPrecondition = avatarReplayPrecondition(replayEligibility, input.characterId, input.sink);
+  const retrySeed = replayEligibility?.ok === true ? replayEligibility.seed : null;
+  // The version the SOURCE ran under, or null when the replay follows the
+  // floating latest — sent explicitly as `intent.versionId` below so the
+  // wire pins exactly the id the row's `meta.retry.pinnedVersionId` reports
+  // (codex review round 2, thread 1).
+  const retryVersionId = replayEligibility?.ok === true ? replayEligibility.version.pinned : null;
+  // A REFUSED same-composition request names a source that is unowned,
+  // foreign, or does not exist — `images.source_image_id` carries no FK, so
+  // writing it verbatim would let a refused row point at (or let a caller
+  // probe the existence of) another owner's image. Only an ELIGIBLE replay's
+  // source is honest lineage; `new_variation`'s pointer is separately
+  // ownership-checked above (`lineageSourceId`).
+  const retrySourceIdForRow =
+    retry?.mode === "same_composition"
+      ? (replayEligibility?.ok === true ? retry.sourceImageId : undefined)
+      : lineageSourceId;
+
+  // A two-candidate request mints one group id shared by both rows; a
+  // single-candidate one (first-ever generation, or a plain retry) carries no
+  // `meta.candidates` at all — byte-for-byte what today's row already writes.
+  const candidateGroup = candidateCount === 2 ? newId() : null;
+
+  // A cut that would not assemble is checked FIRST: a program is never built
+  // over a cut that does not exist, so the two answers cannot both arise. A
+  // refused replay is checked alongside the program's own preconditions, in
+  // the same "fails before spend, names why" shape.
+  const failedPrecondition = character
+    ? cut === null
+      ? "the avatar's visual cut could not be assembled"
+      : (programPrecondition ?? replayPrecondition ?? (demo || model ? null : "no image model is registered for portraits"))
+    : `character ${input.characterId} not found`;
+
+  /**
+   * One candidate's full reserve → generate → save-or-fail cycle. Shared by
+   * both calls below so a two-candidate request cannot drift the two rows'
+   * prompt, precondition or provenance apart — only `meta.candidates.index`
+   * and the pointer claim differ.
+   */
+  async function renderOneCandidate(index: 1 | 2): Promise<string> {
+    const { imageId } = await runImagePipeline({
+      asset: {
+        ownerId: input.userId,
+        kind: "avatar",
+        entityKind: "character",
+        entityId: input.characterId,
+        prompt,
+        ...(retrySourceIdForRow ? { sourceImageId: retrySourceIdForRow } : {}),
+        meta: {
+          style,
+          model: demo ? "demo" : qualifiedImageModelIdentity(model),
+          demo,
+          ...(cut?.digestMeta ?? {}),
+          // The compiled program's own provenance, exactly as the entity lane
+          // records it. Absent on a render that compiled none.
+          ...(compiled?.meta ?? {}),
+          // Lineage and which semantics this retry used — present only for an
+          // actual retry, so an ordinary generation's meta stays unchanged.
+          ...(retry
+            ? {
+                retry: {
+                  mode: retry.mode,
+                  ...(retrySourceIdForRow ? { sourceImageId: retrySourceIdForRow } : {}),
+                  ...(retrySeed !== null ? { seed: retrySeed } : {}),
+                  // Whether THIS replay held a version pin, and which one —
+                  // present (even as `null`) only for an eligible
+                  // same-composition replay, so the row says whether the
+                  // version was held (correction round 2, finding 1).
+                  ...(replayEligibility?.ok === true ? { pinnedVersionId: replayEligibility.version.pinned } : {}),
+                },
+              }
+            : {}),
+          ...(candidateGroup ? { candidates: { group: candidateGroup, index, of: candidateCount } } : {}),
+          // Which client-minted request produced this row, and how many
+          // candidates it asked for — the studio judges best-of-two
+          // completion by this id rather than a client-side snapshot, which
+          // could undercount rows created before the portraits list ever
+          // loaded (codex review round 2, threads 3–4). Absent when the
+          // caller sent no request id (an older client, a script).
+          ...(input.requestId ? { request: { id: input.requestId, candidates: candidateCount } } : {}),
         },
-        input.sink,
-      );
-      if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
-      return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt) };
-    },
-    onReady: async (asset) => {
-      // The CANDIDATE pointer, and nothing else. A generated portrait is a
-      // proposal: it changes what the studio and the library card show, and
-      // changes nothing about the character's identity until the owner accepts
-      // it (`portrait-acceptance.ts`), which is the one trigger for
-      // identity-pack preparation.
-      await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
-    },
-    onSettled: ({ imageId: id, status, startedMs }) =>
-      void logEvent("image.avatar", {
-        imageId: id,
-        characterId: input.characterId,
-        status,
-        demo,
-        durationMs: Date.now() - startedMs,
-      }),
-    onThrown: ({ imageId: id, message }) =>
-      void logEvent("image.avatar", {
-        imageId: id,
-        characterId: input.characterId,
-        status: "failed",
-        error: message.slice(0, 300),
-      }),
-    failureDiagnostic: { code: "images.avatar.generate_failed", context: { characterId: input.characterId } },
-    sink: input.sink,
-  });
-  return imageId;
+      },
+      failedPrecondition,
+      // Text-to-image at Vesper's 3:4, with no references — the simplest intent
+      // there is. A failure still THROWS (this lane's ruled failure shape: the
+      // shell's warn diagnostic plus the error-carrying event line), which is why
+      // render provenance is recorded only on success — a thrown produce has no
+      // meta channel. The cut provenance already landed at reserve time.
+      produce: async () => {
+        if (demo || !resolved) return { ok: true, image: monogramSvg(monogramLabel) };
+        // Every other answer failed the row above, so a production render reaches
+        // the provider only with a compiled program.
+        if (compiled === null) throw new Error("avatar render reached the provider with no compiled prompt program");
+        const transport = characterPromptTransport(compiled);
+        const result = await renderImageIntent(
+          {
+            profile: resolved,
+            ...transport,
+            references: [],
+            target: { aspectRatio: IMAGE_TARGET_ASPECT },
+            // The one seed this lane ever sends explicitly: a same-composition
+            // replay's recorded value, merged over whatever controls the
+            // transport already carries (e.g. a compiled negative prompt).
+            // Every other render leaves this unset, so `resolveIntentSeed`
+            // draws its own — unchanged from today.
+            ...(retrySeed !== null ? { controls: { ...transport.controls, seed: retrySeed } } : {}),
+            // The one explicit version pin this lane ever sends: a
+            // same-composition replay's own recorded version, so the wire
+            // pins exactly the weights that produced the source rather than
+            // hoping a bare slug's floating latest still matches (codex
+            // review round 2, thread 1). Every other render leaves this
+            // unset and follows the model's own slug pin, if any.
+            ...(retryVersionId !== null ? { versionId: retryVersionId } : {}),
+          },
+          input.sink,
+        );
+        if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
+        return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt, result.advisories) };
+      },
+      // The CANDIDATE pointer, and nothing else — and only for a single-candidate
+      // request. A two-candidate request claims NOTHING: the player chooses
+      // through the existing promote action, exactly like choosing among
+      // variants (issue #248 acceptance #1).
+      ...(candidateCount === 1
+        ? {
+            onReady: async (asset: ImageRow) => {
+              // A generated portrait is a proposal: it changes what the studio and
+              // the library card show, and changes nothing about the character's
+              // identity until the owner accepts it (`portrait-acceptance.ts`),
+              // which is the one trigger for identity-pack preparation.
+              await db().update(characters).set({ avatarImageId: asset.id }).where(eq(characters.id, input.characterId));
+            },
+          }
+        : {}),
+      onSettled: ({ imageId: id, status, startedMs }) =>
+        void logEvent("image.avatar", {
+          imageId: id,
+          characterId: input.characterId,
+          status,
+          demo,
+          durationMs: Date.now() - startedMs,
+          ...(candidateGroup ? { candidateIndex: index } : {}),
+        }),
+      onThrown: ({ imageId: id, message }) =>
+        void logEvent("image.avatar", {
+          imageId: id,
+          characterId: input.characterId,
+          status: "failed",
+          error: message.slice(0, 300),
+          ...(candidateGroup ? { candidateIndex: index } : {}),
+        }),
+      failureDiagnostic: {
+        code: "images.avatar.generate_failed",
+        context: { characterId: input.characterId, ...(candidateGroup ? { candidateIndex: index } : {}) },
+      },
+      sink: input.sink,
+    });
+    return imageId;
+  }
+
+  // Sequential, never parallel: a failed first render must not orphan a
+  // candidate group whose second half never ran.
+  const first = await renderOneCandidate(1);
+  const imageIds = candidateCount === 2 ? [first, await renderOneCandidate(2)] : [first];
+  return { imageId: first, imageIds };
 }
 
 /**

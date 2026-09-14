@@ -9,11 +9,18 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import {
+  QWEN_2511_APPEARANCE_MOVED_NOTICE,
+  QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK,
+  QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK_HAIR_CONCEALED,
 } from "@vesper/image-core";
+import type { AttributeValue } from "@/contracts/attributes";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { APPEARANCE_REVISION_META_KEY, appearanceRevisionOf } from "@/contracts/images/appearance-revision";
+import { IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT } from "@/contracts/images/character-adapter";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { expectDiagnostic } from "@/test/diagnostics";
 import {
@@ -301,7 +308,11 @@ describe("binding resolution through the seam", () => {
     const strict = compiled(buildCharacterPromptProgram(programInput({ profile, refuseOnMissingRequired: true })));
     expect(strict).toEqual(tolerant);
 
-    expect(Object.keys(strict.meta).sort()).toEqual([IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY].sort());
+    // The appearance-revision stamp rides beside the two provenance keys on
+    // every character render, so a reference read back later can compare it.
+    expect(Object.keys(strict.meta).sort()).toEqual(
+      [IMAGE_PROMPT_PROGRAM_META_KEY, IMAGE_WORLD_STATE_META_KEY, APPEARANCE_REVISION_META_KEY].sort(),
+    );
     expect(parseImagePromptProgramProvenance(strict.meta[IMAGE_PROMPT_PROGRAM_META_KEY])).not.toBeNull();
     expect(parseImageWorldStateProvenance(strict.meta[IMAGE_WORLD_STATE_META_KEY])).not.toBeNull();
   });
@@ -514,6 +525,76 @@ describe("what a variant render actually sends", () => {
   });
 
   /**
+   * ISSUE #450 checklist item 2: the 2511 identity reference is authoritative
+   * for FACE and skin tone (docs/images/character-prompts.md §Identity on a
+   * reference-anchored render), so the probe sheet's oval `face.shape` — an
+   * OPTIONAL reinforcement the reference already shows pixel-perfect once a
+   * subject is reference-anchored — is dropped as redundant, while the SAME
+   * dialect leaves hair, build, wardrobe and pose text-authoritative: the
+   * platinum hair the sibling test above pins, and the requested outfit
+   * change this render IS, both still compile untouched.
+   */
+  it("drops the redundant face-shape reinforcement a reference-authoritative face already shows, without losing text-controlled hair or the requested change", () => {
+    const result = program();
+
+    // The documented redundant fact: never reaches the prompt once the
+    // subject is anchored to a 2511 identity reference.
+    expect(result.prompt).not.toMatch(/\boval\b/i);
+
+    // Recorded as a suppression with its OWN reason — distinguishable from an
+    // out-of-frame or hidden judgment, and from a fitter's drop.
+    const suppressions =
+      parseImageWorldStateProvenance(result.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const redundant = suppressions.filter(
+      (entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+    );
+    expect(redundant.some((entry) => entry.key.endsWith("appearance.face.shape"))).toBe(true);
+
+    // Text-controlled facts on this dialect are UNTOUCHED: hair stays
+    // reinforced (the sibling test's own claim, restated here beside the
+    // fact it must not be confused with)…
+    expect(result.prompt).toMatch(/platinum hair/i);
+    // …and so is the requested change itself.
+    expect(result.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+  });
+
+  /**
+   * ISSUE #450 checklist item 4: several identity references of ONE person
+   * are several VIEWS of that one subject, never several people. The
+   * request-aware selection reads the same per-subject anchored set the
+   * digest's own identity anchor already uses (`referenceAnchoredSubjects`, a
+   * Set keyed on subject ref) — so a second image of the same person costs
+   * this policy nothing extra: still one subject, the redundant fact
+   * suppressed exactly once, never once per reference.
+   */
+  it("keeps several identity references of one person bound to that one subject, not two", () => {
+    const result = compiled(
+      buildCharacterPromptProgram(programInput({ references: [reference("identity"), reference("identity")] })),
+    );
+
+    // Still ONE subject and ONE identity anchor, whichever way the references
+    // arrived — several views, never several people.
+    expect(result.subjects).toHaveLength(1);
+    const anchors = result.subjects
+      .flatMap((subject) => subject.facts)
+      .filter((fact) => fact.concept === "subject.identity");
+    expect(anchors).toHaveLength(1);
+    // Both images still travel to the provider — a view, not a drop.
+    expect(result.sentReferences).toHaveLength(2);
+
+    // The redundant face-shape fact is suppressed exactly once for the one
+    // subject it names.
+    const suppressions =
+      parseImageWorldStateProvenance(result.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const redundant = suppressions.filter(
+      (entry) =>
+        entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT &&
+        entry.key.endsWith("appearance.face.shape"),
+    );
+    expect(redundant).toHaveLength(1);
+  });
+
+  /**
    * The identity lock must come from the WORLD.
    *
    * The digest of an edit lane states no identity descriptors — the reference
@@ -684,6 +765,99 @@ describe("hair the headwear fully hides", () => {
     expect(program.prompt).not.toMatch(/[Pp]reserve[^.]*\bhair\b/);
     expect(program.prompt.includes(VARIANT_CONCEALED)).toBe(concealed);
   });
+
+  /**
+   * A CURRENT reference does not give the binding its hair back when the
+   * headwear hides it (issue #551, the #312 invariant arriving from the other
+   * direction).
+   *
+   * The appearance revision digests attributes; hair occlusion is wardrobe. So
+   * a character who has not changed an inch since her anchor was minted, now in
+   * a hijab, compares `matches` on the honest reading of the stamp — and the
+   * wider preserve clause would then ask the model to keep her hair "exactly as
+   * shown" in the same prompt as the sentence saying no hair is visible, over
+   * text the selection has already dropped. That is the #544 F4 ambiguity the
+   * lock was narrowed to end, and it is invisible in the output: the render
+   * simply paints hair through the headwear.
+   *
+   * The seam downgrades a `full`-band subject to `unknown` before the verdict
+   * is spent, so BOTH halves move together — the ordinary lock and the
+   * concealment sentence, which is exactly what the band compiled before this
+   * contract existed. Falsified against the stamp being honoured at `full`.
+   */
+  it("never takes the wider preserve set for a covered head, however current the reference is", () => {
+    const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: "full" }]);
+    expect(cut.hairOcclusion).toBe("full");
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          cuts: [
+            {
+              subjectId: LANE_PROBE_SUBJECT_ID,
+              name: LANE_PROBE_NAME,
+              digest: cut.digest,
+              attributes: cut.resolved,
+              exposure: cut.exposure,
+              hairOcclusion: cut.hairOcclusion,
+              realizedBody: cut.realizedBody,
+            },
+          ],
+          // The reference depicts EXACTLY this cut's appearance: on the stamp
+          // alone this is the `matches` case.
+          references: [{ ...reference("identity"), appearanceRevision: appearanceRevisionOf(cut.resolved) }],
+        }),
+      ),
+    );
+
+    expect(program.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    // The one assertion the defect fails: nothing asks for hair back.
+    expect(program.prompt).not.toMatch(/\bkeep\b[^.]*\bhair\b/i);
+    expect(program.prompt).toContain(VARIANT_CONCEALED);
+    // And no appearance-moved correction either — nothing about her HAS moved.
+    expect(program.prompt).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+    const references = parseImagePromptProgramProvenance(program.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["unknown"]);
+  });
+
+  /**
+   * ISSUE #450 checklist item 5: a fact the existing projection already
+   * suppressed — here, hair the headwear fully hides — cannot re-enter
+   * through the new request-aware selection. The withholding happens before
+   * this policy ever runs, so the concealed hair facts never reach
+   * `subject.facts` for it to consider; this pins that the suppression stays
+   * recorded under its OWN reason and is never relabelled as reference
+   * redundancy.
+   */
+  it("does not let request-aware selection recover hair the headwear already concealed", () => {
+    const cut = laneProbeVariantCut([...laneProbeWardrobe(), { ...HIJAB, hairOcclusion: "full" }]);
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          cuts: [
+            {
+              subjectId: LANE_PROBE_SUBJECT_ID,
+              name: LANE_PROBE_NAME,
+              digest: cut.digest,
+              attributes: cut.resolved,
+              exposure: cut.exposure,
+              hairOcclusion: cut.hairOcclusion,
+              realizedBody: cut.realizedBody,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(program.prompt).not.toMatch(/platinum/i);
+    const suppressions =
+      parseImageWorldStateProvenance(program.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const hairSuppressions = suppressions.filter((entry) => entry.key.includes("hair"));
+    expect(hairSuppressions.length).toBeGreaterThan(0);
+    for (const entry of hairSuppressions) {
+      expect(entry.reason).not.toBe(IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT);
+    }
+  });
 });
 
 /**
@@ -803,6 +977,43 @@ describe("the lane's subject-naming policy", () => {
     expect(labelOf(program, LANE_PROBE_SUBJECT_ID)).toBe(LANE_PROBE_NAME);
     expect(program.prompt).toContain(LANE_PROBE_NAME);
   });
+
+  /**
+   * ISSUE #450 checklist item 3: a mixed ensemble decides separately PER
+   * SUBJECT. This rung's only identity image is Ilsa's, so her
+   * reference-authoritative face shape and skin tone are redundant and
+   * dropped, while Nyx — the unreferenced bystander, never in
+   * `anchoredSubjects` — keeps the full reference-free description a render
+   * of her still needs. The two fixtures' disjoint words
+   * (`image-lane-probe.ts`'s module header) are what let this be checked
+   * without a per-subject parser: "heart-shaped" and "ashen" can only be
+   * Ilsa's, "oval" and "brown" only Nyx's.
+   */
+  it("selects reference-aware detail per subject in a mixed ensemble, never for the whole cast", () => {
+    const program = sceneProgram((subjectId) => subjectId !== LANE_PROBE_SUBJECT_ID);
+
+    // Ilsa (referenced): her face shape and skin tone are redundant against
+    // her own reference and do not reach the prompt.
+    expect(program.prompt).not.toMatch(/heart-shaped/i);
+    expect(program.prompt).not.toMatch(/\bashen\b/i);
+
+    // Nyx (unreferenced): the same two facts are still reference-free-required
+    // for HER render and remain stated.
+    expect(program.prompt).toMatch(/\boval\b/i);
+    expect(program.prompt).toMatch(/\bbrown\b/i);
+
+    const suppressions =
+      parseImageWorldStateProvenance(program.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [];
+    const redundant = suppressions.filter(
+      (entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+    );
+    const nyxRedundant = redundant.filter((entry) => entry.key.startsWith(`subject.${LANE_PROBE_SUBJECT_ID}.appearance`));
+    const ilsaRedundant = redundant.filter((entry) =>
+      entry.key.startsWith(`subject.${LANE_PROBE_SECOND_SUBJECT_ID}.appearance`),
+    );
+    expect(ilsaRedundant.length).toBeGreaterThan(0);
+    expect(nyxRedundant).toEqual([]);
+  });
 });
 
 /**
@@ -836,6 +1047,36 @@ describe("the lanes beside the scene", () => {
 
     expect(program.prompt).toContain(`${LANE_PROBE_NAME} appears`);
     expect(program.prompt).toMatch(/late twenties/);
+  });
+
+  /**
+   * ISSUE #450 checklist item 1: a reference-free render carries no identity
+   * reference, so it is never in `anchoredSubjects` and the request-aware
+   * selection this issue adds must be a complete no-op for it — #426's
+   * reference-free completeness rules, unchanged. Kills a selection that
+   * applied a dialect's reference authority regardless of whether a reference
+   * was actually sent.
+   */
+  it("keeps a reference-free portrait's applicable required core description, and still refuses a missing one", () => {
+    const full = compiled(laneProbeAvatarProgram({ wardrobe: laneProbeWardrobe() }));
+
+    // No identity reference exists on this lane: every reference-free-required
+    // core value stays stated exactly as #426 requires, INCLUDING the face
+    // shape and skin tone a reference-anchored render would treat as
+    // redundant (the sibling variant-lane test below).
+    expect(full.prompt).toMatch(/\boval\b/i);
+    expect(full.prompt).toMatch(/platinum hair/i);
+    expect(full.prompt).toMatch(/blue eyes/i);
+    expect(full.missingRequired).toEqual([]);
+
+    // Strip one required core value this suite otherwise always supplies. The
+    // avatar lane refuses on it exactly as before this change — a
+    // reference-free subject was never a candidate for the new selection step.
+    const withoutFaceShape = laneProbeProfile({
+      attributes: laneProbeProfile().attributes.filter((value) => value.id !== "face.shape"),
+    });
+    const degraded = laneProbeAvatarProgram({ profile: withoutFaceShape, wardrobe: laneProbeWardrobe() });
+    expect(degraded.kind).toBe("refused");
   });
 
   /**
@@ -1026,5 +1267,368 @@ describe("the prompt budget the seam fits a variant edit to", () => {
     expect(fitted.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
     expect(fitted.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
     expect(fitted.prompt).toMatch(/\bKeep\b[^.]*\bunchanged from the source\./);
+  });
+
+  /**
+   * ISSUE #450 checklist item 6: selection stays a SEPARATE question from
+   * fitting. The redundant face-shape fact is removed by the request-aware
+   * selection before the digest ever reaches the fitter, so it can never
+   * appear as either a kept claim or a fitter-recorded drop — only as a
+   * world-state suppression under its own reason. Required facts and the
+   * requested change survive the same squeeze regardless, exactly as the
+   * sibling test above already pins for every optional claim.
+   */
+  it("removes a redundant optional fact before fitting, distinct from the fitter's own drops", () => {
+    const fitted = program(200);
+
+    const worldState = parseImageWorldStateProvenance(fitted.meta[IMAGE_WORLD_STATE_META_KEY]);
+    const redundant = (worldState?.suppressions ?? []).filter(
+      (entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT,
+    );
+    expect(redundant.length).toBeGreaterThan(0);
+
+    const promptProvenance = parseImagePromptProgramProvenance(fitted.meta[IMAGE_PROMPT_PROGRAM_META_KEY]);
+    for (const entry of redundant) {
+      // Never offered to the fitter at all: neither kept nor among its own
+      // recorded drops.
+      expect(fitted.keptClaimIds).not.toContain(entry.key);
+      expect(promptProvenance?.droppedClaimIds ?? []).not.toContain(entry.key);
+    }
+
+    // The requested change and the identity lock survive the same squeeze.
+    expect(fitted.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+    expect(fitted.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+  });
+});
+
+/**
+ * ISSUE #450 checklist item 7: identical resolved inputs select the same
+ * facts in the same order and compile to the same prompt.
+ *
+ * The request-aware selection is a pure filter over already-ordered arrays
+ * (`Array.prototype.map`/`filter`, no `Set` iteration order and nothing
+ * time- or randomness-dependent), so two builds from the same
+ * `CharacterPromptProgramInput` must be indistinguishable — not merely
+ * text-equal, but equal in the subjects, the suppressions and the kept-claim
+ * order a developer inspector reads.
+ */
+describe("determinism of the request-aware selection", () => {
+  it("selects the same facts in the same order from identical resolved inputs", () => {
+    const first = compiled(buildCharacterPromptProgram(programInput()));
+    const second = compiled(buildCharacterPromptProgram(programInput()));
+
+    expect(second.prompt).toBe(first.prompt);
+    expect(second.negativePrompt).toBe(first.negativePrompt);
+    expect(second.keptClaimIds).toEqual(first.keptClaimIds);
+    expect(second.subjects).toEqual(first.subjects);
+    expect(
+      parseImageWorldStateProvenance(second.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions,
+    ).toEqual(parseImageWorldStateProvenance(first.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the reference still shows (issue #551)
+// ---------------------------------------------------------------------------
+
+/**
+ * THE PRESERVATION CONTRACT, DERIVED FROM THE REFERENCE'S OWN PROVENANCE
+ * (issue #551, owner direction on the PR #545 review).
+ *
+ * Issue #450 gave this dialect ONE split: the reference owns face, skin tone and
+ * apparent age, the text owns hair and build. That split is right for a
+ * photograph of unknown age and wrong for a reference minted from the very
+ * appearance the render is drawing — on an instruction editor, restating hair
+ * the image already carries is an instruction to repaint it. So the reference's
+ * stamp decides, and the defects are both silent in the output:
+ *
+ * - a reference that IS current still having its hair restated (the contract
+ *   does nothing, and the edit keeps fighting its own anchor);
+ * - a reference that is NOT current being trusted for hair anyway, which
+ *   deletes the only description of it from the prompt and renders last
+ *   month's haircut.
+ *
+ * Both scenarios are the issue's own acceptance criteria, and nothing else in
+ * the suite can see either one: the dialect owns the wording, this seam owns
+ * which contract a render compiles under.
+ */
+describe("the preservation contract the reference's own stamp decides", () => {
+  /** The appearance this render is drawing — what a freshly minted look depicts. */
+  const CURRENT_APPEARANCE = appearanceRevisionOf(VARIANT_CUT.resolved);
+  /**
+   * The same character before the haircut — what an older accepted portrait
+   * depicts. Derived from the same resolved attributes so the two revisions
+   * differ in exactly one registry fact and nothing else.
+   */
+  const BEFORE_THE_HAIRCUT = appearanceRevisionOf(
+    VARIANT_CUT.resolved.map((entry) =>
+      entry.id === "hair.length" ? { ...entry, value: "chin_length" } : entry,
+    ),
+  );
+
+  const anchoredOn = (appearanceRevision: string | null): CharacterPromptProgram =>
+    compiled(
+      buildCharacterPromptProgram(
+        programInput({ references: [{ ...reference("identity"), appearanceRevision }] }),
+      ),
+    );
+
+  const redundantKeys = (result: CharacterPromptProgram): string[] =>
+    (parseImageWorldStateProvenance(result.meta[IMAGE_WORLD_STATE_META_KEY])?.suppressions ?? [])
+      .filter((entry) => entry.reason === IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT)
+      .map((entry) => entry.key);
+
+  /**
+   * ACCEPTANCE (issue #551): a render anchored on a reference minted from the
+   * current appearance compiles no hair or build sentence and a binding that
+   * preserves them from the image.
+   */
+  it("drops hair and build from the text and preserves them from a reference that depicts this very appearance", () => {
+    const result = anchoredOn(CURRENT_APPEARANCE);
+
+    // The wider preserve clause, and NOT the ordinary one — the two are
+    // deliberately non-overlapping strings so which contract a render compiled
+    // under stays assertable from the text.
+    expect(result.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(result.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    // Nothing tells the model to repaint the hair the photograph already has.
+    expect(result.prompt).not.toMatch(/platinum hair/i);
+    // Recorded under the SAME reason #450 records, because it is the same
+    // judgment over a wider set: this fact is redundant beside this reference.
+    const redundant = redundantKeys(result);
+    expect(redundant.some((key) => key.includes("appearance.hair."))).toBe(true);
+    expect(redundant.some((key) => key.includes("appearance.build."))).toBe(true);
+    // The requested change is untouched — this policy removes reinforcement,
+    // never the instruction the render IS.
+    expect(result.prompt).toContain(`Make exactly this change: ${INSTRUCTION}`);
+    // And the provenance says which verdict the slot compiled under, so a
+    // finished render can still explain why it said nothing about hair.
+    const references = parseImagePromptProgramProvenance(result.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["matches"]);
+  });
+
+  /**
+   * ACCEPTANCE (issue #551): a render anchored on an older base portrait after a
+   * haircut compiles an explicit hair change.
+   *
+   * "Explicit" is as explicit as a digest can honestly be. The stamp says the
+   * appearance moved; it cannot say which fact moved, so the prompt states
+   * today's hair as text (which it always did) and adds the one thing the old
+   * prompt lacked — that the photograph is no longer the authority for it.
+   */
+  it("keeps hair in the text and says the photograph is out of date when the reference predates the change", () => {
+    // Control: the fixture really does carry the fact this case moves, so a
+    // green test cannot mean "the two revisions happened to be identical".
+    expect(BEFORE_THE_HAIRCUT).not.toBe(CURRENT_APPEARANCE);
+    const result = anchoredOn(BEFORE_THE_HAIRCUT);
+
+    expect(result.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(result.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    // Today's hair, still stated — the render draws the haircut it has now.
+    expect(result.prompt).toMatch(/platinum hair/i);
+    // …and the sentence that stops the reference and the text competing.
+    expect(result.prompt).toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+    // Nothing was dropped as redundant: an out-of-date image is authoritative
+    // for exactly the aspects #450 already gave it.
+    expect(redundantKeys(result).some((key) => key.includes("appearance.hair."))).toBe(false);
+    const references = parseImagePromptProgramProvenance(result.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["differs"]);
+  });
+
+  /**
+   * The fallback that every reference minted before this contract, and every
+   * uploaded portrait, takes. It must be the program the seam compiled before
+   * the stamp existed — byte-identical, because a silent wording change to every
+   * unstamped render is exactly what a forward-only contract must not do.
+   */
+  it("compiles an unstamped reference exactly as it did before the stamp existed", () => {
+    const unstamped = compiled(buildCharacterPromptProgram(programInput()));
+    const explicitlyUnknown = anchoredOn(null);
+
+    expect(explicitlyUnknown.prompt).toBe(unstamped.prompt);
+    expect(unstamped.prompt).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(unstamped.prompt).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+    expect(unstamped.prompt).toMatch(/platinum hair/i);
+    const references = parseImagePromptProgramProvenance(unstamped.meta[IMAGE_PROMPT_PROGRAM_META_KEY])?.references ?? [];
+    expect(references.map((entry) => entry.preservation)).toEqual(["unknown"]);
+  });
+
+  /**
+   * THE STAMP THIS RENDER'S OWN OUTPUT CARRIES.
+   *
+   * Every character lane merges the program's meta onto the row it reserves, so
+   * this one line is what makes a rendered image able to say later what it
+   * depicts — and it is taken from the cut that was drawn, never from a second
+   * read of the character at some later moment. A row stamped from a later read
+   * would claim a portrait shows a haircut it predates, which is the one failure
+   * this contract exists to prevent.
+   */
+  it("stamps its own output with the appearance it drew, per subject", () => {
+    const result = anchoredOn(CURRENT_APPEARANCE);
+
+    expect(result.meta[APPEARANCE_REVISION_META_KEY]).toEqual({ [LANE_PROBE_SUBJECT_ID]: CURRENT_APPEARANCE });
+  });
+
+  /**
+   * Two images of one person are two claims about when she was photographed.
+   * Taking the wider preserve set on the strength of the fresher one would ask
+   * the model to keep hair "exactly as shown" across a pair of photographs where
+   * only one of them shows today's.
+   */
+  it("refuses the wider preserve set when one of a subject's references is out of date", () => {
+    const result = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          references: [
+            { ...reference("identity"), appearanceRevision: CURRENT_APPEARANCE },
+            { ...reference("identity"), appearanceRevision: BEFORE_THE_HAIRCUT },
+          ],
+        }),
+      ),
+    );
+
+    expect(result.sentReferences).toHaveLength(2);
+    expect(result.prompt).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(result.prompt).not.toContain(QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(result.prompt).toMatch(/platinum hair/i);
+    expect(redundantKeys(result).some((key) => key.includes("appearance.hair."))).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // A MIXED CAST'S SUPPRESSION FOLLOWS THE SAME VERDICT THE LOCK DOES
+  // (issue #551 Codex finding)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A TWO-PERSON CAST, BOTH ANCHORED ON AN IDENTITY REFERENCE — the shape the
+   * Codex finding is about. The dialect's several-people lock is one clause for
+   * the whole bound cast
+   * (`packages/image-core/src/prompt-program/prompt-program.test.ts` pins that
+   * it widens only when EVERY anchored subject's own verdict is `matches`), so
+   * this seam must decide which subject's hair and build to drop from the TEXT
+   * by the identical rule — never by one subject's own verdict alone, which is
+   * exactly the defect Codex found: a matching subject's hair and build
+   * suppressed from the text while the lock, correctly narrow because a
+   * castmate's reference was not current, never picked them up either.
+   *
+   * `secondRevision` computes Ilsa's stamp from HER OWN resolved cut
+   * attributes, so a `differs` case moves a real fact rather than comparing
+   * against an unrelated digest. Nyx's stamp is always the exact revision of
+   * the cut she was drawn from, so her verdict is always `matches` and any
+   * drift the assertions below see is Ilsa's alone.
+   */
+  const mixedCastProgram = (
+    secondRevision: (ilsaAttributes: readonly AttributeValue[]) => string | null,
+  ): CharacterPromptProgram => {
+    const members = laneProbeCastSubjects();
+    const plan = laneProbeCastScenePlan(members.map((subject) => subject.member));
+    const built = applySceneCastVisual({ plan, members });
+    expect(built.refusal).toBeNull();
+    const visualOf = (subjectId: string) => {
+      const slice = built.visuals.find((entry) => entry.subjectId === subjectId);
+      if (slice === undefined) throw new Error(`fixture is missing subject ${subjectId}`);
+      return slice;
+    };
+    const nyx = visualOf(LANE_PROBE_SUBJECT_ID);
+    const ilsa = visualOf(LANE_PROBE_SECOND_SUBJECT_ID);
+    return compiled(
+      buildCharacterPromptProgram({
+        lane: "scene",
+        task: "scene",
+        profile: resolvedImageProfileFixture({ slug: QWEN_2511_SLUG, task: "scene", key: SCENE_KEY }),
+        bindingProfileKey: SCENE_KEY,
+        bindingStrategy: "instruction_edit",
+        cuts: built.visuals.map((slice) => ({
+          subjectId: slice.subjectId,
+          name: slice.name,
+          digest: slice.digest,
+          attributes: slice.attributes,
+          exposure: slice.exposure,
+          hairOcclusion: slice.hairOcclusion,
+          realizedBody: slice.realizedBody,
+        })),
+        read: { kind: "committed_cut", token: built.visuals[0]?.cutId ?? "" },
+        references: [
+          {
+            reference: { role: "identity", buffer: Buffer.from(nyx.subjectId), name: nyx.name },
+            subjectId: nyx.subjectId,
+            // Always drawn from exactly this cut's own appearance: Nyx is the
+            // constant `matches` reference the whole suite compares Ilsa against.
+            appearanceRevision: appearanceRevisionOf(nyx.attributes),
+          },
+          {
+            reference: { role: "identity", buffer: Buffer.from(ilsa.subjectId), name: ilsa.name },
+            subjectId: ilsa.subjectId,
+            appearanceRevision: secondRevision(ilsa.attributes),
+          },
+        ],
+        operation: () => characterSceneImageOperation({ subjectCount: built.visuals.length, kind: "edit" }),
+        refuseOnMissingRequired: true,
+      }),
+    );
+  };
+
+  /**
+   * THE ALL-CURRENT CASE STILL SUPPRESSES FOR EVERYONE — the refactor that
+   * routes both sides through one shared predicate must not have narrowed the
+   * cast-wide widening it already did right. Both references are drawn from
+   * their subject's own cut, so both verdicts are `matches`, the lock widens,
+   * and both subjects' hair and build stay out of the text.
+   */
+  it("suppresses hair and build for every subject when every anchored reference is current", () => {
+    const program = mixedCastProgram((attributes) => appearanceRevisionOf(attributes));
+
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toMatch(/platinum/i);
+    expect(program.prompt).not.toMatch(/\bsturdy\b/i);
+    expect(program.prompt).not.toMatch(/dyed.teal/i);
+    expect(program.prompt).not.toMatch(/\bslight\b/i);
+  });
+
+  /**
+   * ACCEPTANCE (issue #551 Codex finding): one `matches` reference beside one
+   * `unknown` one keeps the ORDINARY lock for the whole cast — so Nyx's own
+   * current reference must not have her hair and build dropped from the text,
+   * because nothing in the compiled prompt would then preserve them at all.
+   */
+  it("keeps a matching subject's hair and build in the text beside a castmate with no stamp", () => {
+    const program = mixedCastProgram(() => null);
+
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+    // Nyx's own reference is current, but the cast-wide lock is narrow, so her
+    // hair and build must still be stated as text.
+    expect(program.prompt).toMatch(/platinum/i);
+    expect(program.prompt).toMatch(/\bsturdy\b/i);
+    const nyxRedundant = redundantKeys(program).filter((key) =>
+      key.startsWith(`subject.${LANE_PROBE_SUBJECT_ID}.appearance`),
+    );
+    expect(nyxRedundant.some((key) => key.includes("hair."))).toBe(false);
+    expect(nyxRedundant.some((key) => key.includes("build."))).toBe(false);
+  });
+
+  /**
+   * The same acceptance against a castmate the revision positively says has
+   * MOVED rather than one nobody stamped — stronger evidence than `unknown`
+   * that the wider lock would be wrong, so if Nyx keeps her text beside the
+   * weaker case above she must keep it here too.
+   */
+  it("keeps a matching subject's hair and build in the text beside a castmate whose appearance moved", () => {
+    const program = mixedCastProgram((attributes) =>
+      appearanceRevisionOf(
+        attributes.map((entry) => (entry.id === "hair.length" ? { ...entry, value: "shoulder_length" } : entry)),
+      ),
+    );
+
+    expect(program.prompt).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(program.prompt).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(program.prompt).toMatch(/platinum/i);
+    expect(program.prompt).toMatch(/\bsturdy\b/i);
+    const nyxRedundant = redundantKeys(program).filter((key) =>
+      key.startsWith(`subject.${LANE_PROBE_SUBJECT_ID}.appearance`),
+    );
+    expect(nyxRedundant.some((key) => key.includes("hair."))).toBe(false);
+    expect(nyxRedundant.some((key) => key.includes("build."))).toBe(false);
   });
 });

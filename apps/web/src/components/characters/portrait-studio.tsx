@@ -16,6 +16,7 @@ import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { IdentityReferencePanel } from "./identity-reference-panel";
 import { ReferenceViewsPanel } from "./reference-views-panel";
 import { ImageProfileSelect, pickedProfileId } from "./image-profile-select";
+import { avatarGenerationRows, isAvatarGenerationComplete, type AvatarGenerationRequest } from "./portrait-studio-state";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { Disclosure } from "@/components/ui/disclosure";
@@ -92,6 +93,45 @@ function portraitKindLabel(image: ImageRecord): string {
   return variant ? portraitVariantKindLabel(variant) : image.kind.replaceAll("_", " ");
 }
 
+/** Short copy for a disabled "Same composition" menu item (issue #248) — the
+ * full sentence lives server-side; this is the label-length version. */
+const REPLAY_REASON_LABEL: Record<string, string> = {
+  no_recorded_seed: "no seed was recorded",
+  model_changed: "the model changed",
+  version_changed: "the model version changed",
+  world_changed: "the character changed",
+  // Correction round 2: defensive-only in practice (the compile step's own
+  // output), but the disabled menu item still needs SOME words if it ever
+  // is reached rather than falling back to "not available" silently.
+  program_unrecorded: "the prompt program can't be compared",
+  demo_mode: "demo mode has no composition to replay",
+  source_unavailable: "unavailable",
+};
+
+/** This row's position in a best-of-two candidate group (issue #248), or null
+ * for an ordinary single-candidate row. */
+function candidateLabel(image: ImageRecord): string | null {
+  const candidates = image.meta?.candidates;
+  return candidates ? `Candidate ${candidates.index} of ${candidates.of}` : null;
+}
+
+/** "Unseeded variation" or the recorded seed, for an avatar-kind row — null
+ * when the row carries no render provenance at all (issue #248). */
+function seedCaption(image: ImageRecord): string | null {
+  if (image.kind !== "avatar") return null;
+  const seed = image.meta?.render?.seed;
+  if (seed === null) return "Unseeded variation";
+  return typeof seed === "number" ? `Seed ${seed}` : null;
+}
+
+/** The Portrait history tile's caption: candidate position and seed status
+ * take priority over the (often IDENTICAL, since two candidates share one
+ * compiled program) prompt text. */
+function tileCaption(image: ImageRecord): string {
+  const parts = [candidateLabel(image), seedCaption(image)].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" \u00b7 ") : image.prompt || image.kind;
+}
+
 /**
  * Avatar + variant studio (docs/images/pipelines/avatars.md §The job and the
  * studio): generate the canonical avatar from
@@ -120,7 +160,6 @@ export function PortraitStudio({
   generationDisabled = false,
   pendingProposalCount = 0,
 }: PortraitStudioProps) {
-  const portraits = useAsyncData(() => charactersApi.portraits(characterId), [characterId]);
   const toast = useToast();
   const [kind, setKind] = useState<PortraitVariantKind>("pose");
   // Both pickers default to the first profile their task offers, which is the
@@ -129,6 +168,19 @@ export function PortraitStudio({
   const variantProfiles = useAsyncData(() => imageProfilesApi.list("variant"), []);
   const [avatarProfileId, setAvatarProfileId] = useState<string>("");
   const [variantProfileId, setVariantProfileId] = useState<string>("");
+  // The selection travels to the list GET too, so the per-row same-composition
+  // hint judges against what a retry right now would actually resolve to,
+  // not always the task default (codex review round 1, finding B); refetch
+  // whenever the player changes it.
+  const avatarModelId = pickedProfileId(avatarProfileId);
+  const portraits = useAsyncData(
+    () => charactersApi.portraits(characterId, { modelId: avatarModelId }),
+    [characterId, avatarModelId],
+  );
+  // "One portrait" (default, byte-for-byte today's behavior) or "two
+  // candidates" (issue #248) — the player ceiling; a same-composition retry
+  // always forces one regardless of this picker.
+  const [candidateCount, setCandidateCount] = useState<1 | 2>(1);
   const [instruction, setInstruction] = useState("");
   const [avatarPhase, setAvatarPhase] = useState<"saving" | "generating" | null>(null);
   const avatarActionRef = useRef(false);
@@ -144,14 +196,6 @@ export function PortraitStudio({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [acceptingPortrait, setAcceptingPortrait] = useState(false);
 
-  // Once the avatar id changes (a generate finished or a variant was
-  // promoted), stop treating the avatar job as pending. Adjusted during
-  // render — the "previous render" pattern — rather than setState in an effect.
-  const [prevAvatarImageId, setPrevAvatarImageId] = useState(avatarImageId);
-  if (avatarImageId !== prevAvatarImageId) {
-    setPrevAvatarImageId(avatarImageId);
-    if (avatarImageId) setAvatarPhase(null);
-  }
   useEffect(() => {
     if (avatarImageId) avatarActionRef.current = false;
   }, [avatarImageId]);
@@ -166,9 +210,13 @@ export function PortraitStudio({
   const generatingAvatar = avatarPhase !== null;
   const hasPending = hasPendingRow || rendering || generatingAvatar || variantQueued;
 
-  // Newest avatar-row id when a generation started — lets the effect below tell a
-  // FAILED regen (a new avatar row that never became canonical) from an old one.
-  const genBaselineRef = useRef<string | null>(null);
+  // The current avatar request's client-minted id and candidate count —
+  // lets the effect below judge completion from the rows THIS request
+  // stamped, never the canonical pointer (which a two-candidate request
+  // never claims) and never a snapshot of pre-existing rows (which a
+  // completion check firing before the portraits list has loaded would
+  // wrongly read as empty; issue #248 codex review round 2, threads 3–4).
+  const avatarRequestRef = useRef<AvatarGenerationRequest | null>(null);
 
   // Poll while anything is generating; also nudge the parent so a finished
   // avatar job shows up without a manual refresh (the hook latest-refs the tick,
@@ -182,16 +230,28 @@ export function PortraitStudio({
     POLL_MS,
   );
 
-  // A failed regeneration never changes avatarImageId, so the success-path clear
-  // (the previous-render block above) never fires. Detect the new failed avatar
-  // row and release the spinner so the button doesn't stay stuck on "Working…".
+  // Neither a two-candidate request (which claims no pointer at all) nor a
+  // single-candidate FAILURE (which never moves it either) ever moves the
+  // canonical pointer, so completion is judged from the request's OWN rows:
+  // every row stamped with this request's `meta.request.id`, never a
+  // snapshot of what existed before it — which would be wrongly empty
+  // before the portraits list has ever loaded (codex review round 2,
+  // threads 3–4). A partial failure inside a two-candidate group is still a
+  // CHOICE, not an error, so the failure toast fires only when every
+  // stamped row failed.
   useEffect(() => {
     if (avatarPhase !== "generating") return;
-    const newestAvatar = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar");
-    if (newestAvatar && newestAvatar.id !== genBaselineRef.current && newestAvatar.status === "failed") {
-      setAvatarPhase(null);
-      avatarActionRef.current = false;
-      const error = generationError(newestAvatar);
+    const request = avatarRequestRef.current;
+    if (!request) return;
+    const currentRows = portraits.data?.portraits ?? [];
+    if (!isAvatarGenerationComplete(request, { rows: currentRows })) return;
+    setAvatarPhase(null);
+    avatarActionRef.current = false;
+    const newRows = avatarGenerationRows(request, currentRows);
+    const allFailed = newRows.length > 0 && newRows.every((newRow) => newRow.status === "failed");
+    if (allFailed) {
+      const [firstFailed] = newRows;
+      const error = firstFailed ? generationError(firstFailed) : null;
       toast.push({
         title: "Avatar generation failed",
         description: error ?? "The image provider returned an error. Try again.",
@@ -200,10 +260,29 @@ export function PortraitStudio({
     }
   }, [portraits.data, avatarPhase, toast]);
 
-  const generateAvatar = async () => {
+  /**
+   * `retry` states explicit semantics for a REGENERATION (issue #248) —
+   * absent for the first-ever "Generate portrait". A same-composition retry
+   * always renders exactly one image, whatever the candidates picker says;
+   * only a plain generation or an explicit "new variation" reads it.
+   */
+  const generateAvatar = async (
+    retry?: { mode: "new_variation"; sourceImageId?: string } | { mode: "same_composition"; sourceImageId: string },
+  ) => {
     if (avatarActionRef.current || generationDisabled || pendingProposalCount > 0) return;
     avatarActionRef.current = true;
-    genBaselineRef.current = (portraits.data?.portraits ?? []).find((img) => img.kind === "avatar")?.id ?? null;
+    const requestedCandidates = retry?.mode === "same_composition" ? 1 : candidateCount;
+    // Minted and tracked BEFORE either phase flips (codex review round 2,
+    // threads 3–4): the ref used to be filled in only after the POST
+    // resolved, which left a window — anywhere from here to that response —
+    // where a completion check firing mid-request judged the PREVIOUS
+    // request's stale record, or found none at all. A client-minted id also
+    // needs no snapshot of what existed before it: the server stamps it on
+    // every row THIS request reserves, so completion is judged by that id
+    // alone, never by counting rows against a history that might not have
+    // loaded yet.
+    const requestId = crypto.randomUUID();
+    avatarRequestRef.current = { requestId, candidates: requestedCandidates };
     setAvatarPhase("saving");
     const source = await prepareGeneration();
     if (!source) {
@@ -215,9 +294,20 @@ export function PortraitStudio({
     const result = await charactersApi.generateAvatar(characterId, {
       authoringRevision: source.authoringRevision,
       modelId: pickedProfileId(avatarProfileId),
+      candidates: requestedCandidates,
+      requestId,
+      ...(retry ? { retry } : {}),
     });
     if (result.ok) {
-      toast.push({ title: "Avatar queued", description: "Built from this character's attributes." });
+      toast.push({
+        title: retry?.mode === "same_composition" ? "Replaying the same composition" : "Avatar queued",
+        description:
+          retry?.mode === "same_composition"
+            ? "Reusing this portrait's settings — a reproducibility request, not a pixel guarantee."
+            : requestedCandidates === 2
+              ? "Building two candidates to choose between."
+              : "Built from this character's attributes.",
+      });
     } else {
       toast.push({ title: "Avatar generation failed", description: result.error.message, tone: "error" });
       setAvatarPhase(null);
@@ -225,6 +315,19 @@ export function PortraitStudio({
     }
     portraits.reload({ silent: true });
   };
+
+  /**
+   * The cheap per-row same-composition hint (issue #248) — seed recorded,
+   * model/profile/version still current. A world-state change is only
+   * detectable at request time, so "Same composition" can still be refused
+   * even when this said nothing was wrong; the failure toast explains why.
+   * Only consulted from the secondary "Same composition" button below, which
+   * renders only once `avatarImageId` exists — there is always a candidate
+   * portrait to reason about here.
+   */
+  const currentReplay = avatarImageId ? portraits.data?.replay?.[avatarImageId] : undefined;
+  const sameCompositionDisabledReason =
+    currentReplay && !currentReplay.ok ? (REPLAY_REASON_LABEL[currentReplay.reason] ?? "not available") : null;
 
   // Row count when the variant was queued — clears the queued flag even when a
   // demo-fast job settles before the first refetch (no pending row, `rendering`
@@ -444,16 +547,42 @@ export function PortraitStudio({
               />
             )}
           </Field>
-          <div className="flex flex-wrap gap-2">
+          <Field label="Candidates" hint="Two lets you pick the better one; a same-composition retry always renders one.">
+            {(id) => (
+              <Select
+                id={id}
+                value={String(candidateCount)}
+                onChange={(e) => setCandidateCount(e.target.value === "2" ? 2 : 1)}
+              >
+                <option value="1">One portrait</option>
+                <option value="2">Two candidates</option>
+              </Select>
+            )}
+          </Field>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant={avatarImageId && !acceptance.isCurrent ? "ghost" : "primary"}
-              onClick={generateAvatar}
+              onClick={() =>
+                void generateAvatar(avatarImageId ? { mode: "new_variation", sourceImageId: avatarImageId } : undefined)
+              }
               busy={generatingAvatar}
               disabled={generationDisabled || pendingProposalCount > 0}
               title={pendingProposalCount > 0 ? "Review pending character suggestions before generating a portrait" : undefined}
             >
               {avatarPhase === "saving" ? "Saving…" : avatarImageId ? "Regenerate portrait" : "Generate portrait"}
             </Button>
+            {avatarImageId ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void generateAvatar({ mode: "same_composition", sourceImageId: avatarImageId })}
+                busy={generatingAvatar}
+                disabled={generationDisabled || pendingProposalCount > 0 || !!sameCompositionDisabledReason}
+                title={sameCompositionDisabledReason ?? "Reuse this portrait's exact settings, including its seed"}
+              >
+                Same composition
+              </Button>
+            ) : null}
             <Button variant="ghost" onClick={() => setUploadOpen(true)}>
               Upload image
             </Button>
@@ -568,6 +697,12 @@ export function PortraitStudio({
       {hasPortrait || portraits.loading || portraits.error || variants.length > 0 || showPainting ? (
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Portrait history</h3>
+          {variants.some((img) => candidateLabel(img) !== null) ? (
+            <p className="text-sm text-paper-400">
+              Two candidates were generated from the same settings — pick the one you like with{" "}
+              <span className="font-medium text-paper-200">Use this one</span>.
+            </p>
+          ) : null}
           {portraits.loading ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {Array.from({ length: 4 }, (_, i) => (
@@ -625,7 +760,7 @@ export function PortraitStudio({
                         </span>
                       ) : (
                         <span className="truncate" title={img.prompt}>
-                          {img.prompt || img.kind}
+                          {tileCaption(img)}
                         </span>
                       )}
                       <span className="hover-reveal ml-auto flex gap-1">
@@ -636,7 +771,7 @@ export function PortraitStudio({
                             busy={busyImageId === img.id}
                             onClick={() => promote(img.id)}
                           >
-                            Promote
+                            {candidateLabel(img) ? "Use this one" : "Promote"}
                           </Button>
                         ) : null}
                         <Button

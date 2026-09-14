@@ -82,4 +82,11 @@ describe("imageRenderRejection storage leg (hidden-kind exemption)", () => {
     expect(await imageRenderRejection(user, req, { count: 6, outputKind: "identity_trial_output" })).toBeNull();
     expect(mockBudget).toHaveBeenCalledWith("user1", "provider_image_day", 6);
   });
+
+  it("a visible-output count of 2 (best-of-two portraits, issue #248) reserves storage and charges the budget for BOTH candidates", async () => {
+    mockStorage.mockResolvedValue({ allowed: true, limit: 100, used: 0, remaining: 100 });
+    expect(await imageRenderRejection(user, req, { count: 2 })).toBeNull();
+    expect(mockStorage).toHaveBeenCalledWith("user1", ESTIMATED_RENDER_BYTES * 2);
+    expect(mockBudget).toHaveBeenCalledWith("user1", "provider_image_day", 2);
+  });
 });

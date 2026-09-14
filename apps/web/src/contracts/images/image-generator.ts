@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  identityReferenceProvenanceListSchema,
   imageAspectModes,
   imageControlReferenceRoles,
   imageEditKinds,
@@ -217,6 +218,53 @@ export function emptyImageGeneratorProviderInputs(): ImageGeneratorProviderInput
 }
 
 /**
+ * WHY a run exists, beyond the freeform bench it always is.
+ *
+ * The Generator itself stays a raw prompt/model bench — `purpose` records a
+ * caller's own reason for one run without the runner reading it for routing,
+ * exactly like a primary reference's `purpose` field records a caller's reason
+ * for one image. A discriminated union rather than a single flat shape: today
+ * only the flagged face-repair action (issue #246) writes one, and headroom for
+ * a second purpose later is a new union member, never a reshaped column.
+ *
+ * `face_repair` carries the whole decision the action made before it spent
+ * anything: which character and source image, which repair method ran, the
+ * multi-person check's own evidence (`subjectCheck`), and the identity
+ * references sent alongside the source — the same provenance shape render
+ * lanes persist to `meta.identityReferences`, reused here rather than
+ * reinvented.
+ */
+export const faceRepairSubjectCheckMethods = ["reference_cast", "render_contract", "pack_quality", "none"] as const;
+export const faceRepairSubjectCheckMethodSchema = z.enum(faceRepairSubjectCheckMethods);
+export type FaceRepairSubjectCheckMethod = (typeof faceRepairSubjectCheckMethods)[number];
+
+export const faceRepairMethods = ["regional_mask", "full_frame_identity_edit"] as const;
+export const faceRepairMethodSchema = z.enum(faceRepairMethods);
+export type FaceRepairMethod = (typeof faceRepairMethods)[number];
+
+export const faceRepairSubjectCheckSchema = z.object({
+  method: faceRepairSubjectCheckMethodSchema,
+  /** null means no evidence either way — never a claimed detection. */
+  subjects: z.number().int().min(0).nullable(),
+});
+export type FaceRepairSubjectCheck = z.infer<typeof faceRepairSubjectCheckSchema>;
+
+export const imageGeneratorRunFaceRepairPurposeSchema = z.object({
+  kind: z.literal("face_repair"),
+  characterId: z.string().min(1),
+  sourceImageId: z.string().min(1),
+  method: faceRepairMethodSchema,
+  subjectCheck: faceRepairSubjectCheckSchema,
+  identityReferences: identityReferenceProvenanceListSchema,
+});
+export type ImageGeneratorRunFaceRepairPurpose = z.infer<typeof imageGeneratorRunFaceRepairPurposeSchema>;
+
+export const imageGeneratorRunPurposeSchema = z.discriminatedUnion("kind", [
+  imageGeneratorRunFaceRepairPurposeSchema,
+]);
+export type ImageGeneratorRunPurpose = z.infer<typeof imageGeneratorRunPurposeSchema>;
+
+/**
  * The create-run request.
  *
  * Create-time rules enforce only client-bug CONTRADICTIONS: at most one
@@ -249,6 +297,8 @@ export const imageGeneratorCreateRunRequestSchema = z.object({
   sourceRunId: z.string().min(1).optional(),
   /** Which version runs; `captured` needs the `sourceRunId` it is replaying. */
   versionPolicy: imageGeneratorVersionPolicySchema.optional(),
+  /** Why this run exists, beyond the bench itself — absent for an ordinary run. */
+  purpose: imageGeneratorRunPurposeSchema.optional(),
 }).superRefine((request, ctx) => {
   const roles = (request.inputs?.dedicated ?? []).map((input) => input.role);
   if (new Set(roles).size !== roles.length) {
@@ -338,6 +388,14 @@ export const imageGeneratorRunSchema = z.object({
     .catch(emptyImageGeneratorProviderInputs)
     .default(emptyImageGeneratorProviderInputs),
   sourceRunId: z.string().min(1).nullable().default(null),
+  /**
+   * Why this run exists, beyond the bench itself — `null` for an ordinary run.
+   * Typed and validated, unlike `attempt`/`effectiveRequest`/`result` below: a
+   * caller that reads `purpose.kind` is making a product decision (which runs
+   * are face repairs), not just displaying a record, so a bag that fails to
+   * parse degrades to `null` rather than surviving as an untyped blob.
+   */
+  purpose: imageGeneratorRunPurposeSchema.nullable().catch(null).default(null),
   resultImageId: z.string().min(1).nullable().default(null),
   /** Dotted generator code, or a verbatim shared-layer code — see the vocabulary note. */
   failureCode: z.string().nullable().default(null),

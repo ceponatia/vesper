@@ -319,7 +319,16 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // itself downstream of the avatar, so only the member with no fresh look
   // asks the pack). A member with neither renders from the prompt's textual
   // description, which the multi-reference prompt already labels as such.
-  const anchors = new Map<string, { imageId: string; buffer: Buffer; source: SceneReferenceSource }>();
+  // `appearanceRevision` rides beside the bytes (issue #551): the prompt seam
+  // decides how much of a person the anchor is still authoritative for, and this
+  // is the only place that knows WHICH stored image each cast member anchored
+  // on — a minted look, or the identity pack's candidate for their accepted
+  // portrait. Null is the ordinary answer for an uploaded portrait and for
+  // anything drawn before the stamp existed.
+  const anchors = new Map<
+    string,
+    { imageId: string; buffer: Buffer; source: SceneReferenceSource; appearanceRevision: string | null }
+  >();
   const identityProvenance: IdentityReferenceProvenance[] = [];
   let identityRefusal: string | null = null;
   // `imageProfile !== null` is implied by `referenceRoute` at runtime (the model
@@ -329,7 +338,12 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       const look =
         input.chatId && member.lookKey ? await latestChatLook(input.chatId, member.characterId, member.lookKey) : null;
       if (look) {
-        anchors.set(member.characterId, { imageId: look.imageId, buffer: look.buffer, source: "generated" });
+        anchors.set(member.characterId, {
+          imageId: look.imageId,
+          buffer: look.buffer,
+          source: "generated",
+          appearanceRevision: look.appearanceRevision,
+        });
         continue;
       }
       // A member with no ACCEPTED portrait renders from text, exactly as a
@@ -359,12 +373,21 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
         imageId: chosen.candidate.imageId,
         buffer: chosen.reference.buffer,
         source: chosen.source,
+        appearanceRevision: chosen.appearanceRevision,
       });
       identityProvenance.push(chosen.provenance);
     }
   }
   const referenceBuffers = new Map<string, Buffer>();
-  for (const anchor of anchors.values()) referenceBuffers.set(anchor.imageId, anchor.buffer);
+  // Keyed by stored image id, exactly as the buffers are, because that is the
+  // one identifier the render's own reference objects carry all the way to the
+  // prompt seam (issue #551). An image with no entry is an image nothing knows
+  // the appearance of, which compares as `unknown`.
+  const referenceAppearanceRevisions = new Map<string, string>();
+  for (const anchor of anchors.values()) {
+    referenceBuffers.set(anchor.imageId, anchor.buffer);
+    if (anchor.appearanceRevision !== null) referenceAppearanceRevisions.set(anchor.imageId, anchor.appearanceRevision);
+  }
 
   // The place rides behind the people: identity is what the cast ruling protects,
   // so when capacity is short the setting is what gives way, never a character.
@@ -439,6 +462,9 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       if (!loaded.ok) continue;
       const angle = referenceViewAngleById(selection.view.angle);
       if (angle === undefined) continue;
+      if (loaded.appearanceRevision !== null) {
+        referenceAppearanceRevisions.set(loaded.imageId, loaded.appearanceRevision);
+      }
       selected.push({
         buffer: loaded.buffer,
         view: {
@@ -518,6 +544,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
           : []),
       ],
       referenceBuffers,
+      referenceAppearanceRevisions,
       // The views count: an extra image-bearing reference is what routes the
       // multi-reference rung, and a single-anchor scene that just gained a
       // matching back view has two images to compose rather than one.

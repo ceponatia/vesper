@@ -10,6 +10,7 @@ import {
   type SceneVisualReference,
 } from "@vesper/image-core";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { appearanceRevisionOf } from "@/contracts/images/appearance-revision";
 import {
   identityProvenanceFixture as record,
   LANE_PROBE_IMAGE_ID,
@@ -183,6 +184,41 @@ beforeEach(() => {
 });
 
 describe("renderResolvedScene identity provenance", () => {
+  /**
+   * The other half of the appearance-revision chain (issue #551): the caller
+   * says what each stored reference depicts, and the scene render has to spend
+   * that on the program it compiles — recovered from the `sourceImageId` the
+   * reference already carries, since nothing else ties a planned slot back to
+   * the row it came from.
+   *
+   * Asserted through the compiled program's own provenance rather than through
+   * the prompt text, because the verdict is what this lane is responsible for
+   * passing on; how a dialect words it is the dialect suite's claim.
+   */
+  it("spends the caller's reference appearance revisions on the compiled program", async () => {
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    const scene = laneProbeCastSceneRender();
+    const focal = scene.cast.find((slice) => slice.subjectId === LANE_PROBE_SUBJECT_ID);
+    if (focal === undefined) throw new Error("the probe cast lost its focal");
+
+    await renderResolvedScene(
+      baseInput({
+        // The focal's anchor depicts exactly the cut this render draws; the
+        // second cast member's anchor is unstamped, which is `unknown`.
+        referenceAppearanceRevisions: new Map([[LANE_PROBE_IMAGE_ID, appearanceRevisionOf(focal.attributes)]]),
+      }),
+    );
+
+    const provenance = parseImagePromptProgramProvenance(
+      pipelineCalls[0]?.asset.meta?.[IMAGE_PROMPT_PROGRAM_META_KEY],
+    );
+    const verdicts = new Map(
+      (provenance?.references ?? []).map((entry) => [entry.subjectRef, entry.preservation]),
+    );
+    expect(verdicts.get(`subject.${LANE_PROBE_SUBJECT_ID}`)).toBe("matches");
+    expect(verdicts.get(`subject.${LANE_PROBE_SECOND_SUBJECT_ID}`)).toBe("unknown");
+  });
+
   it("a refused render (failedPrecondition) records NO identityReferences — nothing was sent", async () => {
     await renderResolvedScene(
       baseInput({
@@ -247,6 +283,9 @@ describe("renderResolvedScene identity provenance", () => {
       sentReferenceRoles: ["identity"],
       predictionId,
       executedVersionId: null,
+      // The mocked transport returns no shape outcome, which `resolvedAttempt`
+      // records as `null` — a real render always carries one.
+      shape: null,
     });
     mockIntent
       .mockResolvedValueOnce({ ok: false, error: "multi boom", attempt: attempt("pred-multi") })

@@ -61,6 +61,7 @@ const EDITABLE = [
   "resolution",
   "width",
   "height",
+  "aspectRatio",
   "fastMode",
   "thinkingMode",
   "lora",
@@ -89,6 +90,7 @@ describe("the profile editor's control fields", () => {
       width: 832,
       height: 1216,
       fastMode: false,
+      aspectRatio: "3:4",
       thinkingMode: true,
       lora: { id: "imglorasabrinaaaaaaaaaaa", scale: 0.9 },
     };

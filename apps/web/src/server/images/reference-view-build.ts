@@ -361,7 +361,12 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
             characters: [{ characterId, revision: context.revision }],
             extraRevisions: [...context.wardrobe.revisions],
           },
-          references: packSelection.references.map((entry) => ({ reference: entry.reference, subjectId: characterId })),
+          references: packSelection.references.map((entry) => ({
+            reference: entry.reference,
+            subjectId: characterId,
+            // The accepted portrait's own stamp (issue #551).
+            appearanceRevision: entry.appearanceRevision,
+          })),
           operation: (subjects) =>
             characterVariantImageOperation({
               change: characterChangeContract(
@@ -431,9 +436,9 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       if (!edit.ok || !edit.image) {
         const error = edit.error ?? `${resolved.model.slug} returned no image`;
         failure = error;
-        return { ok: false, error, ...renderAttemptMeta(edit.attempt) };
+        return { ok: false, error, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       }
-      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt) };
+      return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
     },
     onThrown: ({ message }) => {
       failure = message;

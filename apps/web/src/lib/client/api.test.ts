@@ -6,12 +6,14 @@ import {
   createdRefSchema,
   detailOf,
   emptyCharacterDraft,
+  imageAdvisoriesApi,
   imageRecordSchema,
   imageUrl,
   itemDetailSchema,
   toApiError,
   withQuery,
 } from "./api";
+import { avatarReplayHintSchema, avatarReplayMapSchema } from "./api/images";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -87,6 +89,189 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.render).toEqual(render);
     // Degraded shapes miss cleanly rather than failing the record.
     expect(imageRecordSchema.parse({ id: "img-2", meta: { render: "not-an-object" } }).meta.render).toBeUndefined();
+  });
+
+  it("carries render advisories through the parse, including a reviewed one (issue #249)", () => {
+    const advisories = [
+      {
+        version: 1,
+        code: "blank_output",
+        level: "advisory",
+        reason: "The render came back as a flat, near-uniform image with almost no visible detail.",
+        evidence: { grayVariance: 1, laplacianVariance: 0 },
+        offers: ["retry_same", "new_variation"],
+        review: { verdict: "agree", at: "2026-09-13T00:00:00.000Z" },
+      },
+    ];
+    const parsed = imageRecordSchema.parse({
+      id: "img-3",
+      kind: "scene",
+      status: "ready",
+      prompt: "scene prompt",
+      meta: { model: "replicate/qwen/qwen-image-2512", advisories },
+    });
+    expect(parsed.meta.advisories).toEqual(advisories);
+  });
+
+  it("survives a code outside today's known enum — a future or older deploy's advisory (correction round 1)", () => {
+    // The client schema is deliberately LOOSE on `code` (a plain string, not
+    // the producer's strict enum): a version bump or a code this deployment
+    // does not recognize yet must not make the whole entry unparsable, which
+    // is exactly the bug a strict `renderAdvisorySchema.extend(...)` caused —
+    // a review already written for it would come back `ok:false`.
+    const parsed = imageRecordSchema.parse({
+      id: "img-4",
+      meta: { advisories: [{ version: 2, code: "some_future_code", level: "advisory", reason: "r", evidence: {}, offers: [] }] },
+    });
+    expect(parsed.meta.advisories).toHaveLength(1);
+    expect(parsed.meta.advisories?.[0]?.code).toBe("some_future_code");
+    expect(parsed.meta.advisories?.[0]?.version).toBe(2);
+  });
+
+  it("drops an unparseable advisories entry and keeps its known sibling, rather than failing the whole list", () => {
+    const known = {
+      version: 1,
+      code: "blank_output",
+      level: "advisory",
+      reason: "flat fill",
+      evidence: { grayVariance: 1 },
+      offers: ["retry_same"],
+    };
+    const parsed = imageRecordSchema.parse({
+      id: "img-5",
+      meta: { advisories: [known, "not an advisory object", null, 42] },
+    });
+    expect(parsed.meta.advisories).toEqual([known]);
+  });
+
+  // Kills the defect a strict shape here would cause: a NEW row written by a
+  // newer deploy (issue #248's `retry`/`candidates` meta keys) must never fail
+  // an older client's parse of the whole record.
+  it("carries the retry and candidates provenance (issue #248) through the parse", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-retry",
+      kind: "avatar",
+      status: "ready",
+      prompt: "portrait prompt",
+      meta: {
+        retry: { mode: "same_composition", sourceImageId: "img-source", seed: 777 },
+        candidates: { group: "grp-1", index: 1, of: 2 },
+      },
+    });
+    expect(parsed.meta.retry).toEqual({ mode: "same_composition", sourceImageId: "img-source", seed: 777 });
+    expect(parsed.meta.candidates).toEqual({ group: "grp-1", index: 1, of: 2 });
+  });
+
+  it("degrades a malformed retry or candidates value to absent, never a failed parse", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-malformed",
+      kind: "avatar",
+      status: "ready",
+      prompt: "",
+      meta: { retry: "not-an-object", candidates: 42 },
+    });
+    expect(parsed.meta.retry).toBeUndefined();
+    expect(parsed.meta.candidates).toBeUndefined();
+  });
+
+  // Codex review round 2, threads 3–4: the studio judges best-of-two
+  // completion by matching `meta.request.id` against the id it minted for
+  // its own request, so this field surviving the parse (and degrading
+  // cleanly on a malformed value) is load-bearing, not cosmetic.
+  it("carries the request provenance (issue #248 codex review round 2) through the parse", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-request",
+      kind: "avatar",
+      status: "ready",
+      prompt: "portrait prompt",
+      meta: { request: { id: "req-1", candidates: 2 } },
+    });
+    expect(parsed.meta.request).toEqual({ id: "req-1", candidates: 2 });
+  });
+
+  it("degrades a malformed or absent request value to absent, never a failed parse", () => {
+    expect(imageRecordSchema.parse({ id: "img-1", meta: { request: "not-an-object" } }).meta.request).toBeUndefined();
+    expect(imageRecordSchema.parse({ id: "img-2", meta: {} }).meta.request).toBeUndefined();
+  });
+});
+
+describe("avatarReplayHintSchema / avatarReplayMapSchema (issue #248)", () => {
+  it("parses an eligible and a refused hint", () => {
+    expect(avatarReplayHintSchema.parse({ ok: true })).toEqual({ ok: true });
+    expect(avatarReplayHintSchema.parse({ ok: false, reason: "no_recorded_seed" })).toEqual({
+      ok: false,
+      reason: "no_recorded_seed",
+    });
+  });
+
+  it("a map keys hints by image id and degrades a malformed map to empty", () => {
+    const map = avatarReplayMapSchema.parse({
+      "img-1": { ok: true },
+      "img-2": { ok: false, reason: "model_changed" },
+    });
+    expect(map).toEqual({ "img-1": { ok: true }, "img-2": { ok: false, reason: "model_changed" } });
+    expect(avatarReplayMapSchema.parse("not-an-object")).toEqual({});
+  });
+});
+
+describe("charactersApi.generateAvatar / portraits (codex review round 1, issue #248)", () => {
+  it("decodes the queuing job's id from the 202 response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ jobId: "job-1", characterId: "chr-1" }, 202)));
+    const result = await charactersApi.generateAvatar("chr-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.jobId).toBe("job-1");
+  });
+
+  it("degrades to an empty jobId rather than failing the request when the body is malformed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({}, 202)));
+    const result = await charactersApi.generateAvatar("chr-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.jobId).toBe("");
+  });
+
+  it("sends the caller's modelId as a query param, and omits it when absent (finding B: the same-composition hint must judge the selected profile, not always the task default)", async () => {
+    const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) =>
+      jsonResponse({ portraits: [], rendering: false, replay: {} }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await charactersApi.portraits("chr-1", { modelId: "prf-standard" });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/characters/chr-1/portraits?modelId=prf-standard");
+    fetchMock.mockClear();
+    await charactersApi.portraits("chr-1");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/characters/chr-1/portraits");
+  });
+});
+
+describe("imageAdvisoriesApi.review", () => {
+  it("reports ok:true on a PATCH response carrying a newer advisory version (issue #249 correction round 1)", async () => {
+    // Regression: the response schema used to be `renderAdvisorySchema.extend(...)`,
+    // pinned to `version: z.literal(1)` — a review the server had already
+    // recorded, echoed back at a bumped version, parsed as a failure and the
+    // lightbox reported "Could not record your review" for a write that
+    // actually succeeded.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          advisory: {
+            version: 2,
+            code: "blank_output",
+            level: "advisory",
+            reason: "flat fill",
+            evidence: { grayVariance: 1 },
+            offers: ["retry_same"],
+            review: { verdict: "agree", at: "2026-09-13T00:00:00.000Z" },
+          },
+        }),
+      ),
+    );
+    const result = await imageAdvisoriesApi.review("img-1", { code: "blank_output", verdict: "agree" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.data.advisory.version).toBe(2);
+    expect(result.data.advisory.review?.verdict).toBe("agree");
   });
 });
 

@@ -460,6 +460,148 @@ editor those are the facts the prompt states and the render is asked to change,
 and a preserve clause claiming them leaves every later hair or build sentence
 ambiguous between a reminder and an override.
 
+**The lock's own preserve set is also what makes an optional reinforcement of
+the same fact redundant** — reference authority is
+OPERATION-SPECIFIC, never "a subject-bound reference replaces all stable
+appearance text". The character seam runs one request-aware selection step,
+after reference planning and before the digest compiles: for a subject a
+required identity reference actually names, an OPTIONAL `subject.appearance`
+fact sourced from the attribute registry ([§Registry-backed image
+appearance](#registry-backed-image-appearance)) is omitted when its ASPECT is
+one the resolved dialect declares its reference authoritative for. The aspect
+vocabulary is closed and small — `face`, `hair`, `skin_tone`, `build`,
+`apparent_age` — and each `subject.appearance` fact's aspect is derived from
+the attribute registry's own category, never a hand list of attribute ids in
+the seam. The Qwen edit dialect declares `face`, `skin_tone` and
+`apparent_age` (`QWEN_2511_REFERENCE_AUTHORITY_ASPECTS`,
+`server/images/packs-qwen-2511.ts`) — the exact set its lock preserves above —
+so a reference-anchored render states an oval or heart-shaped face shape and a
+brown or ashen skin tone nowhere in text, while hair, build, wardrobe and pose
+stay exactly as reinforced as they were before this policy existed, matching
+what the lock leaves to the text. `apparent_age` is declared for headroom: no
+`subject.appearance` fact carries it today, because the apparent-age anchor is
+a separate concept a lane's own text-authoritative policy already owns
+([§Apparent age per lane](#apparent-age-per-lane)), so this policy has nothing
+to omit there yet. A dialect this table does not name declares no aspect
+authoritative, so its subjects compile exactly as they always have.
+
+This is selection, never fitting: it decides whether a fact is useful for THIS
+request, before the existing budget fitter separately decides which useful
+optional facts fit, and neither step bypasses the other — no new
+character-count limiter, and every required fact, the identity anchor,
+exposure, morphology, current state, wardrobe, pose and the requested change
+itself are untouched by construction. A subject with no required identity
+reference is untouched too, and several references of one subject are one
+entry in the anchored set and cost one pass, never several. The omission is
+recorded as a suppression under its own reason,
+`character.appearance.reference_redundant`
+(`IMAGE_CHARACTER_APPEARANCE_REFERENCE_REDUNDANT`), distinguishable from the
+projection's own `out_of_frame`/`hidden`/`replaced` judgments — decided before
+this policy ever runs, on a fact that therefore never reaches it to reconsider
+— and from a fitter's drop, decided after. A mixed ensemble decides separately
+per subject: a cast member with a reference gets this treatment, one with none
+keeps the full reference-free description a render of them still needs.
+
+**How much a reference is authoritative for follows WHEN it was drawn.** The
+split above is the honest answer for a photograph of unknown age; it is the
+wrong one for a reference minted from the very appearance the render is
+drawing, which already carries that hair and that build pixel-perfect, and on an
+instruction editor restating them is a request to repaint surfaces the model
+should be copying. So the reference's own provenance decides, through an
+**appearance revision**: a digest over the registry-backed image-appearance
+attributes ([§Registry-backed image
+appearance](#registry-backed-image-appearance)) of one resolved appearance,
+carrying a family prefix that says which input set it was taken over.
+
+- **A render stamps its own output with the appearance it DREW.** The seam
+  records the revision of each compiled cut on the image row's meta
+  (`appearanceRevisions`, keyed by subject ref), and every character lane
+  already merges the program's meta onto the row it reserves — so the avatar,
+  the variant, the chat look and the reference view are stamped by the one seam
+  that compiled them. The stamp always describes the picture, never the
+  character's appearance at some later moment: a row stamped from a later read
+  would claim a portrait shows a haircut it predates, which is the failure this
+  contract exists to prevent. It is **forward-only** — nothing backfills a
+  picture nobody can re-derive the cut for.
+- **The stamp records what the render was ASKED to draw, not a measurement of
+  its pixels.** A chat look and a reference view are themselves edits of an
+  older portrait, so a look minted while that portrait was out of date is
+  stamped with the appearance its prompt stated — which is the appearance the
+  edit was instructed to produce, since a stale anchor leaves hair and build
+  text-authoritative for exactly that render. Nothing inspects the output image,
+  and no digest could: the stamp is the honest record of the cut, and a render
+  that disobeyed its own prompt is a model-fidelity question rather than a
+  provenance one.
+- **The lanes read the stamp off the image they are sending.** A chat-look
+  anchor takes it from the look row, a pack candidate from the accepted portrait
+  the pack was derived from (every role in one pack shows the same person at the
+  same moment, so the face crop — which is cut locally and renders nothing —
+  carries the portrait's answer), a reference view from its own asset row. No
+  table keeps a second copy: a copy is written at copy time, and that is exactly
+  how a stamp comes to describe an appearance its picture never had.
+- **The compile compares, per reference.** The seam digests the cut it is
+  drawing and compares it with each identity slot's stamp, giving
+  `matches` · `differs` · `unknown`. A subject's verdict is the **weakest** of
+  their own slots: two photographs of one person are two claims about when she
+  was taken, and the fresher one may not speak for the other.
+- **`matches` widens the authority set.** That subject's optional
+  registry-sourced hair and build facts are omitted as reference-redundant under
+  the same reason the aspect policy above uses, and the dialect asks for the
+  wider preserve set.
+- **A covered head is never `matches`.** A subject at the `full` hair-occlusion
+  band ([§Hair the headwear conceals](#hair-the-headwear-conceals)) is downgraded
+  to `unknown` before the verdict is spent. The revision digests attributes and
+  the occlusion comes from the wardrobe this render draws, so a character whose
+  appearance has not moved reads `matches` while wearing a hijab — and the wider
+  clause would then ask for her hair "exactly as shown" in the same prompt as the
+  sentence saying no hair is visible, over text the selection has already
+  withheld. `unknown` rather than `differs`, because nothing about her appearance
+  has changed and there is nothing to announce: the band compiles the ordinary
+  lock and the concealment sentence, exactly as it did before this contract.
+- **`differs` changes nothing about the text and adds one sentence.** Today's
+  split stands — hair and build are stated exactly as they were — and the
+  dialect says that the appearance has moved since that image and the prompt's
+  description is what to follow. **A digest cannot name which fact moved**, only
+  that something did, so no lane compiles "change her hair from X to Y": naming
+  the moved fact would need a stored projection of the appearance beside every
+  reference rather than a digest of it.
+- **`unknown` is today's split with no extra sentence**, and it is what an
+  absent stamp, an uploaded portrait and a stamp from another revision family
+  all read as. A cross-family comparison is refused rather than reported as a
+  change, so revising the input set degrades old stamps instead of announcing
+  that every character just changed appearance.
+
+**The revision covers the whole registry-backed appearance, not hair and build
+alone.** `matches` is the verdict that DELETES text, so it is the one that has
+to be hard to earn: a digest over everything says `matches` only when nothing
+about the appearance has moved, and any drift at all falls back to `differs`,
+which is the behaviour the split already had plus a sentence. A narrower digest
+would earn `matches` more often and therefore be wrong more often, and being
+wrong there means a render with no description of a person's hair at all.
+
+**Each dialect declares both of its sets, and only the Qwen edit dialect has a
+second one.** `QWEN_2511_REFERENCE_AUTHORITY_ASPECTS` is the set above;
+`QWEN_2511_CURRENT_LOOK_AUTHORITY_ASPECTS` adds `hair` and `build` to it
+(`server/images/packs-qwen-2511.ts`). Neither is derived from the other, so a
+dialect that has not reviewed the wider contract cannot inherit it, and a
+dialect that declares no authority — the prose family, the tag family —
+compiles every subject exactly as it always has whatever the stamps say. The
+wider preserve clauses are exported beside the three ordinary ones
+(`QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK`,
+`QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK`,
+`QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK`), no clause contains another, and
+the `differs` correction is its own sentence after the lock
+(`QWEN_2511_APPEARANCE_MOVED_NOTICE`) rather than a variant of it. The
+several-people lock is one clause for the whole cast, so it takes the wider set
+only when every person in the picture is bound to a current reference. The
+seam that builds this dialect's digest (`character-prompt-program.ts`) reads
+that identical rule before it drops a subject's optional hair and build text,
+so a subject whose own reference is current keeps that text stated whenever a
+castmate's reference leaves the cast-wide lock at its ordinary, narrower set.
+Each compiled slot's verdict is recorded on the program provenance's
+`references` entry, which is what lets a finished render explain why it said
+nothing about hair.
+
 **No lock asks the reference to restore hair the headwear hides.** A subject at
 the `full` hair-occlusion band carries a `subject.hair_concealment` claim
 ([§Hair the headwear conceals](#hair-the-headwear-conceals)), and a dialect reads
@@ -471,9 +613,12 @@ is one lock for the whole cast, so one covered person drops the clause for
 everyone — a lock that kept "hair" would tell the model to paint that person's
 reference hair back over the hijab, and the uncovered rest of the cast still
 carry their hair in their references. The Qwen edit dialect needs no variant,
-because hair is in none of its three preserve clauses; its `…_HAIR_CONCEALED`
-names are byte-identical deprecated aliases. At `none` and `partial` every measured
-lock ships untouched.
+because hair is in none of the preserve clauses a covered head can reach — its
+`…_HAIR_CONCEALED` names are byte-identical deprecated aliases, and the one
+clause of its that does name hair is the current-appearance lock, which the
+`full` band is downgraded out of before it can be chosen
+([§Identity on a reference-anchored render](#identity-on-a-reference-anchored-render)).
+At `none` and `partial` every measured lock ships untouched.
 
 **A face the shot cannot show adapts the lock, in a sentence of its own and
 never inside the lock string.** The lock says preserve the exact face, and on a

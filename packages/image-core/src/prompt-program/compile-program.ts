@@ -497,6 +497,7 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
           position: reference.position,
           role: reference.role,
           ...(reference.subjectRef === undefined ? {} : { subjectRef: reference.subjectRef }),
+          ...(reference.preservation === undefined ? {} : { preservation: reference.preservation }),
         })),
       },
       worldStateProvenance: {

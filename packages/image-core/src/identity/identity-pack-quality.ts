@@ -72,7 +72,7 @@ export function identityBlurScore(pixels: RawPixels): number | null {
   return Math.max(0, sumSquares / count - mean * mean);
 }
 
-function toGrayscale(pixels: RawPixels): Float64Array | null {
+export function toGrayscale(pixels: RawPixels): Float64Array | null {
   const { data, width, height, channels } = pixels;
   if (!Number.isInteger(width) || !Number.isInteger(height) || !Number.isInteger(channels)) return null;
   if (width < 3 || height < 3 || channels < 1) return null;

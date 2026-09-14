@@ -166,6 +166,79 @@ export const QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK =
   "face, skin tone and apparent age consistent with these references.";
 
 /**
+ * The single-reference preserve clause for a reference whose APPEARANCE
+ * REVISION says it depicts the very appearance this render is drawing (issue
+ * #551) — the same act of binding one person to one photograph, over the wider
+ * preserve set a provably current photograph can carry.
+ *
+ * Hair and build left the ordinary lock because a photograph of unknown age
+ * cannot be trusted for them (#544 F4): the old lock claimed them and was then
+ * followed by hair colour, length, arrangement and musculature stated as bare
+ * facts, with nothing to tell a reminder from an override. That argument is
+ * about AGE, not about hair — and it stops applying when the reference was
+ * drawn from this render's own appearance. The seam then drops those facts from
+ * the text as redundant
+ * (`QWEN_2511_CURRENT_LOOK_AUTHORITY_ASPECTS`, `server/images/packs-qwen-2511.ts`),
+ * so the ambiguity the ordinary lock avoids cannot arise here: there is no
+ * second statement for this clause to contradict.
+ *
+ * Contained in none of the other clauses and containing none, for the reason
+ * they do not contain each other: which contract a render compiled under has to
+ * stay assertable from the text.
+ */
+export const QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK =
+  "face, skin tone, apparent age, hair and build exactly as shown.";
+
+/**
+ * See {@link QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK} — the same wider
+ * preserve set in the multi-reference spelling, taken only when EVERY person in
+ * the picture is bound to a current reference. One clause covers the whole cast,
+ * so a single stale anchor drops it for everyone: a set that claimed hair "as
+ * their own image shows" about somebody whose image predates their haircut is
+ * the exact wrong instruction, and the cast members with current references lose
+ * nothing they would not also have lost before this contract existed.
+ */
+export const QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK =
+  "keep each person's face, skin tone, apparent age, hair and build exactly as their own image shows.";
+
+/**
+ * See {@link QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK} — the same wider
+ * preserve set for ONE person shown in SEVERAL images, which asks for
+ * consistency across them rather than exactness against any one of them (#546).
+ */
+export const QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK =
+  "face, skin tone, apparent age, hair and build consistent with these references.";
+
+/**
+ * What the prompt says when the reference is provably NOT current (issue #551):
+ * the image stays the identity, and the text takes the aspects a photograph of
+ * unknown age cannot vouch for.
+ *
+ * A sentence of its own, after the lock rather than inside it, for the reason
+ * the face-visibility adaptation is: the lock states the preserve set, and a
+ * correction to which source owns what is a different claim that a reader — and
+ * a budget squeeze — must be able to tell apart from it.
+ *
+ * "has changed" is said of the APPEARANCE, never of the hair. The revision is a
+ * digest over the whole registry-backed appearance, so the only thing it
+ * licenses is that something moved; "take hair and build from this prompt's
+ * description" is then an authority instruction rather than a claim that either
+ * one did. "wherever it gives one" is the same honesty about the other end: a
+ * budget squeeze can drop an optional hair fact, and a render told to follow a
+ * description that is no longer there must fall back to the photograph rather
+ * than to nothing.
+ */
+export const QWEN_2511_APPEARANCE_MOVED_NOTICE =
+  "appearance has changed since that image, so take hair and build from this prompt's description wherever it gives one.";
+
+/**
+ * See {@link QWEN_2511_APPEARANCE_MOVED_NOTICE} — the spelling for one person
+ * shown in several images, none of which is current.
+ */
+export const QWEN_2511_GROUPED_APPEARANCE_MOVED_NOTICE =
+  "appearance has changed since those images, so take hair and build from this prompt's description wherever it gives one.";
+
+/**
  * Retained aliases. Hair is no longer in either preserve set, so a cast member
  * whose headwear hides their hair needs no separate spelling — the lock never
  * asks for hair back. `subject.hair_concealment` still states the concealment in
@@ -636,11 +709,12 @@ function bindingSentence(
   // person is in this picture. Everything else about the clause is the same
   // sentence, because binding one person to one photograph is the same act
   // whether or not somebody else is standing next to them.
+  const scope = currentLookLockScope(groups.map(groupPreservation));
   if (first !== undefined && groups.length === 1 && (sole || described.length > 0)) {
     const role = sole
       ? "as the sole subject"
       : `as one of the ${countWord(peopleInPicture(input, state))} people in the picture`;
-    const bound = boundGroupSentence(state, first, open, role);
+    const bound = boundGroupSentence(state, first, open, role, scope);
     // Unreachable: a group exists because a slot made it. Answered rather than
     // thrown, because a compile has nothing to gain from an exception here.
     if (bound === null) return null;
@@ -676,7 +750,19 @@ function bindingSentence(
   // the comma list it always compiled.
   const separator = groups.some((group) => group.slots.length > 1) ? "; " : ", ";
   const list = assignments.length === 0 ? "" : `: ${assignments.join(separator)}`;
-  const assigned = `${open} the numbered images as assigned${list}; ${QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK}`;
+  // One clause for the whole cast, so the wider preserve set is taken only when
+  // EVERY person in it is bound to a reference that still shows them (#551).
+  // A mixed cast keeps the ordinary lock and says nothing further: "each
+  // person's" is not a place a per-person correction can honestly go, and the
+  // people whose references ARE current lose only what they would have lost
+  // before this contract existed. `scope` is the SAME verdict
+  // `character-prompt-program.ts` reads before it decides whether to drop a
+  // subject's hair/build text (`currentLookLockCoversSubject`), computed here
+  // from the identical per-group verdicts — one shared answer to "does the
+  // emitted lock preserve this cast's hair and build", never two.
+  const multiLock =
+    scope === "wide" ? QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK;
+  const assigned = `${open} the numbered images as assigned${list}; ${multiLock}`;
   // The preserve set above is scoped by its own wording — "their own image" is
   // said of the people who have one — and the sentences after it say who does
   // not, so nothing in the paragraph promises an image the payload never carried.
@@ -700,17 +786,33 @@ function boundGroupSentence(
   group: IdentityGroup,
   open: string,
   role: string,
+  scope: CurrentLookLockScope,
 ): string | null {
   const voice = group.subjectRef === undefined ? null : (state.voices.get(group.subjectRef) ?? null);
   const primary = group.slots[0];
   if (primary === undefined) return null;
+  // What this person's own references are still authoritative for (#551). A
+  // current set earns the wider preserve clause; a set known to be out of date
+  // keeps the ordinary one and says so in a sentence of its own; `unknown` —
+  // every reference minted before the stamp existed — compiles exactly what this
+  // dialect compiled then. `covers` is the shared predicate
+  // (`currentLookLockCoversSubject`) that also gates the seam's own text
+  // suppression, so this group's hair and build are never dropped from one
+  // side and kept in the other: within a single-group render `scope` reduces to
+  // this very group's own verdict, and inside a multi-group render it is
+  // `"wide"` only when every anchored group in the cast is `matches`.
+  const preservation = groupPreservation(group);
+  const covers = currentLookLockCoversSubject(scope, preservation);
   if (group.slots.length === 1) {
     const named = voice === null ? `the subject in Image ${primary.position}` : voice.binding;
     const qualified = primary.description === undefined ? named : `${named}, ${primary.description}`;
-    const keep = `keep ${their(voice)} ${QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK}`;
+    const lock = covers ? QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK;
+    const keep = `keep ${their(voice)} ${lock}`;
+    const moved =
+      preservation === "differs" ? ` ${capitalize(their(voice))} ${QWEN_2511_APPEARANCE_MOVED_NOTICE}` : "";
     return state.register === "imperative"
-      ? `${open} ${qualified} ${role}. ${capitalize(keep)}`
-      : `${open} ${qualified} ${role}; ${keep}`;
+      ? `${open} ${qualified} ${role}. ${capitalize(keep)}${moved}`
+      : `${open} ${qualified} ${role}; ${keep}${moved}`;
   }
   // SEVERAL images of one person. The images are named as a set, then each is
   // given its own purpose — the primary is the identity reference and every
@@ -724,7 +826,10 @@ function boundGroupSentence(
     `Image ${primary.position} is ${their(voice)} primary identity reference`,
     ...group.slots.slice(1).map((slot) => `Image ${slot.position} ${viewClause(slot, voice)}`),
   ];
-  return `${open} ${shown} ${role}. ${purposes.join("; ")}. Keep ${their(voice)} ${QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK}`;
+  const groupedLock = covers ? QWEN_2511_GROUPED_REFERENCE_CURRENT_LOOK_LOCK : QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK;
+  const groupedMoved =
+    preservation === "differs" ? ` ${capitalize(their(voice))} ${QWEN_2511_GROUPED_APPEARANCE_MOVED_NOTICE}` : "";
+  return `${open} ${shown} ${role}. ${purposes.join("; ")}. Keep ${their(voice)} ${groupedLock}${groupedMoved}`;
 }
 
 /**
@@ -817,6 +922,78 @@ function identityGroups(slots: readonly ImageDialectReference[]): IdentityGroup[
     else found.slots.push(slot);
   }
   return groups;
+}
+
+/**
+ * How much of a person's appearance their whole identity SET is authoritative
+ * for (issue #551) — the weakest verdict among its slots.
+ *
+ * Only an all-`matches` set is `matches`. Two images of one person are two
+ * claims about when she was photographed, and taking the wider preserve set on
+ * the strength of the fresher one would ask the model to keep hair "exactly as
+ * shown" across a pair of photographs where only one of them shows it. A slot
+ * the application said nothing about counts as `unknown`, which is what every
+ * render compiled before this contract existed.
+ */
+function groupPreservation(group: IdentityGroup): "matches" | "differs" | "unknown" {
+  // Unreachable — a group exists because a slot made it — and answered as
+  // `unknown` rather than as the wider set, because the only way this fails
+  // closed is by never claiming currency it has no slot to have learned from.
+  if (group.slots.length === 0) return "unknown";
+  let verdict: "matches" | "differs" | "unknown" = "matches";
+  for (const slot of group.slots) {
+    const slotVerdict = slot.preservation ?? "unknown";
+    if (slotVerdict === "differs") return "differs";
+    if (slotVerdict === "unknown") verdict = "unknown";
+  }
+  return verdict;
+}
+
+/**
+ * Whether the render-wide current-look lock this cast produces is `"wide"`
+ * (hair and build preserved from the reference, alongside face, skin tone and
+ * apparent age) or `"narrow"` (the ordinary preserve set) — the SAME question
+ * `bindingSentence` and `boundGroupSentence` each word into a sentence and
+ * `character-prompt-program.ts` reads before it drops a subject's optional
+ * hair/build text (issue #551 Codex finding).
+ *
+ * `"wide"` only when every verdict given is `matches` — the lock is one clause
+ * for however many people it binds, so a mixed cast (one current reference
+ * beside one stale or unknown one) keeps the ordinary lock for EVERYONE, not
+ * only the subject whose own reference is current. An empty list is `"narrow"`:
+ * there is no anchored subject for a wide lock to be about.
+ *
+ * Exported so the seam that builds this dialect's digest can compute the exact
+ * scope the dialect will emit, from the same per-subject verdicts, rather than
+ * re-deriving a mixed-cast rule of its own that could disagree with this one.
+ */
+export function currentLookLockScope(
+  verdicts: readonly ("matches" | "differs" | "unknown")[],
+): CurrentLookLockScope {
+  return verdicts.length > 0 && verdicts.every((verdict) => verdict === "matches") ? "wide" : "narrow";
+}
+
+/** See {@link currentLookLockScope}. */
+export type CurrentLookLockScope = "wide" | "narrow";
+
+/**
+ * Whether the lock this `scope` produces actually preserves ONE subject's hair
+ * and build (issue #551 Codex finding) — the single predicate both sides of
+ * the suppression decision must read, so a subject's hair and build are never
+ * missing from both the lock and the text at once.
+ *
+ * `scope` alone would answer this for any subject inside it, because `"wide"`
+ * is defined as "every anchored subject is `matches`" — but `subjectVerdict` is
+ * still taken and checked, so a caller that computes `scope` over one set of
+ * subjects and then asks about a subject outside that set fails closed to the
+ * narrow, text-preserving answer instead of trusting a scope that was never
+ * about this subject.
+ */
+export function currentLookLockCoversSubject(
+  scope: CurrentLookLockScope,
+  subjectVerdict: "matches" | "differs" | "unknown",
+): boolean {
+  return scope === "wide" && subjectVerdict === "matches";
 }
 
 /**

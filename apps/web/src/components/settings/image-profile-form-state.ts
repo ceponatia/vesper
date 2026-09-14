@@ -41,6 +41,8 @@ export interface ImageProfileControlForm {
   resolution: "" | ImageResolutionTier;
   width: string;
   height: string;
+  /** The profile's intended output shape as a `W:H` spelling, or blank for the lane's own default (#247). */
+  aspectRatio: string;
   fastMode: ImageProfileBooleanField;
   thinkingMode: ImageProfileBooleanField;
   loraId: string;
@@ -69,6 +71,7 @@ export function imageProfileControlForm(defaults: ImageControlDefaults | undefin
     resolution: defaults?.resolution ?? "",
     width: numberField(defaults?.width),
     height: numberField(defaults?.height),
+    aspectRatio: defaults?.aspectRatio ?? "",
     fastMode: booleanField(defaults?.fastMode),
     thinkingMode: booleanField(defaults?.thinkingMode),
     loraId: defaults?.lora?.id ?? "",
@@ -97,6 +100,7 @@ export function imageProfileControlDefaults(
     ...(form.resolution === "" ? {} : { resolution: form.resolution }),
     ...(numbers.width === undefined ? {} : { width: numbers.width }),
     ...(numbers.height === undefined ? {} : { height: numbers.height }),
+    ...(form.aspectRatio === "" ? {} : { aspectRatio: form.aspectRatio }),
     // `fastMode` is a tri-state rather than a checkbox because BOTH of its
     // values are requests: the wrappers that expose it default it ON, so "do
     // not accelerate" has to travel as a value while "say nothing" stays blank.

@@ -39,6 +39,26 @@ Accepting names the image on screen, so a portrait that changed in another tab i
 "The portrait changed — review the new one and accept again" and the studio refetches instead of
 accepting a picture nobody looked at.
 
+A **Candidates** field beside the image model picker offers *One portrait* (default) or *Two
+candidates* — the player ceiling. Two candidates compile one program and render both
+sequentially; neither claims the portrait pointer, so both land in **Portrait history** captioned
+*Candidate 1 of 2* / *Candidate 2 of 2*, with a header line explaining the choice and **Use this
+one** (the same promote action as any other variant) in place of **Promote**. Each generate request
+carries its own client-minted id, stamped on every row it reserves; the generate controls stay busy
+until every row carrying that id has settled — one row for an ordinary generation, both candidates
+for a two-candidate request — rather than watching the portrait pointer alone, which a
+two-candidate request never claims, or counting rows against whatever history happened to be
+loaded before the request was sent. Once a portrait
+exists, **Regenerate portrait** keeps its usual primary/ghost emphasis and defaults to a fresh
+sampling attempt (a "new variation"); a small secondary **Same composition** control beside it
+asks instead to reuse this portrait's exact settings, disabled with a short reason (no seed was
+recorded, the model or its version changed) when the list's cheap eligibility check — judged
+against the profile currently selected in the picker, not always the task default — already knows
+it cannot succeed; a world-state change, an unreadable prompt program, or a demo-mode request each
+surface only as the request's own failure toast, since none of the three is detectable from the
+list's cheap check. Every ready avatar tile's caption also states its seed status — *Unseeded
+variation*, or the seed itself.
+
 Below the portrait cards, the **Identity reference** block appears when an accepted image exists
 (`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust
 face crop**, which opens `identity-crop-dialog.tsx` — a draggable, resizable square over the

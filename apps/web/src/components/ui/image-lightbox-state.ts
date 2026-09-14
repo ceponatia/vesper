@@ -29,3 +29,19 @@ export function updateLightboxImageStatus(state: LightboxViewState, view: Lightb
   if (!sameView(state, view) || !view.visible || !view.imageId || state.imageStatus === imageStatus) return state;
   return { ...state, imageStatus };
 }
+
+/**
+ * The key an advisory's own review/submitting state is tracked under.
+ *
+ * A caller (the Gallery, reference review) commonly keeps one `ImageLightbox`
+ * instance mounted across several images rather than remounting it per
+ * image, so component state survives a close/reopen with a DIFFERENT
+ * `imageId`. Keying solely by advisory `code` let one image's recorded
+ * verdict — or its in-flight submit — leak onto a different image that
+ * happens to carry the same code. Composing the image id in is the fix; no
+ * effect-based reset is needed (and a synchronous `setState` in an effect
+ * body is the one thing this codebase's strict react-hooks rule forbids).
+ */
+export function advisoryReviewKey(imageId: string | null, code: string): string {
+  return `${imageId ?? ""}:${code}`;
+}

@@ -11,6 +11,8 @@ import {
   type ImageGeneratorRun,
   imageGeneratorRunInputsSchema,
   type ImageGeneratorRunInputs,
+  type ImageGeneratorRunPurpose,
+  imageGeneratorRunPurposeSchema,
   type ImageGeneratorVersionPolicy,
   imageGeneratorVersionPolicySchema,
 } from "@/contracts/images/image-generator";
@@ -96,6 +98,7 @@ export function toWireImageGeneratorRun(row: ImageGeneratorRunRow, sink?: Diagno
     providerInputs: storedRunProviderInputs(row, sink),
     sourceRunId: row.sourceRunId,
     versionPolicy: storedVersionRequest(row).mode,
+    purpose: storedRunPurpose(row),
     effectiveRequest: storedMetaRecord(row, "effectiveRequest", sink),
     result: storedRunResult(row, sink),
     providerAttempts: storedProviderAttempts(row, sink),
@@ -207,6 +210,17 @@ function storedMetaRecord(
 export function storedVersionRequest(row: ImageGeneratorRunRow): ImageGeneratorVersionRequest {
   const parsed = versionRequestSchema.safeParse(imageMeta(row.meta)["versionRequest"]);
   return parsed.success ? parsed.data : { mode: "current", sourceRunId: null };
+}
+
+/**
+ * Why this run exists, as recorded at create — `null` for an ordinary run and
+ * for a bag that no longer parses (docs/resilience.md §1: a reader displaying
+ * or filtering on `purpose` must degrade rather than throw on an old or
+ * malformed record).
+ */
+export function storedRunPurpose(row: ImageGeneratorRunRow): ImageGeneratorRunPurpose | null {
+  const parsed = imageGeneratorRunPurposeSchema.safeParse(imageMeta(row.meta)["purpose"]);
+  return parsed.success ? parsed.data : null;
 }
 
 export interface ImageGeneratorVersionRequest {
@@ -341,7 +355,11 @@ export async function createImageGeneratorRun(
       controls: request.controls ?? emptyImageGeneratorControls(),
       providerInputs: request.providerInputs ?? emptyImageGeneratorProviderInputs(),
       sourceRunId,
-      meta: { versionRequest },
+      // `purpose` rides the same create-time meta write as `versionRequest`
+      // and is otherwise untouched: `generatorRunMeta` merges every later
+      // settle over the stored bag, so a value written here survives to the
+      // finished row exactly like the version request does.
+      meta: { versionRequest, ...(request.purpose ? { purpose: request.purpose } : {}) },
     })
     .returning();
   if (!row) throw new Error("image_generator_runs insert returned no row");

@@ -27,8 +27,11 @@ import {
   compileDialectClaims,
   selectImageNegativeConstraints,
   selectImagePositiveClaims,
+  QWEN_2511_APPEARANCE_MOVED_NOTICE,
   QWEN_2511_GROUPED_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK,
+  QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK,
   QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK,
   type CompileImagePromptProgramInput,
   type ImageCameraFact,
@@ -1004,6 +1007,153 @@ describe("the Qwen 2511 delta-edit dialect", () => {
     // The person count CLOSES the instruction (D10): it used to sit third, which
     // is the one place a "nobody else is here" assertion cannot do its job.
     expect(text.endsWith("Wren is the only person in the picture; the foreground is clear.")).toBe(true);
+  });
+
+  /**
+   * THE PRESERVE SET FOLLOWS THE REFERENCE'S PROVENANCE (issue #551).
+   *
+   * One slot, three verdicts, three sentences. The application compares the
+   * reference's appearance stamp with the cut being drawn and states the answer
+   * on the slot; this dialect's whole job is to word it — the preserve set it
+   * asks for has to differ, because a photograph taken from today's appearance
+   * carries hair and build and one of unknown age does not.
+   *
+   * `unknown` is pinned against the UNSTATED spelling rather than against a
+   * literal, because the contract is that a render nothing is known about
+   * compiles what it compiled before this field existed.
+   */
+  it("words the preserve set from the reference's appearance verdict", () => {
+    const say = (preservation: "matches" | "differs" | "unknown" | undefined): string => {
+      const result = compile2511(editWorld(), {
+        references: [{ position: 1, role: "identity", subjectRef: "s1", ...(preservation === undefined ? {} : { preservation }) }],
+      });
+      if (!result.ok) throw new Error("unexpected refusal");
+      return result.compiled.positiveText;
+    };
+
+    // A reference drawn from this very appearance: the wider preserve set, and
+    // no correction after it — there is nothing for the text to be authoritative
+    // for that the photograph does not already carry.
+    const current = say("matches");
+    expect(current).toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(current).not.toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(current).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+
+    // A reference the appearance has moved past: the ordinary preserve set, plus
+    // the sentence that stops the image and the text competing over hair. The
+    // correction is its OWN sentence, after the lock rather than inside it.
+    const moved = say("differs");
+    expect(moved).toContain(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK);
+    expect(moved).not.toContain(QWEN_2511_SINGLE_REFERENCE_CURRENT_LOOK_LOCK);
+    expect(moved.indexOf(QWEN_2511_APPEARANCE_MOVED_NOTICE)).toBeGreaterThan(
+      moved.indexOf(QWEN_2511_SINGLE_REFERENCE_IDENTITY_LOCK),
+    );
+
+    // Nothing known, and nothing said: byte-identical to the sentence this
+    // dialect compiled before the field existed.
+    expect(say("unknown")).toBe(say(undefined));
+    expect(say("unknown")).not.toContain(QWEN_2511_APPEARANCE_MOVED_NOTICE);
+  });
+
+  /**
+   * A MIXED CAST NEVER SPLITS THE LOCK — IT WIDENS FOR EVERYONE OR NOBODY
+   * (issue #551 Codex finding).
+   *
+   * The several-people lock is one clause naming "each person's face, skin
+   * tone and apparent age" (or the wider set that adds hair and build); it
+   * cannot honestly claim the wider set for one named person and the ordinary
+   * one for another inside that same clause. So a cast where one subject's
+   * reference is drawn from today's appearance and another's is unknown keeps
+   * the ORDINARY lock for both — exactly what an all-`unknown` cast compiles
+   * — rather than widening it because one subject alone earned `matches`.
+   *
+   * This is the dialect's half of the finding: `character-prompt-program.ts`
+   * must read the identical verdict before it decides whether to drop the
+   * matching subject's hair and build TEXT, so that subject's hair and build
+   * are never missing from both the lock and the text at once (see
+   * `character-prompt-program.test.ts` for the seam's half).
+   */
+  it("keeps the narrow lock for a two-person cast where one reference is unknown", () => {
+    const digest = editWorld({
+      operation: { ...editOperation(), subjectCount: 2 },
+      subjects: [
+        wren(),
+        {
+          ...entity("subject", "s2", [
+            fact({
+              key: "s2.identity",
+              concept: "subject.identity",
+              value: "Nyx, a tall archivist",
+              subjectRef: "s2",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+          ]),
+          label: "Nyx",
+        },
+      ],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1", preservation: "matches" },
+        // No `preservation` at all — the honest `unknown` every pre-#551
+        // reference reads as.
+        { position: 2, role: "identity", subjectRef: "s2" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
+  });
+
+  /**
+   * The same mixed-cast rule, against a reference the revision positively says
+   * has MOVED rather than one nobody stamped (issue #551 Codex finding). A
+   * `differs` verdict is stronger evidence than `unknown` that the wider lock
+   * would be wrong, so if the narrow lock survives the weaker case above it
+   * must survive this one too.
+   */
+  it("keeps the narrow lock for a two-person cast where one reference has moved", () => {
+    const digest = editWorld({
+      operation: { ...editOperation(), subjectCount: 2 },
+      subjects: [
+        wren(),
+        {
+          ...entity("subject", "s2", [
+            fact({
+              key: "s2.identity",
+              concept: "subject.identity",
+              value: "Nyx, a tall archivist",
+              subjectRef: "s2",
+              disposition: "required_visual",
+              priority: 1,
+            }),
+          ]),
+          label: "Nyx",
+        },
+      ],
+      references: [
+        { role: "identity", subjectRef: "s1", required: true, source: referenceSource },
+        { role: "identity", subjectRef: "s2", required: true, source: referenceSource },
+      ],
+    });
+    const result = compile2511(digest, {
+      references: [
+        { position: 1, role: "identity", subjectRef: "s1", preservation: "matches" },
+        { position: 2, role: "identity", subjectRef: "s2", preservation: "differs" },
+      ],
+    });
+    if (!result.ok) throw new Error(`unexpected refusal: ${result.refusal.code}`);
+    const text = result.compiled.positiveText;
+
+    expect(text).toContain(QWEN_2511_MULTI_REFERENCE_IDENTITY_LOCK);
+    expect(text).not.toContain(QWEN_2511_MULTI_REFERENCE_CURRENT_LOOK_LOCK);
   });
 
   /**

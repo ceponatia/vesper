@@ -1,5 +1,12 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { pinnedImageModelVersion } from "@vesper/image-core";
 import { db, images } from "@/server/db";
+import {
+  avatarReplayCheapEligibility,
+  resolveImageProfileForTask,
+  type AvatarReplayEligibility,
+  type AvatarReplaySourceRow,
+} from "@/server/images";
 
 /**
  * Owner-scoped portrait lookups for the studio routes — the sibling of
@@ -69,4 +76,49 @@ export async function listOwnedPortraits(ownerId: string, characterId: string) {
       ),
     )
     .orderBy(desc(images.createdAt));
+}
+
+/** The wire shape of one row's replay hint — `{ ok: true }` never carries the
+ * seed itself: the studio only needs to know whether the menu item is live. */
+export type AvatarReplayHint = { ok: true } | { ok: false; reason: string };
+export type AvatarReplayMap = Record<string, AvatarReplayHint>;
+
+/**
+ * The CHEAP per-row same-composition hint the studio's Regenerate menu reads
+ * (issue #248): seed recorded, and model/profile/version still what the
+ * surface would resolve to today. A world-state change (appearance, wardrobe,
+ * prompt) is undetectable without compiling a fresh program, so it is never
+ * reported here — it surfaces only at request time, as the refused row's own
+ * error text (never a silent fallback to a new variation).
+ *
+ * `modelId` is the studio's CURRENT profile-picker selection (the same stored
+ * value `POST /avatar` resolves through) — omitted, it falls back to
+ * `resolveImageProfileForTask`'s task default. Codex review round 1, finding
+ * B: judging every row against the task default made a portrait rendered on
+ * a non-default profile report `model_changed` even while that exact profile
+ * was selected and a request-time retry would succeed; resolving against the
+ * caller's actual selection makes the cheap hint agree with what a retry
+ * right now would decide. The full eligibility check inside `generateAvatar`
+ * still re-verifies everything against the request's own resolution
+ * regardless of what this hint said.
+ */
+export async function avatarReplayMapForPortraits(
+  rows: ReadonlyArray<AvatarReplaySourceRow>,
+  ownerId: string,
+  characterId: string,
+  modelId?: string,
+): Promise<AvatarReplayMap> {
+  const resolved = await resolveImageProfileForTask("portrait", modelId);
+  if (!resolved) return {};
+  const current = {
+    modelSlug: resolved.model.slug,
+    profileId: resolved.profile.id,
+    pinnedVersionId: pinnedImageModelVersion(resolved.model),
+  };
+  const map: AvatarReplayMap = {};
+  for (const row of rows) {
+    const eligibility: AvatarReplayEligibility = avatarReplayCheapEligibility({ source: row, ownerId, characterId, current });
+    map[row.id] = eligibility.ok ? { ok: true } : { ok: false, reason: eligibility.reason };
+  }
+  return map;
 }
