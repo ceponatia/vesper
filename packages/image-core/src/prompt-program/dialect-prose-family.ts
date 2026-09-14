@@ -12,6 +12,7 @@ import {
   angleSentence,
   capitalize,
   captureModeSentence,
+  currentStatePredicate,
   describe,
   describeChange,
   distanceSentence,
@@ -449,7 +450,11 @@ function renderClaim(
       return say(prefixed(subject, `wears a ${value} expression`));
     case "subject.body_language":
     case "subject.current_state":
-      return say(prefixed(subject, `is ${value}`));
+      // A trailing-clause value (issue #427's meter effects, a fragment
+      // bound to no garment or body part) frames as "is seen …" instead of
+      // the ordinary "is …" predicate complement — `currentStatePredicate`,
+      // mirroring 2511's own `isTrailingClause`/`BAND_FRAMES.seen`.
+      return say(prefixed(subject, currentStatePredicate(value)));
     case "subject.wardrobe":
       return say(prefixed(subject, `wears ${value}`));
     case "subject.hair_concealment":
