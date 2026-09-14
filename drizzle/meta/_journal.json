@@ -981,6 +981,13 @@
       "when": 1789336800000,
       "tag": "0139_flux-kontext-dev",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1789509600000,
+      "tag": "0141_community-model-capability-backfill",
+      "breakpoints": true
     }
   ]
 }

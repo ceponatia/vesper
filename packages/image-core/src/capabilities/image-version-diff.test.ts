@@ -341,7 +341,7 @@ describe("validateImageProfileForCandidate", () => {
       expect.objectContaining({
         level: "blocking",
         code: "reviewed_control_unbound",
-        context: { control: "fastMode", slug: "qwen/qwen-image-edit-2511" },
+        context: { control: "fastMode", reason: "no_binding", slug: "qwen/qwen-image-edit-2511" },
       }),
     ]);
   });
@@ -355,6 +355,58 @@ describe("validateImageProfileForCandidate", () => {
         profile({ controlDefaults: { seedPolicy: "random", fastMode: false } }),
         caps,
         "qwen/qwen-image-edit-2511",
+      ),
+    ).toEqual([]);
+  });
+
+  it("blocks a reviewed value the candidate's binding no longer accepts", () => {
+    // The binding SURVIVES and the value does not: a candidate that narrows
+    // `customWidth` to a 1024 minimum keeps the slot a presence check would have
+    // been satisfied by, and refuses the reviewed 832 at render. The mapper is
+    // asked, so activation names it here instead.
+    const caps = candidate({
+      advancedCapabilities: advanced({
+        controls: {
+          customWidth: { field: "width", type: "integer", minimum: 1024, maximum: 1536 },
+          customHeight: { field: "height", type: "integer", minimum: 64, maximum: 1536 },
+        },
+      }),
+    });
+    const findings = validateImageProfileForCandidate(
+      profile({ controlDefaults: { seedPolicy: "random", resolution: "custom", width: 832, height: 1216 } }),
+      caps,
+      "aisha-ai-official/nsfw-flux-dev",
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({
+        level: "blocking",
+        code: "reviewed_control_unbound",
+        context: { control: "width", reason: "invalid", slug: "aisha-ai-official/nsfw-flux-dev" },
+      }),
+    ]);
+  });
+
+  it("accepts the reviewed pair on the range the production version declares", () => {
+    // The other side of the same check, on the real numbers: 832x1216 inside
+    // PuLID's own 64-1536 bindings is a configuration activation must not touch.
+    const caps = candidate({
+      advancedCapabilities: advanced({
+        controls: {
+          guidance: { field: "cfg", type: "number", minimum: 1, maximum: 20 },
+          customWidth: { field: "width", type: "integer", minimum: 64, maximum: 1536 },
+          customHeight: { field: "height", type: "integer", minimum: 64, maximum: 1536 },
+        },
+        knownInputFields: ["cfg", "face_weight", "height", "method", "width"],
+      }),
+    });
+    expect(
+      validateImageProfileForCandidate(
+        profile({
+          controlDefaults: { seedPolicy: "random", guidance: 7, resolution: "custom", width: 832, height: 1216 },
+          providerOverrides: { method: "fidelity", face_weight: 1 },
+        }),
+        caps,
+        "nsfw-api/sdxl-pulid:83bea6",
       ),
     ).toEqual([]);
   });

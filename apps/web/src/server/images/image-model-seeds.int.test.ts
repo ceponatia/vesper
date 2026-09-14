@@ -1733,3 +1733,145 @@ describe.skipIf(!ready)("migration 0139 — guards over an existing row", () => 
     expect(await snapshot()).toEqual(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 0141 — the community rows' capability backfill
+// ---------------------------------------------------------------------------
+
+const COMMUNITY_MIGRATION_TAG = "0141_community-model-capability-backfill";
+const COMMUNITY_MIGRATION_FILE = `drizzle/${COMMUNITY_MIGRATION_TAG}.sql`;
+
+/**
+ * The three rows 0104 seeds with `advanced_capabilities` at its column default,
+ * and the reviewed setting each one's bindings have to carry.
+ *
+ * These are the models whose reviewed corrections have no other route since #244
+ * removed the transitional overlay: the profile maps them through the bindings
+ * below or they do not ship at all, and on a fresh database only this migration
+ * puts the bindings there.
+ */
+const COMMUNITY_CAPABILITY_ROWS = [
+  {
+    id: "imgmdlnsfwfluxdevaaaaaaa",
+    label: "NSFW FLUX Dev",
+    controls: ["seed", "customWidth", "customHeight"],
+    // The reviewed 832x1216 pair, which this endpoint's only shape input is.
+    reviewedFields: ["width", "height"],
+  },
+  {
+    id: "imgmdllikerealityponyaaa",
+    label: "LikeReality Pony v1",
+    controls: ["seed", "negativePrompt", "customWidth", "customHeight"],
+    // `negative_prompt` is the one that clears the wrapper's "nsfw, naked".
+    reviewedFields: ["negative_prompt", "width", "height"],
+  },
+  {
+    id: "imgmdlsdxlpulidaaaaaaaaa",
+    label: "SDXL PuLID",
+    controls: ["seed", "negativePrompt", "guidance", "customWidth", "customHeight"],
+    // `cfg` carries the reviewed guidance of 7; `method`/`face_weight` are raw
+    // overrides, which fail closed unless `known_input_fields` lists them.
+    reviewedFields: ["cfg", "width", "height", "method", "face_weight"],
+  },
+] as const;
+
+/** 0141's shipped UPDATE statements. */
+function communityBackfillStatements(): Promise<string[]> {
+  return migrationStatements(COMMUNITY_MIGRATION_FILE, 'UPDATE "image_models"');
+}
+
+/** Re-run 0141's own statements. Idempotent by construction — that is what is under test. */
+async function reapplyCommunityBackfill(): Promise<void> {
+  const statements = await communityBackfillStatements();
+  expect(statements, `${COMMUNITY_MIGRATION_FILE} must carry three UPDATE statements`).toHaveLength(3);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+describe.skipIf(!ready)("migration 0141 — history", () => {
+  it("is a single ordered journal entry, as a data migration with no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === COMMUNITY_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(141);
+    expect(journal.entries.filter((candidate) => candidate.idx === 141)).toHaveLength(1);
+
+    // The migrator applies in `when` order, so this file must be timestamped
+    // after everything it expects to have run — asserted against the whole
+    // history rather than one predecessor, because which index sits immediately
+    // before it is a merge outcome and not a property of this migration. The
+    // HEAD assertion belongs to whichever suite owns the newest migration.
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 141).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    // Data only: a snapshot here would claim a `schema.ts` change this file does
+    // not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0141_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+describe.skipIf(!ready)("migration 0141 — the capability record on a migrated database", () => {
+  it.each(COMMUNITY_CAPABILITY_ROWS.map((row) => [row.label, row] as const))(
+    "gives %s the bindings its reviewed settings map through",
+    async (_label, expected) => {
+      const [row] = await db()
+        .select({ caps: imageModels.advancedCapabilities })
+        .from(imageModels)
+        .where(eq(imageModels.id, expected.id));
+      expect(row).toBeDefined();
+      // The control NAMES are what the mapper resolves a reviewed setting
+      // through; an empty record here is the state that made every one of them a
+      // silent `no_binding` drop.
+      expect(row?.caps).toMatchObject({
+        controls: Object.fromEntries(expected.controls.map((control) => [control, expect.any(Object) as unknown])),
+      });
+      for (const field of expected.reviewedFields) {
+        expect(row?.caps).toMatchObject({ knownInputFields: expect.arrayContaining([field]) as unknown });
+      }
+    },
+  );
+
+  it("leaves a row an operator has already probed exactly as they probed it", async () => {
+    // The guard that matters on an upgraded database: `controls` present means a
+    // real probe has answered this question with better evidence than a
+    // hand-written file has, and re-running must not talk over it.
+    const probed = {
+      controls: { seed: { field: "seed", type: "integer" } },
+      additionalImageInputs: [],
+      output: { arity: "single", supportsMultiple: false },
+      knownInputFields: ["prompt", "seed"],
+      providerInputs: [],
+    };
+    const target = COMMUNITY_CAPABILITY_ROWS[2];
+    expect(target).toBeDefined();
+    if (!target) return;
+    const record = JSON.stringify(probed);
+    await db().execute(
+      sql`UPDATE "image_models" SET "advanced_capabilities" = ${record}::jsonb WHERE "id" = ${target.id}`,
+    );
+
+    await reapplyCommunityBackfill();
+
+    const [row] = await db()
+      .select({ caps: imageModels.advancedCapabilities })
+      .from(imageModels)
+      .where(eq(imageModels.id, target.id));
+    expect(row?.caps).toEqual(probed);
+
+    // Back to the migrated state: clearing the record is what a fresh database
+    // looks like before this file runs, so re-running it restores the row.
+    await db().execute(sql`UPDATE "image_models" SET "advanced_capabilities" = '{}'::jsonb WHERE "id" = ${target.id}`);
+    await reapplyCommunityBackfill();
+    const [restored] = await db()
+      .select({ caps: imageModels.advancedCapabilities })
+      .from(imageModels)
+      .where(eq(imageModels.id, target.id));
+    expect(restored?.caps).toMatchObject({ controls: { guidance: { field: "cfg" } } });
+  });
+});
