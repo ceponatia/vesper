@@ -291,7 +291,7 @@ describe("generateAvatar program wiring", () => {
       const produced = await opts.produce({ id } as unknown as ImageRow);
       return { imageId: id, status: produced.ok ? "ready" : "failed" };
     });
-    const result = await generateAvatar({ characterId: "chr-1", userId: "u-1", candidates: 2 });
+    const result = await generateAvatar({ characterId: "chr-1", userId: "u-1", candidates: 2, requestId: "req-xyz" });
     expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1", "img-2"] });
     expect(vi.mocked(runImagePipeline)).toHaveBeenCalledTimes(2);
     expect(vi.mocked(renderImageIntent)).toHaveBeenCalledTimes(2);
@@ -303,10 +303,23 @@ describe("generateAvatar program wiring", () => {
     expect(typeof group).toBe("string");
     expect(firstOpts?.asset.meta?.candidates).toEqual({ group, index: 1, of: 2 });
     expect(secondOpts?.asset.meta?.candidates).toEqual({ group, index: 2, of: 2 });
+    // The client's completion-tracking id (codex review round 2, threads
+    // 3–4) lands on BOTH candidate rows, with the candidate count each row's
+    // own — the studio judges best-of-two completion by this stamp, never a
+    // client-side snapshot of what existed before the request.
+    expect(firstOpts?.asset.meta?.request).toEqual({ id: "req-xyz", candidates: 2 });
+    expect(secondOpts?.asset.meta?.request).toEqual({ id: "req-xyz", candidates: 2 });
     // A two-candidate request claims NOTHING — no `onReady` at all, so there is
     // no pointer write to assert against.
     expect(firstOpts?.onReady).toBeUndefined();
     expect(secondOpts?.onReady).toBeUndefined();
+  });
+
+  it("stamps no meta.request at all when the caller sends no requestId", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    await generateAvatar({ characterId: "chr-1", userId: "u-1" });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.asset.meta?.request).toBeUndefined();
   });
 
   /**
@@ -382,6 +395,78 @@ describe("generateAvatar program wiring", () => {
     });
     const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
     expect(intent?.controls?.seed).toBe(777);
+    // The lane probe's fixture model pins nothing today, so the replay
+    // follows the source's own (also unpinned) version — no explicit
+    // `versionId` reaches the transport.
+    expect(intent?.versionId).toBeUndefined();
+  });
+
+  /**
+   * Codex review round 2, thread 1: a same-composition replay PINS
+   * EXPLICITLY. Comparing a pin to a provider echo used to refuse every
+   * replay of a model the app pins whose transport echoes no version, and
+   * approve every replay of an unpinned model whose provider happens to
+   * echo a hash; sending the source's own recorded version through as
+   * `intent.versionId` makes the wire agree with the row's own provenance
+   * regardless of which shape the model is.
+   */
+  it("an eligible same-composition retry pins the transport to the source's own executed version", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    const source = { name: "Linda", profile: lindaProfile(), revision: "4" };
+
+    await generateAvatar({ characterId: "chr-1", userId: "u-1", source });
+    const establishing = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    const programMeta = establishing?.asset.meta?.[IMAGE_PROMPT_PROGRAM_META_KEY] as { programFingerprint: string };
+    expect(programMeta?.programFingerprint).toBeTruthy();
+
+    vi.mocked(runImagePipeline).mockClear();
+    vi.mocked(renderImageIntent).mockClear();
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({
+              where: () => ({
+                limit: () =>
+                  Promise.resolve([
+                    {
+                      id: "img-source",
+                      ownerId: "u-1",
+                      entityKind: "character",
+                      entityId: "chr-1",
+                      kind: "avatar",
+                      status: "ready",
+                      meta: {
+                        render: {
+                          seed: 777,
+                          modelSlug: bound.model.slug,
+                          profileId: bound.profile.id,
+                          // The provider's own echo — the version that
+                          // PROVABLY produced the row — not a stand-in for
+                          // whatever the app currently pins.
+                          executedVersionId: "v-source-exact",
+                        },
+                        promptProgram: { programFingerprint: programMeta.programFingerprint },
+                      },
+                    },
+                  ]),
+              }),
+            }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+
+    await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source,
+      retry: { mode: "same_composition", sourceImageId: "img-source" },
+    });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.meta?.retry).toMatchObject({ pinnedVersionId: "v-source-exact" });
+    const intent = vi.mocked(renderImageIntent).mock.calls[0]?.[0];
+    expect(intent?.versionId).toBe("v-source-exact");
   });
 
   it("a same-composition retry against a model-changed source fails the row before provider spend, with the reason code", async () => {

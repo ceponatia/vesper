@@ -2,7 +2,7 @@ import { z } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 
 /**
- * Same-composition retry eligibility (issue #248; correction round 2) — a
+ * Same-composition retry eligibility (issue #248; codex review round 2) — a
  * PURE decision over a source row's stored `meta`, the current render
  * resolution, and (only for the full, request-time check) the freshly
  * compiled program's fingerprint.
@@ -19,15 +19,21 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
  * allows none), so the issue's "missing reference" refusal arm is
  * structurally impossible on this lane — there is no reference to go missing.
  *
- * The version check compares a PIN against a PIN, never a pin against a
- * provider echo: `current.pinnedVersionId` is `pinnedImageModelVersion(model)`
- * for the model this replay would run under today, and the row's own
- * `meta.render.requestedVersionId` is the version the ORIGINAL render asked
- * for (falling back to its `executedVersionId` echo only for a row written
- * before `requestedVersionId` existed — for a pinned request the echo equals
- * the pin). A model the app cannot pin today is eligible only against a row
- * that was ALSO an unpinned request, regardless of what that row's provider
- * echo happened to be.
+ * A same-composition replay PINS EXPLICITLY (thread 1, round 2): the version
+ * eligibility returns as `version.pinned` is the SOURCE row's own version —
+ * `meta.render.executedVersionId` (the provider's echo: the version that
+ * PROVABLY produced the row) falling back to `requestedVersionId` (the ask,
+ * for a row whose provider echoed nothing) — and `avatar.ts` sends that id
+ * straight through as `intent.versionId`, so provenance and the wire agree
+ * rather than hoping the floating latest still matches. `pinned: null` means
+ * neither was recorded: the replay follows the floating latest, exactly like
+ * the render that produced the row did. The refusal only fires the other
+ * direction: `current.pinnedVersionId` (`pinnedImageModelVersion(model)`,
+ * the app's own committed version knowledge today — probed OR slug-pinned)
+ * says the app has since moved onto a DIFFERENT version than the one that
+ * produced the source, so holding the old one would silently run weights the
+ * app no longer endorses. An app that pins NOTHING today always replays the
+ * source's own version, whatever it was.
  *
  * A program fingerprint that could not be read degrades to `null`, never
  * `undefined` — the two full-check refusal reasons below are named
@@ -81,11 +87,15 @@ export interface AvatarReplayCurrentModel {
   readonly modelSlug: string;
   readonly profileId: string;
   /**
-   * `pinnedImageModelVersion(model)` for the CURRENT model — the version the
-   * app itself would ask for, never a provider echo. `null` when the app
-   * pins nothing for this model (renamed from `executedVersionId`, which
-   * this field never was: comparing a pin to an echo is exactly the bug
-   * correction round 2's finding 1 closes).
+   * `pinnedImageModelVersion(model)` for the CURRENT model — the app's own
+   * committed version knowledge today (a probed version, a slug pin, or
+   * both agreeing), never a provider echo and NOT necessarily the literal id
+   * the wire would send (a probed-only, unpinned-slug model sends none at
+   * all — see `render-intent.ts`'s `slugVersionPin`). This field answers a
+   * narrower question: has the app moved onto different weights than
+   * whatever produced the source row. `null` when the app pins nothing for
+   * this model today (renamed from `executedVersionId`, which this field
+   * never was: comparing a pin to an echo was the original bug).
    */
   readonly pinnedVersionId: string | null;
 }
@@ -145,25 +155,24 @@ function readMetaField(meta: unknown, key: string): unknown {
 type WorldCheck = { readonly kind: "full"; readonly programFingerprint: string | null } | { readonly kind: "cheap" };
 
 /**
- * The shared eligibility logic (issue #248 acceptance #2–#3; correction round
- * 2 findings 1–2): whether replaying `source` as "same composition" is
- * honest for the CURRENT resolution, and the seed to replay with when it is.
- * Every refusal reason below is checked in the order a caller should trust: a
- * row that fails an earlier check never reaches a later one that would need
- * to read more of it. `demo_mode` never reaches this function — the caller
- * (`generateAvatar`) decides it before there is a program to check anything
- * against, through the same refusal path and diagnostic.
+ * The shared eligibility logic (issue #248 acceptance #2–#3; codex review
+ * round 2, threads 1–2): whether replaying `source` as "same composition" is
+ * honest for the CURRENT resolution, and the seed and version to replay with
+ * when it is. Every refusal reason below is checked in the order a caller
+ * should trust: a row that fails an earlier check never reaches a later one
+ * that would need to read more of it. `demo_mode` never reaches this function
+ * — the caller (`generateAvatar`) decides it before there is a program to
+ * check anything against, through the same refusal path and diagnostic.
  *
- * | condition (checked in this order)                                                      | result               |
- * | --------------------------------------------------------------------------------------- | -------------------- |
- * | row missing, foreign owner/character, not `avatar` kind, or not `ready`                 | `source_unavailable` |
- * | `meta.render.seed` is not a number                                                      | `no_recorded_seed`   |
- * | `meta.render.modelSlug` or `.profileId` differ from the current resolution               | `model_changed`      |
- * | the app pins a version now, and the row's requested-or-echoed version differs from it    | `version_changed`    |
- * | the app pins NO version now, and the row's own requested version was not also null/absent| `version_changed`    |
- * | (full check only) the freshly compiled program's fingerprint could not be read           | `program_unrecorded` |
- * | (full check only) the freshly compiled program's fingerprint differs from the row's own  | `world_changed`      |
- * | everything above holds                                                                   | `{ ok: true, seed, version }` |
+ * | condition (checked in this order)                                                          | result               |
+ * | ------------------------------------------------------------------------------------------- | -------------------- |
+ * | row missing, foreign owner/character, not `avatar` kind, or not `ready`                     | `source_unavailable` |
+ * | `meta.render.seed` is not a number                                                          | `no_recorded_seed`   |
+ * | `meta.render.modelSlug` or `.profileId` differ from the current resolution                   | `model_changed`      |
+ * | the app pins a version now, and it differs from the version that produced the source        | `version_changed`    |
+ * | (full check only) the freshly compiled program's fingerprint could not be read               | `program_unrecorded` |
+ * | (full check only) the freshly compiled program's fingerprint differs from the row's own      | `world_changed`      |
+ * | everything above holds                                                                       | `{ ok: true, seed, version }` |
  */
 function eligibilityFor(input: AvatarReplayBaseInput, world: WorldCheck): AvatarReplayEligibility {
   const { source, ownerId, characterId, current } = input;
@@ -187,19 +196,21 @@ function eligibilityFor(input: AvatarReplayBaseInput, world: WorldCheck): Avatar
     return { ok: false, reason: "model_changed" };
   }
 
-  if (current.pinnedVersionId !== null) {
-    // Rows written before `requestedVersionId` existed recorded only the
-    // provider's echo — for a pinned request the echo equals the pin, so this
-    // fallback reads old and new rows alike.
-    const versionThen = render.requestedVersionId ?? render.executedVersionId ?? null;
-    if (versionThen !== current.pinnedVersionId) return { ok: false, reason: "version_changed" };
-  } else {
-    // The app cannot pin this model today. Eligible only if the stored row
-    // was ALSO an unpinned request — whatever the provider's echo says: an
-    // echoed hash on an unpinned request describes the provider's floating
-    // default at render time, not a version either side asked for.
-    const storedRequestWasUnpinned = render.requestedVersionId === null || render.requestedVersionId === undefined;
-    if (!storedRequestWasUnpinned) return { ok: false, reason: "version_changed" };
+  // The version that PROVABLY produced this row: the provider's own echo
+  // when the render carried one, else what the row's own request asked for
+  // (a row with neither ran under a version nobody ever pinned, and floated
+  // along with the provider's latest at the time). This is the id a replay
+  // pins explicitly — never `current.pinnedVersionId` itself, which only
+  // gates whether replaying it is still safe.
+  const sourceVersion = render.executedVersionId ?? render.requestedVersionId ?? null;
+  // The app pins nothing today: always eligible on this dimension, and the
+  // replay follows the source's own version (including "nothing", which
+  // floats along exactly like the source render did). The app pins
+  // something today: refuse unless it is the SAME version that produced the
+  // source — holding the old one would silently run weights the app has
+  // since moved off.
+  if (current.pinnedVersionId !== null && sourceVersion !== current.pinnedVersionId) {
+    return { ok: false, reason: "version_changed" };
   }
 
   if (world.kind === "full") {
@@ -208,7 +219,7 @@ function eligibilityFor(input: AvatarReplayBaseInput, world: WorldCheck): Avatar
     if (promptProgram.programFingerprint !== world.programFingerprint) return { ok: false, reason: "world_changed" };
   }
 
-  return { ok: true, seed: render.seed, version: { pinned: current.pinnedVersionId } };
+  return { ok: true, seed: render.seed, version: { pinned: sourceVersion } };
 }
 
 /** The full, request-time check: everything `eligibilityFor` checks, including world state. */

@@ -81,6 +81,14 @@ export interface GenerateAvatarInput {
   candidates?: 1 | 2;
   /** Absent for an ordinary generation — the common case, unchanged. */
   retry?: AvatarRetryRequest;
+  /**
+   * The client-minted token this request stamps on every row it reserves
+   * (`meta.request.id`), so the studio can judge best-of-two completion by
+   * which rows belong to THIS request rather than a client-side snapshot of
+   * what existed before it (codex review round 2, threads 3–4). Absent for
+   * a caller with no completion-tracking need of its own.
+   */
+  requestId?: string;
 }
 
 export interface GenerateAvatarResult {
@@ -415,6 +423,11 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
   // row's failure sentence — never a silent fallback to a new variation.
   const replayPrecondition = avatarReplayPrecondition(replayEligibility, input.characterId, input.sink);
   const retrySeed = replayEligibility?.ok === true ? replayEligibility.seed : null;
+  // The version the SOURCE ran under, or null when the replay follows the
+  // floating latest — sent explicitly as `intent.versionId` below so the
+  // wire pins exactly the id the row's `meta.retry.pinnedVersionId` reports
+  // (codex review round 2, thread 1).
+  const retryVersionId = replayEligibility?.ok === true ? replayEligibility.version.pinned : null;
   // A REFUSED same-composition request names a source that is unowned,
   // foreign, or does not exist — `images.source_image_id` carries no FK, so
   // writing it verbatim would let a refused row point at (or let a caller
@@ -481,6 +494,13 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
               }
             : {}),
           ...(candidateGroup ? { candidates: { group: candidateGroup, index, of: candidateCount } } : {}),
+          // Which client-minted request produced this row, and how many
+          // candidates it asked for — the studio judges best-of-two
+          // completion by this id rather than a client-side snapshot, which
+          // could undercount rows created before the portraits list ever
+          // loaded (codex review round 2, threads 3–4). Absent when the
+          // caller sent no request id (an older client, a script).
+          ...(input.requestId ? { request: { id: input.requestId, candidates: candidateCount } } : {}),
         },
       },
       failedPrecondition,
@@ -507,6 +527,13 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
             // Every other render leaves this unset, so `resolveIntentSeed`
             // draws its own — unchanged from today.
             ...(retrySeed !== null ? { controls: { ...transport.controls, seed: retrySeed } } : {}),
+            // The one explicit version pin this lane ever sends: a
+            // same-composition replay's own recorded version, so the wire
+            // pins exactly the weights that produced the source rather than
+            // hoping a bare slug's floating latest still matches (codex
+            // review round 2, thread 1). Every other render leaves this
+            // unset and follows the model's own slug pin, if any.
+            ...(retryVersionId !== null ? { versionId: retryVersionId } : {}),
           },
           input.sink,
         );

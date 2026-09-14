@@ -124,6 +124,16 @@ export const imageRowMetaSchema = z
       })
       .optional()
       .catch(undefined),
+    /** Which client-minted request produced this row, and how many
+     * candidates that request asked for (codex review round 2, threads
+     * 3–4) — absent for a caller that sent no request id at all. */
+    request: z
+      .object({
+        id: z.string().catch(""),
+        candidates: z.number().catch(1),
+      })
+      .optional()
+      .catch(undefined),
     /**
      * Advisory annotations this render measured (issue #249) — harmful crop
      * loss, a blank or severely blurred output — each with the owner's

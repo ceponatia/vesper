@@ -173,6 +173,26 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.retry).toBeUndefined();
     expect(parsed.meta.candidates).toBeUndefined();
   });
+
+  // Codex review round 2, threads 3–4: the studio judges best-of-two
+  // completion by matching `meta.request.id` against the id it minted for
+  // its own request, so this field surviving the parse (and degrading
+  // cleanly on a malformed value) is load-bearing, not cosmetic.
+  it("carries the request provenance (issue #248 codex review round 2) through the parse", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-request",
+      kind: "avatar",
+      status: "ready",
+      prompt: "portrait prompt",
+      meta: { request: { id: "req-1", candidates: 2 } },
+    });
+    expect(parsed.meta.request).toEqual({ id: "req-1", candidates: 2 });
+  });
+
+  it("degrades a malformed or absent request value to absent, never a failed parse", () => {
+    expect(imageRecordSchema.parse({ id: "img-1", meta: { request: "not-an-object" } }).meta.request).toBeUndefined();
+    expect(imageRecordSchema.parse({ id: "img-2", meta: {} }).meta.request).toBeUndefined();
+  });
 });
 
 describe("avatarReplayHintSchema / avatarReplayMapSchema (issue #248)", () => {

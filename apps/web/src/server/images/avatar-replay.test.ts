@@ -16,7 +16,8 @@ import {
  * program, or a demo-mode request, must each refuse with its own named
  * reason rather than quietly falling back to a fresh, differently-seeded
  * render. One case per row of the eligibility table in `avatar-replay.ts`'s
- * own doc comment (correction round 2 findings 1, 2 and 4).
+ * own doc comment (correction round 2 findings 1, 2 and 4; codex review
+ * round 2, thread 1 rewrites the version rule's fixtures).
  */
 
 const OWNER = "user-1";
@@ -42,8 +43,10 @@ function readyAvatarRow(overrides: Partial<AvatarReplaySourceRow> = {}, meta: Re
   };
 }
 
-describe("avatarReplayEligibility (issue #248 table; correction round 2 findings 1–2)", () => {
-  it("ok: every condition holds, pinned now and the row recorded that same pin — returns the seed and the pin", () => {
+describe("avatarReplayEligibility (issue #248 table; codex review round 2, thread 1)", () => {
+  it("ok: pinned now, the source's own request matches — returns the seed and pins the replay to that version", () => {
+    // No echo on this row: `sourceVersion` falls back to `requestedVersionId`,
+    // which is what a same-composition replay now sends as `intent.versionId`.
     const result = avatarReplayEligibility({
       source: readyAvatarRow(),
       ownerId: OWNER,
@@ -54,7 +57,7 @@ describe("avatarReplayEligibility (issue #248 table; correction round 2 findings
     expect(result).toEqual({ ok: true, seed: 42, version: { pinned: "v-current" } });
   });
 
-  it("ok: pinned now, an OLD row that only recorded the provider's echo (no requestedVersionId) — the echo equals the pin", () => {
+  it("ok: pinned now, the source's provider ECHO matches — the echo is what provably produced the row, so it wins over any requested value", () => {
     const result = avatarReplayEligibility({
       source: readyAvatarRow({}, { render: { seed: 42, modelSlug: CURRENT_PINNED.modelSlug, profileId: CURRENT_PINNED.profileId, executedVersionId: "v-current" } }),
       ownerId: OWNER,
@@ -65,7 +68,7 @@ describe("avatarReplayEligibility (issue #248 table; correction round 2 findings
     expect(result).toEqual({ ok: true, seed: 42, version: { pinned: "v-current" } });
   });
 
-  it("version_changed: pinned now, the row's requested version was explicitly null (an unpinned request under an old pinned model)", () => {
+  it("version_changed: pinned now, the source ran with no recorded version at all — the app has since committed to weights the source never confirmed running", () => {
     const result = avatarReplayEligibility({
       source: readyAvatarRow({}, { render: { seed: 42, modelSlug: CURRENT_PINNED.modelSlug, profileId: CURRENT_PINNED.profileId, requestedVersionId: null } }),
       ownerId: OWNER,
@@ -76,7 +79,7 @@ describe("avatarReplayEligibility (issue #248 table; correction round 2 findings
     expect(result).toEqual({ ok: false, reason: "version_changed" });
   });
 
-  it("version_changed: pinned now, the row's requested version pins a DIFFERENT version", () => {
+  it("version_changed: pinned now, the source ran a DIFFERENT version — holding it would silently run weights the app has moved off", () => {
     const result = avatarReplayEligibility({
       source: readyAvatarRow({}, { render: { seed: 42, modelSlug: CURRENT_PINNED.modelSlug, profileId: CURRENT_PINNED.profileId, requestedVersionId: "v-older" } }),
       ownerId: OWNER,
@@ -87,7 +90,13 @@ describe("avatarReplayEligibility (issue #248 table; correction round 2 findings
     expect(result).toEqual({ ok: false, reason: "version_changed" });
   });
 
-  it("ok: the app pins NOTHING today, and the row was also an unpinned request — eligible regardless of the echo, and the pin reads null", () => {
+  it("ok: the app pins NOTHING today — always eligible on this dimension, and the replay pins to whatever the source's provider ECHOED", () => {
+    // Codex review round 2, thread 1: the OLD rule read `requestedVersionId`
+    // alone when the app was unpinned and ignored the echo entirely, so an
+    // unpinned request whose provider happened to echo a real version
+    // replayed with `pinned: null` — a weaker reproduction than the source
+    // itself achieved. The echo is what provably ran, so the replay pins to
+    // it explicitly instead of hoping the floating latest still matches.
     const result = avatarReplayEligibility({
       source: readyAvatarRow({}, { render: { seed: 42, modelSlug: CURRENT_PINNED.modelSlug, profileId: CURRENT_PINNED.profileId, requestedVersionId: null, executedVersionId: "some-hash-the-provider-picked" } }),
       ownerId: OWNER,
@@ -95,10 +104,16 @@ describe("avatarReplayEligibility (issue #248 table; correction round 2 findings
       current: CURRENT_UNPINNED,
       programFingerprint: "fp-1",
     });
-    expect(result).toEqual({ ok: true, seed: 42, version: { pinned: null } });
+    expect(result).toEqual({ ok: true, seed: 42, version: { pinned: "some-hash-the-provider-picked" } });
   });
 
-  it("version_changed: the app pins NOTHING today, but the row's own request WAS pinned — refused whatever the app pins now", () => {
+  it("ok: the app pins NOTHING today, but the source's own request WAS pinned — eligible, and the replay pins back to the source's old version", () => {
+    // Codex review round 2, thread 1: this REVERSES the old rule's refusal.
+    // The app going unpinned since the source rendered is not a reason to
+    // refuse a replay — there is no "current" weights the app endorses to
+    // protect the row from drifting off of, so replaying the source's own
+    // recorded version (whatever it was) is exactly "reuse the settings
+    // that produced this row", the whole point of a same-composition retry.
     const result = avatarReplayEligibility({
       source: readyAvatarRow({}, { render: { seed: 42, modelSlug: CURRENT_PINNED.modelSlug, profileId: CURRENT_PINNED.profileId, requestedVersionId: "v-old-pin" } }),
       ownerId: OWNER,
@@ -106,7 +121,7 @@ describe("avatarReplayEligibility (issue #248 table; correction round 2 findings
       current: CURRENT_UNPINNED,
       programFingerprint: "fp-1",
     });
-    expect(result).toEqual({ ok: false, reason: "version_changed" });
+    expect(result).toEqual({ ok: true, seed: 42, version: { pinned: "v-old-pin" } });
   });
 
   it("no_recorded_seed: meta.render.seed is null", () => {
