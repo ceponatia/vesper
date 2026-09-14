@@ -139,18 +139,25 @@ export {
   loadItemGarmentStateRows,
   neutralItemGarmentState,
   upsertItemGarmentStateRow,
+  type ItemGarmentStateColumn,
   type ItemGarmentStateRow,
 } from "./garment-rows";
 export {
   emptyActorGarmentRead,
   readActorGarmentInstances,
   readDurableActorGarments,
+  readItemGarmentInstance,
   SIM_GARMENT_BLUEPRINT_MISSING,
   SIM_GARMENT_BLUEPRINT_UNREADABLE,
   SIM_GARMENT_SLOT_UNMAPPED,
   type ActorGarmentRead,
+  type ItemGarmentInstanceRead,
   type SimGarmentRead,
 } from "./garment-reads";
+export {
+  submitDurableApplyGarmentOperation,
+  type GarmentStoreOptions,
+} from "./garment-store";
 export {
   loadBodiesProjection,
   readDurableBodies,

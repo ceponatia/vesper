@@ -113,6 +113,21 @@ export async function loadItemGarmentStateRows(
 }
 
 /**
+ * What the two JSONB columns accept on the way IN.
+ *
+ * Deliberately the opaque object rather than the parsed application shape,
+ * which satisfies it anyway. The other writer is the fork rebuild
+ * (`branch-store.ts`), which carries the value out of the package's replay fold
+ * as the opaque object a `garment_operation_applied` event recorded — and
+ * re-parsing that back through the application schemas on the way in is exactly
+ * the transformation that could make a child's row differ from the parent row
+ * it is supposed to reproduce. Reads still come back parsed
+ * ({@link loadItemGarmentStateRows}); it is only the write that is opaque,
+ * which is what the column itself is.
+ */
+export type ItemGarmentStateColumn = Record<string, unknown>;
+
+/**
  * Upsert one item's garment state — the single write path into this table.
  *
  * Idempotent on `(branch_id, item_id)` so a projector replaying the same event
@@ -124,8 +139,8 @@ export async function upsertItemGarmentStateRow(
   tx: SimTx,
   branchId: string,
   itemId: string,
-  presentation: GarmentPresentationState,
-  condition: GarmentConditionState,
+  presentation: ItemGarmentStateColumn,
+  condition: ItemGarmentStateColumn,
   updatedSequence: number,
 ): Promise<void> {
   await tx

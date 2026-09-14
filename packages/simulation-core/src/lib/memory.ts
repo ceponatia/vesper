@@ -118,6 +118,10 @@ function eventKindPhrase(kind: SimulationBranchEvent["type"]): string {
     case "item_condition_source_applied":
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
+    // A garment operation (#296) is not itself a story fact: what a
+    // bystander would remember is the ACT that rearranged the clothing,
+    // which reaches memory through its own causal event.
+    case "garment_operation_applied":
     case "household_created":
     case "household_membership_set":
     case "material_lot_initialized":

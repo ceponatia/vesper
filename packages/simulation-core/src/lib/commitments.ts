@@ -858,6 +858,7 @@ export function applyCommitmentEvent(
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
     case "item_condition_threshold_crossed":
+    case "garment_operation_applied":
     case "household_created":
     case "household_membership_set":
     case "material_lot_initialized":

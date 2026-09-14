@@ -237,6 +237,10 @@ function beatDisposition(event: SimulationBranchEvent): BeatDisposition {
     case "item_condition_source_applied":
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
+    // A garment operation (#296) surfaces through the wardrobe read a cut
+    // already carries, not as a beat of its own: the act that unbuttoned
+    // the shirt is the portrayable event, and nothing yet produces these.
+    case "garment_operation_applied":
       return null;
     case "household_created":
     case "household_membership_set":

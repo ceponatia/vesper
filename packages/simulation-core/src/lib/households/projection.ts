@@ -233,6 +233,7 @@ export function applyHouseholdEvent(
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
     case "item_condition_threshold_crossed":
+    case "garment_operation_applied":
     case "relationship_entry_authored":
     case "relationship_change_recorded":
     case "consent_escalation_resolved":

@@ -176,6 +176,73 @@ one [../resilience.md](../resilience.md) gives for the chat lane: a graph that c
 looks authored is how an unreadable row becomes a nudity claim, so "could not
 read the garment" and "authored to cover nothing" must stay distinguishable.
 
+### Changing a garment
+
+One command changes a garment: `apply_garment_operation`, carrying the acting
+actor, the item, and one typed operation from the shared wardrobe vocabulary.
+It resolves through the same reach law `apply_item_condition_source` states —
+the actor exists, is controlled and embodied; the item is extant, rooted in the
+actor's own zone, not held or worn by somebody else, reachable through its
+container's access policy, and not reserved by a live activity — and then runs
+the SAME `applyGarmentOperations` reducer the chat lane runs, at
+`atMinutes = floor(storySecond / 60)`.
+
+The operation itself is opaque to `@vesper/simulation-core`, which checks only
+that it is a bounded JSON object carrying a `kind`. The application parses it
+with `garmentOperationSchema`; an operation that does not parse is rejected
+`operation_invalid`, and an item with no readable blueprint is rejected
+`garment_not_modelled` rather than operated on against the degraded graph.
+
+**Each operation has exactly one owner command.** `transfer` belongs to
+`transfer_item`, which also arms the worn-window cleanliness drift a donning
+starts; `clean` and an `apply_condition` on `cleanliness` or `wear` belong to
+`apply_item_condition_source`, which owns those meters. Sent here, each is
+rejected `operation_unsupported` naming its owner in
+`legalAlternativeCommandTypes`. Everything else — `set_closure`, `set_roll`,
+`set_tuck`, `set_displacement`, `restore_presentation`, an `apply_condition` on
+`wetness` or `crease_load`, `deposit`, `accept_transfer`, `damage`, `repair` —
+is this command's.
+
+**The event records the resulting state.** An accepted operation appends one
+`garment_operation_applied` carrying the operation, the garment's whole
+post-state as `after: { presentation, condition }`, and a `derived` record of
+the story minute it integrated to and the content hash of the blueprint it ran
+against. Replay re-applies that `after` and never re-runs the reducer — the
+same law `item_condition_source_applied` follows with `valueAfterFixedPoint`.
+Re-deriving would tie every historical outcome to today's reducer, today's
+material coefficients and today's blueprint static, so editing any one of them
+would silently re-dress every fork of every world that carried the garment.
+The projection row is written from the event's own payload, so the live row and
+a replay of that event cannot land on different values.
+
+**The two channels this projection does not own are stripped before recording.**
+`deposit`, `accept_transfer` and `damage` write `cleanliness` or `wear` as a
+side effect of the fact they record — a stain soils, a tear ages. Those two
+channels belong to `item-condition-v1`, and the read overwrites the stored base
+with the integrated meter, so a value left here would be a second opinion that
+is discarded at the only moment anyone reads it. Base and per-part readings on
+both channels go back to their defaults; the located fact — the deposit record,
+the damage mark, with its kind, scope, intensity and freshness — is what
+survives. A `deposit` recorded here therefore never moves the garment's
+cleanliness band on its own: the soiling it implies reaches the meter only
+through a paired `apply_item_condition_source`.
+
+**A reduce that changes nothing is rejected, not recorded.** An operation the
+reducer drops is rejected `operation_rejected` carrying its `garment_op.*`
+diagnostic code; one that applies but leaves the garment identical is rejected
+the same way with `garment_op.no_change`. The stream therefore never carries an
+event whose `after` equals the row it replaces — such an event would buy a
+sequence number and a fork boundary for nothing, and every consumer downstream
+would have to learn to ignore it. A rejection leaves the row and the stream
+exactly as they were and does not fail the turn.
+
+**A fork rebuilds garment state from its inherited events.** Child rows are
+never copied from the parent: `forkBranch` folds the inherited stream through
+`replayItemGarmentStateHistory` from the empty seed, exactly as it does for
+bodies and item condition, and stamps each row's `updated_sequence` from the
+last `garment_operation_applied` touching that item. Two branches forked at one
+boundary start identical and then diverge with what each one's own events say.
+
 ## Households and membership
 
 A household is a branch-scoped shared domestic unit: a named group of actors sharing
