@@ -63,10 +63,11 @@ export function mergeRenderAdvisoryReview(
   const meta = imageMeta(rawMeta);
   const advisories = parseOr(storedAdvisoryListSchema, meta.advisories, [], undefined, "images.meta.advisories");
   const index = advisories.findIndex((advisory) => advisory.code === request.code);
-  if (index === -1) return { ok: false };
+  const current = advisories[index];
+  if (index === -1 || current === undefined) return { ok: false };
 
   const updated = {
-    ...advisories[index],
+    ...current,
     review: {
       verdict: request.verdict,
       ...(request.note !== undefined ? { note: request.note } : {}),

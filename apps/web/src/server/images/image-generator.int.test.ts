@@ -1294,9 +1294,13 @@ describe.skipIf(!ready)("image generator run claim", () => {
     ]);
 
     expect(captured).toHaveLength(1);
-    const outcomes = [first.status ?? first.skipped, second.status ?? second.skipped];
-    expect(outcomes).toContain("succeeded");
-    expect(outcomes.filter((outcome) => outcome === "succeeded")).toHaveLength(1);
+    // The loser answers with `skipped` carrying the row's status as it re-read
+    // it AFTER losing the claim — already `succeeded` whenever the winner
+    // settled first — so the two deliveries are told apart by which field
+    // they answer with, never by the status value itself.
+    const results = [first, second];
+    expect(results.filter((result) => result.skipped !== undefined)).toHaveLength(1);
+    expect(results.filter((result) => result.skipped === undefined && result.status === "succeeded")).toHaveLength(1);
   });
 });
 
