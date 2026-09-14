@@ -8,6 +8,7 @@ import type {
   EffectiveCoverageRead,
   BodyMarkProposal,
   DiagnosticSink,
+  GarmentMutationLane,
 } from "@/contracts";
 import type { ChatSurfaceTransferInput } from "./surface-transfer";
 
@@ -69,10 +70,17 @@ export interface FinalizeChatStateInput {
    */
   selfie?: { requested: boolean; offerEligible: boolean };
   /**
-   * The roster with live presence — arms the archivist's presence-transition
-   * field. Absent/single ⇒ 1-on-1, unchanged.
+   * The roster with live presence, ids and worn lists — arms the archivist's
+   * presence-transition field AND the shared continuity leg's garment handle
+   * enumeration for present members (design #298). Absent/single ⇒ 1-on-1,
+   * unchanged.
    */
-  roster?: readonly { name: string; presence: "present" | "away" }[];
+  roster?: readonly {
+    characterId: string;
+    name: string;
+    presence: "present" | "away";
+    wornItemIds: readonly string[];
+  }[];
   /**
    * Present ensemble members' memory scopes beyond the primary's — each
    * character's memory is their own, so the ONE extraction files to every
@@ -175,4 +183,30 @@ export interface FinalizeChatStateResult {
    * claim nobody can date.
    */
   wardrobeChanged: { character: boolean; player: boolean };
+  /**
+   * The shared continuity leg's grounded garment lane, projected onto the
+   * ensemble roster this exchange enumerated (design #298): "lane" is the
+   * exchange's own mutation lane (typed operations win outright over the
+   * free-text bridge), "enumeratedCharacterIds" names the present members who
+   * had at least one handle in this exchange's table, and "wornItemIds"
+   * carries every present member's worn projection keyed by characterId — the
+   * projection once they are modelled, else their roster worn list. The caller
+   * threads a member's entry into their settle before folding their personal
+   * pass, and skips that pass's own free-text outfit fold for an enumerated
+   * member under the operations lane — the same one-path-per-exchange rule the
+   * primary and player already follow.
+   *
+   * { lane: "none", enumeratedCharacterIds: [], wornItemIds: {} } for a
+   * 1-on-1 chat (no roster), so existing callers/tests are unaffected.
+   */
+  ensembleWardrobe: EnsembleWardrobeReport;
+}
+
+/** The shared continuity leg's grounded-lane report for the ensemble roster (design #298). */
+export interface EnsembleWardrobeReport {
+  lane: GarmentMutationLane;
+  /** Present members (beyond the primary) who had at least one handle in this exchange's table. */
+  enumeratedCharacterIds: readonly string[];
+  /** Every present member's worn projection, keyed by characterId. */
+  wornItemIds: Readonly<Record<string, readonly string[]>>;
 }

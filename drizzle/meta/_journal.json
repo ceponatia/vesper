@@ -995,6 +995,13 @@
       "when": 1789509600000,
       "tag": "0141_community-model-capability-backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1789596000000,
+      "tag": "0142_successor-garment-state",
+      "breakpoints": true
     }
   ]
 }

@@ -96,9 +96,12 @@ export interface StarterWorldSeedInput {
   /**
    * R5 slice 5: the primary's authored outfit, ported into world truth as
    * WORN items at birth — the outfit chip then reads the sim, not legacy
-   * chat state. Slot keys are made unique by the caller's ordering.
+   * chat state. Slot keys are made unique by the caller's ordering
+   * (`successorWornSlotKey`), and `blueprint` is the garment construction the
+   * caller minted from the same wardrobe definition character chat uses. It is
+   * opaque here: the seeder stores it, never interprets it.
    */
-  primaryGarments?: readonly { name: string; slotKey: string }[];
+  primaryGarments?: readonly { name: string; slotKey: string; blueprint?: Record<string, unknown> }[];
 }
 
 /** One seeded obligation: the envelope name is folded into its stamp-derived keys. */
@@ -215,6 +218,10 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
         id: `stw-${stamp}-garment-${index}`,
         name: garment.name.slice(0, 200),
         ownerActorId: actors.primary,
+        ...(garment.blueprint === undefined ? {} : { garmentBlueprint: garment.blueprint }),
+        // Cleanliness and wear belong to item-condition-v1; an untracked garment
+        // could never reach that owner, so every seeded garment is tracked.
+        conditionTracked: true,
         locus: { kind: "worn" as const, actorId: actors.primary, slotKey: garment.slotKey },
       })),
     ],

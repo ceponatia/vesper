@@ -9,6 +9,7 @@ import {
 import { characterProfileSchema, type CharacterProfile } from "@/contracts/world/profile";
 import {
   beatHandlesForCut,
+  buildPresentationStateBlock,
   buildSimHandleMap,
   buildSimRenderPrompt,
   buildSimRenderPromptNodes,
@@ -356,5 +357,70 @@ describe("narrator instruction source (successor lanes)", () => {
     expect(solo).toContain("never put words, thoughts, or actions in their mouth");
     expect(solo).toContain("This glimpse is for the reader only");
     expect(solo).not.toContain("Shaping each reply");
+  });
+});
+
+describe("buildPresentationStateBlock (#297 shared garment digest)", () => {
+  const BASE = { primaryName: "Nora", playerName: "Brian", relationship: undefined };
+
+  it("renders the digest instead of the outfit line when the read is structured", () => {
+    const block = buildPresentationStateBlock({
+      ...BASE,
+      outfitLine: "a linen apron, a cotton dress",
+      garments: {
+        status: "structured",
+        digest:
+          "Wardrobe right now (authoritative — never contradict what is worn, where a garment is, or how it sits):\n- Nora: apron: untied",
+      },
+    });
+    expect(block).toContain("Wardrobe right now (authoritative");
+    expect(block).toContain("apron: untied");
+    expect(block).not.toContain("is wearing a linen apron");
+  });
+
+  it("keeps the plain outfit line when the read fell back to the name list", () => {
+    const block = buildPresentationStateBlock({
+      ...BASE,
+      outfitLine: "a linen apron, a cotton dress",
+      garments: { status: "fallback" },
+    });
+    expect(block).toContain("Nora is wearing a linen apron, a cotton dress right now");
+    expect(block).not.toContain("Wardrobe right now (authoritative");
+  });
+
+  it("keeps the plain (no-clothing) outfit line when the read is known-empty", () => {
+    const block = buildPresentationStateBlock({
+      ...BASE,
+      outfitLine: "no clothing",
+      garments: { status: "empty" },
+    });
+    expect(block).toContain("Nora is wearing no clothing right now");
+    expect(block).not.toContain("Wardrobe right now (authoritative");
+  });
+
+  it("keeps the plain outfit line when no garment read is present at all (today's byte-identical behavior)", () => {
+    const block = buildPresentationStateBlock({
+      ...BASE,
+      outfitLine: "a linen apron, a cotton dress",
+      garments: undefined,
+    });
+    expect(block).toContain("Nora is wearing a linen apron, a cotton dress right now");
+    expect(block).not.toContain("Wardrobe right now (authoritative");
+  });
+
+  it("never renders raw handles, ids, or numbers — the digest is bands only", () => {
+    const block = buildPresentationStateBlock({
+      ...BASE,
+      outfitLine: undefined,
+      garments: {
+        status: "structured",
+        digest:
+          "Wardrobe right now (authoritative — never contradict what is worn, where a garment is, or how it sits):\n- Nora: shirt: untucked, left sleeve rolled",
+      },
+      relationship: { regard: 55, familiarity: 60 },
+    });
+    // The digest block itself is bands only; the relationship line never states
+    // its own numbers either — both are asserted structurally, not by snapshot.
+    expect(block).not.toMatch(/\b\d+\b/);
   });
 });

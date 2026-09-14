@@ -89,6 +89,11 @@ import {
   type DemoteSoftCanonCommand,
   type DemoteSoftCanonCommandResult,
 } from "./soft-canon";
+import {
+  garmentOperationAppliedEventSchema,
+  type ApplyGarmentOperationCommand,
+  type ApplyGarmentOperationCommandResult,
+} from "./garments";
 import { commandPrincipalSchema, principalKindSchema } from "./envelopes";
 import {
   branchHeadSequenceSchema,
@@ -266,6 +271,7 @@ export const simulationBranchEventSchema = z.discriminatedUnion("type", [
   itemConditionModifierAppliedEventSchema,
   itemConditionModifierEndedEventSchema,
   itemConditionThresholdCrossedEventSchema,
+  garmentOperationAppliedEventSchema,
   householdCreatedEventSchema,
   householdMembershipSetEventSchema,
   materialLotInitializedEventSchema,
@@ -454,6 +460,26 @@ export function isItemConditionEvent(
 }
 
 /**
+ * The garment family (#296). One member today, and a family rather than a
+ * membership in `materialEventTypeList` for the same reason item condition is
+ * one: `sim_item_garment_state` is its own projection with its own fold, so
+ * fork replay materializes it from its own `replayItemGarmentStateHistory`
+ * rather than from the materials projection. The list exists so the fork's
+ * per-item `updated_sequence` stamping reads membership from the contract
+ * instead of matching a string literal in the store.
+ */
+const itemGarmentEventTypeList = ["garment_operation_applied"] as const;
+export type ItemGarmentEventType = (typeof itemGarmentEventTypeList)[number];
+export type SimulationItemGarmentEvent = Extract<SimulationBranchEvent, { type: ItemGarmentEventType }>;
+export const itemGarmentEventTypes: ReadonlySet<string> = new Set(itemGarmentEventTypeList);
+
+export function isItemGarmentEvent(
+  event: SimulationBranchEvent,
+): event is SimulationItemGarmentEvent {
+  return itemGarmentEventTypes.has(event.type);
+}
+
+/**
  * The household family (E5.4): households, membership, fungible material
  * lots, means bands, restock routines, and promotion. All row kinds fold from
  * ONE projection (`HouseholdsProjection`), so unlike bodies/item-condition
@@ -552,6 +578,7 @@ export type SimulationCommandEnvelope =
   | ResumeActivityCommand
   | ApplyItemConditionSourceCommand
   | ResolveItemConditionThresholdCommand
+  | ApplyGarmentOperationCommand
   | CreateHouseholdCommand
   | SetHouseholdMembershipCommand
   | AdjustMaterialLotCommand
@@ -601,6 +628,7 @@ export type SimulationCommandResultRecord =
   | ResumeActivityCommandResult
   | ApplyItemConditionSourceCommandResult
   | ResolveItemConditionThresholdCommandResult
+  | ApplyGarmentOperationCommandResult
   | CreateHouseholdCommandResult
   | SetHouseholdMembershipCommandResult
   | AdjustMaterialLotCommandResult

@@ -55,7 +55,7 @@ export async function finalizeChatState(input: FinalizeChatStateInput): Promise<
     characterName: input.characterName,
     roster: input.roster,
   }, archivist);
-  const { outfitChanged, outfitPatch, garmentStore, wornItemIds, playerState, garmentTrace, lane } = await foldFinalizationWardrobe({
+  const { outfitChanged, outfitPatch, garmentStore, wornItemIds, playerState, garmentTrace, lane, ensembleWardrobe } = await foldFinalizationWardrobe({
     sink: input.sink,
     roster: input.roster,
     characterName: input.characterName,
@@ -210,6 +210,7 @@ export async function finalizeChatState(input: FinalizeChatStateInput): Promise<
         playerState.wornItemIds.join(",") !== input.scenario.playerState.wornItemIds.join(",") ||
         playerLookChanged,
     },
+    ensembleWardrobe,
   };
 }
 

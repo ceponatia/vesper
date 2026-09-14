@@ -1173,12 +1173,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // fold's result persists untouched, byte-identical to today.
           ...(contactEffectProposals.length > 0 ? { contactMarkProposals: contactEffectProposals } : {}),
           // The ensemble context: the roster line
-          // arms the archivist's presence field; every present witness's group
-          // gets the same extraction filed as their own memory.
+          // arms the archivist's presence field AND (design #298) the shared
+          // continuity leg's garment handle enumeration for present members —
+          // every present witness's group also gets the same extraction filed
+          // as their own memory.
           roster: ensembleActive
             ? [
-                { name: characterName, presence: driftedState.presence },
-                ...others.map((o) => ({ name: o.name, presence: o.state.presence })),
+                {
+                  characterId,
+                  name: characterName,
+                  presence: driftedState.presence,
+                  wornItemIds: driftedState.wornItemIds,
+                },
+                ...others.map((o) => ({
+                  characterId: o.characterId,
+                  name: o.name,
+                  presence: o.state.presence,
+                  wornItemIds: o.state.wornItemIds,
+                })),
               ]
             : undefined,
           extraMemoryWrites: ensembleActive

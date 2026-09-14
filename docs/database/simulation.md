@@ -23,12 +23,27 @@ character-chat rows. Their behavior is [../engine/README.md](../engine/README.md
 ## Material items
 
 - **`sim_items`** — stable branch-local item identity plus authored material facts:
-  `material_kind_key`, `owner_actor_id` (ownership distinct from holding), and the container
-  config (`container_capacity_count` + `container_access` — containers are items).
+  `material_kind_key`, `owner_actor_id` (ownership distinct from holding), the container
+  config (`container_capacity_count` + `container_access` — containers are items), and
+  `garment_blueprint`, the nullable opaque JSONB construction static a clothing item is minted
+  with at world seed. Statics copy to a fork child like `name`; the application parses the column
+  with `garmentBlueprintSchema`, and a value that is not a JSON object is dropped from the
+  projection rather than failing the branch read.
 - **`sim_item_holdings`** — exactly one row per branch and item, the one-locus invariant as the
   primary key, holding a typed locus (`locus_kind` held/worn/container/zone/gone, with per-kind
   shape CHECKs and composite FKs to characters, items and zones, all
-  `DEFERRABLE INITIALLY DEFERRED` for world-cascade ordering) and the last event sequence.
+  `DEFERRABLE INITIALLY DEFERRED` for world-cascade ordering) and the last event sequence. A
+  `worn` row's `slot_key` carries the garment slot vocabulary [../engine/materials.md](../engine/materials.md) defines.
+- **`sim_item_garment_state`** — the evented twin of the blueprint static: `presentation` and
+  `condition` JSONB for one worn garment, PK `(branch_id, item_id)`, `updated_sequence` with the
+  usual safe-range CHECK. Rows appear lazily and an absent row IS the neutral presentation plus
+  the pristine condition. Cleanliness and wear are not stored here — they are
+  `sim_item_condition_meters`. The composite `(branch_id, item_id)` key to `sim_items` cascades,
+  and the table carries no separate branch key, so a world teardown reaches it through one chain
+  rather than two sibling cascades. Rows are written only by `apply_garment_operation`, from
+  the `after` its `garment_operation_applied` event recorded, and by fork materialization, which
+  replays that same event stream — never from a side channel, so a fork of a dressed world
+  reproduces the branch it came from.
 
 ## Delivery and projection
 

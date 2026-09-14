@@ -27,6 +27,13 @@ export const COMPARISON_RULESET_VERSION = "engine-comparison-rules-v1";
 export interface ComparisonWorldGarment {
   name: string;
   slotKey: string;
+  /**
+   * The garment construction the caller minted from the chat wardrobe
+   * definition (`successorGarmentBlueprint`). Opaque here — the mirror stores
+   * it so the comparison world answers structural garment questions from the
+   * same blueprint the chat lane does, rather than from the name alone.
+   */
+  blueprint?: Record<string, unknown>;
 }
 
 export interface ComparisonWorldSeedInput {
@@ -88,6 +95,10 @@ export async function provisionComparisonWorld(
       id: `cmp-${sessionId}-garment-${index}`,
       name: garment.name.trim().slice(0, 200) || `garment ${index + 1}`,
       ownerActorId: primaryActorId,
+      ...(garment.blueprint === undefined ? {} : { garmentBlueprint: garment.blueprint }),
+      // Tracked for the same reason as the starter world's garments: the
+      // condition meters are the ruled owner of cleanliness and wear.
+      conditionTracked: true,
       locus: {
         kind: "worn" as const,
         actorId: primaryActorId,

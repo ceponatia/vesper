@@ -292,6 +292,7 @@ export async function runSimSoloTurn(input: {
     ...(presentation.primary ? { primary: presentation.primary } : {}),
     player: presentation.player,
     ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
+    ...(presentation.garments ? { garments: presentation.garments } : {}),
     ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
     narrationShape: presentation.narrationShape,
   };

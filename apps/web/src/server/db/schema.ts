@@ -3187,6 +3187,22 @@ export const simItems = pgTable(
      * gates whether that ever happens.
      */
     conditionTracked: boolean("condition_tracked").notNull().default(false),
+    /**
+     * The shared garment blueprint (`contracts/items/garment-blueprint.ts`) for
+     * a clothing item, minted at world seed from the wardrobe definition by
+     * `garmentBlueprintForSeed` and never rewritten: a STATIC, copied to a fork
+     * child alongside `name` rather than replayed from events. Null for every
+     * item that is not a garment, and for garments seeded before the column
+     * existed.
+     *
+     * Opaque here and in `@vesper/simulation-core` (which only checks that it
+     * is a JSON object, so the package never learns the app's wardrobe
+     * vocabulary). The application parses it with `garmentBlueprintSchema`
+     * through `parseOr` at the read boundary — a missing or unreadable value
+     * degrades to `degradedGarmentBlueprint()` with a diagnostic, never a
+     * throw and never a bare body (docs/engine/materials.md §Garments).
+     */
+    garmentBlueprint: jsonb("garment_blueprint").$type<unknown>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -4598,6 +4614,60 @@ export const simItemConditionModifiers = pgTable(
     check(
       "sim_item_condition_modifiers_validity_order",
       sql`${t.validUntil} IS NULL OR ${t.validUntil} > ${t.validFrom}`,
+    ),
+  ],
+);
+
+/**
+ * The per-item garment presentation and condition projection: the evented twin
+ * of the `garment_blueprint` static above, holding everything about a worn
+ * garment that CHANGES — closures, rolls, tucks and displacement
+ * (`presentation`), and the wetness/cleanliness/crease/wear gradient with its
+ * regional overrides, deposits and damage marks (`condition`). Both columns are
+ * opaque JSONB parsed at the read boundary with
+ * `garmentPresentationStateSchema` / `garmentConditionStateSchema`
+ * (`garment-rows.ts`), the same shapes the character-chat garment store rides on.
+ *
+ * Rows appear lazily, exactly as the item-condition meters above do: an ABSENT
+ * row is the neutral presentation plus the pristine condition, never an error
+ * and never a degraded read. Cleanliness and wear are NOT owned here — they are
+ * `sim_item_condition_meters` (item-condition-v1), integrated to the branch
+ * clock and copied over this row's base vector on read, so there is exactly one
+ * owner per channel.
+ *
+ * Placement follows `sim_item_holdings` rather than the condition tables: the
+ * composite `(branch_id, item_id)` key to `sim_items` is a plain
+ * ON DELETE CASCADE with no separate branch key, so a world teardown reaches
+ * this table through ONE chain (`sim_branches` → `sim_items` → here) instead of
+ * two sibling cascades Postgres would not order against each other — which is
+ * what forces `sim_item_condition_modifiers` to be hand-edited DEFERRABLE.
+ * `updated_sequence` identifies the event boundary that last changed the row.
+ */
+export const simItemGarmentState = pgTable(
+  "sim_item_garment_state",
+  {
+    branchId: text("branch_id").notNull(),
+    itemId: text("item_id").notNull(),
+    /** `GarmentPresentationState` — closures, rolls, tucks, displacement. */
+    presentation: jsonb("presentation").$type<unknown>().notNull(),
+    /** `GarmentConditionState` — base gradient, region overrides, deposits, damage. */
+    condition: jsonb("condition").$type<unknown>().notNull(),
+    updatedSequence: bigint("updated_sequence", { mode: "number" }).notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({
+      name: "sim_item_garment_state_branch_item_pk",
+      columns: [t.branchId, t.itemId],
+    }),
+    foreignKey({
+      name: "sim_item_garment_state_item_fk",
+      columns: [t.branchId, t.itemId],
+      foreignColumns: [simItems.branchId, simItems.itemId],
+    }).onDelete("cascade"),
+    check(
+      "sim_item_garment_state_updated_sequence_safe",
+      sql`${t.updatedSequence} >= 0 AND ${t.updatedSequence} <= 9007199254740991`,
     ),
   ],
 );

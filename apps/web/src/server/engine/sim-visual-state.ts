@@ -4,6 +4,10 @@ import {
   characterProfileSchema,
   DiagnosticCollector,
   emptyCharacterProfile,
+  type AffordanceExposure,
+  type RegionCoverage,
+  exposureRegionLocations,
+  exposureRegionOrder,
 } from "@/contracts";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { parseOr } from "@/lib/parse";
@@ -19,22 +23,58 @@ import {
 import { log } from "../log";
 import { chatVisualStateShadowEnabled } from "./prompts/constants";
 import { readBranchClock } from "./sim-beats";
+import { readSimChatGarments, type SimChatGarments } from "./sim-surfaces";
 
 /**
  * The SUCCESSOR lane's visual-state shadow glue.
  *
  * The successor can hand the projection far less than the chat lane: the
- * authored profile (attributes, species realization) is the one visual owner
- * both lanes share, while wardrobe, body-surface, conditions, scene relations
- * and affordance observations have no successor producer wired here yet. Each
+ * authored profile (attributes, species realization) and, since #297, the
+ * primary's structured garment read (`readSimChatGarments`) are the visual
+ * owners this lane has; body-surface conditions, scene relations and
+ * affordance observations still have no successor producer wired here. Each
  * absence is RECORDED by the assembly as a `visual_state.source.unavailable`
  * suppression — that record is the lane's missing-owner measurement, not a gap
- * in it.
+ * in it. The garment read only ever feeds the BODY-SURFACE exposure question
+ * ("is skin visible here") — it is never turned into a garment-domain
+ * observation of its own.
  *
  * Successor observer memory: none is persisted for the `world_branch` scope
  * yet, so the narrator selection runs against empty memory under a matching
  * branch-scoped binding — scope-consistent, read-only, and never written.
  */
+
+/**
+ * Region coverage as a body-surface exposure: bare skin is `visible` to sight,
+ * a sheer covering only `hinted`, and an opaque one `hidden` — the same reading
+ * the wardrobe garment domain gives for a garment's OWN surface
+ * (`chat-garment-affordances.ts`'s `garmentExposure`), asked here for the
+ * BODY instead. Which body locations a region stands for is the contract's
+ * own table, read through `exposureRegionLocations` rather than copied.
+ */
+const AFFORDANCE_EXPOSURE_OF_REGION: Readonly<Record<RegionCoverage, AffordanceExposure>> = {
+  bare: "visible",
+  sheer: "hinted",
+  covered: "hidden",
+};
+
+/**
+ * The primary's #297 structured, reliable garment read as a body-surface
+ * exposure map — `{}` (fails closed) for every other status, exactly the prior
+ * `no wardrobe model` default. A mixed-reliability read (`reliable: false`)
+ * stays `{}` too: its `exposure` is already the fully-covered default, and
+ * echoing that here would assert "hidden" for locations the read could not
+ * actually vouch for.
+ */
+function bodyExposureFromGarments(garments: SimChatGarments | undefined): Record<string, AffordanceExposure> {
+  if (!garments || garments.status !== "structured" || !garments.reliable) return {};
+  const exposure: Record<string, AffordanceExposure> = {};
+  for (const region of exposureRegionOrder) {
+    const band = AFFORDANCE_EXPOSURE_OF_REGION[garments.exposure[region]];
+    for (const locationId of exposureRegionLocations(region)) exposure[locationId] = band;
+  }
+  return exposure;
+}
 
 /** One successor cut, as the shadow can read it without re-rendering. */
 export interface SimVisualStateShadowContext {
@@ -47,6 +87,8 @@ export interface SimVisualStateShadowContext {
   readonly storySecond: number;
   /** The primary's authored profile; absent ⇒ nothing to project, shadow skipped. */
   readonly primary?: { readonly name: string; readonly profile: CharacterProfile } | undefined;
+  /** #297's structured garment read; absent or non-structured/unreliable ⇒ the fail-closed empty exposure. */
+  readonly garments?: SimChatGarments | undefined;
 }
 
 /** The successor cut as a shadow-build input, or `null` when no profile loaded. */
@@ -70,9 +112,13 @@ export function simVisualStateShadowInput(
       ...(profile.bodyFeatures === undefined ? {} : { bodyFeatures: profile.bodyFeatures }),
     },
     // The player is present in the scene; sight is the one channel this lane can
-    // positively assert. No wardrobe model ⇒ no exposure entries, which fails
-    // body-surface visibility closed — recorded, never guessed.
-    perception: affordancePerceptionView({ exposure: {}, channels: { sight: "available" } }),
+    // positively assert. A structured, reliable garment read answers which body
+    // locations are visible/hinted/hidden; anything else fails body-surface
+    // visibility closed — recorded, never guessed.
+    perception: affordancePerceptionView({
+      exposure: bodyExposureFromGarments(context.garments),
+      channels: { sight: "available" },
+    }),
     observerId: context.playerActorId,
     observer: { kind: "actor", actorId: context.playerActorId },
   };
@@ -146,9 +192,12 @@ export async function previewSimVisualState(input: {
   primaryActorId: string;
 }): Promise<VisualStatePreviewPayload> {
   const sink = new DiagnosticCollector();
-  const [primary, clock] = await Promise.all([
+  const [primary, clock, garments] = await Promise.all([
     loadSimPreviewProfile(input.chatId),
     readBranchClock(input.branchId),
+    // Self-degrading (sim-surfaces' own guard); `null` reads as "absent" below,
+    // same as every other optional field this preview assembles.
+    readSimChatGarments(input.chatId),
   ]);
   const shadowInput = simVisualStateShadowInput({
     chatId: input.chatId,
@@ -158,6 +207,7 @@ export async function previewSimVisualState(input: {
     cutId: "visual_state_preview",
     storySecond: clock?.storySecond ?? 0,
     primary,
+    ...(garments ? { garments } : {}),
   });
   const build = shadowInput === null ? null : safeBuildVisualStateShadow({ ...shadowInput, sink }, sink);
   if (build === null) {

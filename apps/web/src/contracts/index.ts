@@ -26,6 +26,7 @@ export * from "./items/item";
 export * from "./items/hair-occlusion";
 export * from "./items/coverage";
 export * from "./items/clothing-categories";
+export * from "./items/successor-worn-slot";
 export * from "./items/colors";
 export * from "./items/object-subtypes";
 export * from "./items/subtypes";

@@ -68,6 +68,7 @@ representative slice of the family catalog:
 | access       | AccessGranted, EntryDenied, ZoneEntered              |
 | engagement   | EngagementOpened, EngagementEnded                    |
 | material     | ItemTransferred, ItemConsumed, ItemDamaged           |
+| garment      | GarmentOperationApplied                              |
 | body         | BodyThresholdCrossed, ConditionAcquired              |
 | knowledge    | ObservationRecorded, AssertionMade, BeliefUpdated    |
 | relationship | RelationshipEntryAuthored, ConsentEscalationResolved |

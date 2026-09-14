@@ -115,6 +115,147 @@ locus when the crossing is marked noticeable. Raw item-meter values never enter 
 narrative cut directly; a read is perception-gated the same way a body meter's raw
 value is.
 
+## Garments
+
+A worn item is also a **garment**: the same construction model character chat
+uses ([../character-chat/wardrobe.md](../character-chat/wardrobe.md) §The garment store), so both lanes answer
+structural questions — which parts, what is still covered — from one model
+rather than from a list of names. Four owners meet on one worn item and none of
+them writes another's channel:
+
+| Channel                                           | Owner                                                     |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| identity and placement                            | `sim_items` / `sim_item_holdings`                         |
+| construction: parts, behaviors, baseline coverage | the `sim_items.garment_blueprint` static                  |
+| cleanliness and wear                              | `item-condition-v1` meters, integrated on read            |
+| presentation, wetness, crease, deposits, damage   | the `sim_item_garment_state` projection                   |
+
+**The blueprint is a static, not a projection.** It is minted once at world
+seed from the wardrobe definition — the same `garmentBlueprintForSeed` the chat
+lane mints with, so one definition produces identical construction on both
+sides — and thereafter only copied. A fork child copies it exactly as it copies
+`name`, so a retake replays the garment that was there rather than re-deriving
+one from a library row that may have changed since. Nothing rewrites it, and a
+definition with no clothing category still mints: the root-only template
+carrying that definition's own coverage is a coarse garment, not a broken one.
+
+The package that owns the material contract never interprets it. It checks only
+that the value is a JSON object, so the wardrobe vocabulary stays in the
+application and the value still round-trips byte-identically through the
+projection every command replays — which is what keeps fork and snapshot
+checksums stable. An item with no garment omits the field entirely rather than
+carrying a null, so a world with no clothing hashes as it always did.
+
+**Worn slot keys are parsed, never trusted.** `slot_key` is free text in the
+holdings contract, so no consumer may read it as an anatomical or garment
+reference without resolving it against the registries. Two vocabularies exist:
+`<clothing-category-id>-<n>`, which a world seed writes, and
+`<body-location-id>-<n>`, which earlier seeds wrote from the first entry of the
+definition's coverage. Anything else — including the `garment-<n>` a
+category-less definition gets — resolves to `unknown`, and the garment is still
+read, simply without a slot-derived hint.
+
+**Presentation and condition are a lazy projection.** An item with no
+`sim_item_garment_state` row is neutral presentation and pristine condition —
+absence is the default state, never an error. Cleanliness and wear are
+deliberately NOT in that row: they are item-condition meters, integrated
+analytically to the branch clock at read time and copied across unchanged
+(`GARMENT_UNIT_ONE` and `METER_FIXED_POINT_ONE` are the same 10 000, and both
+scales agree that 10 000 is fresh and 0 is pristine wear). Effective coverage
+is derived on read from the blueprint and the presentation, and never stored.
+
+**A garment that cannot be read is covered, never bare.** A missing or
+unreadable blueprint resolves to the marked degraded graph and the read is
+flagged unreliable with a stable diagnostic
+(`sim_garment.blueprint_missing` / `sim_garment.blueprint_unreadable`); an
+unmapped slot reports `sim_garment.slot_unmapped`. In every one of those cases
+the garment is still listed with its name, and a consumer deriving exposure
+must treat an unreliable garment as covered — the slot's own conservative
+coverage where it has one, otherwise covered outright. The reason is the same
+one [../resilience.md](../resilience.md) gives for the chat lane: a graph that covers nothing but
+looks authored is how an unreadable row becomes a nudity claim, so "could not
+read the garment" and "authored to cover nothing" must stay distinguishable.
+
+**Narration reads the same resolved wardrobe, never a second derivation.** The
+primary's clothing state reaches the successor narrator as the shared garment
+digest — the same `garmentReadout` bands and `buildGarmentDigest` render the
+character-chat lane produces — instead of a joined item-name line, and the
+digest's coverage-derived exposure is the one answer an image or exposure
+consumer reads too: one worn-set resolution feeds the digest, the readouts,
+and the exposure regions alike. A worn set with no reliable blueprint at all
+falls back to the name list with a `sim_garment.mapping_unresolved`
+diagnostic, never a failed turn; a wardrobe where only SOME items resolve
+still narrates structurally but reports its exposure as fully covered, the
+same never-bare-from-a-missing-blueprint rule applied at the wardrobe level
+rather than per garment.
+
+### Changing a garment
+
+One command changes a garment: `apply_garment_operation`, carrying the acting
+actor, the item, and one typed operation from the shared wardrobe vocabulary.
+It resolves through the same reach law `apply_item_condition_source` states —
+the actor exists, is controlled and embodied; the item is extant, rooted in the
+actor's own zone, not held or worn by somebody else, reachable through its
+container's access policy, and not reserved by a live activity — and then runs
+the SAME `applyGarmentOperations` reducer the chat lane runs, at
+`atMinutes = floor(storySecond / 60)`.
+
+The operation itself is opaque to `@vesper/simulation-core`, which checks only
+that it is a bounded JSON object carrying a `kind`. The application parses it
+with `garmentOperationSchema`; an operation that does not parse is rejected
+`operation_invalid`, and an item with no readable blueprint is rejected
+`garment_not_modelled` rather than operated on against the degraded graph.
+
+**Each operation has exactly one owner command.** `transfer` belongs to
+`transfer_item`, which also arms the worn-window cleanliness drift a donning
+starts; `clean` and an `apply_condition` on `cleanliness` or `wear` belong to
+`apply_item_condition_source`, which owns those meters. Sent here, each is
+rejected `operation_unsupported` naming its owner in
+`legalAlternativeCommandTypes`. Everything else — `set_closure`, `set_roll`,
+`set_tuck`, `set_displacement`, `restore_presentation`, an `apply_condition` on
+`wetness` or `crease_load`, `deposit`, `accept_transfer`, `damage`, `repair` —
+is this command's.
+
+**The event records the resulting state.** An accepted operation appends one
+`garment_operation_applied` carrying the operation, the garment's whole
+post-state as `after: { presentation, condition }`, and a `derived` record of
+the story minute it integrated to and the content hash of the blueprint it ran
+against. Replay re-applies that `after` and never re-runs the reducer — the
+same law `item_condition_source_applied` follows with `valueAfterFixedPoint`.
+Re-deriving would tie every historical outcome to today's reducer, today's
+material coefficients and today's blueprint static, so editing any one of them
+would silently re-dress every fork of every world that carried the garment.
+The projection row is written from the event's own payload, so the live row and
+a replay of that event cannot land on different values.
+
+**The two channels this projection does not own are stripped before recording.**
+`deposit`, `accept_transfer` and `damage` write `cleanliness` or `wear` as a
+side effect of the fact they record — a stain soils, a tear ages. Those two
+channels belong to `item-condition-v1`, and the read overwrites the stored base
+with the integrated meter, so a value left here would be a second opinion that
+is discarded at the only moment anyone reads it. Base and per-part readings on
+both channels go back to their defaults; the located fact — the deposit record,
+the damage mark, with its kind, scope, intensity and freshness — is what
+survives. A `deposit` recorded here therefore never moves the garment's
+cleanliness band on its own: the soiling it implies reaches the meter only
+through a paired `apply_item_condition_source`.
+
+**A reduce that changes nothing is rejected, not recorded.** An operation the
+reducer drops is rejected `operation_rejected` carrying its `garment_op.*`
+diagnostic code; one that applies but leaves the garment identical is rejected
+the same way with `garment_op.no_change`. The stream therefore never carries an
+event whose `after` equals the row it replaces — such an event would buy a
+sequence number and a fork boundary for nothing, and every consumer downstream
+would have to learn to ignore it. A rejection leaves the row and the stream
+exactly as they were and does not fail the turn.
+
+**A fork rebuilds garment state from its inherited events.** Child rows are
+never copied from the parent: `forkBranch` folds the inherited stream through
+`replayItemGarmentStateHistory` from the empty seed, exactly as it does for
+bodies and item condition, and stamps each row's `updated_sequence` from the
+last `garment_operation_applied` touching that item. Two branches forked at one
+boundary start identical and then diverge with what each one's own events say.
+
 ## Households and membership
 
 A household is a branch-scoped shared domestic unit: a named group of actors sharing

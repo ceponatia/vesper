@@ -28,6 +28,7 @@ import {
   isEngagementEvent,
   isHouseholdEvent,
   isItemConditionEvent,
+  isItemGarmentEvent,
   isMovementEvent,
 } from "@vesper/simulation-core/contracts/branching";
 import { emptyActivitiesSeed, replayActivitiesHistory } from "@vesper/simulation-core/activities";
@@ -35,6 +36,10 @@ import { emptyBodiesSeed, replayBodiesHistory } from "@vesper/simulation-core/bo
 import { emptyCohortsSeed, replayCohortHistory } from "@vesper/simulation-core/cohorts";
 import { emptyCommitmentsSeed, replayCommitmentsHistory } from "@vesper/simulation-core/commitments";
 import { emptyEngagementsSeed, replayEngagementsHistory } from "@vesper/simulation-core/engagements";
+import {
+  emptyItemGarmentStateSeed,
+  replayItemGarmentStateHistory,
+} from "@vesper/simulation-core/garments";
 import { simulationHash } from "@vesper/simulation-core/hash";
 import {
   deriveMaterialLotRowKey,
@@ -109,7 +114,8 @@ import {
 import { insertReplayedKnowledge } from "./knowledge-recorder";
 import { cohortRowInsert } from "./cohort-store";
 import { actorLodRowInsert } from "./lod-store";
-import { holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-rows";
+import { upsertItemGarmentStateRow } from "./garment-rows";
+import { garmentBlueprintColumn, holdingRowFieldsForLocus, itemLocusFromHoldingRow } from "./material-rows";
 import { insertReplayedObservations } from "./observation-store";
 import { insertReplayedSocialLedger } from "./social-recorder";
 import { insertReplayedSoftCanon } from "./soft-canon-recorder";
@@ -265,6 +271,7 @@ export async function assembleBranchState(tx: SimTx, ancestry: BranchAncestry): 
       containerCapacityCount: simItems.containerCapacityCount,
       containerAccess: simItems.containerAccess,
       conditionTracked: simItems.conditionTracked,
+      garmentBlueprint: simItems.garmentBlueprint,
       locusKind: simItemHoldings.locusKind,
       locusActorId: simItemHoldings.actorId,
       slotKey: simItemHoldings.slotKey,
@@ -292,25 +299,32 @@ export async function assembleBranchState(tx: SimTx, ancestry: BranchAncestry): 
     headSequence: branch.headSequence,
     storySecond: branch.storySecond,
     actors: actorRows.map((row) => ({ id: row.characterId, name: row.name })),
-    items: itemRows.map((row) => ({
-      id: row.itemId,
-      name: row.name,
-      ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
-      ownerActorId: row.ownerActorId,
-      ...(row.containerCapacityCount !== null && row.containerAccess !== null
-        ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
-        : {}),
-      /** Whether this item carries item-condition (wear/cleanliness) meters. */
-      conditionTracked: row.conditionTracked,
-      locus: itemLocusFromHoldingRow({
-        locusKind: row.locusKind,
-        actorId: row.locusActorId,
-        slotKey: row.slotKey,
-        containerItemId: row.containerItemId,
-        zoneId: row.zoneId,
-        goneBasis: row.goneBasis,
-      }),
-    })),
+    items: itemRows.map((row) => {
+      const garmentBlueprint = garmentBlueprintColumn(row.garmentBlueprint);
+      return {
+        id: row.itemId,
+        name: row.name,
+        ...(row.materialKindKey !== null ? { materialKindKey: row.materialKindKey } : {}),
+        ownerActorId: row.ownerActorId,
+        ...(row.containerCapacityCount !== null && row.containerAccess !== null
+          ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
+          : {}),
+        /** Whether this item carries item-condition (wear/cleanliness) meters. */
+        conditionTracked: row.conditionTracked,
+        // Omitted rather than nulled when the column is empty or unreadable, so
+        // a branch with no garments hashes exactly as it did before the column
+        // existed (`garmentBlueprintColumn` explains why a bad value drops).
+        ...(garmentBlueprint === undefined ? {} : { garmentBlueprint }),
+        locus: itemLocusFromHoldingRow({
+          locusKind: row.locusKind,
+          actorId: row.locusActorId,
+          slotKey: row.slotKey,
+          containerItemId: row.containerItemId,
+          zoneId: row.zoneId,
+          goneBasis: row.goneBasis,
+        }),
+      };
+    }),
   });
 
   return { projection, events, ancestry };
@@ -504,8 +518,15 @@ export async function forkBranch(
           containerCapacityCount: item.container?.capacityCount ?? null,
           containerAccess: item.container?.access ?? null,
           conditionTracked: item.conditionTracked,
+          // A STATIC: the child copies the parent's blueprint the way it copies
+          // `name`, so a fork replays the same garment construction rather than
+          // re-deriving one from a library row that may have changed since.
+          garmentBlueprint: item.garmentBlueprint ?? null,
         })),
       );
+      // `sim_item_garment_state` rows are deliberately NOT copied here: the
+      // presentation/condition projection is evented, so a fork child
+      // materializes it by replaying its own events, not by cloning rows.
       await tx.insert(simItemHoldings).values(
         childProjection.items.map((item) => ({
           branchId: input.childBranchId,
@@ -783,6 +804,42 @@ export async function forkBranch(
             itemConditionSequenceByItem.get(modifier.itemId) ?? 0,
           ),
         ),
+      );
+    }
+
+    // #296 garment state: fully evented, its own projection — replay from the
+    // empty seed, exactly like bodies and item condition. Nothing is COPIED
+    // from the parent's rows (the #295 seed block above says so where the
+    // statics are copied): the presentation and condition a child inherits are
+    // whatever its inherited events say they are, which is the only way a fork
+    // taken mid-scene can diverge correctly when the two branches then dress
+    // differently.
+    //
+    // Each event carries the garment's whole post-state, so the fold is a
+    // re-application and never a re-reduction — the blueprint static, the
+    // material coefficients and the reducer itself are not consulted here, and
+    // a later edit to any of them cannot re-dress a forked world.
+    //
+    // Written through `upsertItemGarmentStateRow`, the row layer's single write
+    // path, rather than a batch insert: one writer for one table is what keeps
+    // the live command lane and this rebuild from drifting apart, and a branch
+    // holds a handful of operated-on garments, not a table's worth.
+    const childGarmentState = replayItemGarmentStateHistory({
+      seed: emptyItemGarmentStateSeed(input.childBranchId, ancestry.rootOriginStorySecond),
+      events: inherited,
+    });
+    const garmentSequenceByItem = new Map<string, number>();
+    for (const event of inherited) {
+      if (isItemGarmentEvent(event)) garmentSequenceByItem.set(event.payload.itemId, event.sequence);
+    }
+    for (const entry of childGarmentState.items) {
+      await upsertItemGarmentStateRow(
+        tx,
+        input.childBranchId,
+        entry.itemId,
+        entry.presentation,
+        entry.condition,
+        garmentSequenceByItem.get(entry.itemId) ?? 0,
       );
     }
 

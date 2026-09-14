@@ -136,6 +136,24 @@ export const simulationMaterialItemSchema = z
     consumptionEffects: z.array(itemConsumptionEffectSchema).max(4).optional(),
     /** Whether this item carries item-condition (wear/cleanliness) meters. */
     conditionTracked: z.boolean().default(false),
+    /**
+     * The garment blueprint STATIC for a clothing item — an opaque JSON object
+     * this package deliberately never interprets.
+     *
+     * The wardrobe vocabulary it describes (part graph, coverage, behaviors)
+     * belongs to the application, which parses this value with its own
+     * `garmentBlueprintSchema` at the read boundary. The package's only
+     * contract is structural: it is an object, so the value round-trips through
+     * `materialsProjectionSchema` byte-identically and hashes deterministically
+     * for snapshot and fork checksums. A non-object is rejected rather than
+     * coerced; the row layer drops such a column instead of failing the whole
+     * projection, and the application read then degrades with a diagnostic.
+     *
+     * Absent for every item that is not a garment — and the key is omitted
+     * rather than nulled, so existing projections and snapshots hash exactly as
+     * they did before the field existed.
+     */
+    garmentBlueprint: z.record(z.string(), z.unknown()).optional(),
     locus: itemLocusSchema,
   })
   .strict();
