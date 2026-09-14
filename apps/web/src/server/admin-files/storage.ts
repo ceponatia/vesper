@@ -1,4 +1,4 @@
-import { createWriteStream } from "node:fs";
+import { constants as fsConstants, createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -6,6 +6,31 @@ import { Writable } from "node:stream";
 
 const FILES_DIRECTORY = "admin-files";
 const UPLOAD_TEMP_DIRECTORY = ".admin-files-upload-tmp";
+const STALE_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The current Fly deployment is one Next process over one attached volume. Keep
+ * destination-changing filesystem mutations serialized inside that process so
+ * the check-before-rename paths cannot race another Files request into silently
+ * replacing a just-created destination. Upload streaming itself stays outside
+ * this lock; only its short publish step is serialized.
+ */
+let mutationTail: Promise<void> = Promise.resolve();
+const activeUploadTemps = new Set<string>();
+
+async function withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = mutationTail;
+  let release: (() => void) | undefined;
+  mutationTail = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release?.();
+  }
+}
 
 export type AdminFileKind = "file" | "folder";
 
@@ -18,7 +43,8 @@ export interface AdminFileEntry {
 }
 
 export interface AdminFileDownload {
-  absolutePath: string;
+  /** Open descriptor whose stat and bytes refer to the same inode. */
+  handle: Awaited<ReturnType<typeof fs.open>>;
   name: string;
   size: number;
   modifiedAt: string;
@@ -102,6 +128,33 @@ async function ensureDirectoryNotSymlink(directory: string): Promise<void> {
   }
 }
 
+/**
+ * A process exit cannot run an upload's finally block. Reclaim old invisible
+ * `.part` files opportunistically on every later Files access. Active uploads
+ * in this process are exempt even if their clocks are unusual; after a restart
+ * that set is empty, so abandoned parts age out automatically.
+ */
+async function reclaimStaleUploadParts(tempRoot: string, now = Date.now()): Promise<void> {
+  const staleBefore = now - STALE_UPLOAD_AGE_MS;
+  const entries = await fs.readdir(tempRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".part")) continue;
+    const absolutePath = path.join(tempRoot, entry.name);
+    if (activeUploadTemps.has(absolutePath)) continue;
+
+    let stat: Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      stat = await fs.lstat(absolutePath);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOENT") continue;
+      throw error;
+    }
+    if (stat.mtimeMs <= staleBefore) {
+      await fs.rm(absolutePath, { force: true, recursive: false });
+    }
+  }
+}
+
 async function storageRoots(): Promise<{ root: string; tempRoot: string }> {
   const configured = process.env.DATA_ROOT ?? path.join(process.cwd(), "data");
   const configuredDataRoot = path.resolve(configured);
@@ -112,7 +165,10 @@ async function storageRoots(): Promise<{ root: string; tempRoot: string }> {
   const tempRoot = path.join(dataRoot, UPLOAD_TEMP_DIRECTORY);
   await ensureDirectoryNotSymlink(root);
   await ensureDirectoryNotSymlink(tempRoot);
-  return { root: await fs.realpath(root), tempRoot: await fs.realpath(tempRoot) };
+  const realRoot = await fs.realpath(root);
+  const realTempRoot = await fs.realpath(tempRoot);
+  await reclaimStaleUploadParts(realTempRoot);
+  return { root: realRoot, tempRoot: realTempRoot };
 }
 
 function assertContained(root: string, candidate: string): void {
@@ -196,73 +252,79 @@ export async function listAdminFiles(relativeDirectory = ""): Promise<AdminFileE
 
 export async function createAdminFolder(relativeDirectory: string, name: string): Promise<AdminFileEntry> {
   validateName(name);
-  const parent = await resolveManagedPath(relativeDirectory);
-  const parentStat = await lstatOrNull(parent.absolutePath);
-  if (parentStat === null) throw new AdminFilesError("not_found", "parent folder not found", 404);
-  if (!parentStat.isDirectory()) throw new AdminFilesError("not_directory", "parent path is not a folder", 400);
+  return withMutationLock(async () => {
+    const parent = await resolveManagedPath(relativeDirectory);
+    const parentStat = await lstatOrNull(parent.absolutePath);
+    if (parentStat === null) throw new AdminFilesError("not_found", "parent folder not found", 404);
+    if (!parentStat.isDirectory()) throw new AdminFilesError("not_directory", "parent path is not a folder", 400);
 
-  const relativeTarget = joinRelative(relativeDirectory, name);
-  const target = await resolveManagedPath(relativeTarget);
-  try {
-    await fs.mkdir(target.absolutePath);
-  } catch (error) {
-    if (nodeErrorCode(error) === "EEXIST") throw new AdminFilesError("already_exists", "a file or folder with that name already exists", 409);
-    if (nodeErrorCode(error) === "ENAMETOOLONG") throw new AdminFilesError("invalid_path", "folder name is too long for this filesystem", 400);
-    throw error;
-  }
-  const stat = await fs.lstat(target.absolutePath);
-  return entryFromStat(name, relativeTarget, stat);
+    const relativeTarget = joinRelative(relativeDirectory, name);
+    const target = await resolveManagedPath(relativeTarget);
+    try {
+      await fs.mkdir(target.absolutePath);
+    } catch (error) {
+      if (nodeErrorCode(error) === "EEXIST") throw new AdminFilesError("already_exists", "a file or folder with that name already exists", 409);
+      if (nodeErrorCode(error) === "ENAMETOOLONG") throw new AdminFilesError("invalid_path", "folder name is too long for this filesystem", 400);
+      throw error;
+    }
+    const stat = await fs.lstat(target.absolutePath);
+    return entryFromStat(name, relativeTarget, stat);
+  });
 }
 
 export async function renameAdminEntry(relativePath: string, name: string): Promise<AdminFileEntry> {
   validateName(name);
-  const source = await resolveManagedPath(relativePath);
-  if (source.segments.length === 0) invalidPath("the Files root cannot be renamed");
+  return withMutationLock(async () => {
+    const source = await resolveManagedPath(relativePath);
+    if (source.segments.length === 0) invalidPath("the Files root cannot be renamed");
 
-  const sourceStat = await lstatOrNull(source.absolutePath);
-  if (sourceStat === null) throw new AdminFilesError("not_found", "file or folder not found", 404);
-  if (sourceStat.isSymbolicLink()) throw new AdminFilesError("unsafe_path", "symbolic links cannot be managed here", 409);
+    const sourceStat = await lstatOrNull(source.absolutePath);
+    if (sourceStat === null) throw new AdminFilesError("not_found", "file or folder not found", 404);
+    if (sourceStat.isSymbolicLink()) throw new AdminFilesError("unsafe_path", "symbolic links cannot be managed here", 409);
 
-  const parentSegments = source.segments.slice(0, -1);
-  const parentRelative = relativePathFor(parentSegments);
-  const targetRelative = joinRelative(parentRelative, name);
-  const target = await resolveManagedPath(targetRelative);
-  if ((await lstatOrNull(target.absolutePath)) !== null) {
-    throw new AdminFilesError("already_exists", "a file or folder with that name already exists", 409);
-  }
+    const parentSegments = source.segments.slice(0, -1);
+    const parentRelative = relativePathFor(parentSegments);
+    const targetRelative = joinRelative(parentRelative, name);
+    const target = await resolveManagedPath(targetRelative);
+    if ((await lstatOrNull(target.absolutePath)) !== null) {
+      throw new AdminFilesError("already_exists", "a file or folder with that name already exists", 409);
+    }
 
-  try {
-    await fs.rename(source.absolutePath, target.absolutePath);
-  } catch (error) {
-    if (nodeErrorCode(error) === "ENAMETOOLONG") throw new AdminFilesError("invalid_path", "name is too long for this filesystem", 400);
-    throw error;
-  }
+    try {
+      await fs.rename(source.absolutePath, target.absolutePath);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENAMETOOLONG") throw new AdminFilesError("invalid_path", "name is too long for this filesystem", 400);
+      throw error;
+    }
 
-  const stat = await fs.lstat(target.absolutePath);
-  return entryFromStat(name, targetRelative, stat);
+    const stat = await fs.lstat(target.absolutePath);
+    return entryFromStat(name, targetRelative, stat);
+  });
 }
 
 export async function deleteAdminEntry(relativePath: string): Promise<void> {
-  const target = await resolveManagedPath(relativePath);
-  if (target.segments.length === 0) invalidPath("the Files root cannot be deleted");
-  const stat = await lstatOrNull(target.absolutePath);
-  if (stat === null) throw new AdminFilesError("not_found", "file or folder not found", 404);
-  if (stat.isSymbolicLink()) throw new AdminFilesError("unsafe_path", "symbolic links cannot be managed here", 409);
+  return withMutationLock(async () => {
+    const target = await resolveManagedPath(relativePath);
+    if (target.segments.length === 0) invalidPath("the Files root cannot be deleted");
+    const stat = await lstatOrNull(target.absolutePath);
+    if (stat === null) throw new AdminFilesError("not_found", "file or folder not found", 404);
+    if (stat.isSymbolicLink()) throw new AdminFilesError("unsafe_path", "symbolic links cannot be managed here", 409);
 
-  if (stat.isFile()) {
-    await fs.unlink(target.absolutePath);
-    return;
-  }
-  if (!stat.isDirectory()) throw new AdminFilesError("unsupported_entry", "unsupported filesystem entry", 409);
-
-  try {
-    await fs.rmdir(target.absolutePath);
-  } catch (error) {
-    if (nodeErrorCode(error) === "ENOTEMPTY" || nodeErrorCode(error) === "EEXIST") {
-      throw new AdminFilesError("folder_not_empty", "folder is not empty; delete its contents first", 409);
+    if (stat.isFile()) {
+      await fs.unlink(target.absolutePath);
+      return;
     }
-    throw error;
-  }
+    if (!stat.isDirectory()) throw new AdminFilesError("unsupported_entry", "unsupported filesystem entry", 409);
+
+    try {
+      await fs.rmdir(target.absolutePath);
+    } catch (error) {
+      if (nodeErrorCode(error) === "ENOTEMPTY" || nodeErrorCode(error) === "EEXIST") {
+        throw new AdminFilesError("folder_not_empty", "folder is not empty; delete its contents first", 409);
+      }
+      throw error;
+    }
+  });
 }
 
 async function finalizeUpload(tempPath: string, targetPath: string, overwrite: boolean): Promise<void> {
@@ -313,6 +375,7 @@ export async function uploadAdminFile(
 
   const { tempRoot } = await storageRoots();
   const tempPath = path.join(tempRoot, `${randomUUID()}.part`);
+  activeUploadTemps.add(tempPath);
   try {
     if (body === null) {
       await fs.writeFile(tempPath, new Uint8Array(), { flag: "wx" });
@@ -320,13 +383,14 @@ export async function uploadAdminFile(
       const output = createWriteStream(tempPath, { flags: "wx" });
       await body.pipeTo(Writable.toWeb(output));
     }
-    await finalizeUpload(tempPath, target.absolutePath, overwrite);
+    await withMutationLock(() => finalizeUpload(tempPath, target.absolutePath, overwrite));
   } catch (error) {
     if (error instanceof AdminFilesError) throw error;
     if (nodeErrorCode(error) === "ENOSPC") throw new AdminFilesError("storage_full", "the Files volume is out of space", 507);
     if (nodeErrorCode(error) === "ENAMETOOLONG") throw new AdminFilesError("invalid_path", "file name is too long for this filesystem", 400);
     throw new AdminFilesError("upload_failed", "upload did not complete", 500);
   } finally {
+    activeUploadTemps.delete(tempPath);
     await fs.rm(tempPath, { force: true }).catch(() => undefined);
   }
 
@@ -337,17 +401,31 @@ export async function uploadAdminFile(
 export async function getAdminFileDownload(relativePath: string): Promise<AdminFileDownload> {
   const target = await resolveManagedPath(relativePath);
   if (target.segments.length === 0) invalidPath("a file path is required");
-  const stat = await lstatOrNull(target.absolutePath);
-  if (stat === null) throw new AdminFilesError("not_found", "file not found", 404);
-  if (stat.isSymbolicLink()) throw new AdminFilesError("unsafe_path", "symbolic links cannot be downloaded", 409);
-  if (!stat.isFile()) throw new AdminFilesError("not_file", "path is not a file", 400);
 
-  const name = target.segments[target.segments.length - 1];
-  if (name === undefined) invalidPath("a file path is required");
-  return {
-    absolutePath: target.absolutePath,
-    name,
-    size: stat.size,
-    modifiedAt: stat.mtime.toISOString(),
-  };
+  let handle: Awaited<ReturnType<typeof fs.open>>;
+  try {
+    // O_NOFOLLOW closes the final-component symlink race between containment
+    // validation and open on the Linux production filesystem.
+    handle = await fs.open(target.absolutePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  } catch (error) {
+    if (nodeErrorCode(error) === "ENOENT") throw new AdminFilesError("not_found", "file not found", 404);
+    if (nodeErrorCode(error) === "ELOOP") throw new AdminFilesError("unsafe_path", "symbolic links cannot be downloaded", 409);
+    throw error;
+  }
+
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) throw new AdminFilesError("not_file", "path is not a file", 400);
+    const name = target.segments[target.segments.length - 1];
+    if (name === undefined) invalidPath("a file path is required");
+    return {
+      handle,
+      name,
+      size: Number(stat.size),
+      modifiedAt: stat.mtime.toISOString(),
+    };
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
 }
