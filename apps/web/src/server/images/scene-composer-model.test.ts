@@ -13,14 +13,22 @@ import { sceneSpecSchema } from "./prompts-scene-composer";
 /**
  * The composer's model seam and its refusal fallback (owner ruling 2026-08-10).
  *
- * `generateChecked` is stubbed rather than reached: what is under test is the LADDER — which
- * model is asked first, what makes the second model be asked at all, and that the terminal
- * degrade is still the deterministic heuristic spec — none of which a network call would
- * make clearer, and all of which a network call would make flaky.
+ * `generateCheckedBounded` is stubbed rather than reached: what is under test is the
+ * LADDER — which model is asked first, what makes the second model be asked at all, and
+ * that the terminal degrade is still the deterministic heuristic spec — none of which a
+ * network call would make clearer, and all of which a network call would make flaky.
+ *
+ * The stub follows the composer's own migration (#192): both rungs now go out through
+ * `generateCheckedBounded`, so the call the ladder is observed at is that one. Stubbing
+ * the retired `generateChecked` here would leave the real bounded helper in place, and
+ * every rung would silently degrade through demo mode instead of returning the scripted
+ * answer — a suite that no longer tests the ladder at all.
  */
 
 const seam = vi.hoisted(() => ({
   calls: [] as Array<{ modelId?: string; hasFallback: boolean; disableReasoning?: boolean }>,
+  /** The deadline each rung was given (#192), recorded apart from the ladder assertions. */
+  bounds: [] as Array<{ timeoutMs: number; timeoutCode: string }>,
   results: [] as Array<{ value: unknown; degraded: boolean }>,
 }));
 
@@ -30,12 +38,16 @@ vi.mock("../ai", async (importOriginal) => {
     ...actual,
     // The seam under test only exists outside demo mode — demo degrades every call by design.
     isDemoMode: () => false,
-    generateChecked: (opts: { modelId?: string; fallback?: () => unknown; disableReasoning?: boolean }) => {
+    generateCheckedBounded: (
+      opts: { modelId?: string; fallback?: () => unknown; disableReasoning?: boolean },
+      bound: { timeoutMs: number; timeoutCode: string },
+    ) => {
       seam.calls.push({
         modelId: opts.modelId,
         hasFallback: typeof opts.fallback === "function",
         disableReasoning: opts.disableReasoning,
       });
+      seam.bounds.push({ timeoutMs: bound.timeoutMs, timeoutCode: bound.timeoutCode });
       return Promise.resolve(seam.results.shift() ?? { value: null, degraded: true });
     },
   };
@@ -51,6 +63,7 @@ const context = {
 
 beforeEach(() => {
   seam.calls.length = 0;
+  seam.bounds.length = 0;
   seam.results.length = 0;
 });
 
@@ -158,6 +171,24 @@ describe("composeSceneSpec model ladder", () => {
     seam.results.push({ value: composed("at the window"), degraded: false });
     await composeSceneSpec({ ...context, composerModel: "some/unbilled-model" });
     expect(seam.calls).toEqual([{ modelId: sceneComposerModelId(), hasFallback: false, disableReasoning: true }]);
+  });
+
+  it("gives EVERY rung the same hard deadline, so a stalled composer cannot hold a render open (#192)", async () => {
+    // Before #192 the composer awaited `generateChecked` with no ceiling, so a provider
+    // that accepted the request and then never answered pinned the render — and the
+    // heuristic rung that exists precisely so a render never fails was unreachable.
+    // A timed-out rung degrades exactly like a refusal (`{ value: null, degraded: true }`,
+    // no fallback configured on the primary), which is what lets the ladder continue.
+    seam.results.push({ value: null, degraded: true });
+    seam.results.push({ value: composed("at the window"), degraded: false });
+    await composeSceneSpec({ ...context, sink: new DiagnosticCollector() });
+    expect(seam.bounds).toHaveLength(2);
+    // One bound object shared by both rungs: a retry that silently ran unbounded is the
+    // shape this kills, and a per-rung budget nobody chose is the other.
+    expect(seam.bounds[1]).toEqual(seam.bounds[0]);
+    expect(seam.bounds[0]?.timeoutMs).toBeGreaterThan(0);
+    // `${code}.timeout` — the convention `withGenerateTimeout` derives a leg id from.
+    expect(seam.bounds[0]?.timeoutCode).toBe("images.scene_composer.timeout");
   });
 
   it("resolves reasoning per RUNG, so an Aion override is never sent an option it rejects", async () => {
