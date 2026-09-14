@@ -9,7 +9,6 @@ import {
 } from "@vesper/image-core";
 import {
   buildFaceRepairRunRequest,
-  faceRepairInstruction,
   type FaceRepairSourceRow,
   pairFaceRepairIdentityProfile,
   planFaceRepair,
@@ -108,10 +107,20 @@ describe("planFaceRepair — flag and basic gates", () => {
     if (!result.ok) expect(result.code).toBe("source_unavailable");
   });
 
-  it("refuses source_unavailable for a hidden system kind", () => {
-    const result = planFaceRepair(planInput({ source: source({ kind: "identity_face_crop" }) }));
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe("source_unavailable");
+  it("refuses source_unavailable for every hidden system kind except reference_view", () => {
+    // The inverse of the reference_view acceptance below: every OTHER
+    // `HIDDEN_IMAGE_KINDS` entry stays refused (issue #246 correction round 2).
+    for (const kind of [
+      "identity_face_crop",
+      "identity_trial_output",
+      "lab_control",
+      "lab_output",
+      "generator_output",
+    ] as const) {
+      const result = planFaceRepair(planInput({ source: source({ kind }) }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe("source_unavailable");
+    }
   });
 });
 
@@ -165,6 +174,11 @@ describe("planFaceRepair — the multi-person accept/deny table", () => {
     expect(result).toEqual({ ok: true, subjectCheck: { method: "none", subjects: null } });
   });
 
+  // A reference view is a real render of this character — the identity
+  // pack's own accepted view — so it is a legitimate repair source even
+  // though `HIDDEN_IMAGE_KINDS` hides it elsewhere for gallery purposes
+  // (issue #246 correction round 2; the accept table wins over the hidden-
+  // kind refusal for this one kind).
   it("accepts a portrait_variant / chat_look / reference_view the same way", () => {
     for (const kind of ["portrait_variant", "chat_look", "reference_view"] as const) {
       const result = planFaceRepair(planInput({ source: source({ kind }) }));
@@ -246,20 +260,6 @@ describe("pairFaceRepairIdentityProfile", () => {
   it("degrades a single-reference model (e.g. PuLID) to canonical_only explicitly", () => {
     const paired = pairFaceRepairIdentityProfile(resolved({ maxReferences: 1 }));
     expect(paired.profile.referencePolicy.identityStrategy).toBe("canonical_only");
-  });
-});
-
-describe("faceRepairInstruction", () => {
-  it("names a single identity reference as Image 2", () => {
-    expect(faceRepairInstruction(1)).toBe(
-      "Repair the face in Image 1 to match the person shown in Image 2; keep the pose, clothing, background, lighting and composition of Image 1 unchanged.",
-    );
-  });
-
-  it("names two identity references as Images 2 through 3", () => {
-    expect(faceRepairInstruction(2)).toBe(
-      "Repair the face in Image 1 to match the person shown in Images 2 through 3; keep the pose, clothing, background, lighting and composition of Image 1 unchanged.",
-    );
   });
 });
 
