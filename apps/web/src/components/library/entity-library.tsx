@@ -905,7 +905,6 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           title="Generate images?"
           confirmLabel="Ok"
           tone="primary"
-          busy={generatingBatch}
         >
           This will generate {missingIds.length} image{missingIds.length === 1 ? "" : "s"} — one for each {scopeNoun}{" "}
           without one. It runs in the background, so you can keep working or leave this page.

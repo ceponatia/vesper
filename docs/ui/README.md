@@ -7,12 +7,12 @@ owned primitives in `apps/web/src/components/ui/`.
 
 ## Reading order
 
-| Doc                                | What it covers                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------------- |
-| [pages.md](pages.md)               | The route map, the global header, and the account menu                       |
-| [library.md](library.md)           | Library grids, facets, editors, pickers, the portrait studio, the outfit tab |
-| [conversation.md](conversation.md) | `/chat/:chatId`: layout, header, scene section, asides, bottom cluster       |
-| [transcript.md](transcript.md)     | Message actions, takes, world beats, markup rendering, scrolling, pagination |
-| [world-card.md](world-card.md)     | The successor lane's "Where you are" panel: travel, handoffs, activities     |
-| [mobile.md](mobile.md)             | One responsive tree: breakpoints, nav modes, the `Sheet` primitive, touch    |
-| [conventions.md](conventions.md)   | Data flow, drafts, polling, modal sizing, contrast, the lightbox, dropdowns  |
+| Doc                                | What it covers                                                                             |
+| ---------------------------------- | ------------------------------------------------------------------------------------------ |
+| [pages.md](pages.md)               | The route map, the global header, and the account menu                                     |
+| [library.md](library.md)           | Library grids, facets, editors, pickers, the portrait studio, the outfit tab               |
+| [conversation.md](conversation.md) | `/chat/:chatId`: layout, header, scene section, asides, bottom cluster                     |
+| [transcript.md](transcript.md)     | Message actions, takes, world beats, markup rendering, scrolling, pagination               |
+| [world-card.md](world-card.md)     | The successor lane's "Where you are" panel: travel, handoffs, activities                   |
+| [mobile.md](mobile.md)             | One responsive tree: breakpoints, nav modes, the `Sheet` primitive, touch                  |
+| [conventions.md](conventions.md)   | Data flow, drafts, polling, modal sizing, confirmations, contrast, the lightbox, dropdowns |

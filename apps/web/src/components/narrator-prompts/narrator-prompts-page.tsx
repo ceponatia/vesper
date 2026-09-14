@@ -439,7 +439,6 @@ export function NarratorPromptsPage({ initialPromptId }: { initialPromptId?: str
         title="This prompt is in use"
         confirmLabel="Save anyway"
         tone="primary"
-        busy={busyAction === "save"}
       >
         <p>{session === null ? "" : inUseSaveWarning(session.usageCount, session.currentRevision + 1)}</p>
         <p className="mt-2 text-paper-400">

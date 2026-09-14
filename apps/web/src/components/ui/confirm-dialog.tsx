@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { Button, type ButtonVariant } from "./button";
-import { confirmDialogDismissal } from "./confirm-dialog-state";
 import { Dialog, type DialogProps } from "./dialog";
 
 const toneVariant: Record<"danger" | "primary", ButtonVariant> = {
@@ -12,7 +11,7 @@ const toneVariant: Record<"danger" | "primary", ButtonVariant> = {
 
 export interface ConfirmDialogProps {
   open: boolean;
-  /** Fires for Escape, a backdrop click, and Cancel — never while `busy` (confirm-dialog-state.ts). */
+  /** Fires for Escape, a backdrop click, and Cancel — never while `busy`. */
   onClose: () => void;
   onConfirm: () => void;
   title: ReactNode;
@@ -52,7 +51,7 @@ export function ConfirmDialog({
   confirmDisabled,
 }: ConfirmDialogProps) {
   const dismiss = () => {
-    if (confirmDialogDismissal({ busy })) onClose();
+    if (!busy) onClose();
   };
 
   return (
