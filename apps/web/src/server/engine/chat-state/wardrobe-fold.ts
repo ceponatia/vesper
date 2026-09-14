@@ -7,6 +7,7 @@ import {
   applyGarmentProposals,
   type GarmentOperationTraceEntry,
   type GarmentHandleTable,
+  wornGarmentDefinitionIds,
 } from "@/contracts";
 import { newId } from "@/lib/ids";
 import { foldOutfitProposal, foldPlayerOutfitProposal } from "./outfit-fold";
@@ -184,19 +185,33 @@ export async function foldFinalizationWardrobe(
             : {}),
         }
       : garmentFold.store;
-  const wornItemIds =
-    garmentFold.applied > 0
-      ? garmentProjectionOr(garmentStore, garmentActorForCharacter(input.characterId), garmentSync.wornItemIds)
-      : garmentSync.wornItemIds;
+  // Actors the handle table actually enumerated (an ENTRY under their handle
+  // prefix, not merely a listing in `actors` — the 12-garment cap trims
+  // entries, and handles are uniquely claimed so a prefix match is exact).
+  const enumeratedActorIds = new Set(
+    garmentHandles.actors
+      .filter((actor) => garmentHandles.entries.some((entry) => entry.handle.startsWith(`${actor.handle}.`)))
+      .map((actor) => actor.actorId),
+  );
+  // The worn projection one state write persists for an actor. After typed
+  // operations applied, an ENUMERATED actor's truth is the store itself — even
+  // an empty worn set: they were modelled when the table was built, so zero
+  // instances now means the operations moved them all (the last garment left on
+  // a chair, handed over, or gone), and writing the pre-exchange list back would
+  // have the next reconcile re-don it. An actor the table never enumerated keeps
+  // the modelled-or-fallback read, and with no operations applied the reconcile's
+  // own list stands (a withheld id then keeps retrying rather than being dropped).
+  const projectionAfterOperations = (actorId: string, fallback: readonly string[]): string[] => {
+    if (garmentFold.applied === 0) return [...fallback];
+    if (enumeratedActorIds.has(actorId)) return wornGarmentDefinitionIds(garmentStore, actorId);
+    return garmentProjectionOr(garmentStore, actorId, fallback);
+  };
+  const wornItemIds = projectionAfterOperations(garmentActorForCharacter(input.characterId), garmentSync.wornItemIds);
   const playerState: ChatPlayerState =
     garmentFold.applied > 0
       ? {
           ...garmentSync.playerState,
-          wornItemIds: garmentProjectionOr(
-            garmentStore,
-            GARMENT_PLAYER_ACTOR,
-            garmentSync.playerState.wornItemIds,
-          ),
+          wornItemIds: projectionAfterOperations(GARMENT_PLAYER_ACTOR, garmentSync.playerState.wornItemIds),
         }
       : garmentSync.playerState;
   const garmentTrace: GarmentOperationTraceEntry[] = garmentFold.trace;
@@ -212,27 +227,16 @@ export async function foldFinalizationWardrobe(
   // would neutralize a member's free-text fold and file the typed-lane
   // diagnostic for a member the model never saw a handle for.
   const enumeratedCharacterIds = presentMembers
-    .filter((member) => {
-      const actor = garmentHandles.actors.find(
-        (a) => a.actorId === garmentActorForCharacter(member.characterId),
-      );
-      return actor !== undefined && garmentHandles.entries.some((entry) => entry.handle.startsWith(`${actor.handle}.`));
-    })
+    .filter((member) => enumeratedActorIds.has(garmentActorForCharacter(member.characterId)))
     .map((member) => member.characterId);
-  // Each present member's worn projection re-derives from the store the same
-  // way the primary's does above: only when typed operations actually applied
-  // this exchange (`garmentFold.applied > 0`) does the store hold a fresher
-  // truth than the roster's own list. Reading the store unconditionally would
-  // report a STALE slice for a member whose reconcile this exchange SKIPPED
-  // (a withheld id — `chat_garments.definition_load_failed` /
-  // `.coverage_unreadable`) as though it were a fresh projection, silently
-  // dropping the id they were trying to equip.
+  // Each present member's worn projection follows the same rule as the
+  // primary's and the player's above (`projectionAfterOperations`).
   const memberWornItemIds: Record<string, readonly string[]> = {};
   for (const member of presentMembers) {
-    memberWornItemIds[member.characterId] =
-      garmentFold.applied > 0
-        ? garmentProjectionOr(garmentStore, garmentActorForCharacter(member.characterId), member.wornItemIds)
-        : [...member.wornItemIds];
+    memberWornItemIds[member.characterId] = projectionAfterOperations(
+      garmentActorForCharacter(member.characterId),
+      member.wornItemIds,
+    );
   }
   // A 1-on-1 chat (no roster at all) reports the fixed default so existing
   // callers/tests are unaffected by a lane this exchange never shared with

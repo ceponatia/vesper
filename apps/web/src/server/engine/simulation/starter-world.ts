@@ -219,6 +219,9 @@ export function starterWorldSeedPlan(input: StarterWorldSeedInput): StarterWorld
         name: garment.name.slice(0, 200),
         ownerActorId: actors.primary,
         ...(garment.blueprint === undefined ? {} : { garmentBlueprint: garment.blueprint }),
+        // Cleanliness and wear belong to item-condition-v1; an untracked garment
+        // could never reach that owner, so every seeded garment is tracked.
+        conditionTracked: true,
         locus: { kind: "worn" as const, actorId: actors.primary, slotKey: garment.slotKey },
       })),
     ],

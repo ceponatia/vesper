@@ -411,12 +411,15 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([MARA_SHIRT_DEF]);
   });
 
-  it("reports the PRE-EXCHANGE roster list, not an empty one, when the member's last instance leaves her actor slice", async () => {
+  it("persists an EMPTY projection when the member's last instance leaves her actor slice", async () => {
     // Mara owns exactly ONE instance this time, and the op moves it to a scene
-    // locus — which belongs to nobody, so `actorHasGarmentInstances` reads her
-    // as unmodelled again and `garmentProjectionOr` takes its documented
-    // fallback: the caller's list, which here is the roster's PRE-exchange
-    // worn ids.
+    // locus — which belongs to nobody. She was ENUMERATED when the handle table
+    // was built, so after the operation the store is her truth: zero worn
+    // instances means she took the scarf off, and the report says so. Writing
+    // the pre-exchange list back instead (the unmodelled-actor fallback) would
+    // have the next reconcile find the scarf on the desk and re-don it —
+    // undoing the change the fiction made. The fallback remains only for actors
+    // the table never enumerated.
     const chat = await ensembleChat([MARA_SCARF_DEF]);
     const { scenario, outcome } = await settle({
       chat,
@@ -428,19 +431,9 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     // The store is unambiguous: the scarf is on the desk and Mara wears nothing.
     expect(garmentsAtScenePlace(scenario.garments, "the study").map((i) => i.name)).toEqual(["a green scarf"]);
     expect(wornGarmentDefinitionIds(scenario.garments, MARA_ACTOR())).toEqual([]);
-
-    // The REPORT nevertheless still names the scarf. That divergence is the
-    // fallback's whole shape and it is pinned here deliberately: the id list is
-    // a compatibility projection that can only be read once an actor is
-    // modelled, so "modelled, wearing nothing" and "never materialized" are the
-    // two states it cannot tell apart, and it fails toward the caller's last
-    // known truth rather than toward an unexplained strip. A change that made
-    // this `[]` would be stripping every member the store cannot currently see
-    // — including one whose reconcile was withheld — so it must be a deliberate
-    // change to `garmentProjectionOr`, not a silent one.
-    expect(outcome.ensembleWardrobe.lane).toBe("operations");
+    // And the report agrees, because she was enumerated this exchange.
     expect(outcome.ensembleWardrobe.enumeratedCharacterIds).toContain(MARA_ID);
-    expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([MARA_SCARF_DEF]);
+    expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([]);
   });
 
   it("an unresolvable member handle drops with the EXISTING diagnostic — no new rejection code, nothing touched", async () => {

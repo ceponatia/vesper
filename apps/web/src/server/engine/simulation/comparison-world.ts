@@ -96,6 +96,9 @@ export async function provisionComparisonWorld(
       name: garment.name.trim().slice(0, 200) || `garment ${index + 1}`,
       ownerActorId: primaryActorId,
       ...(garment.blueprint === undefined ? {} : { garmentBlueprint: garment.blueprint }),
+      // Tracked for the same reason as the starter world's garments: the
+      // condition meters are the ruled owner of cleanliness and wear.
+      conditionTracked: true,
       locus: {
         kind: "worn" as const,
         actorId: primaryActorId,
