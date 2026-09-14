@@ -342,9 +342,11 @@ export async function getAdminFileDownload(relativePath: string): Promise<AdminF
   if (stat.isSymbolicLink()) throw new AdminFilesError("unsafe_path", "symbolic links cannot be downloaded", 409);
   if (!stat.isFile()) throw new AdminFilesError("not_file", "path is not a file", 400);
 
+  const name = target.segments[target.segments.length - 1];
+  if (name === undefined) invalidPath("a file path is required");
   return {
     absolutePath: target.absolutePath,
-    name: target.segments[target.segments.length - 1]!,
+    name,
     size: stat.size,
     modifiedAt: stat.mtime.toISOString(),
   };
