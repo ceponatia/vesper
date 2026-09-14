@@ -249,6 +249,9 @@ export async function seedDurableMaterialBranch(
           containerCapacityCount: item.container?.capacityCount ?? null,
           containerAccess: item.container?.access ?? null,
           conditionTracked: item.conditionTracked,
+          // A static, minted once at seed by `garmentBlueprintForSeed` and
+          // thereafter copied (never re-derived), exactly like `name`.
+          garmentBlueprint: item.garmentBlueprint ?? null,
         })),
       );
       await tx.insert(simItemHoldings).values(

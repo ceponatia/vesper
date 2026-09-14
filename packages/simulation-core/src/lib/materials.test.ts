@@ -17,7 +17,7 @@ import {
   type TransferItemCommandInput,
 } from "../contracts/materials";
 import { bodyInitializedEventSchema, type BodyMeterDefinition } from "../contracts/bodies";
-import { itemInstantiatedFromPromotionEventSchema } from "../contracts/households";
+import { itemInstantiatedFromPromotionEventSchema, promotedItemInputSchema } from "../contracts/households";
 import {
   itemConditionMeterStateSchema,
   itemConditionRegistryV1,
@@ -654,6 +654,76 @@ describe("E5.3 set ownership", () => {
       ownershipCmd({ itemId: "item-x", newOwnerActorId: "ghost" }),
     );
     expect(ghost).toMatchObject({ ok: false, code: "actor_not_found" });
+  });
+});
+
+describe("the opaque garmentBlueprint static", () => {
+  const shirt = {
+    version: 1,
+    rootNodeId: "root",
+    nodes: [{ id: "root", kind: "root", baselineCoverage: ["chest"] }],
+    edges: [],
+    behaviors: [],
+  };
+
+  it("accepts any JSON object and round-trips it untouched, so the package never reinterprets it", () => {
+    const parsed = simulationMaterialItemSchema.parse({
+      id: "shirt",
+      name: "linen shirt",
+      locus: wornBy("mara", "top-0"),
+      garmentBlueprint: shirt,
+    });
+    expect(parsed.garmentBlueprint).toEqual(shirt);
+    // Byte-identical through a second parse: the projection re-parses on EVERY
+    // material event (`sortMaterialsProjection`), so any mutation here would
+    // drift the replay hash away from the live one.
+    expect(simulationHash(simulationMaterialItemSchema.parse(parsed))).toBe(simulationHash(parsed));
+  });
+
+  it("rejects a non-object rather than coercing one — the row layer drops such a column instead", () => {
+    for (const bad of [["a"], "blueprint", 7, null]) {
+      const result = simulationMaterialItemSchema.safeParse({
+        id: "shirt",
+        name: "linen shirt",
+        locus: wornBy("mara", "top-0"),
+        garmentBlueprint: bad,
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("omits the key when absent, so an item without one hashes as it did before the field existed", () => {
+    const plain = simulationMaterialItemSchema.parse({ id: "coin", name: "coin", locus: heldBy("mara") });
+    expect("garmentBlueprint" in plain).toBe(false);
+    expect(simulationHash(plain)).toBe(
+      simulationHash({
+        id: "coin",
+        name: "coin",
+        ownerActorId: null,
+        conditionTracked: false,
+        locus: heldBy("mara"),
+      }),
+    );
+  });
+
+  it("rides the projection and the promotion payload, so a fork replay carries the same construction", () => {
+    const projection = materialsProjectionSchema.parse({
+      worldId: WORLD,
+      branchId: BRANCH,
+      rulesetVersion: RULESET,
+      version: 0,
+      headSequence: 0,
+      storySecond: 0,
+      actors: [{ id: "mara", name: "Mara" }],
+      items: [{ id: "shirt", name: "linen shirt", locus: wornBy("mara", "top-0"), garmentBlueprint: shirt }],
+    });
+    expect(projection.items[0]?.garmentBlueprint).toEqual(shirt);
+    // A promoted garment may carry one too — `promotedItemInputSchema` derives
+    // from the item schema, so the projection write must persist the column or
+    // replay would re-add construction the live row dropped.
+    expect(
+      promotedItemInputSchema.parse({ name: "linen shirt", garmentBlueprint: shirt }).garmentBlueprint,
+    ).toEqual(shirt);
   });
 });
 

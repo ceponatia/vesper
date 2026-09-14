@@ -357,6 +357,11 @@ export async function submitDurablePromoteItemFromStock(
         containerCapacityCount: newItem.container?.capacityCount ?? null,
         containerAccess: newItem.container?.access ?? null,
         conditionTracked: newItem.conditionTracked,
+        // `item_instantiated_from_promotion` carries the item's FULL shape, so a
+        // promoted garment's blueprint must land on the row too: replay re-adds
+        // the item straight from this payload, and a column the live write
+        // dropped would make the rebuilt projection hash differ from the live one.
+        garmentBlueprint: newItem.garmentBlueprint ?? null,
       });
       await tx.insert(simItemHoldings).values({
         branchId: branch.id,

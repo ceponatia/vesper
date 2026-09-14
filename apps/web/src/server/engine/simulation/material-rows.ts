@@ -58,6 +58,28 @@ export function itemLocusFromHoldingRow(row: ItemHoldingRowFields): ItemLocus {
   }
 }
 
+/**
+ * The `sim_items.garment_blueprint` column as the material item contract can
+ * carry it: the stored JSON object, or `undefined`.
+ *
+ * The column is opaque JSONB, so a hand-edited or corrupted row can hold an
+ * array, a scalar or `null` — none of which the package's structural
+ * `garmentBlueprint` field accepts. Dropping such a value here is deliberate:
+ * the alternative is `simulationMaterialItemSchema.parse` throwing, which would
+ * fail EVERY read of the branch over one bad row (docs/resilience.md). The item
+ * still projects, simply without its static, and the application read adapter
+ * (`garment-reads.ts`) reports the loss as a diagnostic and degrades the
+ * garment to covered rather than bare.
+ *
+ * The shape is never validated against the wardrobe vocabulary here — that
+ * parse belongs at the application read boundary, and doing it here would put
+ * `@/contracts` inside the projection every command replays through.
+ */
+export function garmentBlueprintColumn(raw: unknown): Record<string, unknown> | undefined {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  return raw as Record<string, unknown>;
+}
+
 /** The holdings-row column patch for one locus — shared by seed inserts, live updates, and fork materialization. */
 export function holdingRowFieldsForLocus(locus: ItemLocus): ItemHoldingRowFields {
   const empty = { actorId: null, slotKey: null, containerItemId: null, zoneId: null, goneBasis: null };
@@ -95,6 +117,7 @@ export const materialItemSelection = {
   containerCapacityCount: simItems.containerCapacityCount,
   containerAccess: simItems.containerAccess,
   conditionTracked: simItems.conditionTracked,
+  garmentBlueprint: simItems.garmentBlueprint,
   locusKind: simItemHoldings.locusKind,
   holdingActorId: simItemHoldings.actorId,
   slotKey: simItemHoldings.slotKey,
@@ -113,6 +136,8 @@ export interface MaterialItemRow {
   containerAccess: ContainerAccessPolicy | null;
   /** Whether this item carries item-condition (wear/cleanliness) meters. */
   conditionTracked: boolean;
+  /** The opaque garment blueprint static; see {@link garmentBlueprintColumn}. */
+  garmentBlueprint: unknown;
   locusKind: "held" | "worn" | "container" | "zone" | "gone";
   holdingActorId: string | null;
   slotKey: string | null;
@@ -122,6 +147,7 @@ export interface MaterialItemRow {
 }
 
 export function materialItemFromRow(row: MaterialItemRow): SimulationMaterialItem {
+  const blueprint = garmentBlueprintColumn(row.garmentBlueprint);
   const locus = itemLocusFromHoldingRow({
     locusKind: row.locusKind,
     actorId: row.holdingActorId,
@@ -140,6 +166,7 @@ export function materialItemFromRow(row: MaterialItemRow): SimulationMaterialIte
       ? { container: { capacityCount: row.containerCapacityCount, access: row.containerAccess } }
       : {}),
     conditionTracked: row.conditionTracked,
+    ...(blueprint === undefined ? {} : { garmentBlueprint: blueprint }),
     locus,
   });
 }

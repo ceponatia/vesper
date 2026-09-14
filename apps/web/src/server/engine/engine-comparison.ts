@@ -1,5 +1,10 @@
 import { and, asc, eq, sql } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
+import {
+  characterProfileSchema,
+  emptyCharacterProfile,
+  successorGarmentBlueprint,
+  successorWornSlotKey,
+} from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import {
   characterChats,
@@ -169,9 +174,12 @@ export async function startEngineComparison(chatId: string, ownerId: string): Pr
         status,
       );
     }
+    // Same mint the starter world and the chat lane run, so the mirror's
+    // garments carry the construction their chat twins do rather than a name.
     const garments = wardrobeLoad.wardrobe.map((item, index) => ({
       name: item.name,
-      slotKey: `${item.coverage[0] ?? "garment"}-${index}`,
+      slotKey: successorWornSlotKey(item.category, index),
+      blueprint: successorGarmentBlueprint(item),
     }));
 
     // Sim storySecond 0 is midnight of calendarStart. Legacy clockMinutes is
