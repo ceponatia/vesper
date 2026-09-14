@@ -20,7 +20,10 @@ export const GET = withOwnerAdmin(async (_user, req) => {
   const relativePath = req.nextUrl.searchParams.get("path") ?? "";
   try {
     const file = await getAdminFileDownload(relativePath);
-    const stream = Readable.toWeb(createReadStream(file.absolutePath));
+    // Node and DOM currently publish distinct structural typings for web
+    // streams even though Node's adapter returns the WHATWG stream Response
+    // consumes at runtime. Keep that compatibility cast at this one boundary.
+    const stream = Readable.toWeb(createReadStream(file.absolutePath)) as unknown as ReadableStream<Uint8Array>;
     return new Response(stream, {
       headers: {
         "Cache-Control": "private, no-store",
