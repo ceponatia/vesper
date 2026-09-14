@@ -17,7 +17,32 @@ const adminFileListSchema = z.object({
 export type AdminFileList = z.infer<typeof adminFileListSchema>;
 
 const adminFileEntryEnvelopeSchema = z.object({ entry: adminFileEntrySchema });
-const adminFileDeleteSchema = z.object({ ok: z.boolean() });
+
+/** One path a partial-success batch operation could not act on. */
+export const adminFileFailureSchema = z.object({
+  path: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+export type AdminFileFailure = z.infer<typeof adminFileFailureSchema>;
+
+const adminFileDeleteManySchema = z.object({
+  deleted: z.number().catch(0),
+  failures: z.array(adminFileFailureSchema).catch([]),
+});
+
+const adminFileDeletePreviewSchema = z.object({
+  files: z.number().catch(0),
+  folders: z.number().catch(0),
+  bytes: z.number().catch(0),
+  truncated: z.boolean().catch(false),
+});
+
+const adminFileMoveSchema = z.object({
+  moved: z.number().catch(0),
+  entries: z.array(adminFileEntrySchema).catch([]),
+  failures: z.array(adminFileFailureSchema).catch([]),
+});
 
 export interface AdminFileUploadProgress {
   loaded: number;
@@ -104,10 +129,31 @@ export const adminFilesApi = {
       path,
       name,
     }),
-  delete: (path: string) =>
-    apiPost(adminFileDeleteSchema, "/api/admin/self/files", {
-      action: "delete",
-      path,
+  /**
+   * Hard-deletes one or more entries in a single confirmed action. `recursive`
+   * must be sent explicitly — never implicitly — when the selection contains
+   * a folder; the server's non-empty-folder refusal only lifts then. Route a
+   * single-row delete through this with one path too, so that door cannot
+   * drift from the multi-row one (the `image-generator-run-list.tsx` convention).
+   */
+  deleteMany: (paths: string[], recursive?: boolean) =>
+    apiPost(adminFileDeleteManySchema, "/api/admin/self/files", {
+      action: "delete_many",
+      paths,
+      recursive,
+    }),
+  /** Counts what a `deleteMany` of these paths would remove, for the confirmation's title. */
+  deletePreview: (paths: string[]) =>
+    apiPost(adminFileDeletePreviewSchema, "/api/admin/self/files", {
+      action: "delete_preview",
+      paths,
+    }),
+  /** Moves every path into `destination` (`""` = the Files root) in one call; partial success is reported per path in `failures`. */
+  move: (paths: string[], destination: string) =>
+    apiPost(adminFileMoveSchema, "/api/admin/self/files", {
+      action: "move",
+      paths,
+      destination,
     }),
   upload: uploadAdminFile,
   downloadUrl: (path: string) => withQuery("/api/admin/self/files/download", { path }),
