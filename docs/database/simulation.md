@@ -40,7 +40,10 @@ character-chat rows. Their behavior is [../engine/README.md](../engine/README.md
   the pristine condition. Cleanliness and wear are not stored here — they are
   `sim_item_condition_meters`. The composite `(branch_id, item_id)` key to `sim_items` cascades,
   and the table carries no separate branch key, so a world teardown reaches it through one chain
-  rather than two sibling cascades.
+  rather than two sibling cascades. Rows are written only by `apply_garment_operation`, from
+  the `after` its `garment_operation_applied` event recorded, and by fork materialization, which
+  replays that same event stream — never from a side channel, so a fork of a dressed world
+  reproduces the branch it came from.
 
 ## Delivery and projection
 

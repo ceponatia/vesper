@@ -1051,6 +1051,7 @@ export function applyItemConditionEvent(
           event.storySecond,
         ),
       });
+    case "garment_operation_applied":
     case "item_transferred":
     case "item_destroyed":
     case "item_consumed":

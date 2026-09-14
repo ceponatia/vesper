@@ -841,6 +841,10 @@ export function applyMaterialEvent(
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
     case "item_condition_threshold_crossed":
+    // #296: a garment operation changes how an item is ARRANGED and what has
+    // happened to its material, never where it is — `sim_item_holdings` and
+    // `transfer_item` stay the single owner of placement.
+    case "garment_operation_applied":
     case "household_created":
     case "household_membership_set":
     case "material_lot_initialized":

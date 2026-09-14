@@ -233,6 +233,12 @@ export function deriveEventObservations(
     case "item_condition_source_applied":
     case "item_condition_modifier_applied":
     case "item_condition_modifier_ended":
+    // A garment operation (#296) carries no captured witness set, which is
+    // the idiom every perceptible item event uses; deriving live bystanders
+    // for it would be a perception ruling this slice does not make, and the
+    // physical channels that DO move — a doff, a wash — are witnessed
+    // through `item_transferred` and the item-condition family instead.
+    case "garment_operation_applied":
     case "household_created":
     case "household_membership_set":
     case "material_lot_initialized":
