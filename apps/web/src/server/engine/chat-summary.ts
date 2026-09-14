@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { diag, DiagnosticCollector, type DiagnosticSink } from "@/contracts/diagnostics";
+import { isNarratorInput, parseChatMessageMeta } from "@/contracts/turns/chat-message-meta";
 import {
   CHAT_SUMMARY_MAX_CHARS,
   chatSummaryFoldSchema,
@@ -106,6 +107,7 @@ export async function loadChatSummary(chatId: string): Promise<ChatSummaryState 
 export async function loadVerbatimWindow(
   chatId: string,
   watermark: ChatWatermark,
+  sink?: DiagnosticSink,
 ): Promise<ChatTurn[]> {
   const wmCond = afterWatermark(watermark);
   const rows = await db()
@@ -116,12 +118,10 @@ export async function loadVerbatimWindow(
     .limit(CHARACTER_CHAT_HISTORY_TURNS * 2);
   return rows.reverse().map((r) => {
     // Narrator-mode flag: read leniently off
-    // the meta jsonb — the pipeline wraps flagged lines at the model boundary.
-    const narrator =
-      r.role === "user" &&
-      typeof r.meta === "object" &&
-      r.meta !== null &&
-      (r.meta as Record<string, unknown>).inputMode === "narrator";
+    // the meta jsonb — the pipeline wraps flagged lines at the model boundary. The
+    // shared contract parses it per field, so a corrupt sibling key can never turn
+    // saved narration back into player speech here.
+    const narrator = r.role === "user" && isNarratorInput(parseChatMessageMeta(r.meta, sink));
     return { role: r.role, content: r.content, ...(narrator ? { narrator: true } : {}) };
   });
 }
@@ -251,11 +251,7 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   // Narrator-mode player lines fold as labeled story narration so the summary never
   // attributes authored events to the player.
   const chunk: ChatTurn[] = chunkRows.map((r) => {
-    const narrator =
-      r.role === "user" &&
-      typeof r.meta === "object" &&
-      r.meta !== null &&
-      (r.meta as Record<string, unknown>).inputMode === "narrator";
+    const narrator = r.role === "user" && isNarratorInput(parseChatMessageMeta(r.meta, sink));
     return {
       role: r.role,
       content: narrator ? `[story narration, written by the player as storyteller]\n${r.content}` : r.content,

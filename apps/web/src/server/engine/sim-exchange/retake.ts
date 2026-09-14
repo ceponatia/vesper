@@ -1,6 +1,10 @@
-import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
+import {
+  mergeChatMessageMeta,
+  parseChatMessageMeta,
+  serializeChatMessageMeta,
+} from "@/contracts/turns/chat-message-meta";
 import { parseOr } from "@/lib/parse";
-import { z } from "zod";
 import { characterChatMessages, db } from "@/server/db";
 import { and, desc, eq } from "drizzle-orm";
 import { readBranchClock } from "../sim-beats";
@@ -15,20 +19,6 @@ import {
   loadSimPresentationInputs,
 } from "./context";
 import type { SimChatExchangeResult } from "./types";
-
-/**
- * The reply-meta fields the retake path reads back: the committed cut id, and the
- * run that produced the content currently on the row — which the retake hands to
- * the historical take it seeds, so the displaced take keeps naming the prompt that
- * actually wrote it. A reply from before provenance existed carries neither;
- * absent is legal.
- */
-const simReplyMetaSchema = z
-  .object({
-    cutId: z.string().min(1).optional(),
-    narratorRun: narratorRunProvenanceSchema.optional().catch(undefined),
-  })
-  .catch({});
 
 /**
  * retake (regenerate/rerun, ruling 18) — re-render the SAME committed cut: same
@@ -68,7 +58,13 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
   // The cut id: from the reply's meta (persistAssistantReply stored it), else the
   // engagement's newest persisted cut (ruling 18 fallback). The same read recovers
   // the run that produced the take this retake is about to displace.
-  const priorMeta = parseOr(simReplyMetaSchema, target.meta, {}, undefined, "character_chat_messages.meta");
+  // The WHOLE bag: the retake rewrites this row in place, so everything it does not
+  // itself re-derive — the beat marker, a `stopped` flag, the opening directive, and
+  // any key a newer deploy wrote — has to survive the write below.
+  // Collected rather than dropped: a field this row could not parse is a fact the
+  // retake's own diagnostics should carry, since the write below rewrites the row.
+  const metaDiagnostics = new DiagnosticCollector();
+  const priorMeta = parseChatMessageMeta(target.meta, metaDiagnostics);
   const metaCutId = priorMeta.cutId;
   const cutId = metaCutId ?? (await latestCutIdForEngagement(db(), branchId, engagementId));
   if (!cutId) {
@@ -138,14 +134,27 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
     .set({
       content: rendered.prose,
       takes: nextTakes,
-      meta: {
-        simTurn: true,
-        cutId: rendered.cutId,
-        modelId: rendered.modelId,
-        attempts: rendered.attempts,
-        ...(rendered.provenance === undefined ? {} : { narratorRun: rendered.provenance }),
-        ...(rendered.confirmStatus === undefined ? {} : { confirmStatus: rendered.confirmStatus }),
-      },
+      // Merge, never replace: only the fields this re-render actually produced are
+      // overwritten. `narratorRun` and `confirmStatus` are named unconditionally, so a
+      // render that produced neither CLEARS the displaced take's values rather than
+      // leaving them to describe prose that is no longer on the row.
+      meta: serializeChatMessageMeta(
+        mergeChatMessageMeta(priorMeta, {
+          simTurn: true,
+          cutId: rendered.cutId,
+          modelId: rendered.modelId,
+          attempts: rendered.attempts,
+          narratorRun: rendered.provenance,
+          confirmStatus: rendered.confirmStatus,
+          // Row-TYPE markers the fresh render contradicts. Merging is right for
+          // provenance and wrong for these: this row now holds narrated prose, so a
+          // `worldBeat` marker left on it would keep rendering a muted system line
+          // (and keep the narrator's dialogue tail skipping it), and a `stopped`
+          // chip would label a complete render as cut short.
+          worldBeat: undefined,
+          stopped: undefined,
+        }),
+      ),
     })
     .where(and(eq(characterChatMessages.id, target.id), eq(characterChatMessages.chatId, chatId)));
 
@@ -157,6 +166,6 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
     modelId: rendered.modelId,
     attempts: rendered.attempts,
     degraded: rendered.degraded,
-    diagnostics: [...ctx.instructionDiagnostics, ...rendered.diagnostics],
+    diagnostics: [...ctx.instructionDiagnostics, ...metaDiagnostics.items, ...rendered.diagnostics],
   };
 }

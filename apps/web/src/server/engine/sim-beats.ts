@@ -1,6 +1,11 @@
 import { eq } from "drizzle-orm";
-import { z } from "zod";
 import { newId } from "@/lib/ids";
+import {
+  isWorldBeat,
+  parseChatMessageMeta,
+  serializeChatMessageMeta,
+  worldBeatMeta,
+} from "@/contracts/turns/chat-message-meta";
 import { parseOr } from "@/lib/parse";
 import type { CompositionFallbackCode } from "@/contracts/turns/composition-fallback";
 import { simCalendarStartSchema, type SimCalendarStart } from "@/lib/simulation/clock";
@@ -26,12 +31,14 @@ export interface SimChatClock {
   calendarStart: SimCalendarStart | null;
 }
 
-/** The world-beat marker on a message row's `meta` (fail-open to "not a beat"). */
-const worldBeatMetaSchema = z.object({ worldBeat: z.object({ kind: z.string() }).nullish() }).catch({ worldBeat: null });
-
-/** True when a message row's `meta` marks it as a world beat (a UI trace, not narration). */
+/**
+ * True when a message row's raw `meta` marks it as a world beat (a UI trace, not
+ * narration). Presence of the marker is the whole test — the kind drives nothing
+ * here, so a kind a newer deploy wrote still reads as a beat and is still skipped
+ * by the narrator's dialogue tail.
+ */
 export function isWorldBeatMeta(meta: unknown): boolean {
-  return parseOr(worldBeatMetaSchema, meta, {}, undefined, "character_chat_messages.meta").worldBeat != null;
+  return isWorldBeat(parseChatMessageMeta(meta));
 }
 
 /** The branch clock + its world's calendar anchor (fail-open to no calendar). */
@@ -108,11 +115,12 @@ export async function writeWorldBeat(input: {
         speakerCharacterId: null,
         role: "assistant",
         content,
-        meta: {
-          simTurn: true,
-          worldBeat: { kind: input.kind },
-          ...(input.fallbacks && input.fallbacks.length ? { compositionFallbacks: [...input.fallbacks] } : {}),
-        },
+        meta: serializeChatMessageMeta(
+          worldBeatMeta({
+            kind: input.kind,
+            ...(input.fallbacks === undefined ? {} : { compositionFallbacks: input.fallbacks }),
+          }),
+        ),
       })
       .onConflictDoNothing();
   } catch (error) {

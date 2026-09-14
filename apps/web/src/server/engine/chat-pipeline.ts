@@ -24,7 +24,14 @@ import {
   type DiagnosticSink,
   type EffectiveCoverageRead,
 } from "@/contracts";
-import type { NarratorRunProvenance } from "@/contracts/narrator-prompts";
+import {
+  assistantReplyMeta,
+  isEmptyChatMessageMeta,
+  mergeChatMessageMeta,
+  serializeChatMessageMeta,
+  userLineMeta,
+  type ChatMessageMeta,
+} from "@/contracts/turns/chat-message-meta";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
@@ -40,6 +47,7 @@ import {
   currentReplyTakes,
   loadMessageAttachments,
   lastAssistantMessage,
+  mergeMessageMetaColumn,
   messageBefore,
   persistAssistantReply,
   pushReplyTake,
@@ -236,7 +244,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     /** The synthetic cue appended to history when there is no player line this turn. */
     let syntheticCue: string | null = null;
     /** For regenerate: the current (soon-to-be-old) reply text on the row. */
-    let regenerateTarget: { id: string; content: string; narratorRun?: NarratorRunProvenance } | null = null;
+    let regenerateTarget: { id: string; content: string; meta: ChatMessageMeta } | null = null;
     let effectiveKind: ChatExchangeKind = kind;
     /** For rerun: the assistant successors deleted this exchange (their memory is retracted). */
     let rerunDeletedAssistantIds: string[] = [];
@@ -273,10 +281,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           promptMessageId,
           (input.attachmentIds ?? []).slice(0, CHAT_ATTACHMENTS_MAX),
         );
-        const sendMeta = {
-          ...(attachmentFiles.length ? { attachments: { ids: attachmentFiles.map((f) => f.id) } } : {}),
-          ...(narratorInput ? { inputMode: "narrator" } : {}),
-        };
+        const sendMeta = userLineMeta({
+          attachmentIds: attachmentFiles.map((f) => f.id),
+          ...(narratorInput ? { inputMode: "narrator" as const } : {}),
+        });
         await db()
           .insert(characterChatMessages)
           .values({
@@ -284,7 +292,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             chatId,
             role: "user",
             content: playerContent,
-            ...(Object.keys(sendMeta).length ? { meta: sendMeta } : {}),
+            ...(isEmptyChatMessageMeta(sendMeta) ? {} : { meta: serializeChatMessageMeta(sendMeta) }),
           });
         break;
       }
@@ -307,28 +315,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         break;
       }
       case "regenerate": {
-        const target = await lastAssistantMessage(chatId);
+        const target = await lastAssistantMessage(chatId, sink);
         if (!target) {
           releaseChatLock();
           return { ok: false, code: "nothing_to_regenerate", message: "there is no reply to regenerate yet" };
         }
         // `narratorRun` travels with the content it produced: when this take becomes
         // the first browsable historical entry below, it keeps its own provenance.
-        regenerateTarget = {
-          id: target.id,
-          content: target.content,
-          ...(target.narratorRun === undefined ? {} : { narratorRun: target.narratorRun }),
-        };
+        regenerateTarget = { id: target.id, content: target.content, meta: target.meta };
         assistantMessageId = target.id;
         const prev = await messageBefore(chatId, target);
         if (prev?.role === "user") {
           promptMessageId = prev.id;
           playerContent = prev.content;
-        } else if (target.actionBeat) {
+        } else if (target.meta.actionBeat) {
           // The reply being regenerated was an action beat — reproduce its chip so the
           // register cue + deterministic effect land again (state rolls back to the
           // pre-effect snapshot first, so a retake re-applies exactly once, never doubles).
-          actionBeatId = target.actionBeat;
+          actionBeatId = target.meta.actionBeat;
           effectiveKind = "action_beat";
         } else {
           // The reply being regenerated was itself an opening/continue beat.
@@ -367,7 +371,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // message, persisted onto the line's meta so a retake never re-spends — but a
     // DEGRADED read is deliberately not persisted, so a later retake retries it.
     if (promptMessageId && kind !== "send") {
-      const stored = await loadMessageAttachments(chatId, promptMessageId);
+      const stored = await loadMessageAttachments(chatId, promptMessageId, sink);
       attachmentFiles = await chatAttachmentPaths(chatId, stored.ids);
       // A stored read only holds if every attachment still resolves — else re-describe.
       attachmentDescriptions =
@@ -379,10 +383,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       const read = await describeChatPhotos({ files: attachmentFiles, sink });
       attachmentDescriptions = read.descriptions;
       if (!read.degraded && promptMessageId) {
-        await db()
-          .update(characterChatMessages)
-          .set({ meta: { attachments: { ids: attachmentFiles.map((f) => f.id), descriptions: read.descriptions } } })
-          .where(and(eq(characterChatMessages.id, promptMessageId), eq(characterChatMessages.chatId, chatId)));
+        // MERGE the attachments key in — this line's `inputMode` (and everything else
+        // on its bag) must survive. A whole-bag `.set()` here silently turned a saved
+        // narrator line back into player speech on the next rerun.
+        await mergeMessageMetaColumn(
+          chatId,
+          promptMessageId,
+          userLineMeta({
+            attachmentIds: attachmentFiles.map((f) => f.id),
+            attachmentDescriptions: read.descriptions,
+          }),
+        );
       }
     }
 
@@ -576,7 +587,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Window + summary ----------------------------------------------------
     const summaryState = await loadChatSummary(chatId);
-    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null);
+    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null, sink);
     // The regenerated reply must not see itself: it is the newest message, so it
     // is the window's last row — drop it (its prompting user line stays).
     if (regenerateTarget && history.length && history.at(-1)?.role === "assistant") history.pop();
@@ -929,8 +940,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // `narratorRun` rides it too: `content` mirrors the active take, so the row's
       // meta is the row-level answer to "which prompt wrote what is showing?" — and
       // it is what the NEXT regenerate seeds the historical take's provenance from.
-      const beatMeta = actionBeatId ? { actionBeat: actionBeatId, narratorRun } : { narratorRun };
-      const meta = stopped ? { ...beatMeta, stopped: true } : beatMeta;
+      // Named unconditionally so a retake that is NOT stopped clears a prior `stopped`
+      // marker, and an unlabelled run clears a stale provenance — while a merge below
+      // keeps every key this lane does not write.
+      const replyMeta = assistantReplyMeta({
+        actionBeat: actionBeatId,
+        narratorRun,
+        ...(stopped ? { stopped: true } : {}),
+      });
       if (regenerateTarget) {
         // Update the row in place: the old take stays browsable, the new one is
         // active. Row-existence is the guard — a delete landing
@@ -940,12 +957,31 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         const next = pushReplyTake(takes, regenerateTarget.content, full, now.toISOString(), {
           // The take being displaced keeps the run that wrote it; a row from before
           // provenance existed has none, and that take is simply unlabelled.
-          ...(regenerateTarget.narratorRun === undefined ? {} : { current: regenerateTarget.narratorRun }),
+          ...(regenerateTarget.meta.narratorRun === undefined ? {} : { current: regenerateTarget.meta.narratorRun }),
           fresh: narratorRun,
         });
         await db()
           .update(characterChatMessages)
-          .set({ content: full, takes: next, meta })
+          .set({
+            content: full,
+            takes: next,
+            // Merge onto the row's own bag: a regenerate re-derives only the three keys
+            // this lane owns, and must not drop what another writer (or a newer deploy)
+            // put on the same row.
+            meta: serializeChatMessageMeta(
+              mergeChatMessageMeta(regenerateTarget.meta, {
+                actionBeat: replyMeta.actionBeat,
+                narratorRun: replyMeta.narratorRun,
+                stopped: replyMeta.stopped,
+                // Row-TYPE markers this render contradicts: the legacy lane wrote the
+                // prose now on the row, so it is neither a successor turn nor a world
+                // beat, and leaving either marker would render a normal reply as a
+                // muted system line.
+                worldBeat: undefined,
+                simTurn: undefined,
+              }),
+            ),
+          })
           .where(and(eq(characterChatMessages.id, regenerateTarget.id), eq(characterChatMessages.chatId, chatId)));
       } else {
         await persistAssistantReply({
@@ -954,7 +990,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           speakerCharacterId: characterId,
           promptMessageId,
           content: full,
-          meta,
+          meta: replyMeta,
         });
       }
 
