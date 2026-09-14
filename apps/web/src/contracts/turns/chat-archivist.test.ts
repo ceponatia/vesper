@@ -11,6 +11,9 @@ import {
   CHAT_ARCHIVIST_MAX_QUERIES,
   CHAT_ARCHIVIST_MAX_TRAIT_SHIFTS,
   degradedChatArchivist,
+  degradedChatCharacterNotes,
+  degradedChatContinuity,
+  degradedChatMemoryScribe,
   degradedChatPersonalNotes,
   emptyChatMemoryTrace,
   mergeChatExtractions,
@@ -194,6 +197,28 @@ describe("the extraction legs", () => {
       openLoops: ["a", "b", "c", "d", "e"],
     });
     expect(capped.openLoops).toHaveLength(CHAT_ARCHIVIST_MAX_OPEN_LOOPS);
+  });
+
+  /**
+   * The extraction legs (#286): each leg's degraded constructor is a `pick` of
+   * `degradedChatArchivist()`, exactly like `degradedChatPersonalNotes()` above — one
+   * source for the field list (derived from the schema's own `shape`), never a
+   * hand-copied field list here that could drift from the schema's `pick`.
+   */
+  it("each leg's degraded constructor parses through its own pick schema and equals the aggregate pick", () => {
+    const whole = degradedChatArchivist();
+    const table = [
+      { schema: chatMemoryScribeSchema, ctor: degradedChatMemoryScribe },
+      { schema: chatContinuitySchema, ctor: degradedChatContinuity },
+      { schema: chatCharacterNotesSchema, ctor: degradedChatCharacterNotes },
+    ] as const;
+    for (const { schema, ctor } of table) {
+      const keys = Object.keys(schema.shape) as (keyof typeof whole)[];
+      const picked = Object.fromEntries(keys.map((key) => [key, whole[key]]));
+      expect(ctor()).toEqual(picked);
+      expect(schema.parse({})).toEqual(picked);
+      expect(schema.parse(ctor())).toEqual(ctor());
+    }
   });
 });
 

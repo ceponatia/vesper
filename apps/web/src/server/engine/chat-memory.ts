@@ -3,7 +3,9 @@ import {
   chatContinuitySchema,
   chatMemoryScribeSchema,
   chatPersonalNotesSchema,
-  degradedChatArchivist,
+  degradedChatCharacterNotes,
+  degradedChatContinuity,
+  degradedChatMemoryScribe,
   degradedChatPersonalNotes,
   diag,
   mergeChatExtractions,
@@ -452,7 +454,6 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
   }
 
   const ctx: ChatExtractorContext = { ...input };
-  const empty = degradedChatArchivist();
   const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
 
   const [memory, continuity, character] = await Promise.all([
@@ -461,7 +462,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       reasoningProfile,
       ctx,
       schema: chatMemoryScribeSchema,
-      fallback: () => ({ episodeSummary: empty.episodeSummary, facts: empty.facts, memoryQueries: empty.memoryQueries }),
+      fallback: degradedChatMemoryScribe,
       maxOutputTokens: CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_memory_scribe",
@@ -474,18 +475,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       reasoningProfile,
       ctx,
       schema: chatContinuitySchema,
-      fallback: () => ({
-        scene: empty.scene,
-        environment: empty.environment,
-        surfaceWetness: empty.surfaceWetness,
-        surfaceDeposits: empty.surfaceDeposits,
-        garmentOperations: empty.garmentOperations,
-        outfit: empty.outfit,
-        playerOutfit: empty.playerOutfit,
-        attributeChanges: empty.attributeChanges,
-        presence: empty.presence,
-        cast: empty.cast,
-      }),
+      fallback: degradedChatContinuity,
       maxOutputTokens: CHAT_CONTINUITY_MAX_OUTPUT_TOKENS,
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_continuity",
@@ -498,14 +488,7 @@ export async function runChatExtraction(input: ChatExtractionInput): Promise<Cha
       reasoningProfile,
       ctx,
       schema: chatCharacterNotesSchema,
-      fallback: () => ({
-        openLoops: empty.openLoops,
-        plans: empty.plans,
-        driveUpdates: empty.driveUpdates,
-        voiceExemplar: empty.voiceExemplar,
-        characterSlip: empty.characterSlip,
-        traitShifts: empty.traitShifts,
-      }),
+      fallback: degradedChatCharacterNotes,
       maxOutputTokens: CHAT_CHARACTER_NOTES_MAX_OUTPUT_TOKENS,
       timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
       code: "chat_character_notes",
@@ -539,14 +522,13 @@ export async function runChatMemoryScribe(input: ChatExtractionInput): Promise<{
     input.sink?.push(diag("info", "chat_archivist.degraded", "demo mode; skipping chat memory extraction"));
     return { value: null, degraded: true };
   }
-  const empty = degradedChatArchivist();
   const reasoningProfile = await loadChatAgentReasoningProfile(input.trace?.chatId);
   const { value, degraded } = await runExtractorLeg<ChatMemoryScribe>({
     legId: "memory",
     reasoningProfile,
     ctx: { ...input },
     schema: chatMemoryScribeSchema,
-    fallback: () => ({ episodeSummary: empty.episodeSummary, facts: empty.facts, memoryQueries: empty.memoryQueries }),
+    fallback: degradedChatMemoryScribe,
     maxOutputTokens: CHAT_MEMORY_SCRIBE_MAX_OUTPUT_TOKENS,
     timeoutMs: CHAT_EXTRACTOR_TIMEOUT_MS,
     code: "chat_memory_scribe",
