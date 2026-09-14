@@ -43,6 +43,7 @@ vi.mock("@/server/db", async (importOriginal) => {
 });
 
 import {
+  readSimChatGarments,
   readSimChatMeters,
   readSimChatOutfit,
   readSimChatPresence,
@@ -82,5 +83,9 @@ describe("sim read seams degrade to null with a per-seam diagnostic (slice 1)", 
 
   it("outfit degrades to null", async () => {
     await expectSeamDegrades(readSimChatOutfit, "outfit read degraded to null");
+  });
+
+  it("garments degrade to null", async () => {
+    await expectSeamDegrades(readSimChatGarments, "garments read degraded to null");
   });
 });

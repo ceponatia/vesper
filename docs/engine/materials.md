@@ -176,6 +176,19 @@ one [../resilience.md](../resilience.md) gives for the chat lane: a graph that c
 looks authored is how an unreadable row becomes a nudity claim, so "could not
 read the garment" and "authored to cover nothing" must stay distinguishable.
 
+**Narration reads the same resolved wardrobe, never a second derivation.** The
+primary's clothing state reaches the successor narrator as the shared garment
+digest — the same `garmentReadout` bands and `buildGarmentDigest` render the
+character-chat lane produces — instead of a joined item-name line, and the
+digest's coverage-derived exposure is the one answer an image or exposure
+consumer reads too: one worn-set resolution feeds the digest, the readouts,
+and the exposure regions alike. A worn set with no reliable blueprint at all
+falls back to the name list with a `sim_garment.mapping_unresolved`
+diagnostic, never a failed turn; a wardrobe where only SOME items resolve
+still narrates structurally but reports its exposure as fully covered, the
+same never-bare-from-a-missing-blueprint rule applied at the wardrobe level
+rather than per garment.
+
 ### Changing a garment
 
 One command changes a garment: `apply_garment_operation`, carrying the acting

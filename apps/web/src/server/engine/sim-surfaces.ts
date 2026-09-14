@@ -18,6 +18,17 @@ import {
   type WorldActionCandidate,
 } from "@vesper/simulation-core/world-read";
 import {
+  buildGarmentDigest,
+  exposedRegions,
+  FULLY_COVERED,
+  garmentEffectiveCoverage,
+  garmentReadout,
+  renderGarmentDigest,
+  type GarmentReadout,
+  type RegionExposure,
+  type WornItemInput,
+} from "@/contracts";
+import {
   db,
   simActionDefinitions,
   simBranches,
@@ -33,8 +44,10 @@ import {
   loadActorBody,
   loadAuthoredPriorWeights,
   loadDyadLedgerEntries,
+  readActorGarmentInstances,
   readDurableEngagements,
   readDurableSpaceBranch,
+  type SimGarmentRead,
 } from "./simulation";
 
 /**
@@ -471,6 +484,159 @@ export async function readSimChatOutfit(chatId: string): Promise<string | null> 
     return names.length > 0 ? names.join(", ") : "no clothing";
   } catch (error) {
     log.warn("engine.sim", "outfit read degraded to null", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/**
+ * #297: the primary's clothing state as the shared garment digest — the SAME
+ * read `readSimChatOutfit` degrades against, upgraded structural whenever the
+ * worn set resolves reliable construction. One read produces the narrator
+ * digest, the state-tools-shaped readouts, and the coverage-derived exposure,
+ * so narration and an exposure/image consumer can never disagree about what
+ * is worn (docs/engine/materials.md §Garments).
+ */
+
+/** Diagnostic when no worn item resolves a reliable blueprint — the read falls back to the name list. */
+export const SIM_GARMENT_MAPPING_UNRESOLVED = "sim_garment.mapping_unresolved";
+
+/** The digest, readouts and exposure all derive from one resolved, fully-reliable-or-better worn set. */
+export interface SimChatGarmentsStructured {
+  status: "structured";
+  /** `renderGarmentDigest`'s block — bands only, carries its own authority sentence. */
+  digest: string;
+  /** Per-garment readouts, worn-slot order — the state-tools/inspector shape. */
+  readouts: GarmentReadout[];
+  /**
+   * Bare/sheer/covered per region, derived from the SAME readouts. `FULLY_COVERED`
+   * whenever any worn item's blueprint is unreliable — a partially-degraded
+   * wardrobe must never expose a region a broken row merely failed to cover.
+   */
+  exposure: RegionExposure;
+  /** False when at least one worn item could not resolve a trustworthy blueprint (a mixed wardrobe). */
+  reliable: boolean;
+}
+
+/** A known-empty worn set — distinct from `null` (unavailable/not applicable), per docs/resilience.md §1. */
+export interface SimChatGarmentsEmpty {
+  status: "empty";
+}
+
+/** No worn item resolved a reliable blueprint at all — the existing name list, never a bare claim. */
+export interface SimChatGarmentsFallback {
+  status: "fallback";
+  reason: string;
+  names: string;
+}
+
+export type SimChatGarments = SimChatGarmentsStructured | SimChatGarmentsEmpty | SimChatGarmentsFallback;
+
+/**
+ * One resolved garment as an `exposedRegions` input row.
+ *
+ * The successor blueprint carries no absolute layer or per-garment opacity —
+ * those are chat-lane library-ITEM-definition fields (`item.layer`,
+ * `item.opacity`), and a sim item has no such definition to read them from.
+ * `exposedRegions` never consults `layer` (only `resolveWardrobeVisibility`'s
+ * cross-garment occlusion does, which this read does not attempt), so the
+ * placeholder there is inert. Defaulting every garment's `opacity` to
+ * `"opaque"` is the conservative reading `docs/resilience.md`'s
+ * covered-not-bare rule asks for: it can only UNDER-state exposure (a sheer
+ * piece reads "covered" instead of "sheer"), never manufacture a bare region
+ * the sim has no data for.
+ */
+function garmentExposureInput(garment: SimGarmentRead): WornItemInput {
+  return {
+    instanceId: garment.instance.id,
+    garmentId: garment.instance.id,
+    name: garment.instance.name,
+    coverage: garmentEffectiveCoverage(garment.instance, garment.blueprint).covers,
+    layer: 1,
+    opacity: "opaque",
+  };
+}
+
+/**
+ * The primary's structured clothing state for a routed chat (#297): #295's
+ * adapter resolved to the shared digest, readouts and exposure. Same authority
+ * guard and try/log.warn/null degradation as `readSimChatOutfit` — `null` only
+ * for a non-sim lane or a thrown read.
+ *
+ * - Zero worn items ⇒ `"empty"` (known-empty, never confused with `null`).
+ * - Every worn item unreliable ⇒ `"fallback"`, carrying the name list a reader
+ *   already trusts and the `sim_garment.mapping_unresolved` diagnostic.
+ * - Otherwise ⇒ `"structured"`, even when SOME items are unreliable (mixed):
+ *   the digest and readouts still cover every worn item, but `reliable` is
+ *   false and `exposure` degrades to `FULLY_COVERED` rather than trusting the
+ *   readable remainder alone.
+ */
+export async function readSimChatGarments(chatId: string): Promise<SimChatGarments | null> {
+  const authority = await readChatEngineAuthority(chatId);
+  if (
+    !authority ||
+    authority.authority === "legacy_chat" ||
+    authority.authority === "successor_shadow" ||
+    !authority.simBranchId ||
+    !authority.simPrimaryActorId
+  ) {
+    return null;
+  }
+  const branchId = authority.simBranchId;
+  const primaryActorId = authority.simPrimaryActorId;
+  try {
+    const [primaryRow] = await db()
+      .select({ name: simCharacters.name })
+      .from(simCharacters)
+      .where(and(eq(simCharacters.branchId, branchId), eq(simCharacters.characterId, primaryActorId)))
+      .limit(1);
+    const primaryName = primaryRow?.name.trim() || "they";
+
+    // One repeatable-read snapshot for the branch clock and the garment rows —
+    // the same discipline `readSimChatMeters` uses — so the `atMinutes` stamp
+    // `garmentReadout` integrates to can never straddle a command that commits
+    // mid-read.
+    const snapshot = await db().transaction(
+      async (tx) => {
+        const [branch] = await tx
+          .select({ storySecond: simBranches.storySecond })
+          .from(simBranches)
+          .where(eq(simBranches.id, branchId));
+        if (!branch) return null;
+        return {
+          storySecond: branch.storySecond,
+          adapter: await readActorGarmentInstances(tx, branchId, primaryActorId),
+        };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+    if (!snapshot) return null;
+    const { storySecond, adapter } = snapshot;
+
+    if (adapter.garments.length === 0) return { status: "empty" };
+
+    if (adapter.garments.every((garment) => !garment.reliable)) {
+      const names = adapter.instances.map((instance) => instance.name.trim()).filter(Boolean).join(", ");
+      log.warn("engine.sim", "garment read fell back to the name list", {
+        chatId,
+        code: SIM_GARMENT_MAPPING_UNRESOLVED,
+        adapterCodes: [...new Set(adapter.diagnostics.map((diagnostic) => diagnostic.code))],
+      });
+      return { status: "fallback", reason: SIM_GARMENT_MAPPING_UNRESOLVED, names };
+    }
+
+    const atMinutes = Math.floor(storySecond / 60);
+    const readouts = adapter.garments.map((garment) =>
+      garmentReadout(garment.instance, garment.blueprint, { atMinutes }),
+    );
+    const digest = renderGarmentDigest(buildGarmentDigest({ actors: [{ label: primaryName, readouts }] }));
+    const reliable = adapter.reliable;
+    const exposure = reliable ? exposedRegions(adapter.garments.map(garmentExposureInput)) : FULLY_COVERED;
+    return { status: "structured", digest, readouts, exposure, reliable };
+  } catch (error) {
+    log.warn("engine.sim", "garments read degraded to null", {
       chatId,
       error: error instanceof Error ? error.message : String(error),
     });

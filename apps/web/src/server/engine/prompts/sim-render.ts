@@ -75,6 +75,19 @@ export interface SimRenderRelationship {
 }
 
 /**
+ * The garment digest read the exchange layer supplies (mirrors `SimChatGarments`
+ * from `../sim-surfaces`, trimmed to what a pure prompt builder needs — this
+ * layer never touches the readouts/exposure IO consumers read for other
+ * purposes). `"structured"` renders `digest` INSTEAD of the outfit line;
+ * `"fallback"` and `"empty"` render exactly like an absent read (the outfit
+ * line, unchanged).
+ */
+export type SimRenderGarments =
+  | { status: "structured"; digest: string }
+  | { status: "empty" }
+  | { status: "fallback" };
+
+/**
  * Everything one successor render may present. A superset of the legacy
  * `CutRenderConversation`: every field the exchange layer passes today
  * (playerUtterance … memory) keeps its name and type, and the added authored /
@@ -115,6 +128,8 @@ export interface SimRenderContext {
   player?: { name: string; persona?: string; voice?: string; intimacy?: string };
   /** The sim wardrobe projection (`readSimChatOutfit`), pre-formatted; "" ⇒ no line. */
   outfitLine?: string;
+  /** The structured garment digest (`readSimChatGarments`) — supersedes `outfitLine` when structured. */
+  garments?: SimRenderGarments;
   /** The relationship ledger read (`readSimChatRelationship`) — rendered as prose framing, never numbers. */
   relationship?: SimRenderRelationship;
   /** Zone display names by zone id; a missing id is humanized from the id itself. */
@@ -442,18 +457,28 @@ function buildTruthBlock(args: {
   return lines.join("\n");
 }
 
-/** Block 4 — SIM PRESENTATION STATE (outfit projection + relationship framing). Shared with the solo cut. */
+/** Block 4 — SIM PRESENTATION STATE (garment digest or outfit projection + relationship framing). Shared with the solo cut. */
 export function buildPresentationStateBlock(args: {
   primaryName: string;
   playerName: string;
   outfitLine: string | undefined;
+  garments: SimRenderGarments | undefined;
   relationship: SimRenderRelationship | undefined;
 }): string {
-  const { primaryName, playerName, outfitLine, relationship } = args;
+  const { primaryName, playerName, outfitLine, garments, relationship } = args;
   const lines: string[] = [];
-  const outfit = outfitLine?.trim();
-  if (outfit) {
-    lines.push(`- ${primaryName} is wearing ${outfit} right now (world truth — whatever the story has said).`);
+  if (garments?.status === "structured") {
+    // The authoritative digest replaces the outfit line outright — it already
+    // carries its own "never contradict" sentence (`renderGarmentDigest`), and
+    // stating both would repeat one truth in two shapes.
+    lines.push(garments.digest);
+  } else {
+    // Fallback, empty, or no garment read at all: today's outfit line, byte-
+    // identical (a known-empty worn set already renders as "no clothing" here).
+    const outfit = outfitLine?.trim();
+    if (outfit) {
+      lines.push(`- ${primaryName} is wearing ${outfit} right now (world truth — whatever the story has said).`);
+    }
   }
   if (relationship) {
     const fam = familiarityBandForValue(relationship.familiarity).label.toLowerCase();
@@ -686,6 +711,7 @@ export function buildSimRenderPromptNodes(
         primaryName,
         playerName,
         outfitLine: context.outfitLine,
+        garments: context.garments,
         relationship: context.relationship,
       }),
       buildConversationNode({ primaryName, playerName, context }),
