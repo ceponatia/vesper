@@ -223,7 +223,9 @@ with the integrated meter, so a value left here would be a second opinion that
 is discarded at the only moment anyone reads it. Base and per-part readings on
 both channels go back to their defaults; the located fact — the deposit record,
 the damage mark, with its kind, scope, intensity and freshness — is what
-survives.
+survives. A `deposit` recorded here therefore never moves the garment's
+cleanliness band on its own: the soiling it implies reaches the meter only
+through a paired `apply_item_condition_source`.
 
 **A reduce that changes nothing is rejected, not recorded.** An operation the
 reducer drops is rejected `operation_rejected` carrying its `garment_op.*`

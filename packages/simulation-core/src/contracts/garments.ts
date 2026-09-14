@@ -155,7 +155,9 @@ export const applyGarmentOperationCommandSchema = createCommandEnvelopeSchema(
  *   stable `garment_op.*` code saying why: the shared reducer dropped it, it
  *   changed nothing (`garment_op.no_change`), or the stored row it would have
  *   applied to does not parse (`garment_op.state_unreadable`), in which case
- *   there is no baseline for a result to honestly follow from.
+ *   there is no baseline for a result to honestly follow from — or, unreachable
+ *   by construction, the reduced result would not fit the event contract
+ *   (`garment_op.result_unrecordable`).
  */
 export const applyGarmentOperationRejectionCodes = [
   "invalid_command",

@@ -321,14 +321,17 @@ export async function submitDurableApplyGarmentOperation(
         return rejectedResult(command.id, "garment_not_modelled", "That garment's construction is not modelled.");
       }
       if (!garment.state.readable) {
-        // The stored row would not parse, so the read degraded it to the
-        // neutral presentation and the pristine condition. Applying on top of
-        // THAT baseline would record an `after` that does not follow from the
-        // previous event's `after` — quietly turning a corrupt row into corrupt
-        // history, and history is the half a rebuild cannot repair. Refusing
-        // leaves the row exactly as it is, for the operator the read's
-        // `sim_garment.state_unreadable` diagnostic already alerted and for the
-        // rebuild-from-events that actually repairs it.
+        // The stored row would not parse at the top level, so the read
+        // degraded it to the neutral presentation and the pristine condition.
+        // Applying on top of THAT baseline would record an `after` that does
+        // not follow from the previous event's `after` — quietly turning a
+        // corrupt row into corrupt history, and history is the half a fork
+        // cannot repair. Refusing leaves the row exactly as it is; the
+        // rejection code on the `sim_commands` row is the operator's signal
+        // (this lane has no diagnostic sink), and a fork rebuilds the row from
+        // the events. The guard is exactly as wide as the parse: a column that
+        // parses but is field-repaired by the schemas' `.catch()` defaults
+        // reads as readable and is NOT refused here.
         return rejectedResult(command.id, "operation_rejected", STATE_UNREADABLE_CODE);
       }
 
