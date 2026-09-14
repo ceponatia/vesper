@@ -12,7 +12,14 @@ import { loadChatSummary } from "../chat-summary";
 import { log } from "../../log";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
 import { narrationShapeId, type NarrationShapeId } from "../prompts/constants";
-import { readSimChatOutfit, readSimChatRelationship, zoneDisplayNoun, type SimChatRelationship } from "../sim-surfaces";
+import {
+  readSimChatGarments,
+  readSimChatOutfit,
+  readSimChatRelationship,
+  zoneDisplayNoun,
+  type SimChatGarments,
+  type SimChatRelationship,
+} from "../sim-surfaces";
 import { drainMemoryIndexOutbox, queryMemoryDocuments, type MemoryEmbedder } from "../simulation";
 import type { SimChatExchangeResult } from "./types";
 
@@ -241,6 +248,8 @@ interface SimPresentationInputs {
   primary?: { name: string; profile: CharacterProfile };
   player: { name: string; persona?: string; voice?: string; intimacy?: string };
   outfitLine?: string;
+  /** #297's structured clothing read — renders INSTEAD of `outfitLine` when structured. */
+  garments?: SimChatGarments;
   relationship?: SimChatRelationship;
   zoneNames?: Record<string, string>;
   narrationShape: NarrationShapeId;
@@ -327,12 +336,15 @@ export async function loadSimPresentationInputs(input: {
   actorNames: Record<string, string>;
   playerName: string;
 }): Promise<SimPresentationInputs> {
-  const [primary, personaFields, outfit, relationship, zoneNames] = await Promise.all([
+  const [primary, personaFields, outfit, garments, relationship, zoneNames] = await Promise.all([
     loadSimPrimaryProfile(input.chatId, input.actorNames[input.primaryActorId]),
     loadSimPlayerPersonaFields(input.userId, input.chatId),
-    // Both reads self-degrade to `null` with their own per-seam diagnostic
+    // All three reads self-degrade to `null` with their own per-seam diagnostic
     // (the sim-surfaces guards), so no local `.catch` wrapper is needed here.
+    // `outfit` stays exactly as it was: the fallback and older prompts are
+    // byte-identical whenever `garments` is null/fallback/empty.
     readSimChatOutfit(input.chatId),
+    readSimChatGarments(input.chatId),
     readSimChatRelationship(input.chatId),
     loadSimZoneNames(input.branchId, input.chatId),
   ]);
@@ -341,6 +353,7 @@ export async function loadSimPresentationInputs(input: {
     ...(primary ? { primary } : {}),
     player: { name: input.playerName, ...personaFields },
     ...(outfitLine ? { outfitLine } : {}),
+    ...(garments ? { garments } : {}),
     ...(relationship ? { relationship } : {}),
     ...(zoneNames ? { zoneNames } : {}),
     narrationShape: narrationShapeId("chat"),

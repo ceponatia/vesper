@@ -254,6 +254,7 @@ export function buildSimSoloRenderPromptNodes(context: SimSoloRenderContext): re
         primaryName,
         playerName,
         outfitLine: context.outfitLine,
+        garments: context.garments,
         relationship: context.relationship,
       }),
       buildConversationNode({ primaryName, playerName, context, soloAway: true }),

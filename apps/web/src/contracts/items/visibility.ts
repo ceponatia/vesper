@@ -182,6 +182,18 @@ const EXPOSURE_REGION_LOCATIONS: Record<keyof RegionExposure, readonly string[]>
 /** The four regions in the order every read reports them — one list, so no caller invents an order. */
 const EXPOSURE_REGIONS: readonly (keyof RegionExposure)[] = ["torso", "pelvis", "legs", "feet"];
 
+/** The four regions in report order, for consumers that walk a `RegionExposure` — the one list, exported. */
+export const exposureRegionOrder: readonly (keyof RegionExposure)[] = EXPOSURE_REGIONS;
+
+/**
+ * The body-location ids one exposure region stands for. Exported as a read so
+ * a consumer that needs the mapping (a body-surface exposure map, say) reads
+ * this table instead of copying it — the table itself stays private.
+ */
+export function exposureRegionLocations(region: keyof RegionExposure): readonly string[] {
+  return EXPOSURE_REGION_LOCATIONS[region];
+}
+
 /**
  * Coverage ids → every body location they reach, the registry's
  * parent-implies-descendants rule applied once. Unregistered ids are dropped

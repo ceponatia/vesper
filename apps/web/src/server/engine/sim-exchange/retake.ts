@@ -115,6 +115,7 @@ export async function runSimRetake(input: { chatId: string; userId: string; ctx:
       ...(presentation.primary ? { primary: presentation.primary } : {}),
       player: presentation.player,
       ...(presentation.outfitLine ? { outfitLine: presentation.outfitLine } : {}),
+      ...(presentation.garments ? { garments: presentation.garments } : {}),
       ...(presentation.relationship ? { relationship: presentation.relationship } : {}),
       ...(presentation.zoneNames ? { zoneNames: presentation.zoneNames } : {}),
       narrationShape: presentation.narrationShape,

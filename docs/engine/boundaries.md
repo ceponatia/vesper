@@ -98,14 +98,20 @@ throw, per the read-path default in `docs/resilience.md`. The pure shaping
 lives in `packages/simulation-core/src/lib/world-read.ts`.
 
 **Wardrobe authority follows the routed pipeline.** The successor narrator's
-primary-character outfit comes from `sim_item_holdings` world truth. A
-known-empty worn set is represented explicitly (`"no clothing"`), while
-`null` means the simulation wardrobe read was unavailable/not applicable;
-those states must never collapse into each other. The character-chat wardrobe
-row is not a second authority for a successor-routed primary: the state PATCH
-rejects actual wardrobe edits with `sim_wardrobe_managed_by_world`. Likewise,
-the current character-chat scene-image route refuses new successor renders
-with `scene_visual_authority_unavailable` until the simulation side exposes a
+primary-character clothing comes from `sim_item_holdings` world truth,
+resolved through the same garment construction the character-chat lane
+reads: a worn set whose blueprints all resolve narrates as the shared garment
+digest (placement, presentation, coverage and condition bands), falling back
+to the joined item-name line only when no worn item resolves a reliable
+blueprint. A known-empty worn set is represented explicitly (`"no clothing"`
+for the fallback line, an explicit empty status for the structured read),
+while `null` means the simulation wardrobe read was unavailable/not
+applicable; those states must never collapse into each other. The
+character-chat wardrobe row is not a second authority for a successor-routed
+primary: the state PATCH rejects actual wardrobe edits with
+`sim_wardrobe_managed_by_world`. Likewise, the current character-chat
+scene-image route refuses new successor renders with
+`scene_visual_authority_unavailable` until the simulation side exposes a
 structured visual wardrobe projection with coverage/presentation data. This
 is deliberately fail-closed: using character-chat clothing for the image
 while narration reads simulation clothing would make two incompatible truths

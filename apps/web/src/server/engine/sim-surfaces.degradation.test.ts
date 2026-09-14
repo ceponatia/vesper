@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatEngineAuthorityState } from "@vesper/simulation-core/contracts/authority";
 import { log } from "@/server/log";
 
-// Each of the four state-read seams must
+// Each of the five state-read seams must
 // degrade a thrown DB read to a null panel PLUS a distinct `log.warn`
 // diagnostic (docs/resilience.md §7 — degrade at every trust boundary), never
 // a 500. The authority guard stays OUTSIDE the wrap, so this mocks a routed
@@ -30,7 +30,7 @@ vi.mock("@/server/engine/chat-authority", async (importOriginal) => {
 });
 
 // Every `db()` inside the wrap throws — the malformed-row / missing-branch
-// failure mode, uniform across all four seams (two of which never parse a row,
+// failure mode, uniform across all five seams (two of which never parse a row,
 // so a data throw is not otherwise reachable).
 vi.mock("@/server/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/db")>();
@@ -43,6 +43,7 @@ vi.mock("@/server/db", async (importOriginal) => {
 });
 
 import {
+  readSimChatGarments,
   readSimChatMeters,
   readSimChatOutfit,
   readSimChatPresence,
@@ -82,5 +83,9 @@ describe("sim read seams degrade to null with a per-seam diagnostic (slice 1)", 
 
   it("outfit degrades to null", async () => {
     await expectSeamDegrades(readSimChatOutfit, "outfit read degraded to null");
+  });
+
+  it("garments degrade to null", async () => {
+    await expectSeamDegrades(readSimChatGarments, "garments read degraded to null");
   });
 });
