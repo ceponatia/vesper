@@ -78,12 +78,16 @@ describe("profileRenderControlsFingerprintJson", () => {
   });
 
   it("moves when the EFFECTIVE model's payload constants move", () => {
-    // The gap this closes: the reviewed-quality table rewrites `extraInput` at
-    // the render boundary, so fingerprinting the raw row let that table change
-    // what a pinned comparison sends with no conflict to show for it.
-    const raw = plan({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } });
+    // The gap this closes: the model the provider is handed is not always the
+    // row as stored — the caller's safety fact is resolved into `extraInput` at
+    // the compile step — so fingerprinting the raw row let a payload constant
+    // change what a pinned comparison sends with no conflict to show for it.
+    // (`plan` compiles with `safetyCheckerDisabled: true`, so the effective row
+    // carries `true` where the stored one says `false`.)
+    const raw = plan({ extraInput: { disable_safety_checker: false } });
+    expect(raw.effectiveModel.extraInput).toEqual({ disable_safety_checker: true });
     const asStored = profileRenderControlsFingerprintJson(
-      { ...raw, effectiveModel: model({ slug: "qwen/qwen-image-edit-2511", extraInput: { go_fast: true } }) },
+      { ...raw, effectiveModel: model({ extraInput: { disable_safety_checker: false } }) },
       {
         profileId: "profile-1",
         profileKey: "compile-fixture",

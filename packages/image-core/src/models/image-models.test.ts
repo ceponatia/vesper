@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyImageModelAdvancedCapabilities } from "../capabilities/image-model-capabilities";
 import {
+  baseImageModelSlug,
   chooseAspect,
   chooseDimensions,
   fitReferences,
@@ -80,6 +81,17 @@ describe("imageModelSchema", () => {
     const first = imageModelSchema.parse(priorRow);
     first.advancedCapabilities.knownInputFields.push("prompt");
     expect(imageModelSchema.parse(priorRow).advancedCapabilities.knownInputFields).toEqual([]);
+  });
+});
+
+describe("baseImageModelSlug", () => {
+  it("matches pinned community models by their provider path", () => {
+    // The identity is `owner/name`; the version after the colon is which build
+    // runs. Every question asked about the MODEL — its adapter, its curated
+    // LoRAs, its reviewed settings — is asked under this key, so a re-pin must
+    // not move a row out of its own answers.
+    expect(baseImageModelSlug("nsfw-api/sdxl-pulid:abc123")).toBe("nsfw-api/sdxl-pulid");
+    expect(baseImageModelSlug("qwen/qwen-image-edit-2511")).toBe("qwen/qwen-image-edit-2511");
   });
 });
 

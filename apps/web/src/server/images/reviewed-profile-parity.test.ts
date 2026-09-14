@@ -2,64 +2,93 @@ import {
   compileProfileRenderPlan,
   type ImageModel,
   type ImageModelProfile,
+  type ImageRenderControls,
   imageModelProfileSchema,
   imageModelSchema,
   reviewedImageProfileControls,
   reviewedImageQualityControlFields,
   reviewedImageQualityPolicy,
   reviewedImageQualitySlugs,
-  type ReviewedImageQualityPolicy,
 } from "@vesper/image-core";
 import { buildRegistryModelInput, overlayControlInput } from "@vesper/image-replicate";
 import { describe, expect, it } from "vitest";
 
 /**
- * FINAL-PAYLOAD parity between the transitional exact-slug overlay and the task
- * profile that replaces it.
+ * THE reviewed settings, held against the FINAL provider payload — the one
+ * statement worth making about them now that the task profile is their only
+ * owner.
  *
- * The migration's whole safety argument is that a reviewed setting reaches the
- * provider identically whichever layer supplies it, so a comparison of anything
- * short of the provider payload proves nothing: the two routes travel by
- * different merge levels — the overlay through `model.extraInput`, which
- * `buildRegistryModelInput` writes FIRST, and the profile through `controlInput`,
- * which `overlayControlInput` writes LAST. Same values, opposite ends of the
- * precedence order. Equal payloads is the only statement worth making.
+ * The defect this file exists to kill: a reviewed correction that stops
+ * arriving. Until #244 the settings reached the provider twice over — as a
+ * slug-keyed rewrite of the model row's `extraInput` at the render boundary, and
+ * as the profile's own controls — so a profile that carried none of them still
+ * rendered correctly, and nothing could tell the two apart. With the rewrite
+ * gone the profile is load-bearing on its own, and the only way to know a
+ * reviewed value still ships is to read it out of the assembled payload.
  *
- * The three arms are the migration's three states:
- *
- * - `overlay` — today on an unmigrated model: the reviewed slug's `extraInput`,
- *   an inert profile.
- * - `profile` — after step 4 removes the override: an UNREVIEWED twin slug, so
- *   the overlay is a no-op, and a profile carrying the reviewed controls.
- * - `both` — today on a migrated model, which is what this slice ships: the
- *   overlay still applies and the profile now says the same thing.
- *
- * The twin-slug trick is what lets the middle arm exist before step 4 has run.
- * `compileProfileRenderPlan` always applies `withReviewedImageQuality`, so the
- * only way to observe the profile route alone is a model the reviewed table has
- * never heard of.
+ * Anything short of the payload proves nothing: the controls travel as
+ * `controlInput`, which `overlayControlInput` writes LAST, while the row's own
+ * constants are written FIRST by `buildRegistryModelInput`. Same values,
+ * opposite ends of the precedence order.
  */
 
-/** A probed version that declares every field the reviewed policy needs. */
-function probedCapabilities(policy: ReviewedImageQualityPolicy) {
-  const fields = policy.controlFields;
-  return {
-    controls: {
-      ...(fields.steps === undefined ? {} : { steps: { field: fields.steps, type: "integer" as const } }),
-      ...(fields.guidance === undefined ? {} : { guidance: { field: fields.guidance, type: "number" as const } }),
-      ...(fields.negativePrompt === undefined
-        ? {}
-        : { negativePrompt: { field: fields.negativePrompt, type: "string" as const } }),
-      ...(fields.width === undefined ? {} : { customWidth: { field: fields.width, type: "integer" as const } }),
-      ...(fields.height === undefined ? {} : { customHeight: { field: fields.height, type: "integer" as const } }),
-    },
-    // Provider overrides fail CLOSED against an empty list, so the raw keys the
-    // reviewed policy uses have to be probed for the profile route to carry them.
-    knownInputFields: Object.keys(policy.providerOverrides),
-  };
-}
+/**
+ * The four reviewed models' REAL probed bindings, read from the production
+ * registry through the admin API on 2026-09-13.
+ *
+ * Hand-written rather than synthesized from the reviewed table's own
+ * `controlFields`, which is the point: a probe derived from the table would
+ * agree with whatever the table said, and the question here is whether the
+ * reviewed settings survive the trip on the versions production actually runs.
+ * `coversEveryReviewedControl` below refuses a fixture that has fallen behind
+ * the policy it is supposed to carry.
+ */
+/** A type alias, not an interface: it is handed to `imageModelSchema.parse`. */
+type ProbedFixture = {
+  controls: Record<string, { field: string; type: string }>;
+  knownInputFields: string[];
+};
 
-function model(slug: string, advancedCapabilities: Record<string, unknown>, extraInput: Record<string, unknown>) {
+const PRODUCTION_BINDINGS: Record<string, ProbedFixture> = {
+  "qwen/qwen-image-edit-2511": {
+    controls: {
+      seed: { field: "seed", type: "integer" },
+      fastMode: { field: "go_fast", type: "boolean" },
+      loraWeights: { field: "lora_weights", type: "string" },
+      loraScale: { field: "lora_scale", type: "number" },
+    },
+    knownInputFields: ["go_fast", "image", "lora_scale", "lora_weights", "output_quality", "prompt", "seed"],
+  },
+  "aisha-ai-official/nsfw-flux-dev": {
+    controls: {
+      seed: { field: "seed", type: "integer" },
+      customWidth: { field: "width", type: "integer" },
+      customHeight: { field: "height", type: "integer" },
+    },
+    knownInputFields: ["guidance_scale", "height", "prompt", "seed", "steps", "width"],
+  },
+  "aisha-ai-official/likereality-pony-v1": {
+    controls: {
+      seed: { field: "seed", type: "integer" },
+      negativePrompt: { field: "negative_prompt", type: "string" },
+      customWidth: { field: "width", type: "integer" },
+      customHeight: { field: "height", type: "integer" },
+    },
+    knownInputFields: ["height", "negative_prompt", "prompt", "seed", "width"],
+  },
+  "nsfw-api/sdxl-pulid": {
+    controls: {
+      seed: { field: "seed", type: "integer" },
+      guidance: { field: "cfg", type: "number" },
+      negativePrompt: { field: "negative_prompt", type: "string" },
+      customWidth: { field: "width", type: "integer" },
+      customHeight: { field: "height", type: "integer" },
+    },
+    knownInputFields: ["cfg", "face_weight", "height", "method", "negative_prompt", "prompt", "seed", "width"],
+  },
+};
+
+function model(slug: string, advancedCapabilities: Record<string, unknown>, extraInput: Record<string, unknown> = {}) {
   return imageModelSchema.parse({
     id: `model-${slug}`,
     slug,
@@ -76,6 +105,11 @@ function model(slug: string, advancedCapabilities: Record<string, unknown>, extr
   });
 }
 
+/** The reviewed model as production has it: its own probed bindings. */
+function reviewedModel(slug: string, extraInput: Record<string, unknown> = {}): ImageModel {
+  return model(slug, PRODUCTION_BINDINGS[slug] ?? {}, extraInput);
+}
+
 function profile(controlDefaults: Record<string, unknown>, providerOverrides: Record<string, unknown>) {
   return imageModelProfileSchema.parse({
     id: "profile-parity",
@@ -90,8 +124,18 @@ function profile(controlDefaults: Record<string, unknown>, providerOverrides: Re
   });
 }
 
-/** The exact provider payload one arm produces, references and shape held equal. */
-function payload(subject: ImageModel, configuration: ImageModelProfile): Record<string, unknown> {
+/** The profile a reviewed model's rows carry (migrations 0110/0122, and creation). */
+function reviewedProfile(slug: string): ImageModelProfile {
+  const controls = reviewedImageProfileControls(slug);
+  return profile({ ...controls?.controlDefaults }, { ...controls?.providerOverrides });
+}
+
+/** The exact provider payload one configuration produces, for one request. */
+function payload(
+  subject: ImageModel,
+  configuration: ImageModelProfile,
+  controlOverrides?: ImageRenderControls,
+): Record<string, unknown> {
   const compiled = compileProfileRenderPlan({
     model: subject,
     profile: configuration,
@@ -99,6 +143,7 @@ function payload(subject: ImageModel, configuration: ImageModelProfile): Record<
     baseNegativePrompt: null,
     safetyCheckerDisabled: false,
     references: { vocabulary: "render_intent", references: [] },
+    ...(controlOverrides ? { controlOverrides } : {}),
   });
   if (!compiled.ok) throw new Error(`compile refused: ${compiled.reason}`);
   const built = buildRegistryModelInput(
@@ -111,79 +156,117 @@ function payload(subject: ImageModel, configuration: ImageModelProfile): Record<
   return overlayControlInput(built, compiled.plan.controlInput, compiled.plan.effectiveModel);
 }
 
-describe("reviewed overlay versus profile controls, on the final payload", () => {
+/** Every provider field/value the reviewed policy for `slug` must produce. */
+function reviewedPayloadValues(slug: string): Map<string, unknown> {
+  const policy = reviewedImageQualityPolicy(slug);
+  if (!policy) throw new Error(`${slug} has no reviewed policy`);
+  const values = new Map<string, unknown>(Object.entries(policy.providerOverrides));
+  const defaults = new Map<string, unknown>(Object.entries(policy.controlDefaults));
+  for (const [control, field] of Object.entries(policy.controlFields)) {
+    if (field === undefined) continue;
+    values.set(field, defaults.get(control));
+  }
+  return values;
+}
+
+describe("the reviewed settings a task profile carries, on the final payload", () => {
+  it("has a production binding fixture for exactly the reviewed set", () => {
+    expect(Object.keys(PRODUCTION_BINDINGS).sort()).toEqual([...reviewedImageQualitySlugs].sort());
+  });
+
   for (const slug of reviewedImageQualitySlugs) {
     const policy = reviewedImageQualityPolicy(slug);
     if (!policy) continue;
-    const controls = reviewedImageProfileControls(slug);
-    const capabilities = probedCapabilities(policy);
-    // An unreviewed twin: same everything, a slug the reviewed table never matches.
-    const twin = `parity-twin/${slug.split("/")[1] ?? slug}`;
 
-    it(`sends the same payload either way for ${slug}`, () => {
-      const overlayArm = payload(model(slug, capabilities, {}), profile({}, {}));
-      const profileArm = payload(
-        model(twin, capabilities, {}),
-        profile({ ...controls?.controlDefaults }, { ...controls?.providerOverrides }),
-      );
-      expect(profileArm).toEqual(overlayArm);
-    });
-
-    it(`is unchanged when both layers are live for ${slug}`, () => {
-      const overlayArm = payload(model(slug, capabilities, {}), profile({}, {}));
-      const bothArm = payload(
-        model(slug, capabilities, {}),
-        profile({ ...controls?.controlDefaults }, { ...controls?.providerOverrides }),
-      );
-      expect(bothArm).toEqual(overlayArm);
+    it(`probes every reviewed control of ${slug} in the fixture`, () => {
+      // A fixture missing a binding would make the payload assertion below pass
+      // for a value that never went: the control would drop for want of a field
+      // on a version that has one.
+      const fixture = PRODUCTION_BINDINGS[slug];
+      expect(fixture, slug).toBeDefined();
+      if (!fixture) return;
+      const bound = Object.values(fixture.controls).map((binding) => binding.field);
+      for (const field of reviewedImageQualityControlFields(policy)) {
+        expect(bound, `${slug}.${field}`).toContain(field);
+      }
+      for (const field of Object.keys(policy.providerOverrides)) {
+        expect(fixture.knownInputFields, `${slug}.${field}`).toContain(field);
+      }
     });
 
     it(`carries every reviewed value into the payload for ${slug}`, () => {
-      // The parity assertions above would both pass if the reviewed settings
-      // reached NEITHER arm. This one says the values are actually there.
-      const sent = payload(
-        model(twin, capabilities, {}),
-        profile({ ...controls?.controlDefaults }, { ...controls?.providerOverrides }),
-      );
-      for (const [field, value] of Object.entries(policy.providerOverrides)) {
+      const sent = payload(reviewedModel(slug), reviewedProfile(slug));
+      for (const [field, value] of reviewedPayloadValues(slug)) {
         expect(sent[field], `${slug}.${field}`).toEqual(value);
       }
-      for (const field of reviewedImageQualityControlFields(policy)) {
-        expect(Object.keys(sent), `${slug}.${field}`).toContain(field);
+    });
+
+    it(`sends no reviewed value for ${slug} when the profile carries none`, () => {
+      // The retired overlay's whole behavior, asserted absent: a slug-keyed
+      // rewrite of `extraInput` would put these values on the payload of an
+      // inert profile, and the profile would have stopped being load-bearing
+      // without anything failing.
+      const sent = payload(reviewedModel(slug), profile({}, {}));
+      for (const field of reviewedPayloadValues(slug).keys()) {
+        expect(Object.keys(sent), `${slug}.${field}`).not.toContain(field);
       }
     });
   }
 
-  it("lets a stale probe default lose to the reviewed value on both routes", () => {
-    // Qwen Edit's stored row says `go_fast: true`. Whichever layer corrects it,
-    // the provider must be told false.
-    const policy = reviewedImageQualityPolicy("qwen/qwen-image-edit-2511");
-    expect(policy).not.toBeNull();
-    if (!policy) return;
-    const capabilities = probedCapabilities(policy);
-    const stored = { go_fast: true };
-    const overlayArm = payload(model("qwen/qwen-image-edit-2511", capabilities, stored), profile({}, {}));
-    const profileArm = payload(
-      model("parity-twin/qwen-image-edit-2511", capabilities, stored),
-      profile({}, { go_fast: false }),
-    );
-    expect(overlayArm.go_fast).toBe(false);
-    expect(profileArm.go_fast).toBe(false);
-    expect(profileArm).toEqual(overlayArm);
+  it("spells no reviewed setting as a raw override of a field a control already reaches", () => {
+    // The rule a raw `go_fast` override broke: a profile's `providerOverrides`
+    // merge LAST, over the mapped controls, so a reviewed setting written as a
+    // raw field outranks the CALLER's own request for the same thing. Asked
+    // against each model's PROBED bindings, because they decide which fields the
+    // normalized controls reach — the reviewed table alone cannot see the
+    // overlap, which is why it went unnoticed.
+    for (const slug of reviewedImageQualitySlugs) {
+      const policy = reviewedImageQualityPolicy(slug);
+      const fixture = PRODUCTION_BINDINGS[slug];
+      if (!policy || !fixture) continue;
+      const boundByControl = new Set(Object.values(fixture.controls).map((binding) => binding.field));
+      for (const field of Object.keys(policy.providerOverrides)) {
+        expect(boundByControl, `${slug}.${field}`).not.toContain(field);
+      }
+    }
+  });
+
+  it("lets a run that asks Qwen Edit for the accelerated path have it", () => {
+    // THE regression this spelling exists for. The admin Image Generator is the
+    // one surface allowed to ask 2511 for `go_fast: true`, and it asks by
+    // sending `fastMode` as a per-render control. While the reviewed ruling was a
+    // raw override it compiled the request to `go_fast: true` and then replaced
+    // it with `false` — no drop, no refusal, and a Fast-ON/Fast-OFF pair that
+    // came back byte-identical (the klein 4B defect, #569/#573).
+    const slug = "qwen/qwen-image-edit-2511";
+    const off = payload(reviewedModel(slug), reviewedProfile(slug));
+    const on = payload(reviewedModel(slug), reviewedProfile(slug), { fastMode: true });
+    expect(off.go_fast).toBe(false);
+    expect(on.go_fast).toBe(true);
+  });
+
+  it("lets a stale probe default lose to the reviewed value", () => {
+    // Qwen Edit's stored row still says `go_fast: true` — the registry's probe
+    // reads the provider's own default. The profile's override is written after
+    // the row's constants, so the provider is told false.
+    const slug = "qwen/qwen-image-edit-2511";
+    const sent = payload(reviewedModel(slug, { go_fast: true, output_quality: 95 }), reviewedProfile(slug));
+    expect(sent.go_fast).toBe(false);
+    expect(sent.output_quality).toBe(95);
   });
 });
 
-describe("an unprobed model, which is every seeded row today", () => {
+describe("a reviewed model whose version is not probed", () => {
   const slug = "aisha-ai-official/likereality-pony-v1";
-  const controls = reviewedImageProfileControls(slug);
 
   it("drops every profile-borne reviewed control, with a reason for each", () => {
-    // The degradation this slice cannot fix and step 4 therefore waits on: with
-    // `advanced_capabilities = '{}'` the mapper has no field to write to and the
-    // override validator fails closed, so the profile route contributes NOTHING.
+    // With `advanced_capabilities = '{}'` the mapper has no field to write to,
+    // so the reviewed settings reach nothing — and every one of them is named in
+    // `droppedControls`, which is what a run's own record and its fingerprint
+    // carry. Silence here is the failure mode; a recorded drop is not.
     const compiled = compileProfileRenderPlan({
-      model: model(`parity-twin/likereality-pony-v1`, {}, {}),
-      profile: profile({ ...controls?.controlDefaults }, { ...controls?.providerOverrides }),
+      model: model(slug, {}),
+      profile: reviewedProfile(slug),
       basePrompt: "a portrait of Mira",
       baseNegativePrompt: null,
       safetyCheckerDisabled: false,
@@ -199,18 +282,9 @@ describe("an unprobed model, which is every seeded row today", () => {
     expect(drops).toContainEqual({ control: "resolution", reason: "no_binding" });
   });
 
-  it("still reaches the provider, because the overlay is still live", () => {
-    // The reason the transitional policy must NOT be deleted yet: on the reviewed
-    // slug the settings arrive through `extraInput` regardless of the probe.
-    const sent = payload(model(slug, {}, {}), profile({ ...controls?.controlDefaults }, {}));
-    expect(sent.width).toBe(832);
-    expect(sent.height).toBe(1216);
-    expect(sent.negative_prompt).toBe("");
-  });
-
   it("fails an override closed rather than forwarding an unprobed key", () => {
     const compiled = compileProfileRenderPlan({
-      model: model("parity-twin/sdxl-pulid", {}, {}),
+      model: model("nsfw-api/sdxl-pulid", {}),
       profile: profile({}, { method: "fidelity" }),
       basePrompt: "a portrait of Mira",
       baseNegativePrompt: null,

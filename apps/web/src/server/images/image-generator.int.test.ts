@@ -61,6 +61,7 @@ const REQUIRED_CONTROL_MODEL_ID = "imgmdlgenreqcontrolaaaaa";
 const REPROBED_MODEL_ID = "imgmdlgenreprobedaaaaaaa";
 const SIZE_MODEL_ID = "imgmdlgensizemodeaaaaaaa";
 const FAL_MODEL_ID = "imgmdlqwenimage3aaaaaaa";
+const REVIEWED_MODEL_ID = "imgmdlgenreviewedaaaaaaa";
 const FIXTURE_MODEL_IDS = [
   PINNED_MODEL_ID,
   UNPINNED_MODEL_ID,
@@ -74,6 +75,7 @@ const FIXTURE_MODEL_IDS = [
   REQUIRED_CONTROL_MODEL_ID,
   REPROBED_MODEL_ID,
   SIZE_MODEL_ID,
+  REVIEWED_MODEL_ID,
 ];
 
 const PINNED_SLUG = "vesper-test/generator-pinned";
@@ -95,6 +97,19 @@ const SIZE_SLUG = "vesper-test/generator-size-mode";
  */
 const BENCH_LORA_ID = "imglorabenchonlyaaaaaaaa";
 const PINNED_VERSION = "generatorversionaaaaaaaa";
+/**
+ * A slug the REVIEWED table names (`nsfw-api/sdxl-pulid`), version-suffixed so
+ * the row is distinct from the one migration 0104 seeds AND so the reviewed
+ * lookup has a pin to strip — the bench asks under `baseImageModelSlug`, never
+ * the raw slug.
+ *
+ * The suffix IS `PINNED_VERSION`, and it has to be: `pinnedImageModelVersion`
+ * returns null when a slug pin and `probed_version_id` disagree, and the
+ * Generator refuses `version_unpinned` before it reaches any reviewed gate. A
+ * fixture pinned two different ways never gets as far as the behaviour under
+ * test.
+ */
+const REVIEWED_SLUG = `nsfw-api/sdxl-pulid:${PINNED_VERSION}`;
 const REPROBED_VERSION = "generatorversionbbbbbbbb";
 const EXECUTED_VERSION = PINNED_VERSION;
 
@@ -289,6 +304,31 @@ beforeAll(async () => {
         // Wan's real shape: the tier and the shape list are one provider input.
         advancedCapabilities: {
           controls: { resolutionTier: { field: "size", type: "enum", enumValues: ["1K", "2K"] } },
+        },
+      },
+      {
+        // The one fixture the REVIEWED table knows: a bench run on it must send
+        // Vesper's reviewed settings for the model, which now reach a run only
+        // through the synthetic profile (#244). Its bindings are PuLID's own —
+        // guidance on `cfg`, the custom pair on width/height — and it declares
+        // the two raw fields the reviewed policy overrides, so nothing the
+        // policy states is dropped for want of a field. No provider-input
+        // descriptors: this fixture is about the reviewed settings, not the
+        // strict payload gate.
+        id: REVIEWED_MODEL_ID,
+        slug: REVIEWED_SLUG,
+        label: "Generator Reviewed-Model Fixture",
+        canGenerate: true,
+        canEdit: true,
+        maxReferences: 4,
+        probedVersionId: PINNED_VERSION,
+        advancedCapabilities: {
+          controls: {
+            guidance: { field: "cfg", type: "number" },
+            customWidth: { field: "width", type: "integer" },
+            customHeight: { field: "height", type: "integer" },
+          },
+          knownInputFields: ["cfg", "face_weight", "height", "method", "prompt", "width"],
         },
       },
       {
@@ -1053,8 +1093,8 @@ describe.skipIf(!ready)("image generator pre-spend payload gate", () => {
 
   it("records the whole provider request, not only the mapped controls", async () => {
     // A record listing `controlInput` alone says nothing about the model row's
-    // own pinned fields — which the provider is definitely sent, and which the
-    // reviewed-quality seam adds more of on the way out.
+    // own `extraInput` pins, which the payload builder copies through and the
+    // provider is definitely sent.
     stubSuccessfulRenderer();
     const { id, sink } = await createRun({ modelId: ADVANCED_MODEL_ID });
 
@@ -2254,5 +2294,67 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.1 Kontext Dev row"
     const payload = await runImageGeneratorRun(id, ownerId, sink);
     expect(payload.status).toBe("succeeded");
     expect(captured[0]?.intent.prompt).toBe(prompt);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Vesper's reviewed settings on the bench (#244)
+// ---------------------------------------------------------------------------
+
+/**
+ * The synthetic bench profile is now the ONLY way Vesper's reviewed corrections
+ * for a known model reach a Generator run: the slug-keyed rewrite of the model
+ * row's `extraInput` that used to run at the transport boundary is gone
+ * (`packages/image-core` `withReviewedProfileDefaults` replaces it, seeded into
+ * `imageGeneratorProfile`).
+ *
+ * Two defects live here and nowhere else, because both functions are private to
+ * `image-generator-request.ts` and its only export is database-backed:
+ *
+ * 1. SEEDING REMOVED OR NEVER APPLIED. The bench then renders a reviewed model
+ *    on the wrapper's own defaults — a 512-square at four-fifths identity
+ *    strength for PuLID — and the run's record names a configuration production
+ *    never uses. Nothing else fails.
+ * 2. THE DROP GATE. Seeding brings `resolution: "custom"`, the GATE that makes
+ *    the width/height pair a request rather than a leftover. No probed version
+ *    binds a tier field for it, so it drops on every reviewed model there is —
+ *    and before the `{seedPolicy, resolution}` exemption, `refusedDroppedControl`
+ *    turned every such drop into `control_refused` and no bench run on a reviewed
+ *    model could start at all.
+ */
+describe.skipIf(!ready)("image generator runs on a reviewed model", () => {
+  it("sends the model's reviewed settings without the operator naming one", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: REVIEWED_MODEL_ID });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    // Succeeded, not refused: the seeded `resolution: "custom"` drops for want
+    // of a tier binding on every reviewed model, and that drop is the gate, not
+    // a refusal.
+    expect(payload.status).toBe("succeeded");
+    expect((await storedRow(id))?.failureCode).toBeNull();
+    // Both channels of the reviewed policy, read off the record of what was
+    // sent: the normalized controls through this version's own probed bindings,
+    // and the two raw overrides the control vocabulary has no word for.
+    expect(imageMeta((await storedRow(id))?.meta)["effectiveRequest"]).toMatchObject({
+      providerRequest: { cfg: 7, width: 832, height: 1216, method: "fidelity", face_weight: 1 },
+    });
+  });
+
+  it("refuses a raw advanced value that would land on a reviewed field", async () => {
+    // `cfg` is not on this row's `extraInput`; it is the field the reviewed
+    // `guidance` occupies on THIS version's probed binding. The bag is written
+    // last, so accepting it would replace the reviewed 7 while the run's record
+    // still named the reviewed policy as the reason for the number.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun({ modelId: REVIEWED_MODEL_ID, providerInputs: { cfg: 3 } });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBe(imageGeneratorDiagnosticCode("provider_input_rejected"));
+    expect(row?.error).toContain("pinned by the model's reviewed configuration");
+    expect(captured).toHaveLength(0);
   });
 });

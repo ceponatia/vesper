@@ -1,12 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import {
+  baseImageModelSlug,
   chooseAspect,
   type ImageLabControlledKind,
   imageLabRecipeProfile,
   type ImageRenderReference,
   mapImageRenderControls,
   referenceCapacity,
-  withReviewedImageQuality,
+  reviewedImageProfileControls,
+  withReviewedProfileDefaults,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { db, imageLabExperiments } from "../db";
@@ -54,23 +56,17 @@ export async function runControlProbe(row: ImageLabExperimentRow, sink?: Diagnos
   }
   const { model, versionId } = resolved;
 
-  // The quality overlay is applied HERE, before the capacity check, because it
-  // is the model the provider is actually handed and the check has to be about
-  // that one. (It only merges `extraInput`, so capacity is unchanged — reading
-  // capacity off the effective model is what keeps that true if it ever stops
-  // being.)
-  const effectiveModel = withReviewedImageQuality(model);
   // Capacity is refused, never TRIMMED. `runRegistryImageModel` fits an overlong
   // reference list to the model's arity, so an experiment ordering more images
   // than the version accepts would render happily while its record claimed a
   // control was sent that the provider never received — the one failure mode a
   // bench cannot survive, since the verdict would be about an image nobody saw.
-  const capacity = referenceCapacity(effectiveModel);
+  const capacity = referenceCapacity(model);
   if (inputs.length > capacity.max) {
     return await settleFailed(
       row,
       labFailure("capacity_exceeded"),
-      `${effectiveModel.slug} accepts ${String(capacity.max)} reference image(s); this experiment orders ${String(inputs.length)}`,
+      `${model.slug} accepts ${String(capacity.max)} reference image(s); this experiment orders ${String(inputs.length)}`,
       sink,
       { columns: { requestedVersionId: versionId } },
     );
@@ -97,19 +93,48 @@ export async function runControlProbe(row: ImageLabExperimentRow, sink?: Diagnos
   // runner.
   const finalPrompt = row.instruction;
   const settings = storedSettings(row, sink);
-  const mapped = mapImageRenderControls({ controls: settings.controls, capabilities: effectiveModel.advancedCapabilities });
+  // A probe renders a BARE model: no task profile resolves here, so the reviewed
+  // settings this model runs with in production have to be STATED rather than
+  // inherited from the row. They go UNDER the admin's own values on both
+  // channels — the same precedence a profile's defaults have against a request —
+  // so the probe still answers the admin's question while sending what
+  // production sends. An unreviewed model contributes nothing.
+  //
+  // A plain spread is safe for the stored controls: they are parsed from the
+  // row's jsonb, so a key present with an explicit `undefined` (which would read
+  // as "absent" to the mapper while erasing the reviewed value here) cannot
+  // occur.
+  const reviewed = reviewedImageProfileControls(baseImageModelSlug(model.slug));
+  const mapped = mapImageRenderControls({
+    controls: {
+      ...(reviewed?.controlDefaults ?? {}),
+      ...settings.controls,
+      // The reviewed `resolution` is deliberately NOT spread. It is the profile
+      // vocabulary's GATE for a width/height pair rather than a value anything
+      // sends, and `compileProfileRenderPlan` is what reads it — withholding it
+      // from the mapper on a size-mode model, and gating the pair on it
+      // everywhere else. This path has no compile step to do either, so handing
+      // the tier to the mapper would post it through a binding the render path
+      // withholds. The reviewed PAIR still travels; only the admin's own tier
+      // does.
+      resolution: settings.controls.resolution,
+    },
+    capabilities: model.advancedCapabilities,
+  });
   if (mapped.dropped.length > 0) {
     sink?.push(
       diag("info", "image_lab.controls_dropped", "some normalized controls have no binding on this version", {
-        context: { experimentId: row.id, slug: effectiveModel.slug, dropped: mapped.dropped },
+        context: { experimentId: row.id, slug: model.slug, dropped: mapped.dropped },
       }),
     );
   }
   // The raw provider-shaped bag merges LAST, per the contract's own layering:
   // it is the escape hatch the lab needs and production does not, and settling
   // whether a model honours an undocumented input cannot be asked through a
-  // vocabulary that predates the answer.
-  const controlInput = { ...mapped.input, ...settings.controlInput };
+  // vocabulary that predates the answer. The reviewed raw settings sit between
+  // the mapped controls and that bag, exactly where a profile's own
+  // `providerOverrides` sit at the compile step.
+  const controlInput = { ...mapped.input, ...(reviewed?.providerOverrides ?? {}), ...settings.controlInput };
 
   await db()
     .update(imageLabExperiments)
@@ -119,11 +144,11 @@ export async function runControlProbe(row: ImageLabExperimentRow, sink?: Diagnos
   const rendered = await labRenderer()(
     {
       mode: "direct",
-      model: effectiveModel,
+      model,
       prompt: finalPrompt,
       references,
       controlInput,
-      aspect: chooseAspect(effectiveModel).value,
+      aspect: chooseAspect(model).value,
       versionId,
     },
     sink,
@@ -221,10 +246,16 @@ export async function runControlled(
     required: input.role === "identity" || input.imageId === row.controlImageId,
   }));
 
+  // A code-defined recipe states the lane's shape, never a model's reviewed
+  // settings — so it is seeded with them here, for the reason the whole kind
+  // exists: evidence gathered under a configuration production does not run is
+  // evidence about nothing. The recipe's own values win, and an unreviewed model
+  // is left exactly as the recipe wrote it.
+  const recipe = imageLabRecipeProfile(kind, controlKind, model.id);
   return await runRecipeIntent(row, {
     model,
     versionId,
-    recipeProfile: imageLabRecipeProfile(kind, controlKind, model.id),
+    recipeProfile: { ...recipe, ...withReviewedProfileDefaults(model, recipe) },
     references,
     prompt: row.instruction,
     controls: settings.controls,

@@ -7,7 +7,6 @@ import {
   type ImageRenderIntent,
   planImageRender,
   type PlannedImageRender,
-  withReviewedImageQuality,
 } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
 import { buildPayload, previewRegistryModelInput } from "./payload";
@@ -141,9 +140,9 @@ function wire(
     throw new Error(`[fast-mode-final-wire] the plan was refused: ${result.refusal.code} — ${result.refusal.message}`);
   }
   const plan = result.plan;
-  // The reviewed-quality seam is applied by the TRANSPORT, so both assemblies
-  // below take the row through it exactly as `renderWithModel` does.
-  const prepared = withReviewedImageQuality(plan.model);
+  // The row as stored, which is what the transport sends: a profile's own
+  // settings ride `controlInput`, never a rewrite of the row (#244).
+  const prepared = plan.model;
   const sent = buildPayload(
     prepared,
     { prompt: plan.prompt, aspect: null, controlInput: plan.controlInput, policy: plan.policy },

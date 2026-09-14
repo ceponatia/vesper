@@ -6,6 +6,7 @@ import {
 import {
   diffImageModelCapabilities,
   type ImageModelCapabilitySnapshot,
+  type ImageProfileCandidateFinding,
   type ImageProfileCandidateInput,
   validateImageProfileForCandidate,
 } from "./image-version-diff";
@@ -216,44 +217,56 @@ function candidate(overrides: Partial<ImageModelCapabilitySnapshot> = {}): Image
   return snapshot(overrides);
 }
 
+/**
+ * The existing cases judge an UNREVIEWED model: `validateImageProfileForCandidate`
+ * takes the model's slug because the reviewed policy is keyed by it, and a slug
+ * the reviewed table never matches leaves every case below asking exactly what it
+ * asked before. The reviewed cases at the end pass a real reviewed slug.
+ */
+const UNREVIEWED_SLUG = "operator/added-yesterday";
+const validate = (
+  configuration: ImageProfileCandidateInput,
+  caps: ImageModelCapabilitySnapshot,
+): ImageProfileCandidateFinding[] => validateImageProfileForCandidate(configuration, caps, UNREVIEWED_SLUG);
+
 describe("validateImageProfileForCandidate", () => {
   it("passes an inert profile against an inert candidate", () => {
-    expect(validateImageProfileForCandidate(profile(), candidate())).toEqual([]);
+    expect(validate(profile(), candidate())).toEqual([]);
   });
 
   it("blocks an edit profile when the candidate cannot edit", () => {
-    const findings = validateImageProfileForCandidate(profile({ operation: "edit" }), candidate({ canEdit: false }));
+    const findings = validate(profile({ operation: "edit" }), candidate({ canEdit: false }));
     expect(findings).toEqual([
       expect.objectContaining({ level: "blocking", code: "operation_impossible" }),
     ]);
   });
 
   it("blocks a generate profile when the candidate cannot generate", () => {
-    const findings = validateImageProfileForCandidate(profile(), candidate({ canGenerate: false }));
+    const findings = validate(profile(), candidate({ canGenerate: false }));
     expect(findings).toEqual([
       expect.objectContaining({ level: "blocking", code: "operation_impossible" }),
     ]);
   });
 
   it("accepts each operation the candidate supports", () => {
-    expect(validateImageProfileForCandidate(profile({ operation: "edit" }), candidate())).toEqual([]);
-    expect(validateImageProfileForCandidate(profile(), candidate({ canEdit: false }))).toEqual([]);
+    expect(validate(profile({ operation: "edit" }), candidate())).toEqual([]);
+    expect(validate(profile(), candidate({ canEdit: false }))).toEqual([]);
   });
 
   it("accepts an override key the candidate declares", () => {
     const caps = candidate({ advancedCapabilities: advanced({ knownInputFields: ["go_fast", "prompt"] }) });
-    expect(validateImageProfileForCandidate(profile({ providerOverrides: { go_fast: true } }), caps)).toEqual([]);
+    expect(validate(profile({ providerOverrides: { go_fast: true } }), caps)).toEqual([]);
   });
 
   it("blocks an override key the candidate does not declare", () => {
     const caps = candidate({ advancedCapabilities: advanced({ knownInputFields: ["prompt"] }) });
-    expect(validateImageProfileForCandidate(profile({ providerOverrides: { go_fast: true } }), caps)).toEqual([
+    expect(validate(profile({ providerOverrides: { go_fast: true } }), caps)).toEqual([
       expect.objectContaining({ level: "blocking", code: "override_field_unknown", context: { field: "go_fast" } }),
     ]);
   });
 
   it("fails CLOSED on an empty knownInputFields when overrides exist, one finding per key", () => {
-    const findings = validateImageProfileForCandidate(
+    const findings = validate(
       profile({ providerOverrides: { b_field: 1, a_field: true } }),
       candidate(),
     );
@@ -264,7 +277,7 @@ describe("validateImageProfileForCandidate", () => {
   });
 
   it("passes empty overrides against an unprobed candidate", () => {
-    expect(validateImageProfileForCandidate(profile(), candidate())).toEqual([]);
+    expect(validate(profile(), candidate())).toEqual([]);
   });
 
   it("blocks a LoRA default unless the candidate exposes a usable LoRA weights/scale pair", () => {
@@ -272,17 +285,17 @@ describe("validateImageProfileForCandidate", () => {
     const weights = { field: "lora_weights", type: "string" as const };
     const scale = { field: "lora_scale", type: "number" as const };
 
-    expect(validateImageProfileForCandidate(withLora, candidate())).toEqual([
+    expect(validate(withLora, candidate())).toEqual([
       expect.objectContaining({ level: "blocking", code: "lora_binding_missing" }),
     ]);
     expect(
-      validateImageProfileForCandidate(
+      validate(
         withLora,
         candidate({ advancedCapabilities: advanced({ controls: { loraWeights: weights } }) }),
       ),
     ).toEqual([expect.objectContaining({ level: "blocking", code: "lora_binding_missing" })]);
     expect(
-      validateImageProfileForCandidate(
+      validate(
         withLora,
         candidate({ advancedCapabilities: advanced({ controls: { loraWeights: weights, loraScale: scale } }) }),
       ),
@@ -295,7 +308,7 @@ describe("validateImageProfileForCandidate", () => {
     // that do not form a pair.
     const arrayWeights = { field: "lora_weights", type: "string" as const, arity: "array" as const };
     expect(
-      validateImageProfileForCandidate(
+      validate(
         withLora,
         candidate({ advancedCapabilities: advanced({ controls: { loraWeights: arrayWeights, loraScale: scale } }) }),
       ),
@@ -306,11 +319,113 @@ describe("validateImageProfileForCandidate", () => {
     // the scalar shape Qwen's edit endpoints declare.
     const arrayScale = { field: "lora_scales", type: "number" as const, arity: "array" as const };
     expect(
-      validateImageProfileForCandidate(
+      validate(
         withLora,
         candidate({ advancedCapabilities: advanced({ controls: { loraWeights: arrayWeights, loraScale: arrayScale } }) }),
       ),
     ).toEqual([]);
+  });
+
+  it("blocks a reviewed control the candidate binds nowhere", () => {
+    // Qwen Edit's reviewed ruling lives in `fastMode` (migration 0140), and
+    // `fastMode` has no row in the tuned-control warning list below — so before
+    // this finding existed, promoting a version that stopped declaring
+    // `go_fast` reported NOTHING, and every identity-critical render afterwards
+    // shipped the provider's own speed preset.
+    const findings = validateImageProfileForCandidate(
+      profile({ controlDefaults: { seedPolicy: "random", fastMode: false } }),
+      candidate(),
+      "qwen/qwen-image-edit-2511",
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({
+        level: "blocking",
+        code: "reviewed_control_unbound",
+        context: { control: "fastMode", reason: "no_binding", slug: "qwen/qwen-image-edit-2511" },
+      }),
+    ]);
+  });
+
+  it("accepts a reviewed control the candidate still binds", () => {
+    const caps = candidate({
+      advancedCapabilities: advanced({ controls: { fastMode: { field: "go_fast", type: "boolean" } } }),
+    });
+    expect(
+      validateImageProfileForCandidate(
+        profile({ controlDefaults: { seedPolicy: "random", fastMode: false } }),
+        caps,
+        "qwen/qwen-image-edit-2511",
+      ),
+    ).toEqual([]);
+  });
+
+  it("blocks a reviewed value the candidate's binding no longer accepts", () => {
+    // The binding SURVIVES and the value does not: a candidate that narrows
+    // `customWidth` to a 1024 minimum keeps the slot a presence check would have
+    // been satisfied by, and refuses the reviewed 832 at render. The mapper is
+    // asked, so activation names it here instead.
+    const caps = candidate({
+      advancedCapabilities: advanced({
+        controls: {
+          customWidth: { field: "width", type: "integer", minimum: 1024, maximum: 1536 },
+          customHeight: { field: "height", type: "integer", minimum: 64, maximum: 1536 },
+        },
+      }),
+    });
+    const findings = validateImageProfileForCandidate(
+      profile({ controlDefaults: { seedPolicy: "random", resolution: "custom", width: 832, height: 1216 } }),
+      caps,
+      "aisha-ai-official/nsfw-flux-dev",
+    );
+    expect(findings).toEqual([
+      expect.objectContaining({
+        level: "blocking",
+        code: "reviewed_control_unbound",
+        context: { control: "width", reason: "invalid", slug: "aisha-ai-official/nsfw-flux-dev" },
+      }),
+    ]);
+  });
+
+  it("accepts the reviewed pair on the range the production version declares", () => {
+    // The other side of the same check, on the real numbers: 832x1216 inside
+    // PuLID's own 64-1536 bindings is a configuration activation must not touch.
+    const caps = candidate({
+      advancedCapabilities: advanced({
+        controls: {
+          guidance: { field: "cfg", type: "number", minimum: 1, maximum: 20 },
+          customWidth: { field: "width", type: "integer", minimum: 64, maximum: 1536 },
+          customHeight: { field: "height", type: "integer", minimum: 64, maximum: 1536 },
+        },
+        knownInputFields: ["cfg", "face_weight", "height", "method", "width"],
+      }),
+    });
+    expect(
+      validateImageProfileForCandidate(
+        profile({
+          controlDefaults: { seedPolicy: "random", guidance: 7, resolution: "custom", width: 832, height: 1216 },
+          providerOverrides: { method: "fidelity", face_weight: 1 },
+        }),
+        caps,
+        "nsfw-api/sdxl-pulid:83bea6",
+      ),
+    ).toEqual([]);
+  });
+
+  it("replaces the ordinary control warning with the blocking finding, never both", () => {
+    // PuLID's reviewed guidance and dimension pair have warning rows too. One
+    // control gets one answer, and it is the stronger one. `resolution` is in
+    // neither list: it is the gate that makes the pair a request, and no
+    // version binds a field for it.
+    const findings = validateImageProfileForCandidate(
+      profile({
+        controlDefaults: { seedPolicy: "random", guidance: 7, resolution: "custom", width: 832, height: 1216 },
+      }),
+      candidate(),
+      "nsfw-api/sdxl-pulid:83bea6",
+    );
+    expect(findings.map((finding) => finding.context.control)).toEqual(["guidance", "width", "height"]);
+    expect(findings.every((finding) => finding.level === "blocking")).toBe(true);
+    expect(findings.every((finding) => finding.code === "reviewed_control_unbound")).toBe(true);
   });
 
   it.each([
@@ -322,7 +437,7 @@ describe("validateImageProfileForCandidate", () => {
     ["width", { width: 1024 }, "customWidth"],
     ["height", { height: 1536 }, "customHeight"],
   ])("warns when the %s default loses its binding", (control, defaults, slot) => {
-    const findings = validateImageProfileForCandidate(
+    const findings = validate(
       profile({ controlDefaults: { seedPolicy: "random", ...defaults } }),
       candidate(),
     );
@@ -338,7 +453,7 @@ describe("validateImageProfileForCandidate", () => {
       }),
     });
     expect(
-      validateImageProfileForCandidate(
+      validate(
         profile({ controlDefaults: { seedPolicy: "random", guidance: 4.5, steps: 28 } }),
         caps,
       ),
@@ -346,7 +461,7 @@ describe("validateImageProfileForCandidate", () => {
   });
 
   it("does not map a custom resolution onto the tier binding — width/height carry it", () => {
-    const findings = validateImageProfileForCandidate(
+    const findings = validate(
       profile({ controlDefaults: { seedPolicy: "random", resolution: "custom", width: 1024, height: 1536 } }),
       candidate(),
     );
@@ -357,7 +472,7 @@ describe("validateImageProfileForCandidate", () => {
   });
 
   it("collects blocking and warning findings together", () => {
-    const findings = validateImageProfileForCandidate(
+    const findings = validate(
       profile({
         operation: "edit",
         providerOverrides: { go_fast: true },

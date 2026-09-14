@@ -127,3 +127,9 @@ Civitai credential fails the image row with the leg's own message, because a tam
 silently substituted for an explicit one is exactly what the bench is testing against. A
 failed bench route compiles no program either — the fallback profile is not the model the
 render would have run on. The row records the model slug and the resolved LoRA id in `meta`.
+
+A SUCCESSFULLY paired route also passes `intimateReveal: true` into the program (§The
+program), so the compiled prompt states the applicable exposed anatomy the bench exists to
+evaluate rather than just the coverage an ordinary variant would state — the same
+`subjectIntimateRevealFacts` projection the chat scene lane uses. Covered or inapplicable
+anatomy stays out by that projection's own rule.

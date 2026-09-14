@@ -308,6 +308,13 @@ export const VISUAL_STATE_GARMENT_DAMAGE_KIND_ID = "garment.damage";
 export const VISUAL_STATE_GARMENT_MATERIAL_EFFECT_KIND_ID = "garment.material_effect";
 /** An active condition on the subject as a whole — blindfolded, drunk, bound. */
 export const VISUAL_STATE_CONDITION_ACTIVE_KIND_ID = "condition.active";
+/**
+ * A meter's registry-declared visible effect at its current deepest band
+ * (issue #427) — intoxication, hygiene, energy or arousal only, and only at
+ * the one band the owner ruled paintable; every other meter and every
+ * shallower band stays silent (`meterStateCue`'s own suppression).
+ */
+export const VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID = "meter.visible_effect";
 /** A supported physical-affordance observation — strands clumping, hair stirring. */
 export const VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID = "affordance.observation";
 
@@ -437,6 +444,24 @@ export const visualStateActiveConditionValueSchema = z
   .strict();
 export type VisualStateActiveConditionValue = z.infer<typeof visualStateActiveConditionValueSchema>;
 
+/**
+ * A meter's visible effect at its current band (issue #427): the meter id,
+ * the crossed band's key (`pipLabel` when the threshold names one, else the
+ * threshold's own bound-keyed band — `meterStateCue`'s own fallback), and the
+ * registry-authored effect phrases verbatim. `effects` is never empty — the
+ * adapter only mints this kind when `meterStateCue` returned a band that
+ * declares at least one, so an empty array here would be a shape the adapter
+ * itself cannot produce.
+ */
+export const visualStateMeterVisibleEffectValueSchema = z
+  .object({
+    meter: z.string().min(1),
+    band: z.string().min(1),
+    effects: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+export type VisualStateMeterVisibleEffectValue = z.infer<typeof visualStateMeterVisibleEffectValueSchema>;
+
 const AFFORDANCE_PHENOMENON_ID_PATTERN = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
 
 export const visualStateObservationValueSchema = z
@@ -473,6 +498,10 @@ const GARMENT_DEPOSIT_PRIORS = presentationPriors(5_500, 5_000, 2);
 const GARMENT_DAMAGE_PRIORS = presentationPriors(5_500, 5_500, 2);
 const GARMENT_MATERIAL_EFFECT_PRIORS = presentationPriors(4_500, 3_500, 2);
 const CONDITION_ACTIVE_PRIORS = presentationPriors(4_000, 6_000, 2);
+// Same calibration as an active condition: a registry-ruled visible effect is
+// exactly that shape of fact — a subject-wide current state, not a located
+// detail — and the two are equally rare and equally worth a render noticing.
+const METER_VISIBLE_EFFECT_PRIORS = presentationPriors(4_000, 6_000, 2);
 const AFFORDANCE_OBSERVATION_PRIORS = presentationPriors(5_000, 4_000, 2);
 // Body language (slice 4)
 // ---------------------------------------------------------------------------
@@ -929,6 +958,21 @@ export const visualStateKindDefinitions: readonly VisualStateKindDefinition[] = 
     narratorEligible: true,
     imageEligible: true,
     priors: CONDITION_ACTIVE_PRIORS,
+  }),
+  defineVisualStateKind({
+    id: VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
+    layer: "current",
+    valueSchema: visualStateMeterVisibleEffectValueSchema,
+    // The subject as a whole, exactly like an active condition: a meter has
+    // no body locus, and guessing one would invent a fact the meter owner
+    // never states.
+    allowedLoci: ["subject"],
+    stability: "transient",
+    repeatFamily: "meter_visible_effect",
+    recognitionEligible: false,
+    narratorEligible: false,
+    imageEligible: true,
+    priors: METER_VISIBLE_EFFECT_PRIORS,
   }),
   defineVisualStateKind({
     id: VISUAL_STATE_AFFORDANCE_OBSERVATION_KIND_ID,

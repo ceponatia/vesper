@@ -2485,6 +2485,66 @@ describe("a claim value no dialect can word", () => {
   });
 });
 
+/**
+ * A homeless `subject.current_state` trailing clause frames grammatically in
+ * every dialect (issue #427, second correction round).
+ *
+ * The character adapter states a value with no predicate complement of its
+ * own — a meter's ruled visible effect, e.g. "with glassy, unfocused eyes" —
+ * as a clause beginning `with `, exactly like a wardrobe fragment with
+ * nothing to bind to ("with the sweater tucked in" binds to the sweater;
+ * this binds to nothing). Qwen 2511 already recognizes the shape
+ * (`isTrailingClause`, `dialect-qwen-2511.ts`) and frames it via its `seen`
+ * band. Qwen 2512 and the prose family (Seedream 4.5 and siblings) render
+ * `subject.current_state` as one per-claim `<subject> is ${value}` sentence
+ * with no such recognition, which is how "is glassy, unfocused eyes" — a
+ * copula followed by a bare, determiner-less plural noun phrase — reached a
+ * compiled prompt (the #544 F1 defect class). All three now share one
+ * predicate, `currentStatePredicate` (`dialect-qwen-prose.ts`), so a value
+ * beginning `with ` frames `is seen …` and every other value keeps the
+ * ordinary `is …` complement, unchanged.
+ */
+describe("a homeless current-state trailing clause frames grammatically in every dialect (issue #427)", () => {
+  const currentStateWorld = (value: string): ImageWorldDigest =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [
+          fact({
+            key: "nyx.identity",
+            concept: "subject.identity",
+            value: "a woman with dark hair",
+            subjectRef: "nyx",
+            disposition: "required_visual",
+            priority: 1,
+          }),
+          fact({ key: "nyx.current_state", concept: "subject.current_state", value, subjectRef: "nyx" }),
+        ]),
+      ],
+    });
+
+  function compile(dialectId: "qwen_2511_delta_edit" | "qwen_2512_description" | "seedream_45_prose", value: string): string {
+    const dialect = imagePromptDialect(dialectId);
+    if (dialect === null) throw new Error(`${dialectId} is not registered`);
+    const compiled = dialect.compilePositive({
+      claims: selectImagePositiveClaims(currentStateWorld(value)),
+      operation: operation(),
+      references: [{ position: 1, role: "identity", subjectRef: "nyx" }],
+      entityLabels: { nyx: "Nyx" },
+      budget: {},
+    });
+    return compiled.text;
+  }
+
+  it.each(["qwen_2511_delta_edit", "qwen_2512_description", "seedream_45_prose"] as const)(
+    "%s frames a `with …` value as `is seen …` and keeps the plain `is …` frame for an ordinary predicate",
+    (dialectId) => {
+      expect(compile(dialectId, "with glassy, unfocused eyes")).toContain("is seen with glassy, unfocused eyes");
+      expect(compile(dialectId, "with glassy, unfocused eyes")).not.toMatch(/\bis with glassy, unfocused eyes\b/i);
+      expect(compile(dialectId, "blindfolded")).toContain("is blindfolded");
+    },
+  );
+});
+
 // ---------------------------------------------------------------------------
 // 5. Staging wording and the drop record — one accounting system
 // ---------------------------------------------------------------------------

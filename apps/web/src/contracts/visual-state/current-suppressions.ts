@@ -56,7 +56,10 @@ export interface VisualStateUnsupportedFact {
  */
 export const VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS: readonly VisualStateUnsupportedFact[] = [
   { family: "physiology", fact: "swelling", nearest: "authored static attributes" },
-  { family: "physiology", fact: "visible_fatigue", nearest: "energy meter prompt hint (prose-only)" },
+  // `visible_fatigue` was tabled here and has been RETIRED per the rule above:
+  // the energy meter's ruled `exhausted` band (issue #427) now has an owner —
+  // `projectMeterFeatures` reads it as `meter.visible_effect` — so a row and
+  // an adapter for the same fact would argue with each other.
   // `dirt_on_skin` and `blood_on_skin` were tabled here and have been RETIRED
   // per the rule above: the body-surface owner's deposits module commits
   // material on skin and `projectBodySurfaceFeatures` reads it as

@@ -3,7 +3,7 @@
 **Slug:** `qwen/qwen-image-2512`
 **Provenance:** probed 2026-08-05 against pinned version `47c060e80055269a615f9636df2d51fd50239dc439f5ecde465a7d513a0abda6`.
 
-**Quality ruling:** no transitional runtime override
+**Quality ruling:** no reviewed correction
 
 > Qwen Image 2512 is an improved version of Qwen Image with more realistic human
 > generation, finer textures, and stronger text rendering.

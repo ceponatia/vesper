@@ -17,19 +17,25 @@ type MeterDefinition = {
   perHour: number;                  // signed drift per game hour
   baseline?: number;
   recoveryPerHour?: number;
-  thresholds: Array<{ below?: number; above?: number; promptHint: string; pipLabel?: string }>;
+  thresholds: Array<{
+    below?: number;
+    above?: number;
+    promptHint: string;
+    pipLabel?: string;
+    visibleEffects?: readonly string[];
+  }>;
 };
 ```
 
-| Field                   | Meaning                                                                                                                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                    | e.g. `hygiene`, `energy`, `arousal`, `stress`, `intoxication`, `mood`.                                                                                                                                 |
-| `label` / `description` | Display text.                                                                                                                                                                                          |
-| `initial`               | Starting value.                                                                                                                                                                                        |
-| `perHour`               | Signed drift per game hour.                                                                                                                                                                            |
-| `baseline`              | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1.                                                                                                                                |
-| `recoveryPerHour`       | Rate of movement toward `baseline`. *Absent* ⇒ `\|perHour\|`.                                                                                                                                          |
-| `thresholds`            | Crossing one surfaces its `promptHint` to the narrator; `pipLabel` is the same band's short UI chip ("tipsy") — the chat status strip derives from it, so a band edit moves narration and UI together. |
+| Field                   | Meaning                                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                    | e.g. `hygiene`, `energy`, `arousal`, `stress`, `intoxication`, `mood`.                                                                                                                                                                                                                                                   |
+| `label` / `description` | Display text.                                                                                                                                                                                                                                                                                                            |
+| `initial`               | Starting value.                                                                                                                                                                                                                                                                                                          |
+| `perHour`               | Signed drift per game hour.                                                                                                                                                                                                                                                                                              |
+| `baseline`              | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1.                                                                                                                                                                                                                                                  |
+| `recoveryPerHour`       | Rate of movement toward `baseline`. *Absent* ⇒ `\|perHour\|`.                                                                                                                                                                                                                                                            |
+| `thresholds`            | Crossing one surfaces its `promptHint` to the narrator; `pipLabel` is the same band's short UI chip ("tipsy") — the chat status strip derives from it, so a band edit moves narration and UI together. `visibleEffects` is a third, independent consumer — see [§Visible effects in images](#visible-effects-in-images). |
 
 **Drift.** On every clock advance, `applyMeterDrift` moves each value toward its baseline at `recoveryPerHour` — never overshooting, clamped to `[0, 1]` — and surfaces any crossed-threshold `promptHint`s to the narrator. A consumer may override or disable individual meters in its config (`meterOverrides`).
 
@@ -45,6 +51,35 @@ type MeterDefinition = {
 | `arousal`      | 0-seeking.                                                                              |
 | `intoxication` | 0-seeking, fast decay.                                                                  |
 | `mood`         | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel. |
+
+### Visible effects in images
+
+A threshold's optional `visibleEffects: readonly string[]` names the paintable phrases an image
+prompt may state for that band; absent (every threshold but four) means the band is silent in
+images. It is a **third consumer of `thresholds`**, independent of `promptHint` (the narrator's
+prose) and `pipLabel` (the UI chip): a band can carry all three, and `visibleEffects` never
+derives from the other two — the registry is the one owner of the exact image wording.
+
+`contracts/visual-state/meters.ts`'s `projectMeterFeatures` asks `meterStateCue` for a subject's
+single deepest crossed band per meter (the same read the chat strip and the narrator cue split
+use) and mints a `meter.visible_effect` current-layer visual-state fact only when that band
+declares `visibleEffects`. A shallower band, a meter with no ruled band, or a raw scalar never
+reach an image prompt this way. The owner's ruling (issue #427) authors exactly four bands:
+
+| Meter          | Band (bound)            | `visibleEffects`                                   |
+| -------------- | ----------------------- | -------------------------------------------------- |
+| `intoxication` | `drunk` (above 0.7)     | "glassy, unfocused eyes"                           |
+| `hygiene`      | `unwashed` (below 0.3)  | "lank, greasy hair", "grimy skin"                  |
+| `energy`       | `exhausted` (below 0.2) | "heavy-lidded eyes", "dark circles under the eyes" |
+| `arousal`      | `flushed` (above 0.55)  | "parted lips"                                      |
+
+No `visibleEffects` phrase ever uses "flushed", "blush" or a colour synonym — the owner reports
+those render as stage makeup on several models, not a body state — even though the arousal
+meter's own narrator `promptHint` keeps "flushed skin": that phrase is narrator prose only and
+never reaches `visibleEffects`. The projected fact is `current`-layer, so it is scene-current
+state, not the stable chat-look identity anchor: the chat-look pack suppresses
+`subject.current_state` the same way it suppresses a wet cut or an active condition
+([../images/pipelines/chat-images.md](../images/pipelines/chat-images.md) §The look anchor).
 
 ### Mood
 

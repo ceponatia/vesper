@@ -3,7 +3,7 @@
 **Slug:** `prunaai/p-image`
 **Provenance:** probed 2026-08-11 against pinned version `79bbabc34e1dc2c55b09a5a8a220d7792f77234c5aded9b074bdf6bf783a2f65`.
 
-**Quality ruling:** no transitional runtime override
+**Quality ruling:** no reviewed correction
 
 > A sub 1 second text-to-image model built for production use cases.
 

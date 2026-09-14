@@ -10,6 +10,7 @@ import {
   type ResolvedImageProfile,
   resolveImageProfile,
   validateImageProfileConfiguration,
+  withReviewedProfileDefaults,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { newId } from "@/lib/ids";
@@ -220,6 +221,23 @@ async function profileConflict(profile: ImageModelProfile): Promise<string | nul
 /**
  * Add one profile beneath a model.
  *
+ * A profile created for a REVIEWED model carries that model's reviewed settings
+ * from the moment it exists (`withReviewedProfileDefaults`). They are the
+ * profile's own stored values — the same two columns migrations 0110/0122 wrote
+ * onto the built-in rows — because the profile is the one owner of them: a new
+ * row that omitted them would render the model on the wrapper defaults the
+ * reviewed judgment exists to correct, and nothing downstream would say so.
+ * The REQUEST wins on every key it states, so seeding can only supply a setting
+ * the admin did not mention.
+ *
+ * Seeding happens BEFORE validation, deliberately. A reviewed setting the model
+ * cannot carry — an override key an unprobed version cannot validate — is then
+ * refused at save by the existing check, naming the field and the fix
+ * ("re-probe it first"), instead of being stored as a row whose reviewed
+ * settings would be silently dropped at every render. Editing does NOT seed: an
+ * existing row already carries its values, and an admin who removes one is
+ * choosing.
+ *
  * The would-be row is validated as the render path will read it: eligibility
  * and override keys against the PARENT model (`validateImageProfileConfiguration`
  * — a row every resolution would silently skip is refused at save, with the
@@ -234,7 +252,8 @@ export async function createImageModelProfile(
   const model = await loadImageModel(modelId);
   if (!model) return { ok: false, code: "not_found", message: "image model not found" };
 
-  const row: ImageModelProfile = { id: newId(), imageModelId: modelId, builtin: false, ...request };
+  const seeded = { ...request, ...withReviewedProfileDefaults(model, request) };
+  const row: ImageModelProfile = { id: newId(), imageModelId: modelId, builtin: false, ...seeded };
   const issues = validateImageProfileConfiguration(row, model);
   if (issues.length > 0) {
     return { ok: false, code: "invalid", message: issues.map((issue) => issue.message).join("; ") };

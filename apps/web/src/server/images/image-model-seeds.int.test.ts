@@ -1555,10 +1555,9 @@ describe.skipIf(!ready)("migration 0139 — history and upgrade", () => {
     // predecessor would run this seed against a database 0138 had not reached.
     expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
     expect(journal.entries.filter((candidate) => candidate.idx === 139)).toHaveLength(1);
-    // The HEAD assertion lives with the newest migration, so exactly one suite
-    // has to move when the next one lands. A duplicate index from a concurrent
-    // branch is what it catches.
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(139);
+    // The HEAD assertion lives with the NEWEST migration — 0140's suite at the
+    // bottom of this file — so exactly one suite has to move when the next one
+    // lands.
 
     // Data migrations 0132–0138 ship no snapshot either; one here would claim a
     // `schema.ts` change this file does not make.
@@ -1731,5 +1730,305 @@ describe.skipIf(!ready)("migration 0139 — guards over an existing row", () => 
     expect(before).toHaveLength(1);
     await reapplyKontextSeed();
     expect(await snapshot()).toEqual(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0140 — Qwen Image Edit 2511's reviewed speed ruling, as a control
+// ---------------------------------------------------------------------------
+
+const FAST_MODE_MIGRATION_TAG = "0140_qwen-2511-fast-mode-control";
+const FAST_MODE_MIGRATION_FILE = `drizzle/${FAST_MODE_MIGRATION_TAG}.sql`;
+
+/** The provider path 0140's predicate names, and 0100 seeded three profiles under. */
+const QWEN_EDIT_2511_SLUG = "qwen/qwen-image-edit-2511";
+const QWEN_EDIT_2511_MODEL_ID = "imgmdlqwenedit2511aaaaaa";
+
+/** The three rows 0100 seeded beneath it, which 0110 gave the raw `go_fast` override. */
+const QWEN_EDIT_2511_PROFILE_IDS = [
+  "imgprf2511chatlookaaaaaa",
+  "imgprf2511sceneaaaaaaaaa",
+  "imgprf2511variantaaaaaaa",
+] as const;
+
+/** 0140's shipped statement. It is an UPDATE, so it ships no INSERT at all. */
+function fastModeStatements(): Promise<string[]> {
+  return migrationStatements(FAST_MODE_MIGRATION_FILE, 'UPDATE "image_model_profiles"');
+}
+
+/** Re-run 0140's own statement. Idempotent by its two guards — that is what is under test. */
+async function reapplyFastModeMove(): Promise<void> {
+  const statements = await fastModeStatements();
+  expect(statements, `${FAST_MODE_MIGRATION_FILE} must carry exactly one image_model_profiles UPDATE`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/** The two configuration columns of named profile rows, in id order. */
+async function profileConfigurations(
+  ids: readonly string[],
+): Promise<{ id: string; controlDefaults: unknown; providerOverrides: unknown }[]> {
+  const rows = await db()
+    .select({
+      id: imageModelProfiles.id,
+      controlDefaults: imageModelProfiles.controlDefaults,
+      providerOverrides: imageModelProfiles.providerOverrides,
+    })
+    .from(imageModelProfiles)
+    .where(inArray(imageModelProfiles.id, [...ids]));
+  return rows.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/**
+ * 0140 moves a reviewed setting between the two columns a profile stores it in:
+ * out of `provider_overrides`, which merge LAST over the mapped controls and so
+ * outrank the caller's own request for the same thing, and into the normalized
+ * `fastMode` control the vocabulary now has for it (issue #244).
+ *
+ * The defect a migrated database is the only witness to: the reviewed table in
+ * `packages/image-core` and the seeded rows saying two different things. The
+ * table's own suites prove the table; only this one can say the rows followed.
+ */
+describe.skipIf(!ready)("migration 0140 — the Qwen 2511 fast-mode control", () => {
+  it("carries the reviewed ruling as the fastMode control on every row 0110 wrote the override onto", async () => {
+    const rows = await profileConfigurations(QWEN_EDIT_2511_PROFILE_IDS);
+    expect(rows.map((row) => row.id)).toEqual([...QWEN_EDIT_2511_PROFILE_IDS]);
+    for (const row of rows) {
+      // `fastMode: false` maps through 2511's probed `go_fast` binding to the
+      // same value the override sent — the payload does not move, the
+      // precedence does.
+      expect(row.controlDefaults, row.id).toMatchObject({ fastMode: false });
+      expect(row.providerOverrides, row.id).not.toHaveProperty("go_fast");
+    }
+  });
+
+  it("follows 0139 in the journal, as a data migration with no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === FAST_MODE_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(140);
+
+    const previous = journal.entries.find((candidate) => candidate.idx === 139);
+    expect(previous?.tag).toBe(KONTEXT_MIGRATION_TAG);
+    // The migrator applies in `when` order, so an entry timestamped before its
+    // predecessor would run this UPDATE against a database 0139 had not reached.
+    expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
+    expect(journal.entries.filter((candidate) => candidate.idx === 140)).toHaveLength(1);
+
+    // Data migrations 0132–0139 ship no snapshot either; one here would claim a
+    // `schema.ts` change this file does not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0140_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+
+  it("re-running the shipped statement against the migrated state changes nothing", async () => {
+    // Idempotence stated directly, and it is the `NOT (control_defaults ?
+    // 'fastMode')` guard doing it: a replayed deploy must not re-write rows it
+    // already moved. `updated_at` is inside the comparison, because a statement
+    // that matched again would move it even though every value it wrote matches.
+    const snapshot = async () =>
+      (await db().select().from(imageModelProfiles).where(inArray(imageModelProfiles.id, [...QWEN_EDIT_2511_PROFILE_IDS])))
+        .sort((left, right) => left.id.localeCompare(right.id));
+
+    const before = await snapshot();
+    expect(before).toHaveLength(QWEN_EDIT_2511_PROFILE_IDS.length);
+    await reapplyFastModeMove();
+    expect(await snapshot()).toEqual(before);
+  });
+});
+
+describe.skipIf(!ready)("migration 0140 — the predicate", () => {
+  const OPERATOR_PROFILE_ID = "imgprf2511operatorbenchz";
+
+  afterAll(async () => {
+    if (!ready) return;
+    await db().delete(imageModelProfiles).where(eq(imageModelProfiles.id, OPERATOR_PROFILE_ID));
+  });
+
+  it("leaves an operator's deliberate go_fast: true override exactly as it stands", async () => {
+    // The value guard (`provider_overrides -> 'go_fast' = 'false'`) is the half
+    // that separates the reviewed ruling from an operator's own decision. An
+    // UPDATE matching on the KEY alone would silently convert a bench row that
+    // exists to run this model accelerated into one that cannot.
+    await db().delete(imageModelProfiles).where(eq(imageModelProfiles.id, OPERATOR_PROFILE_ID));
+    await db()
+      .insert(imageModelProfiles)
+      .values({
+        id: OPERATOR_PROFILE_ID,
+        imageModelId: QWEN_EDIT_2511_MODEL_ID,
+        key: "operator-accelerated",
+        label: "Operator's Accelerated Bench",
+        task: "item",
+        operation: "edit",
+        promptStrategy: "instruction_edit",
+        providerOverrides: { go_fast: true },
+      });
+
+    await reapplyFastModeMove();
+
+    const [row] = await profileConfigurations([OPERATOR_PROFILE_ID]);
+    expect(row?.providerOverrides).toEqual({ go_fast: true });
+    expect(row?.controlDefaults).toEqual({});
+  });
+
+  it("names the 2511 provider path by split_part, so a version-suffixed row is not missed", async () => {
+    // The predicate the whole statement hangs on, read back from the shipped
+    // file rather than restated: a slug equality test would skip an operator's
+    // auto-pinned `owner/name:<version>` row, and its reviewed ruling would stay
+    // in the column that outranks the caller.
+    const [statement] = await fastModeStatements();
+    expect(statement).toBeDefined();
+    expect(statement).toContain(`split_part(m."slug", ':', 1) = '${QWEN_EDIT_2511_SLUG}'`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 0141 — the community rows' capability backfill
+// ---------------------------------------------------------------------------
+
+const COMMUNITY_MIGRATION_TAG = "0141_community-model-capability-backfill";
+const COMMUNITY_MIGRATION_FILE = `drizzle/${COMMUNITY_MIGRATION_TAG}.sql`;
+
+/**
+ * The three rows 0104 seeds with `advanced_capabilities` at its column default,
+ * and the reviewed setting each one's bindings have to carry.
+ *
+ * These are the models whose reviewed corrections have no other route since #244
+ * removed the transitional overlay: the profile maps them through the bindings
+ * below or they do not ship at all, and on a fresh database only this migration
+ * puts the bindings there.
+ */
+const COMMUNITY_CAPABILITY_ROWS = [
+  {
+    id: "imgmdlnsfwfluxdevaaaaaaa",
+    label: "NSFW FLUX Dev",
+    controls: ["seed", "customWidth", "customHeight"],
+    // The reviewed 832x1216 pair, which this endpoint's only shape input is.
+    reviewedFields: ["width", "height"],
+  },
+  {
+    id: "imgmdllikerealityponyaaa",
+    label: "LikeReality Pony v1",
+    controls: ["seed", "negativePrompt", "customWidth", "customHeight"],
+    // `negative_prompt` is the one that clears the wrapper's "nsfw, naked".
+    reviewedFields: ["negative_prompt", "width", "height"],
+  },
+  {
+    id: "imgmdlsdxlpulidaaaaaaaaa",
+    label: "SDXL PuLID",
+    controls: ["seed", "negativePrompt", "guidance", "customWidth", "customHeight"],
+    // `cfg` carries the reviewed guidance of 7; `method`/`face_weight` are raw
+    // overrides, which fail closed unless `known_input_fields` lists them.
+    reviewedFields: ["cfg", "width", "height", "method", "face_weight"],
+  },
+] as const;
+
+/** 0141's shipped UPDATE statements. */
+function communityBackfillStatements(): Promise<string[]> {
+  return migrationStatements(COMMUNITY_MIGRATION_FILE, 'UPDATE "image_models"');
+}
+
+/** Re-run 0141's own statements. Idempotent by construction — that is what is under test. */
+async function reapplyCommunityBackfill(): Promise<void> {
+  const statements = await communityBackfillStatements();
+  expect(statements, `${COMMUNITY_MIGRATION_FILE} must carry three UPDATE statements`).toHaveLength(3);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+describe.skipIf(!ready)("migration 0141 — history", () => {
+  it("is a single ordered journal entry, as a data migration with no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === COMMUNITY_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(141);
+    expect(journal.entries.filter((candidate) => candidate.idx === 141)).toHaveLength(1);
+    // The HEAD assertion lives with the newest migration, so exactly one suite
+    // has to move when the next one lands. A duplicate index from a concurrent
+    // branch is what it catches.
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(141);
+
+    // The migrator applies in `when` order, so this file must be timestamped
+    // after everything it expects to have run — asserted against the whole
+    // history rather than one predecessor, because which index sits immediately
+    // before it is a merge outcome and not a property of this migration. The
+    // HEAD assertion belongs to whichever suite owns the newest migration.
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 141).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    // Data only: a snapshot here would claim a `schema.ts` change this file does
+    // not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0141_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+describe.skipIf(!ready)("migration 0141 — the capability record on a migrated database", () => {
+  it.each(COMMUNITY_CAPABILITY_ROWS.map((row) => [row.label, row] as const))(
+    "gives %s the bindings its reviewed settings map through",
+    async (_label, expected) => {
+      const [row] = await db()
+        .select({ caps: imageModels.advancedCapabilities })
+        .from(imageModels)
+        .where(eq(imageModels.id, expected.id));
+      expect(row).toBeDefined();
+      // The control NAMES are what the mapper resolves a reviewed setting
+      // through; an empty record here is the state that made every one of them a
+      // silent `no_binding` drop.
+      expect(row?.caps).toMatchObject({
+        controls: Object.fromEntries(expected.controls.map((control) => [control, expect.any(Object) as unknown])),
+      });
+      for (const field of expected.reviewedFields) {
+        expect(row?.caps).toMatchObject({ knownInputFields: expect.arrayContaining([field]) as unknown });
+      }
+    },
+  );
+
+  it("leaves a row an operator has already probed exactly as they probed it", async () => {
+    // The guard that matters on an upgraded database: `controls` present means a
+    // real probe has answered this question with better evidence than a
+    // hand-written file has, and re-running must not talk over it.
+    const probed = {
+      controls: { seed: { field: "seed", type: "integer" } },
+      additionalImageInputs: [],
+      output: { arity: "single", supportsMultiple: false },
+      knownInputFields: ["prompt", "seed"],
+      providerInputs: [],
+    };
+    const target = COMMUNITY_CAPABILITY_ROWS[2];
+    expect(target).toBeDefined();
+    if (!target) return;
+    const record = JSON.stringify(probed);
+    await db().execute(
+      sql`UPDATE "image_models" SET "advanced_capabilities" = ${record}::jsonb WHERE "id" = ${target.id}`,
+    );
+
+    await reapplyCommunityBackfill();
+
+    const [row] = await db()
+      .select({ caps: imageModels.advancedCapabilities })
+      .from(imageModels)
+      .where(eq(imageModels.id, target.id));
+    expect(row?.caps).toEqual(probed);
+
+    // Back to the migrated state: clearing the record is what a fresh database
+    // looks like before this file runs, so re-running it restores the row.
+    await db().execute(sql`UPDATE "image_models" SET "advanced_capabilities" = '{}'::jsonb WHERE "id" = ${target.id}`);
+    await reapplyCommunityBackfill();
+    const [restored] = await db()
+      .select({ caps: imageModels.advancedCapabilities })
+      .from(imageModels)
+      .where(eq(imageModels.id, target.id));
+    expect(restored?.caps).toMatchObject({ controls: { guidance: { field: "cfg" } } });
   });
 });

@@ -33,13 +33,13 @@ Character subjects reach the digest through a two-module seam in
 `apps/web/src/contracts/images/`, and the split is an ownership boundary, not a
 convenience:
 
-| Layer                          | Owns                                                               |
-| ------------------------------ | ------------------------------------------------------------------ |
-| observer recognition           | the deliberately narrow catalog of distinctive recognizable cues   |
-| attribute registry             | image-description eligibility, class and canonical readable value  |
-| visual state                   | current presentation, camera-visible truth and transient state     |
-| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth                           |
-| `character-adapter.ts`         | render visibility, replacement and completeness over those owners  |
+| Layer                          | Owns                                                                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| observer recognition           | the deliberately narrow catalog of distinctive recognizable cues                                                                         |
+| attribute registry             | image-description eligibility, class and canonical readable value                                                                        |
+| visual state                   | current presentation, camera-visible truth and transient state (body-surface wetness, active conditions, a ruled meter's visible effect) |
+| `subject-digest.ts` (scaffold) | vocabulary translation; it adds no truth                                                                                                 |
+| `character-adapter.ts`         | render visibility, replacement and completeness over those owners                                                                        |
 
 `projectSubjectDigests` translates the visual digest's classification into
 concepts and dispositions, verbatim. `projectCharacterWorldSlices` consumes it
@@ -514,13 +514,16 @@ names no hair in either band, so it takes no per-subject edit.
 
 A committed cut never carries intimate anatomy: the visual-state image selection keeps its
 consent gate shut in every lane. A lane whose route permits it — the chat scene's uncensored
-reference-edit rungs — passes `intimateReveal` to the seam, which projects each cut's exposed
-intimate anatomy as optional `subject.intimate_anatomy` facts beside the digest
-(`contracts/images/subject-reveal.ts`): silhouette through clothing, surface detail when the
-region reads bare, untagged anatomy when its region is exposed, sensory never. The facts are
-the route's, sourced `images.subject_reveal`, and the assembly appends them to the subject
-untouched. A lane that passes nothing compiles the cut alone, which is every lane but the
-scene ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) §Subject body reveal).
+reference-edit rungs, the staged-scene bench, and the portrait studio's `nsfw test` variant on
+a successfully paired anatomy-LoRA route — passes `intimateReveal` to the seam, which projects
+each cut's exposed intimate anatomy as optional `subject.intimate_anatomy` facts beside the
+digest (`contracts/images/subject-reveal.ts`): silhouette through clothing, surface detail when
+the region reads bare, untagged anatomy when its region is exposed, sensory never. The facts
+are the route's, sourced `images.subject_reveal`, and the assembly appends them to the subject
+untouched. A lane that passes nothing compiles the cut alone: the portrait, ordinary variant
+and chat-look lanes ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) §Subject body
+reveal, [pipelines/portrait-variants.md](pipelines/portrait-variants.md) §The `nsfw test`
+anatomy bench).
 
 ## Refusals the seam adds
 

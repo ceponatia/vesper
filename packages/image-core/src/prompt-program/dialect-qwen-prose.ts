@@ -280,6 +280,38 @@ export function prefixed(subject: string | null, predicate: string): string {
   return `${subject ?? "The subject"} ${predicate}.`;
 }
 
+/**
+ * A `subject.current_state` / `subject.body_language` value the character
+ * adapter wrote as a HOMELESS TRAILING CLAUSE — "with glassy, unfocused
+ * eyes" (issue #427's meter effects: a fragment with no garment or body part
+ * to bind to, unlike "with the sweater tucked in", which binds to the
+ * garment it names). `dialect-qwen-2511.ts`'s own `isTrailingClause` is the
+ * source of truth for this shape — a leading `with `, tested on the trimmed
+ * value — restated here so every dialect built on this shared module
+ * recognizes the same one without a new package edge.
+ */
+export function isTrailingClauseValue(value: string): boolean {
+  return /^with\s/iu.test(value.trim());
+}
+
+/**
+ * The `is …` predicate for a `subject.current_state` / `subject.body_language`
+ * claim, framed for whichever shape the value is.
+ *
+ * An ordinary predicate complement ("blindfolded") keeps the plain `is`
+ * frame. A trailing clause names no predicate complement of its own — "is
+ * glassy, unfocused eyes" is the #544 F1 defect class, a category mismatch
+ * between the copula and a bare noun phrase — so it is framed `is seen …`
+ * instead, the descriptive equivalent of 2511's own `seen` band frame
+ * (`BAND_FRAMES.seen`, `dialect-qwen-2511.ts`) for the dialects here that
+ * render one claim as one sentence rather than grouping several into a band.
+ * Neither dialect that calls this has an imperative register, so there is no
+ * `Show … with …` form to choose between.
+ */
+export function currentStatePredicate(value: string): string {
+  return isTrailingClauseValue(value) ? `is seen ${value}` : `is ${value}`;
+}
+
 export function relationSentence(
   say: (text: string) => ImagePromptSegment,
   subject: string | null,

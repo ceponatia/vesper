@@ -142,14 +142,30 @@ describe("assembleVisualStateSnapshot", () => {
     expect(snapshot.subjects).toContain(SUBJECT_ID);
   });
 
+  it("projects a ruled meter effect into the snapshot, and stays silent below the ruled band (issue #427)", () => {
+    const drunk = assembleVisualStateSnapshot({ ...chatShadowInput(), meters: { intoxication: 0.8 } });
+    const drunkFeature = drunk.snapshot.features.find((feature) => feature.kindId === "meter.visible_effect");
+    expect(drunkFeature?.value).toEqual({
+      meter: "intoxication",
+      band: "drunk",
+      effects: ["glassy, unfocused eyes"],
+    });
+
+    const sober = assembleVisualStateSnapshot({ ...chatShadowInput(), meters: { intoxication: 0.2 } });
+    expect(sober.snapshot.features.some((feature) => feature.kindId === "meter.visible_effect")).toBe(false);
+
+    const tipsy = assembleVisualStateSnapshot({ ...chatShadowInput(), meters: { intoxication: 0.5 } });
+    expect(tipsy.snapshot.features.some((feature) => feature.kindId === "meter.visible_effect")).toBe(false);
+  });
+
   it("records the standing unsupported facts and the lane's absent owners as suppressions", () => {
     const sink = new DiagnosticCollector();
     const { snapshot } = assembleVisualStateSnapshot({ ...simShadowInput(), sink });
     const unavailable = snapshot.suppressions.filter((entry) => entry.code === VISUAL_STATE_SOURCE_UNAVAILABLE);
     // The ownerless current-state table, plus one lane record per absent owner
-    // (presentation, wardrobe, body_surface, condition, scene_relation,
+    // (presentation, wardrobe, body_surface, condition, meter, scene_relation,
     // affordance_observation).
-    expect(unavailable.length).toBe(VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS.length + 6);
+    expect(unavailable.length).toBe(VISUAL_STATE_UNSUPPORTED_CURRENT_FACTS.length + 7);
     const laneDetails = unavailable.map((entry) => entry.detail);
     expect(laneDetails).toContain("lane:wardrobe");
     expect(laneDetails).toContain("lane:scene_relation");

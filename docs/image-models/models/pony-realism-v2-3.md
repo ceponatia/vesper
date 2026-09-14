@@ -62,7 +62,7 @@ changing these scales.
 
 ## Prompt and negative ruling
 
-The provider's `negative_prompt` default is empty. The transitional render policy
+The provider's `negative_prompt` default is empty. The reviewed quality policy
 leaves the model byte-identical and does not add score tags or generic anatomy
 terms.
 

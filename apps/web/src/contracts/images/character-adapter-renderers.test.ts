@@ -13,6 +13,7 @@ import {
   VISUAL_STATE_BODY_LANGUAGE_SUPPORT_KIND_ID,
   VISUAL_STATE_BODY_SURFACE_WETNESS_KIND_ID,
   VISUAL_STATE_GARMENT_PRESENTATION_KIND_ID,
+  VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
   VISUAL_STATE_PRESENTATION_HAIRSTYLE_KIND_ID,
   VISUAL_STATE_WARDROBE_GARMENT_KIND_ID,
 } from "../visual-state";
@@ -456,6 +457,41 @@ describe("presentation and current state", () => {
         value: { band: "damp" },
       }),
     ).toBe("damp at the hair");
+  });
+
+  /**
+   * A meter's ruled visible effect (issue #427) joins the registry's own
+   * phrases into one clause; nothing here re-derives wording from the band or
+   * the meter id, and a value with a band the effect list disagrees with
+   * still renders exactly what `effects` carries.
+   */
+  it("joins a meter's ruled visible effects into a trailing clause, never a bare phrase", () => {
+    // A bare join ("glassy, unfocused eyes") reaches the dialects' ordinary
+    // subject frame as a predicate complement — "She is glassy, unfocused
+    // eyes." — the #544 F1 defect class. A leading `with ` is the shape both
+    // dialects recognize for a current-state trailing clause instead.
+    expect(
+      rendered({
+        kindId: VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
+        locus: { kind: "subject", subjectId: SUBJECT_ID },
+        value: { meter: "intoxication", band: "drunk", effects: ["glassy, unfocused eyes"] },
+      }),
+    ).toBe("with glassy, unfocused eyes");
+    // Two effects join with "and", not a third comma — "a and b", never "a, b".
+    expect(
+      rendered({
+        kindId: VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
+        locus: { kind: "subject", subjectId: SUBJECT_ID },
+        value: { meter: "hygiene", band: "unwashed", effects: ["lank, greasy hair", "grimy skin"] },
+      }),
+    ).toBe("with lank, greasy hair and grimy skin");
+    expect(
+      rendered({
+        kindId: VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID,
+        locus: { kind: "subject", subjectId: SUBJECT_ID },
+        value: { meter: "arousal", band: "flushed", effects: ["parted lips"] },
+      }),
+    ).toBe("with parted lips");
   });
 
   /** A value that fails its own kind's schema is silence, never a partial guess. */

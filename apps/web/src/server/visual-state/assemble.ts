@@ -13,6 +13,7 @@ import {
   projectBodyLanguageFeatures,
   projectBodySurfaceFeatures,
   projectGarmentCurrentState,
+  projectMeterFeatures,
   projectObservationFeatures,
   projectPresentationFeatures,
   projectSpeciesFeatureGroups,
@@ -139,6 +140,13 @@ export interface VisualStateAssemblyInput {
   readonly attributes: readonly AttributeValue[];
   readonly attributeOverlays?: readonly AttributeValue[];
   readonly conditions?: readonly ActiveCondition[];
+  /**
+   * Current meter values (0..1), when this lane tracks them. Projected into
+   * the four owner-ruled visible-effect facts (issue #427); absent is the
+   * recorded lane-unavailable degradation, exactly like every other optional
+   * owner here.
+   */
+  readonly meters?: Readonly<Record<string, number>>;
   /** The realized-body inputs (species, heritage, body plan, features). */
   readonly realize?: RealizeBodyInput;
   readonly presentation?: CharacterPresentationState;
@@ -174,6 +182,7 @@ export const visualStateLaneOwners = [
   "wardrobe",
   "body_surface",
   "condition",
+  "meter",
   "scene_relation",
   "affordance_observation",
 ] as const;
@@ -389,8 +398,25 @@ export function assembleVisualStateSnapshot(input: VisualStateAssemblyInput): Vi
   } else {
     currentSuppressions.push(laneUnavailable(input.subjectId, "condition", sink));
   }
-  currentSuppressions.push(...unsupportedCurrentStateSuppressions(input.subjectId, sink));
+  // Body-surface and conditions join `composed` here, ahead of the meter read:
+  // a meter's ruled effect may already be stated by an active condition on the
+  // same subject (issue #427 finding, e.g. the catalog's own `unwashed`
+  // condition), and the meter adapter can only see that by reading `composed`.
   composed.push(...currentFeatures);
+  if (input.meters !== undefined) {
+    const meters = projectMeterFeatures({
+      subjectId: input.subjectId,
+      meters: input.meters,
+      composeAgainst: composed,
+      ...(sink === undefined ? {} : { sink }),
+    });
+    currentFeatures.push(...meters.features);
+    currentSuppressions.push(...meters.suppressions);
+    composed.push(...meters.features);
+  } else {
+    currentSuppressions.push(laneUnavailable(input.subjectId, "meter", sink));
+  }
+  currentSuppressions.push(...unsupportedCurrentStateSuppressions(input.subjectId, sink));
   contributions.push({ adapterId: "condition", features: currentFeatures, suppressions: currentSuppressions });
 
   // Body language from the scene / body-relations owner.

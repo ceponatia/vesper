@@ -157,6 +157,20 @@ export type ImageModel = z.infer<typeof imageModelSchema>;
 export const imageModelListSchema = z.array(imageModelSchema).catch([]);
 
 /**
+ * Strip a pinned `owner/name:version` suffix without touching ordinary slugs.
+ *
+ * A model's IDENTITY is `owner/name`; the version after the colon is which
+ * build of it this row runs. Everything that asks a question about the model
+ * rather than about the build — which adapter speaks its dialect, which LoRAs
+ * were curated for it, which reviewed settings it carries — asks it here, so a
+ * re-pin to a new version can never quietly move a row out of its own answers.
+ * `split_part(slug, ':', 1)` is the same rule the seed migrations use.
+ */
+export function baseImageModelSlug(slug: string): string {
+  return slug.split(":", 1)[0] ?? slug;
+}
+
+/**
  * Whether a model may be OFFERED on a surface: the stored toggle AND the
  * capability it implies. A row whose toggle and flags disagree is simply not
  * listed — no error, no diagnostic. Editing surfaces need `canEdit`; making a

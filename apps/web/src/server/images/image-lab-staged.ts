@@ -8,7 +8,7 @@ import {
   type ResolvedImageProfile,
   isImageLabControlRole,
   referenceCapacity,
-  withReviewedImageQuality,
+  withReviewedProfileDefaults,
 } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { characterSceneImageOperation, type CharacterWorldReadInput } from "@/contracts/images/character-digest";
@@ -253,15 +253,12 @@ export async function runStagedScene(row: ImageLabExperimentRow, sink?: Diagnost
   // `image_profile.*` refusal about a dropped required role. The lab's own
   // vocabulary says the same thing in words the panel already explains, and says
   // it before eligibility, the LoRA read and the program compile spend any work.
-  // Read through the reviewed-quality overlay for the two-character kind's
-  // reason: it is what keeps this check about the model the provider is handed.
-  const effectiveModel = withReviewedImageQuality(model);
-  const capacity = referenceCapacity(effectiveModel);
+  const capacity = referenceCapacity(model);
   if (identities.length > capacity.max) {
     return await settleFailed(
       row,
       labFailure("capacity_exceeded"),
-      `${effectiveModel.slug} accepts ${String(capacity.max)} reference image(s) and a staged scene requires its one identity reference; the act is staged on a named person or not at all`,
+      `${model.slug} accepts ${String(capacity.max)} reference image(s) and a staged scene requires its one identity reference; the act is staged on a named person or not at all`,
       sink,
       { columns },
     );
@@ -330,7 +327,11 @@ export async function runStagedScene(row: ImageLabExperimentRow, sink?: Diagnost
       { columns },
     );
   }
-  const recipeProfile = imageLabStagedSceneRecipeProfile(model.id, entry.id);
+  // Seeded with the model's reviewed settings for the controlled runner's reason:
+  // a code-defined recipe states the lane's shape, and a staged act rendered
+  // under a configuration production does not use is evidence about nothing.
+  const recipe = imageLabStagedSceneRecipeProfile(model.id, entry.id);
+  const recipeProfile = { ...recipe, ...withReviewedProfileDefaults(model, recipe) };
   const { program } = stagedSceneProgram({
     subject: visual.cut,
     entry,
