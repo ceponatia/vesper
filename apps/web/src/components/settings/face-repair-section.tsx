@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ImageGeneratorRun, ImageGeneratorRunFaceRepairPurpose } from "@/contracts/images/image-generator";
 import { charactersApi, faceRepairApi, imageGeneratorApi, imageProfilesApi, imageUrl, meApi } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
@@ -32,6 +33,19 @@ import { OwnedImagePicker } from "./owned-image-picker";
  * page uses, filtered client-side to the runs whose `purpose.kind` is
  * `"face_repair"` — a `?purpose=` query param would cost a route edit this
  * action does not otherwise need.
+ *
+ * The run list polls itself exactly like the Generator page's own list
+ * (`image-generator-page.tsx`: same `POLL_MS`/`MAX_LIST_POLLS`,
+ * `usePollWhile`), while any repair run is `pending`/`running` — otherwise a
+ * run's chip, thumbnail and comparison stayed stale until a full page
+ * reload (issue #246 round-2 correction).
+ *
+ * `FACE_REPAIR_SOURCE_KINDS` mirrors `FACE_REPAIR_ALLOWED_KINDS` in
+ * `@/server/images/face-repair.ts` client-side (a "use client" component may
+ * not import that server module): it narrows the source picker to kinds the
+ * route will actually accept, so an admin never picks an item/location
+ * `entity` render or an unrelated chat upload only to have the request
+ * refused after the fact (issue #246 round-2 correction).
  */
 
 function isFaceRepairRun(
@@ -39,6 +53,39 @@ function isFaceRepairRun(
 ): run is ImageGeneratorRun & { purpose: ImageGeneratorRunFaceRepairPurpose } {
   return run.purpose?.kind === "face_repair";
 }
+
+/**
+ * The list poll's own stop condition. Exported and unit-tested on its own
+ * (`face-repair-section.test.ts`) since the component has no render harness
+ * — a pure one-liner is cheap insurance against a status typo silently
+ * disabling the poll (issue #246 round-2 correction).
+ */
+export function anyFaceRepairRunLive(runs: readonly Pick<ImageGeneratorRun, "status">[]): boolean {
+  return runs.some((run) => run.status === "pending" || run.status === "running");
+}
+
+// Same interval and bound as the Generator page's own list poll
+// (`image-generator-page.tsx`).
+const POLL_MS = 3000;
+/** ~5 minutes of silence before the list poll gives up; re-armed by any new activity. */
+const MAX_LIST_POLLS = 100;
+
+/**
+ * Mirrors `FACE_REPAIR_ALLOWED_KINDS` (`@/server/images/face-repair.ts`),
+ * spelled client-side because this component may not import that server
+ * module — the same reason `OWNED_IMAGE_PICKER_KINDS` is spelled out in
+ * `owned-image-picker.tsx` rather than imported. The server VALIDATES a
+ * kinds filter rather than narrowing it, so a drifted entry here fails
+ * loudly as a 400 instead of silently listing nothing.
+ */
+const FACE_REPAIR_SOURCE_KINDS = [
+  "avatar",
+  "portrait_variant",
+  "chat_look",
+  "reference_view",
+  "scene",
+  "chat_place",
+] as const;
 
 export function FaceRepairSection() {
   const me = useAsyncData(() => meApi.get(), []);
@@ -53,6 +100,14 @@ export function FaceRepairSection() {
   const [profileId, setProfileId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
+
+  // Computed ahead of the early returns below (and unconditionally on every
+  // render) so the poll hook itself stays unconditional — the strict
+  // react-hooks rule this file otherwise has no reason to violate.
+  const faceRepairRuns = (runs.data ?? []).filter(isFaceRepairRun);
+  usePollWhile(anyFaceRepairRunLive(faceRepairRuns), () => runs.reload({ silent: true }), POLL_MS, {
+    maxPolls: MAX_LIST_POLLS,
+  });
 
   const isAdmin = me.data?.role === "admin";
 
@@ -92,7 +147,6 @@ export function FaceRepairSection() {
     );
   }
 
-  const faceRepairRuns = (runs.data ?? []).filter(isFaceRepairRun);
   const openRun = openRunId ? (runs.data ?? []).find((run) => run.id === openRunId) : undefined;
 
   async function submit() {
@@ -176,6 +230,7 @@ export function FaceRepairSection() {
             <OwnedImagePicker
               label="Source image"
               hint="The picture to repair. It stays unchanged; the repair is stored beside it."
+              kinds={FACE_REPAIR_SOURCE_KINDS}
               value={sourceImageId}
               onChange={(imageId) => setSourceImageId(imageId)}
             />

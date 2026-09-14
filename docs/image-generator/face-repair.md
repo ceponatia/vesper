@@ -28,11 +28,14 @@ provider spend:
 
 1. The flag is on.
 2. `characterId` names a character this admin owns.
-3. `sourceImageId` names an image this admin owns, `ready`, and not one of the five hidden system
-   kinds a repair refuses (`identity_face_crop`, `identity_trial_output`, `lab_control`,
-   `lab_output`, `generator_output`). A reference view is hidden from the player-facing gallery for
-   an unrelated reason, but it is a genuine render of this character — the identity pack's own
-   accepted view — so a repair accepts it as a source.
+3. `sourceImageId` names an image this admin owns, `ready`, and one of the kinds a repair can
+   take as a source: `avatar` (rendered or uploaded), `portrait_variant`, `chat_look`,
+   `reference_view`, or a cast-bearing `scene`/`chat_place` (still subject to the multi-person
+   check below). This is a positive allowlist rather than a list of kinds to exclude, so an
+   item/location `entity` render or an unrelated player `chat_upload` refuses here too, exactly
+   like the operational system kinds (`identity_face_crop`, `identity_trial_output`,
+   `lab_control`, `lab_output`, `generator_output`) — every kind not named above refuses, naming
+   the kind in the message.
 4. The multi-person check (below) passes.
 5. The repair profile pairs with an identity strategy the model's reference capacity affords
    (below) — refuses `face_repair.model_unavailable` when no room is left for both the source
@@ -45,15 +48,15 @@ A refusal at any step is a typed JSON error at 400 — `{ code: "face_repair.<co
 except the flag-off case, which answers the anonymous hidden 404 instead of naming itself, so a
 disabled action is indistinguishable from a route that does not exist:
 
-| Code                               | Meaning                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `face_repair.disabled`             | the flag is off (hidden 404, not a typed 400)                               |
-| `face_repair.character_not_found`  | no character matches that id for this admin                                 |
-| `face_repair.source_unavailable`   | the source is missing, not owned, not ready, hidden, or another character's |
-| `face_repair.multi_person`         | the source depicts, or asserts, more than one person                        |
-| `face_repair.identity_unavailable` | the identity-pack render lane refused before any byte was read              |
-| `face_repair.model_unavailable`    | no offered model, or the offered model has no capacity left for a repair    |
-| `face_repair.method_unavailable`   | a masked repair is declared on the model but no mask source exists          |
+| Code                               | Meaning                                                                                  |
+| ---------------------------------- | ---------------------------------------------------------------------------------------- |
+| `face_repair.disabled`             | the flag is off (hidden 404, not a typed 400)                                            |
+| `face_repair.character_not_found`  | no character matches that id for this admin                                              |
+| `face_repair.source_unavailable`   | the source is missing, not owned, not ready, not an allowed kind, or another character's |
+| `face_repair.multi_person`         | the source depicts, or asserts, more than one person                                     |
+| `face_repair.identity_unavailable` | the identity-pack render lane refused before any byte was read                           |
+| `face_repair.model_unavailable`    | no offered model, or the offered model has no capacity left for a repair                 |
+| `face_repair.method_unavailable`   | a masked repair is declared on the model but no mask source exists                       |
 
 Once accepted, the route builds an ordinary `imageGeneratorCreateRunRequestSchema` request and
 calls `createImageGeneratorRun` + `startJob` exactly as

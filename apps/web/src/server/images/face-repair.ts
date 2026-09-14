@@ -17,7 +17,7 @@ import type {
 } from "@/contracts/images/image-generator";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { characters, db, imageReferences, images } from "../db";
-import { HIDDEN_IMAGE_KINDS, imageMeta, type ImageEntityKind, type ImageKind, type ImageRow } from "./asset-storage";
+import { imageMeta, type ImageEntityKind, type ImageKind, type ImageRow } from "./asset-storage";
 import { getIdentityPackForOwner } from "./identity-pack-read";
 
 /**
@@ -107,19 +107,33 @@ export type FaceRepairCreateRequest = z.infer<typeof faceRepairCreateRequestSche
 const FACE_REPAIR_SCENE_KINDS: readonly ImageKind[] = ["scene", "chat_place"];
 
 /**
- * The hidden system kinds a face-repair source refuses — every
- * `HIDDEN_IMAGE_KINDS` entry except `reference_view`.
+ * The only image kinds a face repair may take as a source — a positive
+ * allowlist, stated once, rather than a denylist of system kinds to
+ * exclude.
  *
- * `reference_view` sits in `HIDDEN_IMAGE_KINDS` for a different surface's
- * reason entirely: it must stay out of the player-facing gallery. A
- * reference view is still a genuine render of this character — the identity
- * pack's own accepted view — so it is a legitimate repair source, and this
- * subtracts it out here rather than editing `HIDDEN_IMAGE_KINDS` itself,
- * which other surfaces rely on unchanged for gallery hiding.
+ * A denylist built from `HIDDEN_IMAGE_KINDS` let every OTHER ready owned
+ * image through by default: an item/location `entity` render or an
+ * unrelated player `chat_upload` is not a hidden system kind, so it passed
+ * this gate and could trigger a paid render pairing a stranger's photo (or
+ * a location's establishing shot) with the selected character's identity
+ * references — a source the design's own accept/deny table never lists.
+ * Naming exactly what a repair MAY take, instead of everything it must
+ * refuse, closes that gap the same way for every kind that does not exist
+ * yet, not just the ones already known to be hidden.
+ *
+ * `avatar` covers both a rendered portrait and an uploaded one — the row's
+ * provenance does not distinguish them at this layer. `scene`/`chat_place`
+ * are cast-bearing and stay subject to the multi-person check below; every
+ * other allowed kind is a solo render or upload by construction.
  */
-const FACE_REPAIR_REFUSED_HIDDEN_KINDS: readonly ImageKind[] = HIDDEN_IMAGE_KINDS.filter(
-  (kind) => kind !== "reference_view",
-);
+const FACE_REPAIR_ALLOWED_KINDS: readonly ImageKind[] = [
+  "avatar",
+  "portrait_variant",
+  "chat_look",
+  "reference_view",
+  "scene",
+  "chat_place",
+];
 
 /** The source image row, exactly as loaded — no bytes, no provenance parsed yet. */
 export interface FaceRepairSourceRow {
@@ -188,11 +202,11 @@ export function planFaceRepair(input: PlanFaceRepairInput): PlanFaceRepairResult
   if (source.status !== "ready") {
     return { ok: false, code: "source_unavailable", message: "the source image is not ready" };
   }
-  if (FACE_REPAIR_REFUSED_HIDDEN_KINDS.some((kind) => kind === source.kind)) {
+  if (!FACE_REPAIR_ALLOWED_KINDS.some((kind) => kind === source.kind)) {
     return {
       ok: false,
       code: "source_unavailable",
-      message: "the source image is a system asset, not a repairable render",
+      message: `the source image's kind ("${source.kind}") is not one a repair can take as a source`,
     };
   }
   return evaluateFaceRepairSource(input.characterId, source, input.sceneCast, input.identityPack);
