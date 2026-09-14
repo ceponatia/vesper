@@ -15,6 +15,7 @@
 /locations, /locations/:id   Lean library + editor (Details · Image tabs)
 /items, /items/:id           Lean library + editor (Details · Image tabs)
 /gallery                 Tabbed image hub — Scenes · Portraits · Entity art ([../images/pipelines/scene-images.md](../images/pipelines/scene-images.md) §The Gallery hub)
+/settings/files          Owner-admin temporary file sharing ([../admin-files.md](../admin-files.md))
 ```
 
 ## The character editor
@@ -64,17 +65,19 @@ destination, no strip). The nav entry lights for any of them via `NavDest.match`
 (`nav-links.ts`, `isNavActive` takes the dest). **Worlds** is the successor engine's front door.
 
 At the right sits the **account dropdown** (`components/shell/account-menu.tsx`): the signed-in
-name over a menu of **Settings**, then — for admins only — **Image generator**, **Image lab**,
+name over a menu of **Settings**, then — for admins only — **Files**, **Image generator**, **Image lab**,
 **Image models**, **Narrator prompts** and **Engine Comparison**, then **Sign out**.
 
-The five admin entries are standalone owner tools rather than account preferences, so they hang
-off this menu instead of the Settings page, which keeps only the default-persona pick, Identity
-trials, Face repair — a flagged, explicit per-character face repair over the Image Generator run
-path ([../image-generator/face-repair.md](../image-generator/face-repair.md)) — and Image
-advisories (`/settings/image-advisories` — the render-advisory comparison record,
+The six admin entries are standalone owner tools rather than account preferences, so they hang
+off this menu instead of the Settings page. **Files** (`/settings/files`) is the intentionally
+isolated temporary sharing utility documented in [../admin-files.md](../admin-files.md); it is
+not a product asset surface. The Settings page itself keeps only the default-persona pick,
+Identity trials, Face repair — a flagged, explicit per-character face repair over the Image
+Generator run path ([../image-generator/face-repair.md](../image-generator/face-repair.md)) — and
+Image advisories (`/settings/image-advisories` — the render-advisory comparison record,
 [../images/render-advisories.md](../images/render-advisories.md)). Every one of their pages
-re-checks the role and their APIs are role-gated server-side, so hiding the links is
-tidiness rather than access control.
+re-checks the role and their APIs are role-gated server-side, so hiding the links is tidiness
+rather than access control.
 
 The menu renders at every width — it is part of the global header, which the immersive
 conversation route suppresses below `md` — so the admin tools stay reachable on a phone. On
