@@ -60,7 +60,14 @@ elif [ "$SLICE" = 1 ]; then
   git -C "$ROOT" worktree add -b "$BRANCH" "$DIR" "origin/$BASE"
   echo "slice branch $BRANCH (local only, not linked — the PR says 'Part of #$ISSUE')"
 else
-  gh issue develop "$ISSUE" --repo "$REPO" --base "$BASE" --name "$BRANCH" --checkout --worktree "$DIR"
+  # `gh issue develop` registers the Development link and creates the branch,
+  # and that is all it does: it has no flag that also places a worktree, and
+  # --checkout would put the branch in the invoking checkout rather than $DIR.
+  # The branch it makes is a remote one, so fetch it before adding the worktree
+  # from the main checkout the way every other path here does.
+  gh issue develop "$ISSUE" --repo "$REPO" --base "$BASE" --name "$BRANCH"
+  git -C "$ROOT" fetch -q origin "$BRANCH"
+  git -C "$ROOT" worktree add "$DIR" "$BRANCH"
   echo "linked branch $BRANCH registered on #$ISSUE (a PR from it closes the issue)"
 fi
 
