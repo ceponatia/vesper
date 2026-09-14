@@ -21,9 +21,11 @@ import { matchDelimiter, repoRelative, sourceFilesUnder, stripComments } from "@
  * generate-images confirm, several settings remove dialogs) before this test
  * existed to catch it.
  *
- * The second half of the boundary is at the bottom of this file: the census
- * proves every confirmation ROUTES through `ConfirmDialog`, and that one proves
- * `ConfirmDialog` still does the thing the routing was for.
+ * The boundary takes three checks, in this order. The census proves every
+ * confirmation ROUTES through `ConfirmDialog`. `MIXED_USE_CONFIRM_SITES` covers
+ * the one case the census is blind to — a file allowlisted for its own raw
+ * `Dialog` that also owns a confirmation. The guard check at the bottom proves
+ * `ConfirmDialog` still does the thing all that routing was for.
  */
 const COMPONENTS_DIR = path.join(process.cwd(), "apps/web/src/components");
 
@@ -88,15 +90,70 @@ describe("raw Dialog importer census", () => {
 });
 
 /**
+ * The census above is a FILE-level check, and this closes its one blind spot.
+ *
+ * A file that both holds a legitimate raw `Dialog` and routes a destructive
+ * confirmation through `ConfirmDialog` is allowlisted for the first reason, so
+ * replacing its confirmation with a hand-rolled raw dialog changes no importer
+ * and the census stays green — unguarded deletion restored, invisibly. Only
+ * counting the `ConfirmDialog` sites inside those files can see it.
+ *
+ * Every other adopter is covered by construction: it imports no raw `Dialog`
+ * at all, so hand-rolling one there ADDS an importer the census rejects. That
+ * is why this map is short rather than a second census — it is exactly the
+ * intersection of `ALLOWED_DIALOG_IMPORTERS` with the `ConfirmDialog`
+ * adopters.
+ *
+ * That last sentence is a claim, so the first test below DERIVES the
+ * intersection from the repo and asserts this map equals it. Writing the two
+ * files out by hand and checking only that they are allowlisted would leave
+ * the blind spot open at its other end: an allowlisted raw-`Dialog` component
+ * that ADOPTS `ConfirmDialog` later becomes mixed-use, and an unpinned
+ * mixed-use file is exactly the hole this map exists to close.
+ */
+const MIXED_USE_CONFIRM_SITES: ReadonlyMap<string, number> = new Map([
+  ["apps/web/src/components/chat/chat-conversation.tsx", 1],
+  ["apps/web/src/components/chat/chats-page.tsx", 1],
+]);
+
+/** `<ConfirmDialog` sites in `file`, comments blanked so prose never counts. */
+function confirmDialogSites(file: string): number {
+  const source = stripComments(fs.readFileSync(path.join(process.cwd(), file), "utf8"));
+  return source.match(/<ConfirmDialog\b/g)?.length ?? 0;
+}
+
+describe("mixed-use allowlisted components", () => {
+  it("are pinned exhaustively, so a newly mixed-use file cannot enter the blind spot unnoticed", () => {
+    const derived = ALLOWED_DIALOG_IMPORTERS.filter((file) => confirmDialogSites(file) > 0).sort();
+
+    expect(derived, "every allowlisted file that adopts ConfirmDialog must be pinned below").toEqual(
+      [...MIXED_USE_CONFIRM_SITES.keys()].sort(),
+    );
+  });
+
+  it("keep their destructive confirmations on ConfirmDialog", () => {
+    for (const [file, expected] of MIXED_USE_CONFIRM_SITES) {
+      expect(
+        confirmDialogSites(file),
+        `${file} must still route ${expected} confirmation(s) through ConfirmDialog`,
+      ).toBe(expected);
+    }
+  });
+});
+
+/**
  * `ConfirmDialog` still guards dismissal while the confirmed operation runs.
  *
- * The defect this kills is the silent removal of that guard, in either of its
- * two shapes: wiring `Dialog`'s `onClose` straight to the `onClose` PROP, so
+ * The defect this kills is the silent removal of that guard, in any of its
+ * three shapes: wiring `Dialog`'s `onClose` straight to the `onClose` PROP, so
  * Escape and a backdrop click stop being guarded while Cancel still looks
- * guarded, or dropping `busy` from the confirm button, so a second click starts
- * a second delete. Both are valid TypeScript, both are lint-clean, and one edit
- * takes the guard away from all 26 adopted sites at once — the blast radius the
- * one shared surface bought, spent in reverse.
+ * guarded; dropping `busy` from the confirm button, so a second click starts
+ * a second delete; or INVERTING the condition to `if (busy) onClose()`, which
+ * dismisses a running deletion and refuses to dismiss an idle dialog while
+ * naming every token the correct guard names. All three are valid TypeScript,
+ * all three are lint-clean, and one edit takes the guard away from all 26
+ * adopted sites at once — the blast radius the one shared surface bought,
+ * spent in reverse.
  *
  * Nothing else can catch it. A rendered assertion is out of reach: both Vitest
  * projects run in `node` and include `*.test.ts` only, so no suite here can
@@ -105,12 +162,12 @@ describe("raw Dialog importer census", () => {
  *
  * Structure, never a snapshot. It asserts that ONE shared local handler reaches
  * both `Dialog`'s `onClose` and Cancel's `onClick`, that the handler's body
- * decides on `busy`, and that the confirm button carries `busy` — not the text
- * of any of them, so reformatting, renaming `dismiss`, reordering the props and
- * rewording every label all stay green. A shape it cannot find THROWS rather
- * than failing an assertion: a rewritten component is a stale scanner, and
- * reporting that as a missing guard would send the next reader after the wrong
- * thing.
+ * closes only while NOT `busy`, and that the confirm button carries `busy` —
+ * not the text of any of them, so reformatting, renaming `dismiss`, reordering
+ * the props and rewording every label all stay green. A shape it cannot find
+ * THROWS rather than failing an assertion: a rewritten component is a stale
+ * scanner, and reporting that as a missing guard would send the next reader
+ * after the wrong thing.
  */
 const CONFIRM_DIALOG = path.join(process.cwd(), "apps/web/src/components/ui/confirm-dialog.tsx");
 
@@ -145,6 +202,40 @@ function handlerBody(source: string, name: string): string {
   return source.slice(open, close + 1);
 }
 
+/**
+ * True when `body` reaches `onClose()` only while `busy` is FALSE, in either
+ * idiomatic shape of that guard: the call sits in the consequent of
+ * `if (!busy)`, or a leading `if (busy) return` precedes it.
+ *
+ * Two things have to hold, and the second is easy to lose. POLARITY, because
+ * an inverted `if (busy) onClose()` still contains `busy` and `onClose()` — so
+ * token presence cannot tell the guard from its exact opposite, the one that
+ * dismisses a running deletion and refuses to dismiss an idle dialog. And
+ * BINDING, because a condition that does not govern the call guards nothing:
+ * `onClose(); if (busy) return;` names an idle/busy test and closes
+ * unconditionally, so the predicate must prove the call is downstream of the
+ * guard rather than merely in the same function.
+ */
+function closesOnlyWhenIdle(body: string): boolean {
+  const negated = /if\s*\(\s*!\s*busy\s*\)\s*/.exec(body);
+  if (negated !== null) {
+    const consequent = negated.index + negated[0].length;
+    if (body.startsWith("{", consequent)) {
+      // A braced consequent may hold more than the call; match it and look inside.
+      const end = matchDelimiter(body, consequent, "{", "}");
+      if (end !== -1 && body.slice(consequent, end + 1).includes("onClose()")) return true;
+    } else if (/^onClose\s*\(\)/.test(body.slice(consequent))) {
+      return true;
+    }
+  }
+
+  // A leading `if (busy) return` makes every later close unreachable while
+  // busy. Position is the whole point: the same return AFTER the call is inert.
+  const earlyReturn = /if\s*\(\s*busy\s*\)\s*\{?\s*return\b/.exec(body);
+  const close = body.indexOf("onClose()");
+  return earlyReturn !== null && close !== -1 && earlyReturn.index < close;
+}
+
 /** The attribute text of the `<Button>` that fires `onConfirm`. */
 function confirmButtonAttributes(source: string): string {
   const confirm = [...source.matchAll(/<Button\b([^>]*)>/g)]
@@ -170,8 +261,11 @@ describe("ConfirmDialog's busy guard", () => {
     expect(source, "Cancel must share Dialog's dismissal handler").toContain(`onClick={${handler}}`);
 
     const body = handlerBody(source, handler);
-    expect(body, `${handler} must decide on busy`).toContain("busy");
     expect(body, `${handler} must still be able to close`).toContain("onClose()");
+    expect(
+      closesOnlyWhenIdle(body),
+      `${handler} must close only while NOT busy — an inverted guard reads as \`${body.trim()}\``,
+    ).toBe(true);
   });
 
   it("gives the confirm button Button's own busy, so a second click starts no second operation", () => {
