@@ -4,7 +4,9 @@ import {
   controlReferenceTransport,
   faceRepairInstruction,
   parseImageWorldStateProvenance,
+  referenceCapacity,
   type IdentityReferenceProvenance,
+  type IdentityReferenceStrategy,
   type ImageModel,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
@@ -68,7 +70,9 @@ export const faceRepairCodes = [
   "multi_person",
   /** The identity-pack render lane refused before any byte was read. */
   "identity_unavailable",
-  /** No image model profile is offered for a repair. */
+  /** No image model profile is offered for a repair, or the offered
+   * model's reference capacity cannot fit the source image alongside even
+   * one identity reference. */
   "model_unavailable",
   /** A regional (masked) repair is declared but no mask source exists yet. */
   "method_unavailable",
@@ -296,23 +300,57 @@ function evaluateFaceRepairSource(
 // PURE: identity profile pairing and method resolution
 // ---------------------------------------------------------------------------
 
+export type PairFaceRepairIdentityProfileResult =
+  | { ok: true; profile: ResolvedImageProfile }
+  | { ok: false; code: Extract<FaceRepairCode, "model_unavailable">; message: string };
+
 /**
- * Pair a resolved `variant` profile with the identity strategy the repair
- * action wants — canonical portrait THEN face crop — in memory only, the
- * `pairProfileWithNsfwLora` precedent for overriding one facet of a stored
- * profile without a new registry row (`nsfw-lora.ts`). A model whose registry
- * row caps it at one reference (a single-reference candidate like PuLID)
- * cannot carry two identity images, so it degrades explicitly to
- * canonical-only instead of asking `identityPackRenderReferences` for a
- * strategy the model has no slot for.
+ * Pair a resolved `variant` profile with the identity strategy a face repair
+ * can actually afford — in memory only, the `pairProfileWithNsfwLora`
+ * precedent for overriding one facet of a stored profile without a new
+ * registry row (`nsfw-lora.ts`).
+ *
+ * The source image `buildFaceRepairRunRequest` always prepends as the first
+ * primary reference occupies ONE of the model's reference slots too — it is
+ * not free just because it is not an identity reference — so the identity
+ * strategy is chosen against `referenceCapacity(model).max - 1`, not against
+ * the model's raw capacity. The capacity rule, source slot reserved first:
+ *
+ * | `referenceCapacity(model).max` | identity slots left | outcome                                                      |
+ * | ------------------------------ | ------------------- | ------------------------------------------------------------ |
+ * | 3 or more                      | 2 or more           | `canonical_then_face_detail` — source + portrait + face crop |
+ * | exactly 2                      | exactly 1           | `canonical_only` (the degraded strategy) — source + portrait |
+ * | 1 or fewer                     | 0 or fewer          | refuse `model_unavailable` before any spend                  |
+ *
+ * A model capped at one reference (an identity-conditioned single-reference
+ * generator such as PuLID) has no slot left once the source itself is
+ * counted: it can condition a NEW render on a face, but it cannot also take
+ * a source image to repair. That makes it not a face-repair candidate at all
+ * (`docs/image-generator/face-repair.md`) — a face regenerated from an
+ * identity reference with no source is an ordinary Generator run, not this
+ * action — so it is refused here rather than silently asked for a strategy
+ * it has no room for.
  */
-export function pairFaceRepairIdentityProfile(profile: ResolvedImageProfile): ResolvedImageProfile {
-  const identityStrategy = profile.model.maxReferences <= 1 ? "canonical_only" : "canonical_then_face_detail";
+export function pairFaceRepairIdentityProfile(profile: ResolvedImageProfile): PairFaceRepairIdentityProfileResult {
+  const capacity = referenceCapacity(profile.model).max;
+  const identitySlots = capacity - 1;
+  if (identitySlots <= 0) {
+    return {
+      ok: false,
+      code: "model_unavailable",
+      message: `this model carries ${String(capacity)} reference${capacity === 1 ? "" : "s"}; a repair needs the source image plus the portrait`,
+    };
+  }
+  const identityStrategy: IdentityReferenceStrategy =
+    identitySlots >= 2 ? "canonical_then_face_detail" : "canonical_only";
   return {
-    ...profile,
+    ok: true,
     profile: {
-      ...profile.profile,
-      referencePolicy: { ...profile.profile.referencePolicy, identityStrategy },
+      ...profile,
+      profile: {
+        ...profile.profile,
+        referencePolicy: { ...profile.profile.referencePolicy, identityStrategy },
+      },
     },
   };
 }

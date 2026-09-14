@@ -250,16 +250,58 @@ describe("resolveFaceRepairMethod", () => {
   });
 });
 
-describe("pairFaceRepairIdentityProfile", () => {
-  it("pairs a multi-reference model with canonical_then_face_detail", () => {
-    const paired = pairFaceRepairIdentityProfile(resolved({ maxReferences: 2 }));
-    expect(paired.profile.referencePolicy.identityStrategy).toBe("canonical_then_face_detail");
-    expect(paired.model.id).toBe("model-1");
+describe("pairFaceRepairIdentityProfile — the capacity rule (source slot reserved first)", () => {
+  it("capacity 3+: pairs canonical_then_face_detail, and the run request sends source-then-identity in three slots", () => {
+    const result = pairFaceRepairIdentityProfile(resolved({ maxReferences: 3 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.profile.profile.referencePolicy.identityStrategy).toBe("canonical_then_face_detail");
+    expect(result.profile.model.id).toBe("model-1");
+
+    const request = buildFaceRepairRunRequest({
+      modelId: "model-1",
+      characterId: "char-1",
+      sourceImageId: "img-source",
+      identityReferenceImageIds: ["img-canonical", "img-face-detail"],
+      method: "full_frame_identity_edit",
+      subjectCheck: { method: "none", subjects: null },
+      identityReferences: [],
+    });
+    expect(request.inputs?.primary).toEqual([
+      { imageId: "img-source", purpose: "reference" },
+      { imageId: "img-canonical", purpose: "identity" },
+      { imageId: "img-face-detail", purpose: "identity" },
+    ]);
   });
 
-  it("degrades a single-reference model (e.g. PuLID) to canonical_only explicitly", () => {
-    const paired = pairFaceRepairIdentityProfile(resolved({ maxReferences: 1 }));
-    expect(paired.profile.referencePolicy.identityStrategy).toBe("canonical_only");
+  it("capacity 2: degrades to canonical_only (recorded), and the run request sends source-then-portrait in two slots", () => {
+    const result = pairFaceRepairIdentityProfile(resolved({ maxReferences: 2 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.profile.profile.referencePolicy.identityStrategy).toBe("canonical_only");
+
+    const request = buildFaceRepairRunRequest({
+      modelId: "model-1",
+      characterId: "char-1",
+      sourceImageId: "img-source",
+      identityReferenceImageIds: ["img-canonical"],
+      method: "full_frame_identity_edit",
+      subjectCheck: { method: "none", subjects: null },
+      identityReferences: [],
+    });
+    expect(request.inputs?.primary).toEqual([
+      { imageId: "img-source", purpose: "reference" },
+      { imageId: "img-canonical", purpose: "identity" },
+    ]);
+  });
+
+  it("capacity 1 (e.g. PuLID): refuses model_unavailable before any request is built, naming the capacity", () => {
+    const result = pairFaceRepairIdentityProfile(resolved({ maxReferences: 1, referenceArity: "single" }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.code).toBe("model_unavailable");
+    expect(result.message).toContain("this model carries 1 reference");
+    expect(result.message).toContain("source image");
   });
 });
 
