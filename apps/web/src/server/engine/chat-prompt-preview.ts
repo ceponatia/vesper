@@ -9,12 +9,12 @@ import {
   garmentActorForCharacter,
   type PhysicalActionOutcome,
 } from "@/contracts";
+import { isNarratorInput, parseChatMessageMeta } from "@/contracts/turns/chat-message-meta";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
 import { characterChatMessages, db } from "../db";
 import { log } from "../log";
 import { resolveChatPersona } from "../players";
-import { messageAttachmentsMetaSchema } from "./chat-reply-store";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
 import {
@@ -222,8 +222,8 @@ async function lastPlayerMessage(chatId: string): Promise<{ id: string | null; c
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
     .limit(1);
   if (!row) return { id: null, content: "", narrator: false };
-  const meta = parseOr(messageAttachmentsMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
-  return { id: row.id, content: row.content, narrator: meta.inputMode === "narrator" };
+  const meta = parseChatMessageMeta(row.meta);
+  return { id: row.id, content: row.content, narrator: isNarratorInput(meta) };
 }
 
 /**

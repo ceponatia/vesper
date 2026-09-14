@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
 import { narratorRunProvenanceSchema } from "@/contracts/narrator-prompts";
-import { WORLD_BEAT_KINDS } from "@/lib/simulation/world-beat";
+import { parseChatMessageMeta } from "@/contracts/turns/chat-message-meta";
 import {
   activeConditionSchema,
   type ActiveCondition,
@@ -75,34 +75,18 @@ export const chatMessageSchema = z.object({
   content: textOr(""),
   takes: replyTakesSchema,
   /**
-   * `{ stopped: true }` when the player cut the reply short;
-   * `attachments.ids` on a user line = the photos it carried.
+   * The row's durable metadata bag, parsed through the SHARED contract rather
+   * than a client-side mirror of it: `apps/web/src/contracts` is pure, so the
+   * browser reads the column through the same module the server writes it with
+   * and the transcript cannot disagree with the row about what was saved.
+   *
+   * Per-field lenient, which the whole-object `.catch` it replaces was not — one
+   * malformed key used to reset every sibling to its default, so a corrupt
+   * `attachments` re-rendered a saved narrator line as ordinary player speech.
+   * Unknown keys survive the parse untouched (`meta.extra`), so a field a newer
+   * deploy writes is never lost to an older tab.
    */
-  meta: z
-    .object({
-      stopped: z.boolean().catch(false),
-      attachments: z
-        .object({ ids: z.array(z.string()).catch([]) })
-        .nullish()
-        .catch(null),
-      /** "narrator" on a user line = story narration authored as the storyteller. */
-      inputMode: z.enum(["player", "narrator"]).nullish().catch(null),
-      /**
-       * World beat: a durable travel / time-skip /
-       * scene-ended trace on an assistant row — `content` carries the phrased line,
-       * this marks it so the transcript renders a muted system line, not a bubble.
-       */
-      worldBeat: z
-        .object({ kind: z.enum(WORLD_BEAT_KINDS).catch("traveled") })
-        .nullish()
-        .catch(null),
-    })
-    .catch({
-      stopped: false,
-      attachments: null,
-      inputMode: null,
-      worldBeat: null,
-    }),
+  meta: z.unknown().transform((raw) => parseChatMessageMeta(raw)),
   createdAt: optionalText,
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;

@@ -1,12 +1,18 @@
 import { and, asc, desc, eq, gt, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  chatActionIdSchema,
-  type ChatActionId,
   type ChatReplyFailure,
   type ChatReplyFailureCause,
   type ChatReplyFailureCode,
+  type DiagnosticSink,
 } from "@/contracts";
+import {
+  isNarratorInput,
+  mergeChatMessageMeta,
+  parseChatMessageMeta,
+  serializeChatMessageMeta,
+  type ChatMessageMeta,
+} from "@/contracts/turns/chat-message-meta";
 import {
   narratorPromptAuthorityWeights,
   narratorPromptUnits,
@@ -45,15 +51,6 @@ export const replyTakesSchema = z.object({
 export type ReplyTakes = z.infer<typeof replyTakesSchema>;
 
 export const emptyReplyTakes = (): ReplyTakes => ({ takes: [], activeId: "" });
-
-/**
- * An assistant row's whole `meta` bag, kept open. Both lanes write different keys
- * into it (the action-beat chip, the stop marker, the successor cut/model/attempts,
- * composition fallbacks), and a take switch has to REWRITE one key while carrying
- * the rest through — so this parse exists to make the merge safe, not to describe
- * the shape. Unreadable meta degrades to an empty bag rather than losing the write.
- */
-const replyMetaBagSchema = z.record(z.string(), z.unknown()).catch({});
 
 /**
  * Record a fresh take (PURE): the row's current content becomes a browsable entry
@@ -177,12 +174,18 @@ export async function switchReplyTake(chatId: string, messageId: string, takeId:
   const takes = parseOr(replyTakesSchema, row.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
   const target = takes.takes.find((t) => t.id === takeId);
   if (!target) return null;
-  const meta = parseOr(replyMetaBagSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
-  if (target.provenance === undefined) delete meta.narratorRun;
-  else meta.narratorRun = target.provenance;
+  // The patch names `narratorRun` unconditionally, so an unlabelled target REMOVES
+  // the previously displayed take's run. Every other key on the row — the beat chip,
+  // the stop marker, the successor cut/model, and anything a newer deploy wrote —
+  // is carried through untouched.
+  const meta = mergeChatMessageMeta(parseChatMessageMeta(row.meta), { narratorRun: target.provenance });
   await db()
     .update(characterChatMessages)
-    .set({ content: target.content, takes: { ...takes, activeId: target.id }, meta })
+    .set({
+      content: target.content,
+      takes: { ...takes, activeId: target.id },
+      meta: serializeChatMessageMeta(meta),
+    })
     .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)));
   return target.content;
 }
@@ -215,59 +218,35 @@ export async function saveReplyFailure(
   }
 }
 
-export const messageAttachmentsMetaSchema = z.object({
-  attachments: z
-    .object({
-      ids: z.array(z.string()).catch([]).default([]),
-      descriptions: z.array(z.string()).optional(),
-    })
-    .optional(),
-  /** Narrator-mode marker. */
-  inputMode: z.enum(["player", "narrator"]).optional().catch(undefined),
-});
-
 /** The prompting line's stored attachment ids + any persisted vision read + its input mode. */
 export async function loadMessageAttachments(
   chatId: string,
   messageId: string,
+  sink?: DiagnosticSink,
 ): Promise<{ ids: string[]; descriptions: string[] | null; narrator: boolean }> {
   const [row] = await db()
     .select({ meta: characterChatMessages.meta })
     .from(characterChatMessages)
     .where(and(eq(characterChatMessages.id, messageId), eq(characterChatMessages.chatId, chatId)))
     .limit(1);
-  const parsed = parseOr(messageAttachmentsMetaSchema, row?.meta ?? {}, {}, undefined, "character_chat_messages.meta");
+  // Per-field: a corrupt `attachments` costs the photos alone — the line's narrator
+  // register still reads back, because losing it would turn saved narration into
+  // player speech on every rerun.
+  const parsed = parseChatMessageMeta(row?.meta, sink);
   const ids = parsed.attachments?.ids ?? [];
   const descriptions = parsed.attachments?.descriptions;
   return {
     ids,
     descriptions: descriptions && descriptions.length === ids.length ? descriptions : null,
-    narrator: parsed.inputMode === "narrator",
+    narrator: isNarratorInput(parsed),
   };
 }
-
-/**
- * Defensive parse of an assistant reply's meta: the action-beat chip id (regenerate
- * recovery) and the run that produced the content currently on the row — which the
- * first regenerate hands to the historical take it seeds, so the old take keeps
- * saying which prompt actually wrote it. Rows written before provenance existed
- * have none; absent is legal, never an error.
- */
-const assistantReplyMetaSchema = z.object({
-  actionBeat: chatActionIdSchema.optional().catch(undefined),
-  narratorRun: narratorRunProvenanceSchema.optional().catch(undefined),
-});
 
 /** The newest message when it is an assistant reply — the only regenerable target. */
 export async function lastAssistantMessage(
   chatId: string,
-): Promise<{
-  id: string;
-  content: string;
-  createdAt: Date;
-  actionBeat?: ChatActionId;
-  narratorRun?: NarratorRunProvenance;
-} | null> {
+  sink?: DiagnosticSink,
+): Promise<{ id: string; content: string; createdAt: Date; meta: ChatMessageMeta } | null> {
   const [row] = await db()
     .select({
       id: characterChatMessages.id,
@@ -281,13 +260,13 @@ export async function lastAssistantMessage(
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
     .limit(1);
   if (!row || row.role !== "assistant") return null;
-  const meta = parseOr(assistantReplyMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
+  // The WHOLE parsed bag, not the two fields the regenerate reads: the caller
+  // rewrites this row, and it can only preserve what it was handed.
   return {
     id: row.id,
     content: row.content,
     createdAt: row.createdAt,
-    actionBeat: meta.actionBeat,
-    narratorRun: meta.narratorRun,
+    meta: parseChatMessageMeta(row.meta, sink),
   };
 }
 
@@ -452,9 +431,9 @@ export async function persistAssistantReply(args: {
   speakerCharacterId: string;
   promptMessageId: string | null;
   content: string;
-  meta?: Record<string, unknown>;
+  meta?: ChatMessageMeta;
 }): Promise<void> {
-  const meta = JSON.stringify(args.meta ?? {});
+  const meta = JSON.stringify(args.meta === undefined ? {} : serializeChatMessageMeta(args.meta));
   const guard = args.promptMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${args.promptMessageId})`
     : sql`true`;
@@ -462,5 +441,41 @@ export async function persistAssistantReply(args: {
     insert into ${characterChatMessages} (id, chat_id, speaker_character_id, role, content, meta)
     select ${args.id}, ${args.chatId}, ${args.speakerCharacterId}, 'assistant', ${args.content}, ${meta}::jsonb
     where ${guard}
+  `);
+}
+
+/**
+ * Merge top-level keys INTO a message row's `meta`, in one statement.
+ *
+ * Postgres does the merge (`jsonb ||`) inside the UPDATE, under the row lock the
+ * UPDATE already takes — so a concurrent writer of the same row is serialized
+ * rather than overwritten. The read-modify-write alternative (`parse` → merge →
+ * `set`) has a real window between the SELECT and the UPDATE in which another
+ * writer's keys are read, not re-read, and then written back stale; this shape has
+ * no window and needs no second read.
+ *
+ * `||` is a SHALLOW top-level merge, which is exactly right for the callers: each
+ * writes a whole key (`attachments` with its ids AND descriptions together), and
+ * every key it does not name — `inputMode`, `simTurn`, `v`, and anything a newer
+ * deploy wrote — is left alone.
+ *
+ * It cannot REMOVE a key. A writer that must clear one reads, merges through
+ * {@link mergeChatMessageMeta} and writes the whole bag instead.
+ *
+ * A row whose stored `meta` is not a JSON object is treated as `{}` rather than
+ * erroring: a degenerate bag costs its unreadable contents, never the write.
+ */
+export async function mergeMessageMetaColumn(
+  chatId: string,
+  messageId: string,
+  patch: ChatMessageMeta,
+): Promise<void> {
+  const serialized = serializeChatMessageMeta(patch);
+  if (Object.keys(serialized).length === 0) return;
+  await db().execute(sql`
+    update ${characterChatMessages}
+    set meta = (case when jsonb_typeof(meta) = 'object' then meta else '{}'::jsonb end)
+      || ${JSON.stringify(serialized)}::jsonb
+    where id = ${messageId} and chat_id = ${chatId}
   `);
 }
