@@ -186,12 +186,13 @@ describe("prepareChatTurnGuidance — #209 claim 4: the pending permission stop 
     const result = await prepareChatTurnGuidance(baseArgs());
 
     expect(result.physicalGuidanceLines).toHaveLength(1);
-    expect(result.physicalGuidanceLines[0]).toBe(
-      "- Ended contact: the player is no longer touching Wren's shoulder. " +
-        "That contact is over now — do not write it as continuing, resuming, or still in progress. " +
-        "If the stop has not already been shown, portray it naturally (an in-character reaction is fine); " +
-        "do not decide how the player responds.",
-    );
+    const [line] = result.physicalGuidanceLines;
+    // The full sentence (stop wording, closing clause) is
+    // chat-physical-guidance-render.test.ts's own pin (:677 "names the pair
+    // and the surface, and binds the stop"); this only needs to prove the
+    // pending stop actually reached the render step through this arm.
+    expect(line).toMatch(/^- Ended contact: the player is no longer touching Wren's shoulder/);
+    expect(line?.endsWith("do not decide how the player responds.")).toBe(true);
     // The transition-only arm was taken, not the full adapter — flag-off means
     // it never could be, and the line above is that arm's own compiled output.
     expect(buildChatPhysicalGuidance).not.toHaveBeenCalled();
@@ -232,5 +233,23 @@ describe("prepareChatTurnGuidance — #209 claim 4: the pending permission stop 
     });
 
     await expect(prepareChatTurnGuidance(baseArgs())).rejects.toThrow(renderFailure);
+  });
+
+  it("(e) a failed stop READ aborts the turn — the same binding rule as the build", async () => {
+    // The read's catch (`chat-turn-guidance.ts` ~lines 116-119) always
+    // rethrows, unlike the build's catch (~line 187) which only rethrows
+    // when a stop was pending. `log.error` runs first on both paths; it is
+    // unmocked here on purpose. `emit()` (`server/log.ts`) only ever calls
+    // `console[level](...)` over a string it built itself, so it cannot
+    // throw — the same assumption `sim-surfaces.degradation.test.ts` already
+    // relies on (it imports `log` from `@/server/log` unmocked and forces
+    // `sim-surfaces.ts`'s degraded reads to call real `log.warn`s while
+    // asserting the seam still degrades cleanly, in the same `app` project).
+    process.env.CHAT_ROMANTIC_PERMISSION = "on";
+    process.env.CHAT_CONTACT_ACTIONS = "on";
+    const readFailure = new Error("ledger boom");
+    vi.mocked(loadChatPermissionStopTransitions).mockRejectedValueOnce(readFailure);
+
+    await expect(prepareChatTurnGuidance(baseArgs())).rejects.toThrow(readFailure);
   });
 });

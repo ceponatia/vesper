@@ -765,33 +765,27 @@ describe("#209 acceptance — the constraint path end to end, purely", () => {
 
     const premiseLines = lines.filter((line) => line.startsWith("- Premise check:"));
     const constraintLines = lines.filter((line) => line.startsWith("- Binding constraint:"));
-    // Two premise-check lines: the rain-as-cause claim and the loose-as-style claim.
+    // Two premise-check lines: the rain-as-cause claim and the loose-as-style
+    // claim. The full sentences are chat-physical-guidance-render.test.ts's
+    // own pins (:492 the wetness-cause line, :272 the constraint line); this
+    // suite only needs the fragment that distinguishes each area, to prove
+    // the adapter's real detection reached the render step at all.
     expect(premiseLines).toHaveLength(2);
-    expect(premiseLines).toContain(
-      "- Premise check: the player's wetness-cause claim conflicts with committed state. " +
-        "Do not adopt rain as the cause of the wetness in Wren's hair. " +
-        "Do not correct the player aloud unless Wren would naturally do so.",
-    );
-    expect(premiseLines).toContain(
-      "- Premise check: the player's hairstyle claim conflicts with committed state. " +
-        "Do not adopt loose as how Wren's hair is worn. " +
-        "Do not correct the player aloud unless Wren would naturally do so.",
-    );
+    expect(premiseLines.some((line) => line.includes("Do not adopt rain as the cause"))).toBe(true);
+    expect(premiseLines.some((line) => line.includes("Do not adopt loose as how"))).toBe(true);
     // One binding-constraint line, with the braid truth clause because
     // perception licensed it (the read's hair locus is visible).
-    expect(constraintLines).toEqual([
-      "- Binding constraint: do not describe Wren's hair as loose, cascading, streaming, or whipping; " +
-        "it remains secured in a braid.",
-    ]);
+    expect(constraintLines).toHaveLength(1);
+    expect(constraintLines[0]).toMatch(/^- Binding constraint:/);
+    expect(constraintLines[0]).toContain("it remains secured in a braid");
     // The committed cause (a bath / immersion) is never voiced — a correction
     // names only the claim not to adopt, never the truth behind it.
     expect(lines.join(" ")).not.toMatch(/immersion|bath|soaking in water/iu);
-    // No line invites a body detail — only a prohibition.
-    const block = chatPhysicalGuidanceBlock(lines);
-    for (const invitation of ["you may", "mention", "weave", "include", "offer", "describe it", "worth noticing", "if the moment"]) {
-      expect(block.toLowerCase(), invitation).not.toContain(invitation);
-    }
-    expect(block).toContain("do not describe");
+    // The full invitation vocabulary is chat-physical-guidance-render.test.ts's
+    // own ("a constraint-only turn contains no instruction to mention a body
+    // detail", :310-338); this only needs to prove the join didn't
+    // reintroduce one.
+    expect(chatPhysicalGuidanceBlock(lines).toLowerCase()).not.toMatch(/mention|worth noticing/u);
   });
 
   it("claim 2: a rejected out-of-reach contact attempt renders a leading 'Blocked contact' line even when the hair tier is empty", () => {
@@ -828,11 +822,13 @@ describe("#209 acceptance — the constraint path end to end, purely", () => {
     expect(guidance.constraints).toEqual([]);
     expect(guidance.corrections).toEqual([]);
 
+    // The producer side — a real rejected `out_of_reach` resolution emitting
+    // exactly these two codes — is pinned at `chat-contact-adapter.test.ts`
+    // lines 1951-1953 ("makes a refusal mandatory for the narrator"); this
+    // case owns only the join from those codes to the rendered prompt line.
     const lines = render(guidance);
-    expect(lines[0]).toBe(
-      "- Blocked contact: the player's hand does not reach Wren's shoulder — they are too far apart for it. " +
-        "The narration must account for that; do not write the touch as landing.",
-    );
+    expect(lines[0]).toMatch(/^- Blocked contact:/);
+    expect(lines[0]).toContain("too far apart");
   });
 
   it("claim 3: a resolver_only action outcome never reaches guidance.actionOutcomes or a rendered line, and files the withheld diagnostic", () => {
