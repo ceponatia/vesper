@@ -307,7 +307,9 @@ export interface RenderShapeOutcome {
  * This wrapper owns shape negotiation. A lane says what ratio it wants —
  * and, when it compiled a profile plan, what dimensions the profile asked for —
  * and `chooseDimensions` finds the closest thing the model offers; anything
- * short of exact is centre-cropped here, toward the lane's ratio. That is what
+ * short of exact is cropped here toward the lane's ratio, placed by
+ * `chooseCropPlacement` (a focal box when one is supplied, else top-anchored for
+ * a subject-bearing task's too-tall trim and centred otherwise). That is what
  * lets Stable Diffusion 3.5 Large (no 3:4 in its enum) serve a portrait, and
  * the same code serve the item lane's 1:1, without either caller knowing which
  * models need help.

@@ -69,7 +69,7 @@ async function solidImage(width: number, height: number, background: { r: number
 async function pixelAt(buffer: Buffer, x: number, y: number): Promise<{ r: number; g: number; b: number }> {
   const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
   const index = (y * info.width + x) * info.channels;
-  return { r: data[index], g: data[index + 1], b: data[index + 2] };
+  return { r: data[index] ?? 0, g: data[index + 1] ?? 0, b: data[index + 2] ?? 0 };
 }
 
 beforeEach(() => {

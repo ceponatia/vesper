@@ -68,7 +68,9 @@ Owner ruling 2026-08-25: the digest contributes the body-shape anchors — speci
 and anatomy departures, the horns/wings/tail an edit model "corrects" away — and the cataloged
 distinctive marks, and nothing else.
 
-Hair and eye colour are **reinforced in text** beside the reference: on an instruction editor
+Hair and eye colour are **reinforced in text** beside a reference whose appearance revision
+is unknown or differs from the cut's; a reference stamped with the cut's own revision preserves
+hair and build from the image instead and the text omits them. On an instruction editor
 the text owns hair, build, wardrobe and pose, and the reference is authoritative only for what
 the bound endpoint declares — face, skin tone and apparent age on Qwen Image Edit 2511 — so the
 request-aware selection drops those optional facts for the referenced subject and keeps the rest

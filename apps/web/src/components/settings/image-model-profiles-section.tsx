@@ -559,7 +559,7 @@ function ImageModelProfileForm({
             hint={
               ratioOptions.length === 0
                 ? "This model offers no ratio-shaped enum, so only the lane default applies."
-                : "Wins over the render's own task default — set this when the profile's own width/height pair is the intended shape."
+                : "Overrides the lane's own request (every portrait, scene, item or location this profile renders), not just the task default — set it only when this profile's width/height pair is the intended shape."
             }
           >
             {(id) => (
