@@ -9,6 +9,12 @@ import { imageModelProfileSchema, imageModelSchema, type ResolvedImageProfile } 
  * ship unnoticed. Kept minimal: the eligibility TABLE itself is owned by
  * `avatar-replay.test.ts`; this proves only that the mapping wires
  * `avatarReplayCheapEligibility` correctly over a real row set.
+ *
+ * Codex review round 1, finding B: also owns the `modelId` parameter added
+ * so the hint judges a row against the studio's CURRENT profile-picker
+ * selection rather than always the task default — without it, a portrait
+ * rendered on a non-default profile reported `model_changed` even while
+ * that exact profile was selected.
  */
 
 vi.mock("@/server/images", async (importOriginal) => {
@@ -44,6 +50,36 @@ function resolvedProfile(): ResolvedImageProfile {
       imageModelId: "mdl-1",
       key: "portrait-standard",
       label: "Portrait Standard",
+      task: "portrait",
+      operation: "generate",
+      promptStrategy: "text_to_image_description",
+      controlDefaults: { seedPolicy: "random" },
+    }),
+  };
+}
+
+const ALT_MODEL_SLUG = "replicate/some-alt-model";
+const ALT_PROFILE_ID = "profile-portrait-alt";
+const ALT_MODEL_ID = "alt-model-profile";
+
+function altResolvedProfile(): ResolvedImageProfile {
+  return {
+    model: imageModelSchema.parse({
+      id: "mdl-2",
+      slug: ALT_MODEL_SLUG,
+      label: "Alt Fixture",
+      canGenerate: true,
+      canEdit: true,
+      referenceField: "image",
+      referenceArity: "array",
+      maxReferences: 1,
+      supportedAspects: ["3:4"],
+    }),
+    profile: imageModelProfileSchema.parse({
+      id: ALT_PROFILE_ID,
+      imageModelId: "mdl-2",
+      key: "portrait-alt",
+      label: "Portrait Alt",
       task: "portrait",
       operation: "generate",
       promptStrategy: "text_to_image_description",
@@ -97,5 +133,17 @@ describe("avatarReplayMapForPortraits", () => {
     mockResolve.mockResolvedValue(null);
     const map = await avatarReplayMapForPortraits([row("img-1", { seed: 1 })], OWNER, CHARACTER);
     expect(map).toEqual({});
+  });
+
+  it("judges against the caller's selected profile, not always the task default (codex review round 1, finding B)", async () => {
+    mockResolve.mockImplementation(async (_task, modelId) => (modelId === ALT_MODEL_ID ? altResolvedProfile() : resolvedProfile()));
+    // Rendered on the ALT profile, not the task default.
+    const rows = [row("img-1", { seed: 1, modelSlug: ALT_MODEL_SLUG, profileId: ALT_PROFILE_ID, requestedVersionId: null })];
+
+    const againstDefault = await avatarReplayMapForPortraits(rows, OWNER, CHARACTER);
+    expect(againstDefault).toEqual({ "img-1": { ok: false, reason: "model_changed" } });
+
+    const againstSelected = await avatarReplayMapForPortraits(rows, OWNER, CHARACTER, ALT_MODEL_ID);
+    expect(againstSelected).toEqual({ "img-1": { ok: true } });
   });
 });
