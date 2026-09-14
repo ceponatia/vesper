@@ -52,7 +52,7 @@ Schema design rules that make this work:
 The cleanest shape this rule takes: a leg that could make a turn worse can never do so if its **degraded default is the deterministic code path that ran before it existed**. Two live cases in the chat lane:
 
 - The one-turn intent reads (`chat-intent.ts`) are **regex-first, no LLM** — the safe baseline. The optional markup lane (`lib/message-spans`) only *upgrades* them to determinism when the player opts in; absent markup, behavior is exactly the regex baseline.
-- Every LLM leg on the reply path runs `generateChecked` (the full ladder above) wrapped in a hard timeout (`withGenerateTimeout`). On timeout, generation failure, or demo mode it degrades to a safe default — a no-op or the prior state — and records a diagnostic; the reply never blocks on it.
+- Every non-streaming structured leg — on the reply path or off it, interactive or a detached job — runs `generateChecked` (the full ladder above) under a hard deadline. `generateCheckedBounded` (`server/ai/generate-timeout.ts`) composes the two in one call for a fresh leg: it builds the `AbortController`, composes in the caller's own `AbortSignal` when one exists, and races the call through `withGenerateTimeout`. On timeout, a caller abort, generation failure, or demo mode the leg degrades to its own fallback — a no-op, the prior state, or a deterministic default — the timeout is recorded as both a diagnostic and a tallied failure (§8), and the caller never blocks on it.
 
 The pattern to copy when adding a pre-reply check: make its fallback the deterministic step that runs without it, time-box it, and the new call is pure upside.
 

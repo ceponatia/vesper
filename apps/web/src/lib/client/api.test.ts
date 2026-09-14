@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { emptyChatMessageMeta } from "@/contracts/turns/chat-message-meta";
 import {
   apiGet,
   characterDetailSchema,
   charactersApi,
+  chatMessageSchema,
+  chatTranscriptSchema,
   createdRefSchema,
   detailOf,
   emptyCharacterDraft,
@@ -407,6 +410,50 @@ describe("resource schemas degrade per-field", () => {
     const parsed = detailOf(characterDetailSchema, "character").parse({ id: "c2", name: "Bare" });
     expect(parsed.id).toBe("c2");
     expect(parsed.mine).toBe(true);
+  });
+});
+
+describe("chat transcript meta", () => {
+  /**
+   * `chatMessageSchema.meta` is `z.unknown().optional().transform(parseChatMessageMeta)`.
+   * The `.optional()` is the load-bearing half: zod 4 treats a bare `z.unknown()` as a
+   * REQUIRED object key, so without it a row whose payload carries no `meta` fails its
+   * own parse — and `listOf` flatMaps a failed row AWAY, which drops the message out of
+   * the rendered transcript entirely rather than degrading it to an empty bag.
+   */
+  it("keeps a row whose payload carries no meta in the transcript", () => {
+    const parsed = chatTranscriptSchema.parse({
+      messages: [
+        { id: "m1", role: "user", content: "a line written before meta existed" },
+        { id: "m2", role: "assistant", content: "a reply", meta: { stopped: true } },
+      ],
+      chat: { id: "c1" },
+      character: { id: "ch1" },
+    });
+    // The row survives — this is the assertion the flatMap would break.
+    expect(parsed.messages.map((message) => message.id)).toEqual(["m1", "m2"]);
+    // …and it degrades to the documented empty bag, not to a missing field.
+    expect(parsed.messages[0]?.meta).toEqual(emptyChatMessageMeta());
+    expect(parsed.messages[1]?.meta.stopped).toBe(true);
+  });
+
+  it("parses the bag through the SHARED contract, keys this build does not model included", () => {
+    // The browser reads the column through the same module the server writes it with,
+    // so a field a newer deploy added rides through in `extra` instead of being stripped
+    // by a client-side mirror of the schema.
+    const parsed = chatMessageSchema.parse({
+      id: "m3",
+      role: "user",
+      content: "hello",
+      meta: { inputMode: "narrator", fromANewerDeploy: { nested: 1 } },
+    });
+    expect(parsed.meta.inputMode).toBe("narrator");
+    expect(parsed.meta.extra).toEqual({ fromANewerDeploy: { nested: 1 } });
+  });
+
+  it("degrades a meta value that is not an object at all to the empty bag", () => {
+    const parsed = chatMessageSchema.parse({ id: "m4", role: "assistant", content: "x", meta: 7 });
+    expect(parsed.meta).toEqual(emptyChatMessageMeta());
   });
 });
 

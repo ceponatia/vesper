@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { diag, DiagnosticCollector, type DiagnosticSink } from "@/contracts/diagnostics";
+import { isNarratorInput, parseChatMessageMeta } from "@/contracts/turns/chat-message-meta";
 import {
   CHAT_SUMMARY_MAX_CHARS,
   chatSummaryFoldSchema,
@@ -9,7 +10,7 @@ import {
 } from "@/contracts/turns/chat-summary";
 import { parseOrNull } from "@/lib/parse";
 import { log } from "@/server/log";
-import { generateChecked } from "../ai";
+import { generateCheckedBounded } from "../ai";
 import { characterChatMessages, characterChatSummaries, characters, chatParticipants, db, hasLiveChatJob } from "../db";
 import type { ChatTurn } from "./character-chat";
 import { CHARACTER_CHAT_HISTORY_TURNS, CHARACTER_CHAT_SUMMARIZE_AT, CHARACTER_CHAT_VERBATIM_KEEP } from "./constants";
@@ -106,6 +107,7 @@ export async function loadChatSummary(chatId: string): Promise<ChatSummaryState 
 export async function loadVerbatimWindow(
   chatId: string,
   watermark: ChatWatermark,
+  sink?: DiagnosticSink,
 ): Promise<ChatTurn[]> {
   const wmCond = afterWatermark(watermark);
   const rows = await db()
@@ -116,12 +118,10 @@ export async function loadVerbatimWindow(
     .limit(CHARACTER_CHAT_HISTORY_TURNS * 2);
   return rows.reverse().map((r) => {
     // Narrator-mode flag: read leniently off
-    // the meta jsonb — the pipeline wraps flagged lines at the model boundary.
-    const narrator =
-      r.role === "user" &&
-      typeof r.meta === "object" &&
-      r.meta !== null &&
-      (r.meta as Record<string, unknown>).inputMode === "narrator";
+    // the meta jsonb — the pipeline wraps flagged lines at the model boundary. The
+    // shared contract parses it per field, so a corrupt sibling key can never turn
+    // saved narration back into player speech here.
+    const narrator = r.role === "user" && isNarratorInput(parseChatMessageMeta(r.meta, sink));
     return { role: r.role, content: r.content, ...(narrator ? { narrator: true } : {}) };
   });
 }
@@ -251,26 +251,25 @@ export async function processChatSummary(payload: ChatSummaryJobPayload, jobId?:
   // Narrator-mode player lines fold as labeled story narration so the summary never
   // attributes authored events to the player.
   const chunk: ChatTurn[] = chunkRows.map((r) => {
-    const narrator =
-      r.role === "user" &&
-      typeof r.meta === "object" &&
-      r.meta !== null &&
-      (r.meta as Record<string, unknown>).inputMode === "narrator";
+    const narrator = r.role === "user" && isNarratorInput(parseChatMessageMeta(r.meta, sink));
     return {
       role: r.role,
       content: narrator ? `[story narration, written by the player as storyteller]\n${r.content}` : r.content,
     };
   });
-  const { value, degraded } = await generateChecked<ChatSummaryFold>({
-    schema: chatSummaryFoldSchema,
-    system: CHAT_SUMMARY_SYSTEM,
-    prompt: buildChatSummaryFoldPrompt({ characterName: character.name, priorSummary, chunk }),
-    temperature: 0.2,
-    maxOutputTokens: CHAT_SUMMARY_MAX_OUTPUT_TOKENS,
-    code: "chat_summary.fold",
-    sink,
-    fallback: () => degradedChatSummaryFold(priorSummary),
-  });
+  const { value, degraded } = await generateCheckedBounded<ChatSummaryFold>(
+    {
+      schema: chatSummaryFoldSchema,
+      system: CHAT_SUMMARY_SYSTEM,
+      prompt: buildChatSummaryFoldPrompt({ characterName: character.name, priorSummary, chunk }),
+      temperature: 0.2,
+      maxOutputTokens: CHAT_SUMMARY_MAX_OUTPUT_TOKENS,
+      code: "chat_summary.fold",
+      sink,
+      fallback: () => degradedChatSummaryFold(priorSummary),
+    },
+    { timeoutMs: CHAT_SUMMARY_FOLD_TIMEOUT_MS, timeoutCode: "chat_summary.fold.timeout" },
+  );
 
   const folded = normalizeChatSummary(priorSummary, value, degraded, sink);
   if (!folded.advance) {
@@ -386,6 +385,8 @@ export async function repairChatSummaryForMessage(
 
 /** Output-token cap for the fold — the summary targets ~400 words; keep it cheap. */
 const CHAT_SUMMARY_MAX_OUTPUT_TOKENS = 800;
+/** The fold runs in a detached job, off any request's latency path — generous, but a stalled call must still release the keyed lock (docs/resilience.md §3). */
+const CHAT_SUMMARY_FOLD_TIMEOUT_MS = 60_000;
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

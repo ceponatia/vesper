@@ -6,6 +6,13 @@ import type { CharacterDraft } from "../drafts";
 
 /** Shared low-latency, reasoning-off options for all three structured forge legs. */
 export const FORGE_LEG_OPTIONS = { disableReasoning: true, lowLatencyRouting: true } as const;
+/**
+ * Shared deadline for all three structured forge legs
+ * (docs/resilience.md §3): the create/fill/redraft flows wait on this inline, but each leg also
+ * reasons over a full character concept and may run the one repair
+ * round-trip, so the budget is roomier than an ordinary interactive call.
+ */
+export const FORGE_LEG_TIMEOUT_MS = 90_000;
 
 export const characterForgeSections = ["profile", "attributes", "outfit"] as const;
 export const characterForgeSectionSchema = z.enum(characterForgeSections);

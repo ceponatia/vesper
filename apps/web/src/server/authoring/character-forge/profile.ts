@@ -3,8 +3,8 @@ import { DEFAULT_SPECIES_ID, emptyCharacterProfile, scheduleEntrySchema, authore
 import { characterSections, type CharacterSheetScope } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
 import { parseOrNull } from "@/lib/parse";
-import { generateChecked } from "@/server/ai";
-import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
+import { generateCheckedBounded } from "@/server/ai";
+import { FORGE_LEG_OPTIONS, FORGE_LEG_TIMEOUT_MS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import { heritageForForgeContext, speciesForgeDescriptor, speciesForForgeContext } from "./context";
 import { demoCharacterProfileSection } from "./demo";
 import { normalizeEnumToken } from "./normalization";
@@ -551,16 +551,19 @@ function profilePrompt(context: CharacterForgeContext): string {
 }
 
 export async function forgeProfileSection(context: CharacterForgeContext): Promise<CharacterSectionPatch> {
-  const { value, degraded } = await generateChecked<Record<string, unknown>>({
-    ...FORGE_LEG_OPTIONS,
-    schema: buildProfileSectionSchema(context.scope),
-    system: PROFILE_SYSTEM,
-    prompt: profilePrompt(context),
-    temperature: 0.7,
-    code: "forge.character.profile",
-    sink: context.sink,
-    fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterProfileSection,
-  });
+  const { value, degraded } = await generateCheckedBounded<Record<string, unknown>>(
+    {
+      ...FORGE_LEG_OPTIONS,
+      schema: buildProfileSectionSchema(context.scope),
+      system: PROFILE_SYSTEM,
+      prompt: profilePrompt(context),
+      temperature: 0.7,
+      code: "forge.character.profile",
+      sink: context.sink,
+      fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterProfileSection,
+    },
+    { timeoutMs: FORGE_LEG_TIMEOUT_MS, timeoutCode: "forge.character.profile.timeout" },
+  );
   if (context.scope && (degraded || !value)) return {};
   // Scoped fields use their full authored shape; the create parser must not strip them.
   const createShape = { ...value };

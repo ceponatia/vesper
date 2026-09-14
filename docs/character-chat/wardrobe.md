@@ -51,7 +51,8 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
 - **Failure is marked, never bare.** The manual `outfit_exposed` flag speaks only on the
   genuinely free-text path (`worn_item_ids` empty) — with worn ids present a stale flag cannot
   undress a wardrobe whose load merely failed. A load that threw, a row whose `coverage`
-  column would not parse, or a modelled instance whose blueprint dangles or parsed degraded
+  column would not parse, or a modelled instance whose blueprint dangles, parsed degraded, or
+  was replaced by the durable read for failing structural validation
   (`resolveGarmentBlueprint`'s `reliable: false`) degrades exposure to fully covered, withholds
   `worn` so the contact/affordance reads fail closed, and marks the resolve `unreliable` — the
   `chat_look` mint skips a marked resolve (no render, no purge of the correct anchor) and the
@@ -61,6 +62,8 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
   and SKIPS the reconcile for any actor whose desired set contains one — warn diagnostics
   `chat_garments.definition_load_failed` / `chat_garments.coverage_unreadable` — instead of
   minting durable covers-nothing instances or doffing whatever the unreadable garment replaced.
+  A definition whose graph is structurally impossible takes the same arm one level down, in
+  the reducer, under `chat_garments.blueprint_invalid` (§The garment store).
   An unmodelled actor keeps the ids in the worn column and materializes on a later healthy
   reconcile; a modelled actor keeps their prior outfit (the projection re-persists the old worn
   set), so a failed load costs a lost outfit change, never a bare body. A partially readable
@@ -152,8 +155,44 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
   sparse at `none`), and the resolve seam reads that snapshot only when the definition is
   gone — a live definition's band, absent included, always wins, so an editor override
   applies at once while an orphaned hijab still hides hair.
+- **An impossible graph is never trusted clothing.** `validateGarmentBlueprint`
+  (`contracts/items/garment-blueprint-validation.ts`) owns the structural rules — one root,
+  acyclic `part_of` reaching every part, known edge endpoints, registry-valid body locations
+  and materials, legal behavior bindings — and its codes (`garment_blueprint.*`) are the only
+  vocabulary any boundary uses to report a bad graph. Two boundaries run it. **Materializing**,
+  a seed whose blueprint fails is not registered and nothing is minted from it: `syncWornGarments`
+  abandons that actor's whole reconcile and returns the store untouched, so a modelled actor
+  keeps their prior outfit and an unmodelled one keeps the ids in the worn column until the
+  definition is repaired — the same lost-outfit-change shape a withheld id takes, never a
+  doffed body. `instantiateGarment` likewise refuses the ad-hoc mint and hands its caller the
+  issues, so the `introduce` op drops the garment instead of minting one nothing can read.
+  **Reading**, every durable and rollback parse of the store runs
+  `validateGarmentStoreBlueprints`: a stored entry that parses but fails is replaced under its
+  own key by the marked degraded root, so its instances resolve `reliable: false` and their
+  wearer degrades to covered. An entry the SHAPE parse already truncated — a malformed node
+  dropped, the rest kept and the blueprint marked `degraded` — is normalized to that same
+  root and reported once as `chat_garments.blueprint_degraded`: the parse itself files
+  nothing (it is handed no sink), and its surviving nodes still carry coverage that every
+  consumer reading the blueprint without checking `reliable` would enumerate. An entry that
+  is ALREADY that canonical root passes silently, so a corruption is reported once rather
+  than on every load. One entry degrades alone — siblings, `instances` and `seeded`
+  are untouched, a store with nothing to replace comes back unchanged, and a damaged entry
+  files ONE diagnostic rather than one per broken rule. That repair is DURABLE, not
+  per-read: the load hands the degraded store to the exchange, which persists it, and an
+  already-worn instance keeps the sentinel until it is doffed — so the wearer stays
+  conservatively covered and heals on the next outfit change rather than at the next load.
+  The graphs that can be invalid in practice are an item definition whose `coverage` names a
+  body location outside the registry (it lands on the blueprint's root at mint time) and a
+  stored snapshot damaged or written by an older shape; category templates are code-owned, so
+  one failing is a programmer error rather than a degraded read. A registry-KNOWN id that is
+  not coverage-relevant — the intimate and feature sub-trees, which are contact loci rather
+  than garment slots — is not damage: materialization drops it exactly as every other coverage
+  consumer does ([../contracts/items/visibility.md](../contracts/items/visibility.md)), which changes no exposure and
+  keeps the gate reserved for graphs that cannot be true.
 - **Rollback for free.** The store rides the `pre_exchange_scenario` blob, so retakes
-  restore blueprints, loci, presentation, and gradients byte-identically (int-tested).
+  restore blueprints, loci, presentation, and gradients byte-identically (int-tested) — and
+  the anchor is a durable read like any other, so a damaged historical snapshot degrades on
+  the way back in rather than undressing the wearer a retake restores.
 - **`outfit_exposed` demoted.** Authoritative only for unmodelled actors (no instances);
   a modelled actor's exposure always derives from coverage.
 - **The extraction lane**: the archivist proposes typed garment operations

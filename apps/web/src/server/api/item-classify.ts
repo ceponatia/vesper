@@ -26,7 +26,7 @@ import {
 } from "@/contracts";
 import { log } from "@/server/log";
 import { parseOr } from "@/lib/parse";
-import { generateChecked } from "@/server/ai";
+import { generateCheckedBounded } from "@/server/ai";
 import { db, items } from "@/server/db";
 import { errorText } from "./respond";
 import { itemExtrasSchema, type ItemExtras } from "./schemas";
@@ -40,6 +40,11 @@ import { itemExtrasSchema, type ItemExtras } from "./schemas";
  */
 
 const CLASSIFY_CHUNK = 20;
+
+/** The editor's inline draft-from-description — interactive; the user waits on it. */
+const ITEM_DRAFT_TIMEOUT_MS = 45_000;
+/** One classify-backfill chunk — a detached background job, so a roomier per-chunk budget. */
+const ITEM_CLASSIFY_TIMEOUT_MS = 60_000;
 
 // The accessory categories carrying a subtype vocabulary — compile-time
 // registry constants, safe to inline into the SQL literal.
@@ -318,12 +323,15 @@ export async function draftItemProposal(input: {
   name: string;
   description: string;
 }): Promise<ItemDraftProposal | null> {
-  const { value } = await generateChecked({
-    schema: draftedItemSchema,
-    system: DRAFT_SYSTEM,
-    prompt: draftPrompt(input.kind, input.name, input.description),
-    code: "api.items.draft",
-  });
+  const { value } = await generateCheckedBounded(
+    {
+      schema: draftedItemSchema,
+      system: DRAFT_SYSTEM,
+      prompt: draftPrompt(input.kind, input.name, input.description),
+      code: "api.items.draft",
+    },
+    { timeoutMs: ITEM_DRAFT_TIMEOUT_MS, timeoutCode: "api.items.draft.timeout" },
+  );
   if (!value) return null;
   return groundItemDraft(input.kind, value);
 }
@@ -351,12 +359,15 @@ export async function runItemClassify(ownerId: string, ids: readonly string[]): 
         .where(and(eq(items.ownerId, ownerId), inArray(items.id, [...chunkIds])));
       if (rows.length === 0) continue;
 
-      const { value } = await generateChecked({
-        schema: classifySectionSchema,
-        system: CLASSIFY_SYSTEM,
-        prompt: classifyPrompt(rows),
-        code: "api.items.classify",
-      });
+      const { value } = await generateCheckedBounded(
+        {
+          schema: classifySectionSchema,
+          system: CLASSIFY_SYSTEM,
+          prompt: classifyPrompt(rows),
+          code: "api.items.classify",
+        },
+        { timeoutMs: ITEM_CLASSIFY_TIMEOUT_MS, timeoutCode: "api.items.classify.timeout" },
+      );
       if (!value) {
         failedChunks += 1;
         continue;

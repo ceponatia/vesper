@@ -4,7 +4,7 @@ import { characterChatMessages, characterChatState, characterChatSummaries, char
 
 // Rolling chat-summary integration suite (re-keyed on the conversation). The DB-bound
 // fold: processChatSummary, the watermark window, the enqueue guard, and the chat
-// DELETE cascading the summary row. generateChecked is mocked so the fold has a
+// DELETE cascading the summary row. The fold's structured call is mocked so it has a
 // deterministic recap without a provider (AI_FAKE keeps the reply stream in demo
 // mode). Self-skips when the database is unreachable.
 
@@ -13,13 +13,16 @@ const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Sum Int"
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 // Preserve the real ai barrel (streamCharacterChat still needs openrouter/isDemoMode),
-// override only the structured-generation call the fold uses.
+// override only the structured-generation call the fold uses. That call is
+// `generateCheckedBounded` since #192 put the fold behind a deadline: stubbing the
+// retired bare `generateChecked` would leave the real bounded helper in the fold's
+// path, and every recap below would come back as demo mode's degraded default.
 vi.mock("@/server/ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai")>();
-  return { ...actual, generateChecked: vi.fn() };
+  return { ...actual, generateCheckedBounded: vi.fn() };
 });
 
-import { generateChecked } from "@/server/ai";
+import { generateCheckedBounded } from "@/server/ai";
 import { resetRateLimits } from "@/server/api";
 import {
   chatExchangeLockKey,
@@ -94,7 +97,7 @@ beforeEach(async () => {
   await db().delete(characterChatSummaries).where(eq(characterChatSummaries.chatId, ids.chat));
   await db().delete(characterChatState).where(eq(characterChatState.chatId, ids.chat));
   await db().delete(jobs).where(sql`${jobs.payload} ->> 'chatId' = ${ids.chat}`);
-  vi.mocked(generateChecked).mockReset();
+  vi.mocked(generateCheckedBounded).mockReset();
 });
 
 afterAll(async () => {
@@ -106,7 +109,7 @@ afterAll(async () => {
 
 describe.runIf(ready)("processChatSummary — the fold", () => {
   it("folds the oldest exchanges, advances the watermark, and trims the verbatim window", async () => {
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "ROLLED-UP RECAP" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "ROLLED-UP RECAP" }, degraded: false });
     await seed(ids.chat, 80); // 40 exchanges, all unsummarized
 
     await processChatSummary({ chatId: ids.chat });
@@ -118,7 +121,7 @@ describe.runIf(ready)("processChatSummary — the fold", () => {
     expect(state?.summary).toBe("ROLLED-UP RECAP");
     expect(state?.watermark).not.toBeNull();
     expect(state?.coveredExchanges).toBe(25); // floor(50 / 2)
-    expect(generateChecked).toHaveBeenCalledTimes(1);
+    expect(generateCheckedBounded).toHaveBeenCalledTimes(1);
 
     // The window is exactly the messages after the watermark — the newest 30.
     const window = await loadVerbatimWindow(ids.chat, state?.watermark ?? null);
@@ -128,7 +131,7 @@ describe.runIf(ready)("processChatSummary — the fold", () => {
   });
 
   it("degrades to a no-op (no row, watermark unmoved) when the fold fails", async () => {
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "" }, degraded: true });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "" }, degraded: true });
     await seed(ids.chat, 80);
 
     await processChatSummary({ chatId: ids.chat });
@@ -140,13 +143,13 @@ describe.runIf(ready)("processChatSummary — the fold", () => {
   });
 
   it("no-ops below the trigger without calling the model", async () => {
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "unused" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "unused" }, degraded: false });
     await seed(ids.chat, 60); // < 70 (the trigger)
 
     await processChatSummary({ chatId: ids.chat });
 
     expect(await loadChatSummary(ids.chat)).toBeNull();
-    expect(generateChecked).not.toHaveBeenCalled();
+    expect(generateCheckedBounded).not.toHaveBeenCalled();
   });
 });
 
@@ -189,19 +192,19 @@ const msgCtx = (chatId: string, messageId: string) => routeCtx({ chatId, message
 
 /** Seed 80 messages and fold once, leaving a summary that quotes `msg-3`. */
 async function foldOnce(): Promise<void> {
-  vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "RECAP: msg-3 mattered" }, degraded: false });
+  vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "RECAP: msg-3 mattered" }, degraded: false });
   await seed(ids.chat, 80);
   await processChatSummary({ chatId: ids.chat });
   const state = await loadChatSummary(ids.chat);
   expect(state?.summary).toContain("msg-3");
   expect(state?.watermark).not.toBeNull();
-  vi.mocked(generateChecked).mockClear();
+  vi.mocked(generateCheckedBounded).mockClear();
 }
 
 describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — continuity repair", () => {
   it("re-folds the summary when an edited assistant line is covered by the watermark", async () => {
     await foldOnce();
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
     const covered = (await transcript(ids.chat))[3]!; // msg-3, an assistant line inside the folded chunk
 
     const res = await msgPatch(patchMsgReq(ids.chat, covered.id, "msg-3 rewritten"), msgCtx(ids.chat, covered.id));
@@ -209,7 +212,7 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
 
     expect(body.continuity.summary).toBe("rebuilt");
     expect(body.continuity.diagnostics).toContain("chat_continuity.summary.rebuilt");
-    expect(generateChecked).toHaveBeenCalled(); // the rebuild's own fold
+    expect(generateCheckedBounded).toHaveBeenCalled(); // the rebuild's own fold
     const after = await loadChatSummary(ids.chat);
     expect(after?.summary).toBe("REBUILT RECAP");
     expect(after?.summary).not.toContain("msg-3"); // the old wording is unreachable through the summary
@@ -217,7 +220,7 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
 
   it("re-folds for a covered USER line too (summary repair is not assistant-only)", async () => {
     await foldOnce();
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
     const covered = (await transcript(ids.chat))[2]!; // msg-2, a user line
     expect(covered.role).toBe("user");
 
@@ -240,7 +243,7 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
     const body = await expectJson<{ id: string; continuity: Continuity }>(res, 200);
 
     expect(body.continuity.summary).toBe("unaffected");
-    expect(generateChecked).not.toHaveBeenCalled();
+    expect(generateCheckedBounded).not.toHaveBeenCalled();
     expect((await loadChatSummary(ids.chat))?.summary).toContain("msg-3"); // untouched
   });
 
@@ -281,14 +284,14 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
       watermarkId: chunkEnd.id,
       coveredExchanges: 25,
     });
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
     release();
     await held;
 
     const body = await expectJson<{ id: string; continuity: Continuity }>(await pending, 200);
     expect(body.continuity.summary).toBe("rebuilt");
     expect(body.continuity.diagnostics).toContain("chat_continuity.summary.rebuilt");
-    expect(generateChecked).toHaveBeenCalled(); // the rebuild's own fold
+    expect(generateCheckedBounded).toHaveBeenCalled(); // the rebuild's own fold
     const after = await loadChatSummary(ids.chat);
     expect(after?.summary).toBe("REBUILT RECAP");
     expect(after?.summary).not.toContain("msg-3"); // the fold's stale chunk did not outlive the edit
@@ -296,7 +299,7 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
 
   it("re-folds when a covered line is deleted", async () => {
     await foldOnce();
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
     const covered = (await transcript(ids.chat))[4]!;
 
     const res = await msgDelete(delMsgReq(ids.chat, covered.id), msgCtx(ids.chat, covered.id));
@@ -312,7 +315,7 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
     await foldOnce();
     const watermark = (await loadChatSummary(ids.chat))?.watermark ?? null;
     expect(watermark).not.toBeNull();
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "REBUILT RECAP" }, degraded: false });
 
     const res = await msgDelete(delMsgReq(ids.chat, watermark!.id), msgCtx(ids.chat, watermark!.id));
     const body = await expectJson<{ deleted: true; continuity: Continuity }>(res, 200);
@@ -325,7 +328,7 @@ describe.runIf(ready)("PATCH/DELETE /api/chats/:chatId/messages/:messageId — c
     await foldOnce();
     // Every fold from here on degrades: the rebuild resets the row first, so the
     // honest end state is no summary at all rather than the stale recap.
-    vi.mocked(generateChecked).mockResolvedValue({ value: { summary: "" }, degraded: true });
+    vi.mocked(generateCheckedBounded).mockResolvedValue({ value: { summary: "" }, degraded: true });
     const covered = (await transcript(ids.chat))[2]!;
 
     const res = await msgPatch(patchMsgReq(ids.chat, covered.id, "msg-2 rewritten"), msgCtx(ids.chat, covered.id));

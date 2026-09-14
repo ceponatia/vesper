@@ -5,16 +5,17 @@ import {
   currentScenePlace,
   derivePermissionPolicyRead,
   DiagnosticCollector,
+  type DiagnosticSink,
   emptyCharacterProfile,
   garmentActorForCharacter,
   type PhysicalActionOutcome,
 } from "@/contracts";
+import { isNarratorInput, parseChatMessageMeta } from "@/contracts/turns/chat-message-meta";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
 import { characterChatMessages, db } from "../db";
 import { log } from "../log";
 import { resolveChatPersona } from "../players";
-import { messageAttachmentsMetaSchema } from "./chat-reply-store";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordancePreview, type AffordancePreview } from "./chat-affordance-preview";
 import {
@@ -214,7 +215,10 @@ export async function previewChatVisualState(input: {
  * a preview that carries it re-derives the very contact the live turn wrote rather
  * than a look-alike under a different ref.
  */
-async function lastPlayerMessage(chatId: string): Promise<{ id: string | null; content: string; narrator: boolean }> {
+async function lastPlayerMessage(
+  chatId: string,
+  sink?: DiagnosticSink,
+): Promise<{ id: string | null; content: string; narrator: boolean }> {
   const [row] = await db()
     .select({ id: characterChatMessages.id, content: characterChatMessages.content, meta: characterChatMessages.meta })
     .from(characterChatMessages)
@@ -222,8 +226,8 @@ async function lastPlayerMessage(chatId: string): Promise<{ id: string | null; c
     .orderBy(desc(characterChatMessages.createdAt), desc(characterChatMessages.id))
     .limit(1);
   if (!row) return { id: null, content: "", narrator: false };
-  const meta = parseOr(messageAttachmentsMetaSchema, row.meta ?? {}, {}, undefined, "character_chat_messages.meta");
-  return { id: row.id, content: row.content, narrator: meta.inputMode === "narrator" };
+  const meta = parseChatMessageMeta(row.meta, sink);
+  return { id: row.id, content: row.content, narrator: isNarratorInput(meta) };
 }
 
 /**
@@ -408,7 +412,7 @@ export async function previewChatPhysicalGuidance(input: {
   const sink = new DiagnosticCollector();
   const cut = await loadChatPreviewCut({ chatId: input.chatId, character: input.character, sink });
   const read = chatVisualStateAffordanceRead({ characterId: input.character.id, cut, sink });
-  const message = await lastPlayerMessage(input.chatId);
+  const message = await lastPlayerMessage(input.chatId, sink);
   const sensoryFocus = previewSensoryFocus({ character: input.character, cut, message });
   // Reported, never obeyed — the same discipline the affordance read above follows. A
   // developer asking why a contact turn narrated nothing needs the answer with
@@ -537,7 +541,7 @@ export async function previewChatPrompt(input: {
   let previewPhysicalGuidance: readonly string[] = [];
   if (chatPhysicalConstraintsEnabled()) {
     const read = chatVisualStateAffordanceRead({ characterId: input.character.id, cut, sink });
-    const message = await lastPlayerMessage(input.chatId);
+    const message = await lastPlayerMessage(input.chatId, sink);
     const sensoryFocus = previewSensoryFocus({ character: input.character, cut, message });
     // BOTH flags, exactly as the live path gates them: the contact leg is its own
     // experiment, and its outcome only reaches the narrator inside the guidance block

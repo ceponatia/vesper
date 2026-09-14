@@ -7,6 +7,7 @@ import {
   type SoloCutContext,
   type SoloVignette,
 } from "@vesper/simulation-core/solo-cut";
+import { successorReplyMeta } from "@/contracts/turns/chat-message-meta";
 import { newId } from "@/lib/ids";
 import { db, simItemHoldings, simItems } from "@/server/db";
 import { and, asc, eq } from "drizzle-orm";
@@ -321,8 +322,7 @@ export async function runSimSoloTurn(input: {
     speakerCharacterId: input.speakerCharacterId,
     promptMessageId: input.userMessageId,
     content: rendered.prose,
-    meta: {
-      simTurn: true,
+    meta: successorReplyMeta({
       solo: true,
       modelId: rendered.modelId,
       attempts: rendered.attempts,
@@ -330,9 +330,9 @@ export async function runSimSoloTurn(input: {
       ...(input.mode === "open" ? { simOpening: true } : {}),
       // C15 surface a: the composed-flow codes (public-safe), plus the solo render's own
       // stable diagnostic codes — both were previously returned then dropped at persist.
-      ...(fallbackCodes.length ? { compositionFallbacks: fallbackCodes } : {}),
-      ...(diagnostics.length ? { renderDiagnostics: diagnostics } : {}),
-    },
+      compositionFallbacks: fallbackCodes,
+      renderDiagnostics: diagnostics,
+    }),
   });
   void enqueueChatSummary({ chatId });
   return {

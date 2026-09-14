@@ -400,6 +400,12 @@ export const chatMemoryScribeSchema = chatArchivistSchema.pick({
 });
 export type ChatMemoryScribe = z.infer<typeof chatMemoryScribeSchema>;
 
+/** Degraded default: the memory-scribe leg's fields alone (a pick of `degradedChatArchivist()`). */
+export function degradedChatMemoryScribe(): ChatMemoryScribe {
+  const { episodeSummary, facts, memoryQueries } = degradedChatArchivist();
+  return { episodeSummary, facts, memoryQueries };
+}
+
 export const chatContinuitySchema = chatArchivistSchema.pick({
   scene: true,
   // Weather and body surfaces are scene-level state (one sky, one soaking), so
@@ -426,6 +432,34 @@ export const chatContinuitySchema = chatArchivistSchema.pick({
 });
 export type ChatContinuity = z.infer<typeof chatContinuitySchema>;
 
+/** Degraded default: the continuity leg's fields alone (a pick of `degradedChatArchivist()`). */
+export function degradedChatContinuity(): ChatContinuity {
+  const {
+    scene,
+    environment,
+    surfaceWetness,
+    surfaceDeposits,
+    garmentOperations,
+    outfit,
+    playerOutfit,
+    attributeChanges,
+    presence,
+    cast,
+  } = degradedChatArchivist();
+  return {
+    scene,
+    environment,
+    surfaceWetness,
+    surfaceDeposits,
+    garmentOperations,
+    outfit,
+    playerOutfit,
+    attributeChanges,
+    presence,
+    cast,
+  };
+}
+
 export const chatCharacterNotesSchema = chatArchivistSchema.pick({
   openLoops: true,
   driveUpdates: true,
@@ -435,6 +469,12 @@ export const chatCharacterNotesSchema = chatArchivistSchema.pick({
   traitShifts: true,
 });
 export type ChatCharacterNotes = z.infer<typeof chatCharacterNotesSchema>;
+
+/** Degraded default: the character-tracker leg's fields alone (a pick of `degradedChatArchivist()`). */
+export function degradedChatCharacterNotes(): ChatCharacterNotes {
+  const { openLoops, driveUpdates, plans, voiceExemplar, characterSlip, traitShifts } = degradedChatArchivist();
+  return { openLoops, driveUpdates, plans, voiceExemplar, characterSlip, traitShifts };
+}
 
 /**
  * The per-member personal pass: in an

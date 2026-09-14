@@ -11,6 +11,8 @@ import {
   type GarmentSeed,
 } from "@/contracts/items/garment-store";
 import { emptyChatGarmentStore } from "@/contracts/items/garment-instance";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { logDiagnostics } from "@/server/log";
 import { sceneBodyZoneOf } from "@/contracts/affordances/scene";
 import type { VisualFramingBand } from "@/contracts/visual-state";
 import type { VisualStateLaneGarments } from "@/server/visual-state";
@@ -179,6 +181,16 @@ export function standaloneWardrobeGarments(input: {
   }
   const actorId = garmentActorForCharacter(input.characterId);
   let sequence = 0;
+  // This lane has no sink to thread: it builds a throwaway store per render from
+  // rows it was handed. The reconcile can still degrade — a structurally invalid
+  // graph abandons the pass and returns the EMPTY store — and that costs every
+  // garment IDENTITY in the digest, silently, on every render until the row is
+  // fixed. (Exposure is safe regardless: it comes from `toWornInputs(wardrobe)`
+  // over the full wardrobe, and the lane already omits `garments` entirely when
+  // coverage is unreadable.) Collecting locally and logging is what
+  // `logDiagnostics` exists for — a degradation nobody supplied a sink for is
+  // otherwise a failure with no record (docs/resilience.md §8).
+  const diagnostics = new DiagnosticCollector();
   const store = syncWornGarments({
     store: emptyChatGarmentStore(),
     actorId,
@@ -186,7 +198,15 @@ export function standaloneWardrobeGarments(input: {
     seeds,
     mintId: () => `standalone:${input.characterId}:garment:${sequence++}`,
     atMinutes: 0,
+    sink: diagnostics,
   });
+  if (diagnostics.items.length > 0) {
+    logDiagnostics("images.standalone_wardrobe", diagnostics.items, {
+      characterId: input.characterId,
+      garmentRows: visibleRows.length,
+      materialized: store.instances.length,
+    });
+  }
   const rowByDefinition = new Map(visibleRows.map((row) => [row.definitionId, row]));
   const layersByGarmentId = new Map<string, number>();
   const categoriesByGarmentId = new Map<string, string>();

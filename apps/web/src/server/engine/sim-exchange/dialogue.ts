@@ -1,3 +1,4 @@
+import { successorReplyMeta } from "@/contracts/turns/chat-message-meta";
 import { newId } from "@/lib/ids";
 import { readBranchClock } from "../sim-beats";
 import type { CompositionFallbackCollector } from "../composition-diagnostics";
@@ -93,8 +94,7 @@ export async function runCoPresentTurn(input: {
     speakerCharacterId: input.speakerCharacterId,
     promptMessageId: input.userMessageId,
     content: rendered.prose,
-    meta: {
-      simTurn: true,
+    meta: successorReplyMeta({
       cutId: rendered.cutId,
       modelId: rendered.modelId,
       attempts: rendered.attempts,
@@ -105,8 +105,8 @@ export async function runCoPresentTurn(input: {
       // active take, and is what a later retake seeds the historical take's label from.
       ...(rendered.provenance === undefined ? {} : { narratorRun: rendered.provenance }),
       // C15 surface a: public-safe codes only — open a degraded beat and see why.
-      ...(input.fallbacks && input.fallbacks.codes().length ? { compositionFallbacks: input.fallbacks.codes() } : {}),
-    },
+      ...(input.fallbacks === undefined ? {} : { compositionFallbacks: input.fallbacks.codes() }),
+    }),
   });
   // Knowledge/memory: fold the conversation forward — self-dedupes below its trigger.
   void enqueueChatSummary({ chatId });

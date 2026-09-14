@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState } from "react";
+import { isNarratorInput } from "@/contracts/turns/chat-message-meta";
 import { chatsApi, type ChatMessage, type ChatTranscript } from "@/lib/client/api";
 import type { ChatLine } from "@/components/characters/chat-message";
 import { useAsyncData } from "@/components/hooks/use-async";
@@ -8,17 +9,25 @@ import { useToast } from "@/components/ui/toast";
 import { PER_CHAT_DEFAULTS } from "./chat-conversation-state";
 
 /** Project an API transcript row onto the renderable line shape (takes + stopped + attachments ride along). */
-const toLine = (m: ChatMessage): ChatLine => ({
-  id: m.id,
-  role: m.role,
-  content: m.content,
-  takes: m.takes,
-  stopped: m.meta.stopped,
-  attachmentIds: m.meta.attachments?.ids.length ? m.meta.attachments.ids : undefined,
-  narrator: m.meta.inputMode === "narrator" || undefined,
-  // World beat: the muted travel/skip/scene-ended trace.
-  worldBeat: m.meta.worldBeat?.kind,
-});
+const toLine = (m: ChatMessage): ChatLine => {
+  // Always present: the schema's transform runs even on a missing key, so an absent
+  // bag arrives here as the empty meta rather than as `undefined`.
+  const meta = m.meta;
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    takes: m.takes,
+    stopped: meta.stopped ?? false,
+    attachmentIds: meta.attachments?.ids.length ? meta.attachments.ids : undefined,
+    narrator: isNarratorInput(meta) || undefined,
+    // World beat: the muted travel/skip/scene-ended trace.
+    // The kind passes through verbatim — a beat from a NEWER deploy must still
+    // render as a beat, and substituting a known kind for an unknown one would put
+    // a fabricated value in a field the renderer only presence-checks.
+    ...(meta.worldBeat === undefined ? {} : { worldBeat: meta.worldBeat.kind }),
+  };
+};
 
 /** The single transcript, pagination, and committed current-chat identity. */
 export function useChatTranscript(chatId: string) {

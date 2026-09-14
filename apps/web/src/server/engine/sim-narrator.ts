@@ -13,13 +13,13 @@ import type { NarratorRunProvenance } from "@/contracts/narrator-prompts";
 import {
   chatNarrativeModelId,
   collapseRepeatedBlocks,
-  generateChecked,
+  generateCheckedBounded,
   narrativeProviderOptions,
   stripNarratorArtifacts,
 } from "@/server/ai";
 import { db, type Db } from "@/server/db";
 import { buildNarratorRunProvenance } from "./chat-reply-store";
-import { NARRATIVE_TEMPERATURE } from "./constants";
+import { NARRATIVE_TEMPERATURE, SIM_NARRATOR_TIMEOUT_MS } from "./constants";
 import {
   beatHandlesForCut,
   buildSimHandleMap,
@@ -126,17 +126,20 @@ function liveRenderSeam(cut: NarrativeCut): RenderSeam {
     // Provider parity with the legacy narrator lane:
     // NARRATIVE_TEMPERATURE + the eval-ruled per-model reasoning/routing knobs.
     const providerOptions = narrativeProviderOptions(modelId);
-    const generated = await generateChecked({
-      schema: narratorResultSchema,
-      system,
-      prompt,
-      modelId,
-      temperature: NARRATIVE_TEMPERATURE,
-      ...(providerOptions === undefined ? {} : { providerOptions }),
-      maxOutputTokens: 2_000,
-      code: "sim.narrator",
-      fallback: () => deterministicFallbackResult(cut),
-    });
+    const generated = await generateCheckedBounded(
+      {
+        schema: narratorResultSchema,
+        system,
+        prompt,
+        modelId,
+        temperature: NARRATIVE_TEMPERATURE,
+        ...(providerOptions === undefined ? {} : { providerOptions }),
+        maxOutputTokens: 2_000,
+        code: "sim.narrator",
+        fallback: () => deterministicFallbackResult(cut),
+      },
+      { timeoutMs: SIM_NARRATOR_TIMEOUT_MS, timeoutCode: "sim.narrator.timeout" },
+    );
     return {
       raw: generated.value,
       provider: generated.provider ?? null,
@@ -393,21 +396,24 @@ export interface RenderedSolo {
   diagnostics: string[];
 }
 
-/** Live seam: one `generateChecked` call under narrator provider parity, degrading to the fallback prose. */
+/** Live seam: one bounded `generateChecked` call under narrator provider parity, degrading to the fallback prose. */
 function liveSoloSeam(fallbackProse: string): SoloRenderSeam {
   return async ({ system, prompt, modelId }) => {
     const providerOptions = narrativeProviderOptions(modelId);
-    const generated = await generateChecked({
-      schema: soloNarrationSchema,
-      system,
-      prompt,
-      modelId,
-      temperature: NARRATIVE_TEMPERATURE,
-      ...(providerOptions === undefined ? {} : { providerOptions }),
-      maxOutputTokens: 2_000,
-      code: "sim.narrator.solo",
-      fallback: () => ({ prose: fallbackProse }),
-    });
+    const generated = await generateCheckedBounded(
+      {
+        schema: soloNarrationSchema,
+        system,
+        prompt,
+        modelId,
+        temperature: NARRATIVE_TEMPERATURE,
+        ...(providerOptions === undefined ? {} : { providerOptions }),
+        maxOutputTokens: 2_000,
+        code: "sim.narrator.solo",
+        fallback: () => ({ prose: fallbackProse }),
+      },
+      { timeoutMs: SIM_NARRATOR_TIMEOUT_MS, timeoutCode: "sim.narrator.solo.timeout" },
+    );
     return {
       prose: generated.value?.prose ?? fallbackProse,
       provider: generated.provider ?? null,
@@ -487,6 +493,21 @@ export async function renderSoloNarration(
 }
 
 /**
+ * Grace the deliberator's own deadline holds OVER the arbiter's bare `timeout`
+ * race below: that race is the NORMAL decider (it starts its `setTimeout` at
+ * construction, strictly before this deadline's clock even starts), so a
+ * model answering at, say, 4.5s already lost the race and the arbiter already
+ * took its deterministic branch — an expected, non-exceptional outcome. Without
+ * this grace the inner deadline would then fire moments later anyway and
+ * record a `sim.deliberator` timeout failure for that designed-normal case,
+ * and since this leg passes no `telemetry`, it would NEVER record a success —
+ * the Agent-health panel would show a leg that only ever times out. A recorded
+ * timeout now means a genuine stall PAST the arbiter's own race, not merely
+ * losing it.
+ */
+const DELIBERATION_TIMEOUT_GRACE_MS = 2_000;
+
+/**
  * The live deliberator behind its budget and
  * deterministic fallback. The arbiter admits deliberation only for a rare,
  * consequential, ambiguous departure (score gap under the threshold); this
@@ -509,24 +530,35 @@ export function buildLiveDeliberation(options: {
       setTimeout(() => resolve(undefined), timeoutMs).unref?.();
     }),
     deliberate: async (request) => {
-      const generated = await generateChecked({
-        schema: deliberatorResponseSchema,
-        system:
-          "You choose ONE option for a character in a simulation. Reply with strict JSON " +
-          '{"chosenCandidateId": "<one of the given ids>", "rationaleSummary": "<one short sentence>"} ' +
-          "and nothing else. You cannot invent options.",
-        prompt: [
-          `CANDIDATES: ${request.candidateIds.join(" | ")}`,
-          request.evidence.length > 0 ? `EVIDENCE:\n${request.evidence.map((line) => `- ${line}`).join("\n")}` : "",
-          "Pick the candidate the evidence best supports.",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        modelId,
-        temperature: 0.2,
-        maxOutputTokens: 300,
-        code: "sim.deliberator",
-      });
+      // The bare `timeout` promise above already races this against timeoutMs
+      // for the arbiter's own fallback decision — that race alone never
+      // aborted the provider call, leaving it to run to completion in the
+      // background. Composing timeoutMs (plus a grace — see
+      // DELIBERATION_TIMEOUT_GRACE_MS) here as the deadline means a genuine
+      // stall now aborts the in-flight call instead of orphaning it, without
+      // this leg recording a timeout for every ordinary loss of the arbiter's
+      // own race.
+      const generated = await generateCheckedBounded(
+        {
+          schema: deliberatorResponseSchema,
+          system:
+            "You choose ONE option for a character in a simulation. Reply with strict JSON " +
+            '{"chosenCandidateId": "<one of the given ids>", "rationaleSummary": "<one short sentence>"} ' +
+            "and nothing else. You cannot invent options.",
+          prompt: [
+            `CANDIDATES: ${request.candidateIds.join(" | ")}`,
+            request.evidence.length > 0 ? `EVIDENCE:\n${request.evidence.map((line) => `- ${line}`).join("\n")}` : "",
+            "Pick the candidate the evidence best supports.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          modelId,
+          temperature: 0.2,
+          maxOutputTokens: 300,
+          code: "sim.deliberator",
+        },
+        { timeoutMs: timeoutMs + DELIBERATION_TIMEOUT_GRACE_MS, timeoutCode: "sim.deliberator.timeout" },
+      );
       return generated.value;
     },
   };

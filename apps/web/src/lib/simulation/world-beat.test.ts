@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isWorldBeat } from "@/contracts/turns/chat-message-meta";
 import { chatMessageSchema } from "@/lib/client/api";
 import type { SimCalendarStart } from "./clock";
 import { worldBeatText, WORLD_BEAT_KINDS } from "./world-beat";
@@ -133,13 +134,28 @@ describe("chatMessageSchema world-beat round-trip", () => {
     expect(parsed.meta.worldBeat ?? null).toBeNull();
   });
 
-  it("catches an unknown kind to the degraded default rather than rejecting the row", () => {
+  it("carries an unrecognized kind through VERBATIM rather than substituting a known one", () => {
+    // The retired client schema narrowed the kind to `WORLD_BEAT_KINDS` and
+    // `.catch("traveled")`-ed anything else, so a beat written by a newer deploy
+    // came back to an older tab claiming to be a travel beat — a fabricated value
+    // in a durable field. The shared contract types the kind as a plain string
+    // (`chatMessageWorldBeatSchema`) because the vocabulary's owner is
+    // `world-beat.ts`, and every consumer only presence-checks the marker.
     const parsed = chatMessageSchema.parse({
       id: "msg-junk",
       role: "assistant",
       content: "…",
       meta: { worldBeat: { kind: "not-a-real-kind" } },
     });
-    expect(parsed.meta.worldBeat?.kind).toBe("traveled");
+    expect(parsed.meta.worldBeat?.kind).toBe("not-a-real-kind");
+    // Still a beat: the transcript keeps rendering it as the muted system line.
+    expect(isWorldBeat(parsed.meta)).toBe(true);
+  });
+
+  it("keeps a beat kind this build DOES know unchanged", () => {
+    for (const kind of WORLD_BEAT_KINDS) {
+      const parsed = chatMessageSchema.parse({ id: "m", role: "assistant", content: "…", meta: { worldBeat: { kind } } });
+      expect(parsed.meta.worldBeat?.kind).toBe(kind);
+    }
   });
 });

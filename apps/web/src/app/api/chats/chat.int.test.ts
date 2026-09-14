@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { narratorRunProvenanceSchema, type NarratorRunProvenance } from "@/contracts/narrator-prompts";
+import { assistantReplyMeta } from "@/contracts/turns/chat-message-meta";
 import { newId } from "@/lib/ids";
 import {
   characterChatMessages,
@@ -1313,7 +1314,7 @@ describe.runIf(ready)("stopped replies", () => {
       speakerCharacterId: ids.character,
       promptMessageId: promptId,
       content: '[Mara] "I was just about to—"',
-      meta: { stopped: true },
+      meta: assistantReplyMeta({ stopped: true }),
     });
 
     const got = await expectJson<{ messages: { id: string; meta: unknown }[] }>(

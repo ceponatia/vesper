@@ -1,5 +1,6 @@
 import type { AdmittedCommand } from "@vesper/simulation-core/input-admission";
 import { planDepartureChoreography } from "@vesper/simulation-core/departure";
+import { serializeChatMessageMeta, userLineMeta } from "@/contracts/turns/chat-message-meta";
 import { newId } from "@/lib/ids";
 import { characterChatMessages, db } from "@/server/db";
 import { CompositionFallbackCollector } from "../composition-diagnostics";
@@ -57,7 +58,9 @@ export async function runSimTurn(input: {
       speakerCharacterId: null,
       role: "user",
       content: message,
-      meta: { simTurn: true, ...(narratorInput ? { inputMode: "narrator" } : {}) },
+      meta: serializeChatMessageMeta(
+        userLineMeta({ simTurn: true, ...(narratorInput ? { inputMode: "narrator" as const } : {}) }),
+      ),
     });
   }
 

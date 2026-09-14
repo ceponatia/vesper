@@ -25,6 +25,8 @@ import {
   bodySurfaceStateSchema,
   emptyBodySurfaceState,
   clampRegard,
+  validateGarmentStoreBlueprints,
+  type DiagnosticSink,
 } from "@/contracts";
 import { voiceExemplarsSchema } from "../chat-voice";
 import { callbackHistorySchema } from "../chat-callback";
@@ -82,8 +84,26 @@ export function rollbackScenario(anchor: ChatScenario, live: ChatScenario | null
   return { ...anchor, supportingCast: live?.supportingCast ?? anchor.supportingCast };
 }
 
-/** Load the scenario rollback anchor; `{}` (the sentinel) or a bad parse ⇒ null (keep live). */
-export async function loadPreExchangeScenario(chatId: string): Promise<ChatScenario | null> {
+/**
+ * Load the scenario rollback anchor; `{}` (the sentinel) or a bad parse ⇒ null
+ * (keep live).
+ *
+ * This is the ROLLBACK anchor for the garment store — a retake restores
+ * blueprints, loci, presentation and gradients from exactly these bytes — so it
+ * is a durable read like `loadChatScenario` and carries the same structural
+ * rule: an anchored blueprint that parses but is structurally impossible is
+ * replaced by the MARKED degraded root rather than restored as trusted
+ * coverage. Without it a damaged historical snapshot could undress its wearer on
+ * the way back in, which is the one direction a retake must never move.
+ *
+ * `sink` is optional because most callers restore inside a settled transaction
+ * with no collector to hand; the degradation happens either way, and a caller
+ * that wants to see it threads one in.
+ */
+export async function loadPreExchangeScenario(
+  chatId: string,
+  sink?: DiagnosticSink,
+): Promise<ChatScenario | null> {
   const [row] = await db()
     .select({ preExchangeScenario: characterChats.preExchangeScenario })
     .from(characterChats)
@@ -96,8 +116,14 @@ export async function loadPreExchangeScenario(chatId: string): Promise<ChatScena
   // they meet their own parser. An anchor written before the field existed has no
   // `scene` key at all, which `sceneOrEmpty` reads as the empty scene — nobody
   // placed, which is the restoration that can never be wrong in a harmful
-  // direction. No sink: a legacy anchor is not a corruption to report.
-  return { ...parsed, scene: sceneOrEmpty(parsed.scene) };
+  // direction. The SCENE gets no sink even when one is threaded in: a legacy
+  // anchor is not a corruption to report. The garment store does get it — an
+  // impossible graph is a corruption at any age.
+  return {
+    ...parsed,
+    garments: validateGarmentStoreBlueprints(parsed.garments, sink, "pre_exchange_scenario.garments.blueprints"),
+    scene: sceneOrEmpty(parsed.scene),
+  };
 }
 
 /**

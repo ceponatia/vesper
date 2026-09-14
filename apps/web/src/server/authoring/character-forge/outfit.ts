@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { bodyLocationRegistry, clothingCategories, clothingCategoryById, colorFamilyById, colorFamilyIds, clothingLayerSchema, diag, itemDefinitionSchema, wearerTargetById, wearerTargets, type DiagnosticSink, type ItemDefinition } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
-import { generateChecked } from "@/server/ai";
+import { generateCheckedBounded } from "@/server/ai";
 import { CANDIDATE_LIMIT, findItemsByName, listClothingCandidates, type ClothingCandidate, type LibraryLookup } from "../library";
-import { FORGE_LEG_OPTIONS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
+import { FORGE_LEG_OPTIONS, FORGE_LEG_TIMEOUT_MS, type CharacterForgeContext, type CharacterSectionPatch } from "./types";
 import { demoCharacterOutfitSection } from "./demo";
 import { normalizeEnumToken } from "./normalization";
 
@@ -205,16 +205,19 @@ export async function forgeOutfitSection(context: CharacterForgeContext): Promis
     );
   }
 
-  const { value, degraded } = await generateChecked({
-    ...FORGE_LEG_OPTIONS,
-    schema: outfitSectionSchema,
-    system: OUTFIT_SYSTEM,
-    prompt: outfitPrompt(context, candidates),
-    temperature: 0.5,
-    code: "forge.character.outfit",
-    sink: context.sink,
-    fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterOutfitSection,
-  });
+  const { value, degraded } = await generateCheckedBounded(
+    {
+      ...FORGE_LEG_OPTIONS,
+      schema: outfitSectionSchema,
+      system: OUTFIT_SYSTEM,
+      prompt: outfitPrompt(context, candidates),
+      temperature: 0.5,
+      code: "forge.character.outfit",
+      sink: context.sink,
+      fallback: context.scope || context.useFallbacks === false ? undefined : demoCharacterOutfitSection,
+    },
+    { timeoutMs: FORGE_LEG_TIMEOUT_MS, timeoutCode: "forge.character.outfit.timeout" },
+  );
   if (context.scope && (degraded || !value)) return {};
   const section = value ?? outfitSectionSchema.parse({});
   const { reuseIds, fresh } = partitionOutfitReuse(section, new Set(candidates.map((c) => c.id)), context.sink);

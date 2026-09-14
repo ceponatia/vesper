@@ -16,12 +16,14 @@ import {
   type PortraitExtractionEvidence,
   type PortraitFieldEvidence,
 } from "@/lib/portrait-extraction";
-import { generateChecked, visionModelId, type GenerateImagePart } from "@/server/ai";
+import { generateCheckedBounded, visionModelId, type GenerateImagePart } from "@/server/ai";
 import { characterAttributeDefinitions, describeConstraint, groundAttributeValues } from "./character-forge/attributes";
 import type { CharacterDraft } from "./drafts";
 
 export const PORTRAIT_ATTRIBUTE_PROMPT_VERSION = "portrait-attributes/v2";
 export const PORTRAIT_DEFAULT_CONFIDENCE = 7_000;
+/** The portrait vision read (docs/resilience.md §3): a single call, waited on inline by the forge/redraft flow — generous for a vision model, still bounded. */
+export const PORTRAIT_ATTRIBUTES_TIMEOUT_MS = 60_000;
 
 export function portraitObservationCanPropose(
   definition: AttributeDefinition | undefined,
@@ -245,15 +247,18 @@ export async function derivePortraitAttributes(input: PortraitAttributesInput): 
   const definitions = portraitAttributeDefinitions(draft);
   const startedAt = new Date();
   const modelId = visionModelId();
-  const generated = await generateChecked({
-    schema: buildPortraitSchema(definitions),
-    system: PORTRAIT_SYSTEM,
-    prompt: portraitPrompt(definitions),
-    images: [input.image],
-    modelId,
-    code: "forge.character.portrait",
-    sink,
-  });
+  const generated = await generateCheckedBounded(
+    {
+      schema: buildPortraitSchema(definitions),
+      system: PORTRAIT_SYSTEM,
+      prompt: portraitPrompt(definitions),
+      images: [input.image],
+      modelId,
+      code: "forge.character.portrait",
+      sink,
+    },
+    { timeoutMs: PORTRAIT_ATTRIBUTES_TIMEOUT_MS, timeoutCode: "forge.character.portrait.timeout" },
+  );
   const finishedAt = new Date();
   if (generated.degraded || !generated.value) {
     return {

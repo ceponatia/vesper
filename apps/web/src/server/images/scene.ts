@@ -4,7 +4,7 @@ import {
   classifyImageFailure,
   composerDisablesReasoning,
   composerFallbackModelId,
-  generateChecked,
+  generateCheckedBounded,
   isDemoMode,
   qualifiedImageModelIdentity,
   sceneComposerModelId,
@@ -69,6 +69,9 @@ export type SceneComposeInput = SceneComposerContext & {
   composerModel?: string | null;
 };
 
+/** Each composer rung's budget (docs/resilience.md §3): a render waits on this, and there are two rungs at most, so each stays tight. */
+const SCENE_COMPOSER_TIMEOUT_MS = 30_000;
+
 /**
  * Compose a validated render plan from the current scene context.
  *
@@ -77,12 +80,14 @@ export type SceneComposeInput = SceneComposerContext & {
  * on purpose: `generateChecked` answers a missing fallback with the schema's own defaults,
  * which parse cleanly and would look exactly like a successful composition — the refusal
  * would be invisible and the second model would never be asked. Reading `degraded` is what
- * makes a refusal or a schema miss visible enough to retry.
+ * makes a refusal or a schema miss visible enough to retry. A timed-out primary degrades the
+ * exact same way (`generateCheckedBounded` resolves `{ value: null, degraded: true }` with no
+ * fallback configured), so a stalled first rung also falls through to the retry rung.
  *
  * The retry is the approved refusal fallback (`composerFallbackModelId` — a model already
  * trusted with this repo's most explicit text, and guaranteed not to be the primary itself),
  * and it carries the heuristic fallback, so the terminal degrade stays today's deterministic
- * spec — never a failed render.
+ * spec — never a failed render, and never a stalled one either.
  */
 export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneRenderPlan> {
   const { sink, composerModel, ...context } = input;
@@ -94,15 +99,19 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
     code: "images.scene_composer",
     sink,
   };
+  const bound = { timeoutMs: SCENE_COMPOSER_TIMEOUT_MS, timeoutCode: "images.scene_composer.timeout" };
   // Resolved ONCE: the id is read four times below (the call, the diagnostic, its context,
   // and the fallback's collision check), and re-resolving would let a mid-compose default
   // change split the ladder across two models nobody chose.
   const primaryModelId = sceneComposerModelId(composerModel);
-  const primary = await generateChecked({
-    ...request,
-    modelId: primaryModelId,
-    disableReasoning: composerDisablesReasoning(primaryModelId),
-  });
+  const primary = await generateCheckedBounded(
+    {
+      ...request,
+      modelId: primaryModelId,
+      disableReasoning: composerDisablesReasoning(primaryModelId),
+    },
+    bound,
+  );
   if (!primary.degraded && primary.value) return resolveScenePlan(primary.value, context, sink);
   // Demo mode degrades every model call by design, so a second one buys nothing but noise —
   // and the primary's own `.degraded` diagnostic has already said what happened.
@@ -113,14 +122,17 @@ export async function composeSceneSpec(input: SceneComposeInput): Promise<SceneR
       context: { primary: primaryModelId, fallback: fallbackModelId },
     }),
   );
-  const retry = await generateChecked({
-    ...request,
-    modelId: fallbackModelId,
-    fallback,
-    // Resolved for the RUNG, not inherited from the primary: the fallback is an Aion
-    // endpoint, which rejects `reasoning:{enabled:false}` outright.
-    disableReasoning: composerDisablesReasoning(fallbackModelId),
-  });
+  const retry = await generateCheckedBounded(
+    {
+      ...request,
+      modelId: fallbackModelId,
+      fallback,
+      // Resolved for the RUNG, not inherited from the primary: the fallback is an Aion
+      // endpoint, which rejects `reasoning:{enabled:false}` outright.
+      disableReasoning: composerDisablesReasoning(fallbackModelId),
+    },
+    bound,
+  );
   return resolveScenePlan(retry.value ?? fallback(), context, sink);
 }
 
