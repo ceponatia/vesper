@@ -419,6 +419,16 @@ describe("a ruled meter effect in a scene (issue #427)", () => {
       (fact) => fact.concept === "subject.current_state" && String(fact.value).includes("glassy"),
     );
     expect(effectFact).toBeDefined();
+    // The #544 F1 defect class: a bare join ("glassy, unfocused eyes") reaches
+    // the ordinary subject frame as a predicate complement and compiles a
+    // malformed sentence. The renderer states a trailing clause instead
+    // (`with glassy, unfocused eyes`), and this probe cast carries no
+    // wardrobe facts (`laneProbeShadowInput` sets no `garments`), so the 2511
+    // dialect's wardrobe band has nothing to attach the clause to and frames
+    // it in its own "seen" form — the imperative register the scene task
+    // defaults to (`registerFor`, `dialect-qwen-2511.ts`).
+    expect(drunk.prompt).not.toMatch(/\bis glassy, unfocused eyes\b/i);
+    expect(drunk.prompt).toContain("Show her with glassy, unfocused eyes.");
 
     const { program: sober } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.2));
     expect(sober.prompt).not.toMatch(/glassy/i);
