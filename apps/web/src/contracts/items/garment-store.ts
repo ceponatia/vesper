@@ -205,12 +205,27 @@ function firstBlueprintDiagnostic(
  * Per-entry independence is the schema's rule and it is kept here: one bad entry
  * degrades ALONE — its siblings, the `instances` and `seeded` untouched — and
  * files exactly ONE diagnostic, so a store full of damage cannot flood the
- * turn's record. An entry the parse ALREADY marked `degraded` is left exactly
- * as it is — it is already
- * the marked state this function produces, the parse already recorded the loss,
- * and re-reporting it would file a warning on every later load of the same
- * conversation. A store with nothing to replace is returned by IDENTITY, so a
- * healthy read stays byte-identical through the rollback anchor.
+ * turn's record.
+ *
+ * An entry the PARSE marked `degraded` gets the same treatment, on the same
+ * terms. `chatGarmentStoreSchema` drops a malformed node, keeps the rest and
+ * sets the flag — but it pushes no diagnostic and it is not handed a sink, so
+ * the loss reaches nobody, and the surviving nodes keep their coverage: the
+ * remainder is still enumerable through `garmentBlueprintFor`, which the many
+ * consumers that never consult `reliable` call. That partial graph is NOT the
+ * marked safe root; only the CANONICAL sentinel is. So a degraded entry that is
+ * not byte-equal to `degradedGarmentBlueprint()` is normalized to it and
+ * reported once, in the `chat_garments.*` family — the corruption belongs to the
+ * wardrobe, not to any one structural rule, and the validator has nothing to say
+ * about a graph the shape parse already truncated.
+ *
+ * An entry that already IS the canonical sentinel — a dangling-hash fill, or one
+ * this pass normalized on an earlier load — passes silently. That is what keeps
+ * the report to ONCE rather than once per load: the exchange persists the
+ * normalized store, and the next read finds the sentinel and says nothing. A
+ * store with nothing to replace is returned by IDENTITY, so a healthy read stays
+ * byte-identical through the rollback anchor and a second pass over a normalized
+ * store is a no-op.
  */
 export function validateGarmentStoreBlueprints(
   store: ChatGarmentStore,
@@ -219,7 +234,21 @@ export function validateGarmentStoreBlueprints(
 ): ChatGarmentStore {
   let replaced: Record<string, GarmentBlueprint> | undefined;
   for (const [hash, blueprint] of Object.entries(store.blueprints)) {
-    if (isDegradedGarmentBlueprint(blueprint)) continue;
+    if (isDegradedGarmentBlueprint(blueprint)) {
+      // Already canonical ⇒ nothing to normalize and nothing new to say.
+      if (isCanonicalDegradedBlueprint(blueprint)) continue;
+      replaced ??= { ...store.blueprints };
+      replaced[hash] = degradedGarmentBlueprint();
+      sink?.push(
+        diag(
+          "warn",
+          "chat_garments.blueprint_degraded",
+          "stored garment blueprint lost parts to the shape parse — normalized to the degraded root; its wearer degrades to covered",
+          { path, context: { blueprintHash: hash, nodeCount: blueprint.nodes.length } },
+        ),
+      );
+      continue;
+    }
     const validation = validateGarmentBlueprint(blueprint);
     if (validation.ok) continue;
     replaced ??= { ...store.blueprints };
@@ -228,6 +257,25 @@ export function validateGarmentStoreBlueprints(
     if (sink && diagnostic) sink.push(diagnostic);
   }
   return replaced === undefined ? store : { ...store, blueprints: replaced };
+}
+
+/**
+ * Is this the CANONICAL degraded sentinel — the exact graph
+ * `degradedGarmentBlueprint()` mints — rather than merely a `degraded`-marked
+ * one? Compared through the content hash, which is what "byte-equal" means for
+ * a blueprint (normalized field and collection order, so a re-serialized
+ * sentinel still matches). `garment-blueprint.ts` exposes no such recognizer:
+ * `isDegradedGarmentBlueprint` answers the different, weaker question of whether
+ * coverage can be trusted at all, and every consumer that only needs THAT
+ * should keep asking it.
+ *
+ * The canonical hash is constant; it is memoized on first use rather than
+ * computed at module load so this file does no import-time work.
+ */
+let canonicalDegradedHash: string | undefined;
+function isCanonicalDegradedBlueprint(blueprint: GarmentBlueprint): boolean {
+  canonicalDegradedHash ??= garmentBlueprintHash(degradedGarmentBlueprint());
+  return garmentBlueprintHash(blueprint) === canonicalDegradedHash;
 }
 
 /** Every instance an actor currently WEARS, in store order (the projection's order). */
