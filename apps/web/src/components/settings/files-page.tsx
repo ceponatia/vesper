@@ -117,7 +117,14 @@ export function FilesPage() {
   // mid-drag — only reaching zero nested "entered" elements means "left".
   const dragDepthRef = useRef(0);
   /** Paths of the drag in flight; `dataTransfer.getData` stays empty until the drop. */
-  const dragPathsRef = useRef<string[]>([]);
+  /**
+   * Paths of the drag in flight — state rather than a ref, because this
+   * genuinely drives rendering: it decides which drop targets light up, and
+   * `dataTransfer.getData` stays empty until the drop. A ref here made the
+   * highlight depend on a value React was not tracking, which is exactly what
+   * `react-hooks/refs` objects to.
+   */
+  const [dragPaths, setDragPaths] = useState<string[]>([]);
   const [showDropOverlay, setShowDropOverlay] = useState(false);
   // Same-tab record of what a row's own drag is carrying, used only for the
   // hover highlight. The drop handlers below re-derive the authoritative list
@@ -242,22 +249,20 @@ export function FilesPage() {
    *
    * A destination the move would refuse must not light up or take the pointer —
    * the drop was already refused, but silently, so the row highlighted, accepted
-   * the cursor, and then nothing happened. The payload comes from `dragPathsRef`
-   * because `dataTransfer.getData` stays empty until the drop, and it is read
-   * inside each handler rather than in a closure built here: this function runs
-   * during render, and `react-hooks/refs` rightly refuses a ref read on that path.
+   * the cursor, and then nothing happened. The payload comes from `dragPaths`,
+   * since `dataTransfer.getData` stays empty until the drop.
    */
   function dropTargetHandlers(destination: string) {
     return {
       onDragEnter: (event: DragEvent) => {
         if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE)) return;
-        if (isBlockedDragDestination(destination, dragPathsRef.current)) return;
+        if (isBlockedDragDestination(destination, dragPaths)) return;
         event.preventDefault();
         setDragOverTargetPath(destination);
       },
       onDragOver: (event: DragEvent) => {
         if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE)) return;
-        if (isBlockedDragDestination(destination, dragPathsRef.current)) return;
+        if (isBlockedDragDestination(destination, dragPaths)) return;
         event.preventDefault();
       },
       onDragLeave: () => setDragOverTargetPath((current) => (current === destination ? null : current)),
@@ -279,10 +284,10 @@ export function FilesPage() {
     const paths = dragSourcePaths(new Set(selectedVisible.map((entry) => entry.path)), entryPath);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(ADMIN_FILES_DRAG_TYPE, JSON.stringify(paths));
-    dragPathsRef.current = paths;
+    setDragPaths(paths);
   };
   const onRowDragEnd = () => {
-    dragPathsRef.current = [];
+    setDragPaths([]);
     setDragOverTargetPath(null);
   };
 
