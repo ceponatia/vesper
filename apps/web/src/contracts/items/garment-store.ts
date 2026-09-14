@@ -1,3 +1,4 @@
+import { bodyLocationRegistry } from "../body/locations";
 import { diag, type Diagnostic, type DiagnosticSink } from "../diagnostics";
 import { samePlaceName } from "../turns/chat-scene-memory";
 import {
@@ -11,6 +12,7 @@ import {
   garmentBlueprintDiagnostics,
   validateGarmentBlueprint,
   type GarmentBlueprintIssue,
+  type GarmentBlueprintValidation,
 } from "./garment-blueprint-validation";
 import { GARMENT_MATERIAL_UNKNOWN, type GarmentMaterialProfileId } from "./garment-material";
 import {
@@ -152,8 +154,34 @@ function blueprintIssues(
 ): readonly GarmentBlueprintIssue[] {
   const validation = validateGarmentBlueprint(blueprint);
   if (validation.ok) return [];
-  if (sink) for (const diagnostic of garmentBlueprintDiagnostics(validation, path, context)) sink.push(diagnostic);
+  const diagnostic = firstBlueprintDiagnostic(validation, path, context);
+  if (sink && diagnostic) sink.push(diagnostic);
   return validation.issues;
+}
+
+/**
+ * The ONE diagnostic an invalid graph files: its FIRST issue, carrying
+ * `issueCount` for the rest.
+ *
+ * All the rules run so an authoring surface can show every problem at once, but
+ * a degradation sink is not an authoring surface — it is a per-turn record, and
+ * one damaged graph can carry a couple of dozen issues while a durable read
+ * walks up to `CHAT_GARMENT_BLUEPRINTS_MAX` of them. Filing them all would bury
+ * every other diagnostic the turn recorded to say one thing. Callers that need
+ * the full list get it from the return value (`instantiateGarment`'s `rejected`,
+ * the skip warn's `issues` context), never from the sink.
+ */
+function firstBlueprintDiagnostic(
+  validation: GarmentBlueprintValidation,
+  path: string,
+  context: Record<string, unknown>,
+): Diagnostic | undefined {
+  const first = validation.issues[0];
+  if (!first) return undefined;
+  return garmentBlueprintDiagnostics({ ok: false, issues: [first] }, path, {
+    ...context,
+    issueCount: validation.issues.length,
+  })[0];
 }
 
 /**
@@ -175,8 +203,10 @@ function blueprintIssues(
  * covered (docs/character-chat/wardrobe.md §"Failure is marked, never bare").
  *
  * Per-entry independence is the schema's rule and it is kept here: one bad entry
- * degrades ALONE, its siblings, the `instances` and `seeded` untouched. An entry
- * the parse ALREADY marked `degraded` is left exactly as it is — it is already
+ * degrades ALONE — its siblings, the `instances` and `seeded` untouched — and
+ * files exactly ONE diagnostic, so a store full of damage cannot flood the
+ * turn's record. An entry the parse ALREADY marked `degraded` is left exactly
+ * as it is — it is already
  * the marked state this function produces, the parse already recorded the loss,
  * and re-reporting it would file a warning on every later load of the same
  * conversation. A store with nothing to replace is returned by IDENTITY, so a
@@ -194,11 +224,8 @@ export function validateGarmentStoreBlueprints(
     if (validation.ok) continue;
     replaced ??= { ...store.blueprints };
     replaced[hash] = degradedGarmentBlueprint();
-    if (sink) {
-      for (const diagnostic of garmentBlueprintDiagnostics(validation, path, { blueprintHash: hash })) {
-        sink.push(diagnostic);
-      }
-    }
+    const diagnostic = firstBlueprintDiagnostic(validation, path, { blueprintHash: hash });
+    if (sink && diagnostic) sink.push(diagnostic);
   }
   return replaced === undefined ? store : { ...store, blueprints: replaced };
 }
@@ -270,19 +297,36 @@ export interface GarmentSeed {
  * COVERAGE. Every template node keeps only the locations the definition actually
  * covers, and any covered location no node claims lands on the root — so
  *
- *     union(node.baselineCoverage) === set(definition.coverage)
+ *     union(node.baselineCoverage) === storable(definition.coverage)
  *
  * exactly. That is what makes materialization coverage-neutral: a "top" edited
  * down to a bandeau instantiates as a bandeau, not as the category's shoulders +
  * chest + back + waist + upper arms. (Slice 1's template invariant — union of
  * node coverage = CATEGORY coverage — is the un-rescoped case of the same rule.)
+ *
+ * `storable` is `items/coverage.ts`'s rule, applied here for the same reason
+ * every other coverage consumer applies it (`storableIds` in
+ * `garment-coverage.ts`, `resolveWardrobeVisibility` in `visibility.ts`):
+ * NON-coverage-relevant ids — the intimate and feature sub-trees — are not
+ * wardrobe slots, and a garment over `pelvis`/`chest` already covers them
+ * through `expand`. The item API validates a coverage list for registry
+ * MEMBERSHIP only, so such an id can legitimately sit in a stored definition;
+ * dropping it here is coverage-neutral (the visibility resolver skips it either
+ * way) and keeps the structural gate below reserved for genuine topology
+ * damage. An id the registry does not know at all is NOT dropped: that is
+ * unknown state rather than a known-droppable slot, it parks on the root as
+ * before, and the gate refuses it.
  */
 export function garmentBlueprintForSeed(seed: GarmentSeed): GarmentBlueprint {
   const material = seed.materialProfileId ?? GARMENT_MATERIAL_UNKNOWN;
   const template =
     (seed.categoryId ? garmentTemplateForCategory(seed.categoryId, material) : undefined) ??
     mintGarmentBlueprint({ materialProfileId: material });
-  const wanted = new Set(seed.coverage.filter((id) => id.trim().length > 0));
+  const wanted = new Set(
+    seed.coverage.filter(
+      (id) => id.trim().length > 0 && bodyLocationRegistry.byId(id)?.coverageRelevant !== false,
+    ),
+  );
   const claimed = new Set<string>();
   const nodes = template.nodes.map((node) => {
     const kept = node.baselineCoverage.filter((id) => wanted.has(id));
@@ -550,21 +594,38 @@ export function syncWornGarments(input: SyncWornGarmentsInput): ChatGarmentStore
     let hairOcclusion: HairOcclusion | undefined;
     if (seed) {
       const seedBlueprint = garmentBlueprintForSeed(seed);
-      // The structural gate. A definition's own `coverage` is the one input here
-      // that is neither code-owned nor registry-checked, so an id that is not a
-      // coverage-relevant body location rides it in and lands on the root node.
-      // That graph must not be registered and must not be minted from — but the
-      // reconcile does not simply drop the garment either, because reconciling
-      // this actor to the readable remainder is what would DOFF whatever the bad
-      // definition covers and persist a modelled-and-emptier wardrobe, i.e. read
-      // the region bare. So the actor's whole pass is abandoned and their store
-      // slice comes back untouched, exactly as `syncChatGarments` treats a
-      // withheld id: a modelled actor keeps the prior outfit, an unmodelled one
-      // keeps the ids in the worn column, and a repaired definition materializes
-      // normally on the next reconcile. The cost is a lost outfit CHANGE, never
-      // a bare body (docs/character-chat/wardrobe.md §"Failure is marked, never
-      // bare").
-      if (blueprintIssues(seedBlueprint, "garment_store.sync", { actorId, definitionId }, sink).length > 0) {
+      // The structural gate — genuine topology damage only. A definition's
+      // coverage no longer reaches it through the known-but-not-storable door
+      // (`garmentBlueprintForSeed` drops those ids the way every other coverage
+      // consumer does), so what remains is a graph that cannot be true: a cycle,
+      // a lost root, an id the registry has never heard of.
+      //
+      // Such a graph must not be registered and must not be minted from — but
+      // the reconcile does not simply drop the garment either, because
+      // reconciling this actor to the readable remainder is what would DOFF
+      // whatever the bad definition covers and persist a modelled-and-emptier
+      // wardrobe, i.e. read the region bare. So the actor's whole pass is
+      // abandoned and their store slice comes back untouched, exactly as
+      // `syncChatGarments` treats a withheld id: a modelled actor keeps the
+      // prior outfit, an unmodelled one keeps the ids in the worn column, and a
+      // repaired definition materializes normally on the next reconcile. The
+      // cost is a lost outfit CHANGE, never a bare body
+      // (docs/character-chat/wardrobe.md §"Failure is marked, never bare").
+      const issues = blueprintIssues(seedBlueprint, "garment_store.sync", { actorId, definitionId }, sink);
+      if (issues.length > 0) {
+        // The SKIP is its own fact, in the family the wardrobe seam's other two
+        // withhold arms use (`definition_load_failed` / `coverage_unreadable`),
+        // so one `chat_garments.*` filter sees every reconcile this chat lost.
+        // The `garment_blueprint.*` diagnostic above says what was wrong with
+        // the graph; this one says what the wardrobe did about it.
+        sink?.push(
+          diag(
+            "warn",
+            "chat_garments.blueprint_invalid",
+            `worn definition ${definitionId} has a structurally invalid garment graph — reconcile skipped for this actor; materialization retries on the next one`,
+            { path: "chat_garments.sync", context: { actorId, definitionId, issues: issues.map((issue) => issue.code) } },
+          ),
+        );
         return input.store;
       }
       const registration = registerBlueprint(blueprints, seedBlueprint, instances);

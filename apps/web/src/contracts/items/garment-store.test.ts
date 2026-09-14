@@ -11,6 +11,7 @@ import {
   isDegradedGarmentBlueprint,
   type GarmentBlueprint,
 } from "./garment-blueprint";
+import type { GarmentBlueprintIssueCode } from "./garment-blueprint-validation";
 import { garmentCategoryTemplates } from "./garment-templates";
 import { exposedRegions, type WornItemInput } from "./visibility";
 import {
@@ -709,6 +710,20 @@ describe("R2 minted ad-hoc garments (F21)", () => {
   });
 });
 
+/** One graph that parses and is still structurally impossible. */
+interface InvalidGraph {
+  readonly label: string;
+  /** The rule this case is ABOUT — asserted against the full issue list. */
+  readonly rule: GarmentBlueprintIssueCode;
+  /**
+   * The code a bounded sink actually carries: the FIRST issue the validator
+   * files. Same as `rule` except for the unreachable case — a part the root
+   * cannot reach necessarily also has no `part_of` edge, and that rule is
+   * checked first.
+   */
+  readonly reported: GarmentBlueprintIssueCode;
+  readonly blueprint: GarmentBlueprint;
+}
 
 /**
  * Graphs that PARSE and are still structurally impossible — the class no shape
@@ -717,14 +732,15 @@ describe("R2 minted ad-hoc garments (F21)", () => {
  * lives in `garment-blueprint-validation.test.ts` and is deliberately not
  * repeated.
  */
-function invalidGraphs(): readonly { readonly label: string; readonly code: string; readonly blueprint: GarmentBlueprint }[] {
+function invalidGraphs(): readonly InvalidGraph[] {
   const node = (id: string, kind: string, baselineCoverage: readonly string[] = []) => ({ id, kind, baselineCoverage });
   const graph = (rootNodeId: string, nodes: unknown[], edges: unknown[] = []): GarmentBlueprint =>
     garmentBlueprintSchema.parse({ rootNodeId, nodes, edges, behaviors: [] });
   return [
     {
       label: "a part_of cycle",
-      code: "garment_blueprint.part_of_cycle",
+      rule: "garment_blueprint.part_of_cycle",
+      reported: "garment_blueprint.part_of_cycle",
       blueprint: graph(
         "root",
         [node("root", "root"), node("a", "panel", ["chest"]), node("b", "panel", ["waist"])],
@@ -736,17 +752,20 @@ function invalidGraphs(): readonly { readonly label: string; readonly code: stri
     },
     {
       label: "a rootNodeId naming no part",
-      code: "garment_blueprint.root_missing",
+      rule: "garment_blueprint.root_missing",
+      reported: "garment_blueprint.root_missing",
       blueprint: graph("gone", [node("root", "root", ["chest"])]),
     },
     {
       label: "a part the root cannot reach",
-      code: "garment_blueprint.part_of_unreachable",
+      rule: "garment_blueprint.part_of_unreachable",
+      reported: "garment_blueprint.part_of_missing",
       blueprint: graph("root", [node("root", "root", ["chest"]), node("stray", "panel", ["waist"])]),
     },
     {
       label: "coverage naming an unknown body location",
-      code: "garment_blueprint.unknown_body_location",
+      rule: "garment_blueprint.unknown_body_location",
+      reported: "garment_blueprint.unknown_body_location",
       blueprint: graph("root", [node("root", "root", ["chest", "atlantis"])]),
     },
   ];
@@ -787,7 +806,15 @@ describe("materialization refuses a structurally invalid graph", () => {
       atMinutes: 30,
       sink,
     });
-    expectDiagnostic(sink, "garment_blueprint.unknown_body_location");
+    // Two diagnostics, one each: WHAT was wrong with the graph, and what the
+    // wardrobe did about it (the `chat_garments.*` family the seam's other
+    // withhold arms use).
+    expectDiagnostics(sink, ["garment_blueprint.unknown_body_location", "chat_garments.blueprint_invalid"]);
+    expect(sink.items[1]?.context ?? {}).toMatchObject({
+      actorId: ALICE,
+      definitionId: "cursed",
+      issues: ["garment_blueprint.unknown_body_location"],
+    });
     // The store comes back by IDENTITY: nothing registered, nothing minted,
     // nothing doffed. The cost is a lost outfit change, not a bare body.
     expect(after).toBe(dressed);
@@ -808,6 +835,7 @@ describe("materialization refuses a structurally invalid graph", () => {
       sink,
     });
     expectDiagnostic(sink, "garment_blueprint.unknown_body_location");
+    expectDiagnostic(sink, "chat_garments.blueprint_invalid");
     expect(actorHasGarmentInstances(after, ALICE)).toBe(false);
     expect(after.blueprints).toEqual({});
     // Unseeded, so the read seam keeps reading the caller's worn-id list.
@@ -815,7 +843,7 @@ describe("materialization refuses a structurally invalid graph", () => {
   });
 
   it("instantiateGarment refuses the mint and names the refusal in the validator's codes", () => {
-    for (const { label, code, blueprint } of invalidGraphs()) {
+    for (const { label, rule, reported, blueprint } of invalidGraphs()) {
       const sink = new DiagnosticCollector();
       const result = instantiateGarment(
         emptyChatGarmentStore(),
@@ -825,15 +853,47 @@ describe("materialization refuses a structurally invalid graph", () => {
       expect(result.instance, label).toBeUndefined();
       expect(result.store.instances, label).toEqual([]);
       expect(result.store.blueprints, label).toEqual({});
-      expectDiagnostic(sink, code);
-      expect(result.rejected?.map((issue) => issue.code), label).toContain(code);
+      // The caller gets every issue…
+      expect(result.rejected?.map((issue) => issue.code), label).toContain(rule);
+      // …the sink gets exactly one, with the total beside it.
+      expectDiagnostics(sink, [reported]);
+      expect(sink.items[0]?.context ?? {}, label).toMatchObject({ issueCount: result.rejected?.length ?? 0 });
     }
+  });
+
+  it("drops a known-but-unstorable coverage id instead of refusing the graph over it", () => {
+    // `vulva` is registry-valid and `coverageRelevant: false` — a contact locus,
+    // not a garment slot — and the item API accepts it in a coverage list, so it
+    // legitimately sits in stored definitions. Every other coverage consumer
+    // drops it; so does materialization. Refusing here would abandon this
+    // actor's reconcile on EVERY write, forever, over an id that changes no
+    // exposure — a far worse failure than the one the gate exists for.
+    const sink = new DiagnosticCollector();
+    const after = syncWornGarments({
+      store: emptyChatGarmentStore(),
+      actorId: ALICE,
+      wornDefinitionIds: ["panties"],
+      seeds: garmentSeedMap([seed("panties", "pants", ["waist", "vulva"])]),
+      mintId: counterIds(),
+      atMinutes: 0,
+      sink,
+    });
+    expectCleanSink(sink);
+    expect(wornGarmentDefinitionIds(after, ALICE)).toEqual(["panties"]);
+    const instance = after.instances[0];
+    expect(instance).toBeDefined();
+    if (!instance) return;
+    const resolution = resolveGarmentBlueprint(after, instance);
+    expect(resolution.reliable).toBe(true);
+    // Coverage-neutral: the storable half survives, the unstorable id is gone.
+    const union = new Set(resolution.blueprint.nodes.flatMap((node) => node.baselineCoverage));
+    expect([...union]).toEqual(["waist"]);
   });
 });
 
 describe("the durable read's structural gate", () => {
   it("replaces a stored entry that parses but cannot be structurally true", () => {
-    for (const { label, code, blueprint } of invalidGraphs()) {
+    for (const { label, reported, blueprint } of invalidGraphs()) {
       const store = storeHolding(blueprint);
       const hash = garmentBlueprintHash(blueprint);
       const sink = new DiagnosticCollector();
@@ -844,9 +904,12 @@ describe("the durable read's structural gate", () => {
       // The MARKED safe root — covers nothing, does nothing, and says so.
       expect(isDegradedGarmentBlueprint(kept), label).toBe(true);
       expect(kept.nodes.flatMap((n) => n.baselineCoverage), label).toEqual([]);
-      expectDiagnostic(sink, code);
-      expect(sink.items.every((d) => d.path === "character_chats.garments.blueprints"), label).toBe(true);
-      expect(sink.items.some((d) => d.context?.blueprintHash === hash), label).toBe(true);
+      // ONE diagnostic per entry, never one per issue: a store full of damage
+      // must not flood the turn's record off the inspector.
+      expectDiagnostics(sink, [reported]);
+      expect(sink.items[0]?.path, label).toBe("character_chats.garments.blueprints");
+      expect(sink.items[0]?.context ?? {}, label).toMatchObject({ blueprintHash: hash });
+      expect(typeof sink.items[0]?.context?.issueCount, label).toBe("number");
       // …so every instance pointing at it reads UNRELIABLE, which is what makes
       // the wardrobe seam degrade this wearer to covered rather than bare.
       const instance = after.instances[0];

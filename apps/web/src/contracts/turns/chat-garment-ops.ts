@@ -230,7 +230,12 @@ export const garmentOperationTraceEntrySchema = z
     /** The resolved instance id; "" when the handle did not resolve. */
     garmentId: z.string().catch("").default(""),
     outcome: garmentOperationOutcomeSchema.catch("rejected").default("rejected"),
-    /** Stable `garment_op.*` code on a rejection; "" otherwise. */
+    /**
+     * Stable machine code on a rejection; "" otherwise. Usually `garment_op.*`
+     * (this module's own rejection vocabulary); an `introduce` the garment store
+     * refused structurally carries that validator's `garment_blueprint.*` code
+     * verbatim rather than a parallel one restating it.
+     */
     code: z.string().catch("").default(""),
     detail: z.string().catch("").default(""),
   })

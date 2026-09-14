@@ -63,7 +63,7 @@ look is on), the free-text `outfit` (an overlay for narrated-but-unowned garment
   `chat_garments.definition_load_failed` / `chat_garments.coverage_unreadable` — instead of
   minting durable covers-nothing instances or doffing whatever the unreadable garment replaced.
   A definition whose graph is structurally impossible takes the same arm one level down, in
-  the reducer (§The garment store).
+  the reducer, under `chat_garments.blueprint_invalid` (§The garment store).
   An unmodelled actor keeps the ids in the worn column and materializes on a later healthy
   reconcile; a modelled actor keeps their prior outfit (the projection re-persists the old worn
   set), so a failed load costs a lost outfit change, never a bare body. A partially readable
@@ -165,11 +165,19 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
   `validateGarmentStoreBlueprints`: a stored entry that parses but fails is replaced under its
   own key by the marked degraded root, so its instances resolve `reliable: false` and their
   wearer degrades to covered. One entry degrades alone — siblings, `instances` and `seeded`
-  are untouched, and a store with nothing to replace comes back unchanged. The graphs that can
-  be invalid in practice are an item definition whose `coverage` names a body location outside
-  the registry (it lands on the blueprint's root at mint time) and a stored snapshot damaged or
-  written by an older shape; category templates are code-owned, so one failing is a programmer
-  error rather than a degraded read.
+  are untouched, a store with nothing to replace comes back unchanged, and a damaged entry
+  files ONE diagnostic rather than one per broken rule. That repair is DURABLE, not
+  per-read: the load hands the degraded store to the exchange, which persists it, and an
+  already-worn instance keeps the sentinel until it is doffed — so the wearer stays
+  conservatively covered and heals on the next outfit change rather than at the next load.
+  The graphs that can be invalid in practice are an item definition whose `coverage` names a
+  body location outside the registry (it lands on the blueprint's root at mint time) and a
+  stored snapshot damaged or written by an older shape; category templates are code-owned, so
+  one failing is a programmer error rather than a degraded read. A registry-KNOWN id that is
+  not coverage-relevant — the intimate and feature sub-trees, which are contact loci rather
+  than garment slots — is not damage: materialization drops it exactly as every other coverage
+  consumer does ([../contracts/items/visibility.md](../contracts/items/visibility.md)), which changes no exposure and
+  keeps the gate reserved for graphs that cannot be true.
 - **Rollback for free.** The store rides the `pre_exchange_scenario` blob, so retakes
   restore blueprints, loci, presentation, and gradients byte-identically (int-tested) — and
   the anchor is a durable read like any other, so a damaged historical snapshot degrades on
