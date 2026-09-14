@@ -85,11 +85,15 @@ export const renderAdvisoryListSchema = z.array(renderAdvisorySchema);
  *   — a real answer, but not what THIS render actually cut if the provider's
  *   real output disagreed with that expectation.
  */
-export interface CropLossMeasurement {
+// Type aliases rather than interfaces on purpose: an interface has no implicit
+// index signature, so it is not assignable to the schema's loose
+// `Record<string, unknown>` evidence, and the package test's compile-time
+// "union matches schema" assertion would fail for that reason alone.
+export type CropLossMeasurement = {
   trimmedFraction: number;
   placement: "focal" | "top" | "center";
   basis: "performed" | "planned";
-}
+};
 
 /**
  * The measurement behind a `blank_output` or `severe_blur` judgment.
@@ -101,7 +105,7 @@ export interface CropLossMeasurement {
  * floor is recalibrated: the raw number means nothing without the pixel
  * count it scaled with.
  */
-export interface OutputPixelMeasurement {
+export type OutputPixelMeasurement = {
   /** Variance of the grayscale pixel values themselves — near zero for a flat,
    * near-uniform fill. */
   grayVariance: number;
@@ -112,7 +116,7 @@ export interface OutputPixelMeasurement {
   measuredWidth: number;
   /** The thumbnail's actual pixel height, as measured. */
   measuredHeight: number;
-}
+};
 
 export type RenderAdvisory =
   | {
