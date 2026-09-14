@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it } from "vitest";
+import type { RenderAdvisory } from "@vesper/image-core";
 import { eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
@@ -499,14 +500,17 @@ describe.skipIf(!ready)("image generator runs", () => {
     // `renderAttemptMeta` — this proves `image-generator-settle.ts` threads
     // `representative.advisories` into it the same way every other lane
     // threads them through `renderAttemptMeta`'s second argument.
-    const advisory = {
+    // Typed as the producer's own union rather than frozen `as const`: the
+    // renderer result wants a mutable `offers` array, which a readonly tuple
+    // is not.
+    const advisory: RenderAdvisory = {
       version: 1,
       code: "blank_output",
       level: "advisory",
       reason: "flat fill",
       evidence: { grayVariance: 0, laplacianVariance: 0, measuredWidth: 8, measuredHeight: 12 },
       offers: ["retry_same", "new_variation"],
-    } as const;
+    };
     setImageGeneratorRendererForTesting(async (request) => {
       captured.push(request);
       return {

@@ -235,6 +235,7 @@ describe("attempt provenance", () => {
       sentValue: "3:4",
       expectedAspect: 3 / 4,
       returned: { width: 768, height: 1024 },
+      providerSize: null,
       crop: null,
     });
   });
