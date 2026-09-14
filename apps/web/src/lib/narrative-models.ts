@@ -139,9 +139,9 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // chain and applies the merges' recommended non-thinking sampling (temp 0.7 / top-p
   // 0.8 / top-k 20 / presence 1.5), after which warm calls measure 0.7–2.8s to first
   // token and 2–6s to a full reply; removing that entry makes those rows unusable, not
-  // merely slower. They are also the only bench rows carrying a sampler profile, so a
-  // comparison including one must read those settings as part of the arm. The Slimaki
-  // row emits no chain at all and therefore has no policy entry.
+  // merely slower. DarkIdol below has its own exact-model profile and deliberately keeps
+  // its short reasoning pass ON at medium effort instead of inheriting this Qwen3.6 rule.
+  // The Slimaki row emits no chain at all and therefore has no policy entry.
   //
   // `(32K)` is the usual context marker; see the note above the RP bench for what
   // it binds.
@@ -174,6 +174,23 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   {
     id: "Naphula/Slimaki-Tavern-24B-v1.3",
     label: "Slimaki Tavern 24B (32K)",
+    provider: "featherless",
+  },
+  // Owner ask, 2026-09-14. Qwen3.8-27B fine-tuned specifically for cinematic RP,
+  // anti-puppeteering, character consistency and narrative-state reasoning. Featherless
+  // serves the checkpoint at FP8/32K even though the author documents stable use up to
+  // 65,536 tokens when self-hosted, so the host is the binding context limit here.
+  //
+  // Unlike the DavidAU Qwen3.6 rows, DarkIdol is meant to reason briefly before prose.
+  // Its exact-model provider policy keeps that reasoning ON at medium effort and applies
+  // the author's supported sampler settings (temperature 1.0, min-p 0.05). The author's
+  // DRY sampler recommendation is not sent because Featherless does not document DRY
+  // request fields; sending undocumented fields would turn a style optimization into an
+  // avoidable provider-compatibility risk. This row has not yet been production-seam
+  // probed, so it remains a test-bench candidate rather than a promoted default.
+  {
+    id: "aifeifei798/DarkIdol-Qwen3.8-27B-v1.1",
+    label: "DarkIdol Qwen3.8 27B v1.1 (32K)",
     provider: "featherless",
   },
   // Added 2026-09-04 from Featherless's public `/v1/models` record, not a
