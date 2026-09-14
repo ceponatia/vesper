@@ -1,4 +1,5 @@
 import { finalizeChatState } from "../engine/chat-state/finalize";
+import type { FinalizeChatStateInput } from "../engine/chat-state/finalize-types";
 import type { AffordanceCueState } from "@/contracts/affordances/core/ranking";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import type { GarmentCueState } from "@/contracts/items/garment-instance";
@@ -282,6 +283,13 @@ export interface SettleChatExchangeArgs {
   playerPersona?: PersonaProfile;
   /** Convenience over `scenario`: the pre-exchange player state (worn list / seeded flag). */
   playerState?: ChatPlayerState;
+  /**
+   * The ensemble roster (design #298): present members' ids + worn lists arm
+   * the shared continuity leg's handle enumeration and lazy materialization,
+   * beyond the primary this fixture already dresses. Absent ⇒ the classic
+   * 1-on-1, unchanged.
+   */
+  roster?: FinalizeChatStateInput["roster"];
   /** Slice-6 cue memory the prompt surfaced; omitted ⇒ the store's memory is untouched. */
   garmentCueState?: GarmentCueState;
   /** Affordance cue memory the prompt surfaced; omitted ⇒ the scenario's memory is untouched. */
@@ -336,6 +344,7 @@ export async function settleChatExchange(
     ...(args.garmentCueState === undefined ? {} : { garmentCueState: args.garmentCueState }),
     ...(args.affordanceCueState === undefined ? {} : { affordanceCueState: args.affordanceCueState }),
     ...(args.playerPersona === undefined ? {} : { playerPersona: args.playerPersona }),
+    ...(args.roster === undefined ? {} : { roster: args.roster }),
     sink,
   });
 

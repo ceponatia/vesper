@@ -496,6 +496,16 @@ export async function syncGarmentsForExchange(input: {
   postWornItemIds: readonly string[];
   /** The player's state with this change's outfit patch already applied. */
   playerStateAfterFold: ChatPlayerState;
+  /**
+   * Present ensemble members beyond the primary (#298):
+   * materialized on THIS write with `preWornItemIds === wornItemIds === their
+   * roster worn list` — a behavior-neutral materialization for a member with no
+   * instances yet (the same clothes, now as instances, so the NEXT exchange's
+   * handle enumeration sees them), and an idempotent no-op for one already
+   * modelled. Absent/empty ⇒ today's primary/player-only reconcile,
+   * byte-identical.
+   */
+  ensembleMembers?: readonly { characterId: string; wornItemIds: readonly string[] }[];
   sink?: DiagnosticSink;
 }): Promise<ChatGarmentSyncResult> {
   const actorId = garmentActorForCharacter(input.characterId);
@@ -515,6 +525,11 @@ export async function syncGarmentsForExchange(input: {
       ...(includePlayer
         ? [{ actorId: GARMENT_PLAYER_ACTOR, preWornItemIds: prePlayerWorn, wornItemIds: postPlayerWorn }]
         : []),
+      ...(input.ensembleMembers ?? []).map((member) => ({
+        actorId: garmentActorForCharacter(member.characterId),
+        preWornItemIds: member.wornItemIds,
+        wornItemIds: member.wornItemIds,
+      })),
     ],
   });
 

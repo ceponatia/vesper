@@ -14,6 +14,7 @@ import { mentionsCharacter, spokeInReply } from "./chat-intent";
 import { runChatPersonalNotes } from "./chat-memory";
 import { runChatPulse } from "./chat-state/pulse-agent";
 import { settleEnsembleMember } from "./chat-state";
+import { applyEnsembleWardrobeProjection, ensembleMemberPersonalNotes } from "./chat-state/ensemble";
 import type { ChatScenario, ChatState } from "./chat-state/types";
 import { saveChatState } from "./chat-state/store";
 import { savePreExchangeSnapshot } from "./chat-state/snapshots";
@@ -139,11 +140,29 @@ export async function settleChatTurnMembers(args: {
             : Promise.resolve(null),
         ]);
         const isSelfieTarget = selfieTargetOther?.characterId === member.characterId;
+        // #298: the shared continuity leg's grounded garment
+        // lane, threaded onto this member's settle. (a) their pre-settle state
+        // picks up the leg's post-typed-ops worn projection when this exchange
+        // enumerated them; (b) their personal pass's own free-text outfit
+        // proposal is neutralized (with the one info diagnostic) when it did —
+        // the same one-path-per-exchange rule the primary and player already
+        // follow, so a typed operation and a free-text restatement never both
+        // land on the same member's wardrobe this exchange.
         const memberState = settleEnsembleMember({
-          state: pulsed ? pulsed.state : member.state,
+          state: applyEnsembleWardrobeProjection(
+            pulsed ? pulsed.state : member.state,
+            member.characterId,
+            finalized.ensembleWardrobe,
+          ),
           preRegard,
           pulsed: shouldPulse,
-          personal: personal?.value ?? null,
+          personal: ensembleMemberPersonalNotes({
+            personal: personal?.value ?? null,
+            characterId: member.characterId,
+            characterName: member.name,
+            ensembleWardrobe: finalized.ensembleWardrobe,
+            sink,
+          }),
           exchange: { player: agentPlayerContent, assistant: full },
           evidenceOwner: {
             names: [member.name, ...member.profile.aliases],
