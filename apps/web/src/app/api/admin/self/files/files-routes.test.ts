@@ -29,11 +29,31 @@ afterEach(async () => {
   await temp.cleanup();
 });
 
+function mutate(body: unknown): Promise<Response> {
+  return MUTATE(apiRequest("/api/admin/self/files", { body }), routeCtx());
+}
+
+function upload(path: string, name: string, body: string): Promise<Response> {
+  return UPLOAD(
+    apiRequest("/api/admin/self/files/upload", { method: "PUT", body, query: { path, name } }),
+    routeCtx(),
+  );
+}
+
+interface BatchFailures {
+  failures: Array<{ path: string; code: string; message: string }>;
+}
+
 describe("owner-admin Files routes", () => {
   it("hides the API from a signed-in non-admin", async () => {
     await withAuthUser(authState, { role: "user" }, async () => {
-      const response = await LIST(apiRequest("/api/admin/self/files"), routeCtx());
-      await expectApiError(response, 404, "not_found");
+      const listed = await LIST(apiRequest("/api/admin/self/files"), routeCtx());
+      await expectApiError(listed, 404, "not_found");
+
+      // The batch actions sit behind the same gate; a new action must not open
+      // a door the single-entry ones keep shut.
+      const batched = await mutate({ action: "delete_many", paths: ["anything"] });
+      await expectApiError(batched, 404, "not_found");
     });
   });
 
@@ -123,5 +143,50 @@ describe("owner-admin Files routes", () => {
       routeCtx(),
     );
     await expectApiError(response, 415, "unsupported_content_encoding");
+  });
+
+  it("previews a delete, refuses a non-empty folder, and removes the tree once asked", async () => {
+    expect((await mutate({ action: "create_folder", path: "", name: "share" })).status).toBe(201);
+    expect((await upload("share", "note.txt", "hello")).status).toBe(201);
+
+    let response = await mutate({ action: "delete_preview", paths: ["share"] });
+    expect(await expectJson(response, 200)).toEqual({ files: 1, folders: 1, bytes: 5, truncated: false });
+
+    // Partial success: the refused folder is a `failures` row, not a status.
+    response = await mutate({ action: "delete_many", paths: ["share", "missing.txt"] });
+    const refused = await expectJson<BatchFailures & { deleted: number }>(response, 200);
+    expect(refused.deleted).toBe(0);
+    expect(refused.failures.map((failure) => [failure.path, failure.code])).toEqual([
+      ["share", "folder_not_empty"],
+      ["missing.txt", "not_found"],
+    ]);
+
+    response = await mutate({ action: "delete_many", paths: ["share"], recursive: true });
+    expect(await expectJson(response, 200)).toEqual({ deleted: 1, failures: [] });
+
+    response = await mutate({ action: "delete_many", paths: [] });
+    await expectApiError(response, 400, "invalid_body");
+  });
+
+  it("moves a selection and reports a collision per path without failing the request", async () => {
+    expect((await mutate({ action: "create_folder", path: "", name: "box" })).status).toBe(201);
+    expect((await upload("", "a.txt", "root a")).status).toBe(201);
+    expect((await upload("", "b.txt", "root b")).status).toBe(201);
+    expect((await upload("box", "a.txt", "box a")).status).toBe(201);
+
+    let response = await mutate({ action: "move", paths: ["a.txt", "b.txt"], destination: "box" });
+    const result = await expectJson<BatchFailures & { moved: number; entries: Array<{ path: string }> }>(response, 200);
+    expect(result.moved).toBe(1);
+    expect(result.entries.map((entry) => entry.path)).toEqual(["box/b.txt"]);
+    expect(result.failures.map((failure) => [failure.path, failure.code])).toEqual([["a.txt", "already_exists"]]);
+
+    // A missing destination is one fact about the request, so it fails the
+    // request rather than repeating itself once per path.
+    response = await mutate({ action: "move", paths: ["a.txt"], destination: "nowhere" });
+    await expectApiError(response, 404, "not_found");
+
+    response = await LIST(apiRequest("/api/admin/self/files", { query: { path: "box" } }), routeCtx());
+    const listing = await expectJson<{ entries: Array<{ name: string }> }>(response, 200);
+    expect(listing.entries.map((entry) => entry.name)).toEqual(["a.txt", "b.txt"]);
   });
 });
