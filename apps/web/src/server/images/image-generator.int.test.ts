@@ -5,6 +5,7 @@ import {
   type ImageGeneratorControls,
   type ImageGeneratorCreateRunRequest,
   imageGeneratorDiagnosticCode,
+  type ImageGeneratorRunPurpose,
 } from "@/contracts/images/image-generator";
 import {
   imageGeneratorRunOutputImageIds,
@@ -1251,6 +1252,51 @@ describe.skipIf(!ready)("image generator run claim", () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!ready)("image generator records", () => {
+  /**
+   * PROTECTS: a run's `purpose` survives from create to the finished record
+   * (issue #246).
+   *
+   * The face-repair action's whole provenance — which character, which source
+   * image, which repair method, which multi-person evidence — travels as this
+   * one bag, and `createImageGeneratorRun` writes it into the SAME create-time
+   * meta column that every later settle rewrites (`generatorRunMeta` merges
+   * over the stored bag). Two ways to lose it are one-line edits that break
+   * nothing else: dropping it from the insert, and a settle that replaces the
+   * bag instead of merging into it. Either way the repair still renders and
+   * the run still succeeds — the only symptom is a finished row that cannot
+   * say it was a repair, which no other assertion in this suite would notice.
+   *
+   * Round-tripped through the real column rather than asserted on the create
+   * result, because the settle is the half that can silently drop it.
+   */
+  it("carries a run's purpose from create through settlement to the wire record", async () => {
+    stubSuccessfulRenderer();
+    const purpose: ImageGeneratorRunPurpose = {
+      kind: "face_repair",
+      characterId: "chr-face-repair",
+      sourceImageId: "img-face-repair-source",
+      method: "full_frame_identity_edit",
+      subjectCheck: { method: "none", subjects: null },
+      identityReferences: [],
+    };
+    const { id, sink } = await createRun({ purpose });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.status).toBe("succeeded");
+    expect(run?.purpose).toEqual(purpose);
+  });
+
+  it("reports no purpose for an ordinary bench run", async () => {
+    // `null`, not an empty bag: the Generator is a freeform bench first, and a
+    // reader filtering for repair runs must be able to tell the two apart.
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun();
+    await runImageGeneratorRun(id, ownerId, sink);
+    expect((await getImageGeneratorRunDetail(id, ownerId, sink))?.purpose).toBeNull();
+  });
+
   it("deletes a run and the hidden output it points at", async () => {
     stubSuccessfulRenderer();
     const { id, sink } = await createRun();

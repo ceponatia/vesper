@@ -424,6 +424,98 @@ describe("generateAvatar program wiring", () => {
     expect(opts?.asset.sourceImageId).toBeUndefined();
     expect(opts?.asset.meta?.retry).toEqual({ mode: "same_composition" });
   });
+
+  /**
+   * THE `new_variation` LINEAGE POINTER, AND ITS SCOPE CHECK (issue #248).
+   *
+   * `new_variation` is the studio's MAIN regenerate button once a portrait
+   * exists, so every ordinary regeneration now writes `images.source_image_id`
+   * and `meta.retry` on an avatar row. Unlike `same_composition` it needs no
+   * eligibility at all — a fresh seed is the whole point — so an id it cannot
+   * vouch for is DROPPED rather than refused, and that silence is exactly what
+   * makes the scope check untestable from the outside: a build that wrote the
+   * id verbatim renders an identical picture and fails nothing.
+   *
+   * `images.source_image_id` carries no foreign key, so writing an id this
+   * caller does not own would leave another owner's image id on the row and
+   * let a caller probe whether that id exists at all — the same argument the
+   * refused-replay case above makes, on the branch that never refuses.
+   */
+  function withSourceRow(row: Record<string, unknown>): void {
+    mockDb.mockImplementation(
+      () =>
+        ({
+          select: () => ({
+            from: () => ({ where: () => ({ limit: () => Promise.resolve([row]) }) }),
+          }),
+        }) as unknown as ReturnType<typeof db>,
+    );
+  }
+
+  const sourceRow = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: "img-source",
+    ownerId: "u-1",
+    entityKind: "character",
+    entityId: "chr-1",
+    kind: "avatar",
+    status: "ready",
+    meta: {},
+    ...over,
+  });
+
+  it("records a new-variation retry's lineage when the named source is this owner's own portrait of this character", async () => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    withSourceRow(sourceRow());
+
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "new_variation", sourceImageId: "img-source" },
+    });
+
+    expect(result).toEqual({ imageId: "img-1", imageIds: ["img-1"] });
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(opts?.asset.sourceImageId).toBe("img-source");
+    // No seed: a new variation is a DIFFERENT composition of the same subject,
+    // so the lane leaves `resolveIntentSeed` to draw its own.
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "new_variation", sourceImageId: "img-source" });
+    expect(vi.mocked(renderImageIntent).mock.calls[0]?.[0]?.controls?.seed).toBeUndefined();
+  });
+
+  /** Every way the named row fails the pointer's ownership/scope check. */
+  const unvouchable: ReadonlyArray<[string, Record<string, unknown>]> = [
+    ["another owner's image", { ownerId: "u-2" }],
+    ["another character's portrait", { entityId: "chr-2" }],
+    ["a row that is not a character asset", { entityKind: null, entityId: null }],
+    ["a kind that is neither an avatar nor a portrait variant", { kind: "scene" }],
+  ];
+
+  it.each(unvouchable)("drops a new-variation pointer at %s, and still renders", async (_label, over) => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    withSourceRow(sourceRow(over));
+    const sink = new DiagnosticCollector();
+
+    const result = await generateAvatar({
+      characterId: "chr-1",
+      userId: "u-1",
+      sink,
+      source: { name: "Linda", profile: lindaProfile(), revision: "4" },
+      retry: { mode: "new_variation", sourceImageId: "img-source" },
+    });
+
+    expect(result.imageIds).toHaveLength(1);
+    const opts = vi.mocked(runImagePipeline).mock.calls[0]?.[0];
+    // Dropped, not refused: the render proceeds and the provider is reached.
+    expect(opts?.failedPrecondition ?? null).toBeNull();
+    expect(vi.mocked(renderImageIntent)).toHaveBeenCalledTimes(1);
+    // The unvouchable id appears NOWHERE on the row — not as the column, not
+    // inside the retry bag.
+    expect(opts?.asset.sourceImageId).toBeUndefined();
+    expect(opts?.asset.meta?.retry).toEqual({ mode: "new_variation" });
+    expect(JSON.stringify(opts?.asset.meta)).not.toContain("img-source");
+  });
 });
 
 /**

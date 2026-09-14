@@ -42,10 +42,13 @@ describe("resolveRenderTarget", () => {
     expect(result).toEqual({ aspectRatio: 1, source: "task_default" });
   });
 
-  it("also falls to the task default when the intent carries no aspect ratio number or null", () => {
-    // Same as an absent intent target — an intent that named a target object
-    // with neither branch set is not expected today, but the resolver must not
-    // throw over it either.
+  it("reads the fallen-through answer from the TASK's own row of the table", () => {
+    // The case above falls through on `item` and lands on 1; this one falls
+    // through on `chat_place` and lands on 3:2. Two different non-3:4 answers
+    // out of the same branch is what proves the fallback is keyed by the
+    // render's task rather than collapsed to one constant on the way out —
+    // which a `??` against `IMAGE_TARGET_ASPECT` would look identical to on
+    // every portrait-shaped task.
     const result = resolveRenderTarget({
       intentTarget: undefined,
       profile: profileWith(),

@@ -206,7 +206,7 @@ describe("avatarReplayEligibility (issue #248 table)", () => {
     expect(result).toEqual({ ok: false, reason: "source_unavailable" });
   });
 
-  it("a malformed meta object degrades to source_unavailable-adjacent refusals, never a thrown parse", () => {
+  it("no_recorded_seed: a malformed render bag degrades rather than throwing a parse", () => {
     // Schema-legal-input resilience: garbage in a jsonb column must degrade,
     // not throw, at a trust boundary (docs/resilience.md).
     expect(() =>

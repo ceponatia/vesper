@@ -283,6 +283,9 @@ describe("renderResolvedScene identity provenance", () => {
       sentReferenceRoles: ["identity"],
       predictionId,
       executedVersionId: null,
+      // The mocked transport returns no shape outcome, which `resolvedAttempt`
+      // records as `null` — a real render always carries one.
+      shape: null,
     });
     mockIntent
       .mockResolvedValueOnce({ ok: false, error: "multi boom", attempt: attempt("pred-multi") })
