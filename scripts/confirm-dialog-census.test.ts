@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { repoRelative, sourceFilesUnder } from "@/server/test-support";
+import { matchDelimiter, repoRelative, sourceFilesUnder, stripComments } from "@/server/test-support";
 
 /**
  * Every confirmation — a destructive delete or an equivalent one-step
@@ -20,6 +20,10 @@ import { repoRelative, sourceFilesUnder } from "@/server/test-support";
  * class of site #287 found already unguarded (`entity-library.tsx`'s
  * generate-images confirm, several settings remove dialogs) before this test
  * existed to catch it.
+ *
+ * The second half of the boundary is at the bottom of this file: the census
+ * proves every confirmation ROUTES through `ConfirmDialog`, and that one proves
+ * `ConfirmDialog` still does the thing the routing was for.
  */
 const COMPONENTS_DIR = path.join(process.cwd(), "apps/web/src/components");
 
@@ -80,5 +84,102 @@ describe("raw Dialog importer census", () => {
       .sort();
 
     expect(actual).toEqual([...ALLOWED_DIALOG_IMPORTERS].sort());
+  });
+});
+
+/**
+ * `ConfirmDialog` still guards dismissal while the confirmed operation runs.
+ *
+ * The defect this kills is the silent removal of that guard, in either of its
+ * two shapes: wiring `Dialog`'s `onClose` straight to the `onClose` PROP, so
+ * Escape and a backdrop click stop being guarded while Cancel still looks
+ * guarded, or dropping `busy` from the confirm button, so a second click starts
+ * a second delete. Both are valid TypeScript, both are lint-clean, and one edit
+ * takes the guard away from all 26 adopted sites at once — the blast radius the
+ * one shared surface bought, spent in reverse.
+ *
+ * Nothing else can catch it. A rendered assertion is out of reach: both Vitest
+ * projects run in `node` and include `*.test.ts` only, so no suite here can
+ * mount this component (`image-control-vocabulary-display.test.ts` states the
+ * same constraint for the Generator's run detail, and answers it the same way).
+ *
+ * Structure, never a snapshot. It asserts that ONE shared local handler reaches
+ * both `Dialog`'s `onClose` and Cancel's `onClick`, that the handler's body
+ * decides on `busy`, and that the confirm button carries `busy` — not the text
+ * of any of them, so reformatting, renaming `dismiss`, reordering the props and
+ * rewording every label all stay green. A shape it cannot find THROWS rather
+ * than failing an assertion: a rewritten component is a stale scanner, and
+ * reporting that as a missing guard would send the next reader after the wrong
+ * thing.
+ */
+const CONFIRM_DIALOG = path.join(process.cwd(), "apps/web/src/components/ui/confirm-dialog.tsx");
+
+/** Comments blanked and whitespace collapsed — a guard named only in the doc comment must not satisfy a check. */
+function confirmDialogSource(): string {
+  return stripComments(fs.readFileSync(CONFIRM_DIALOG, "utf8")).replace(/\s+/g, " ");
+}
+
+/** The identifier `<Dialog>` is handed as `onClose`. */
+function dialogCloseHandler(source: string): string {
+  const match = /<Dialog\b[\s\S]*?\sonClose=\{(\w+)\}/.exec(source);
+  if (match === null) {
+    throw new Error(
+      `[confirm-dialog] ${repoRelative(CONFIRM_DIALOG)} hands <Dialog> no bare-identifier onClose — ` +
+        "the component was rewritten, so this scanner is stale rather than the guard missing",
+    );
+  }
+  return match[1] ?? "";
+}
+
+/** The brace-matched body of `const <name> = ...`. */
+function handlerBody(source: string, name: string): string {
+  const declaration = new RegExp(String.raw`\bconst\s+${name}\s*=`).exec(source);
+  if (declaration === null) {
+    throw new Error(`[confirm-dialog] ${name} is not declared as a const in ${repoRelative(CONFIRM_DIALOG)}`);
+  }
+  const open = source.indexOf("{", declaration.index + declaration[0].length);
+  const close = open === -1 ? -1 : matchDelimiter(source, open, "{", "}");
+  if (close === -1) {
+    throw new Error(`[confirm-dialog] ${name} has no brace-matched body in ${repoRelative(CONFIRM_DIALOG)}`);
+  }
+  return source.slice(open, close + 1);
+}
+
+/** The attribute text of the `<Button>` that fires `onConfirm`. */
+function confirmButtonAttributes(source: string): string {
+  const confirm = [...source.matchAll(/<Button\b([^>]*)>/g)]
+    .map((match) => match[1] ?? "")
+    .find((attributes) => attributes.includes("onClick={onConfirm}"));
+  if (confirm === undefined) {
+    throw new Error(
+      `[confirm-dialog] no <Button> in ${repoRelative(CONFIRM_DIALOG)} fires onConfirm — ` +
+        "the component was rewritten, so this scanner is stale rather than the guard missing",
+    );
+  }
+  return confirm;
+}
+
+describe("ConfirmDialog's busy guard", () => {
+  it("sends Escape, the backdrop click and Cancel through one handler that decides on busy", () => {
+    const source = confirmDialogSource();
+    const handler = dialogCloseHandler(source);
+
+    // The caller's own prop reaching Dialog IS the regression: Escape and a
+    // backdrop click would dismiss a running operation while Cancel refused.
+    expect(handler, "Dialog's onClose must be a guarded wrapper, not the onClose prop").not.toBe("onClose");
+    expect(source, "Cancel must share Dialog's dismissal handler").toContain(`onClick={${handler}}`);
+
+    const body = handlerBody(source, handler);
+    expect(body, `${handler} must decide on busy`).toContain("busy");
+    expect(body, `${handler} must still be able to close`).toContain("onClose()");
+  });
+
+  it("gives the confirm button Button's own busy, so a second click starts no second operation", () => {
+    // `Button` renders `disabled={disabled || busy}` plus the spinner, so this
+    // one prop is both halves of "cannot be clicked twice" and "says so".
+    expect(
+      confirmButtonAttributes(confirmDialogSource()),
+      "the confirm button must carry busy, not just confirmDisabled",
+    ).toContain("busy={busy}");
   });
 });
