@@ -35,7 +35,7 @@
  * one.
  */
 
-export { bindTextModelProfile, defineTextModel, mergeTextCallSettings } from "./composer";
+export { bindTextModelProfile, bindTextProfileValues, defineTextModel, mergeTextCallSettings } from "./composer";
 export type {
   BoundTextProfile,
   TextModelAdapter,
@@ -53,6 +53,7 @@ export {
   dryAllowedLengthFeature,
   dryBaseFeature,
   dryMultiplierFeature,
+  dryRangeFeature,
   drySequenceBreakersFeature,
   dynatempExponentFeature,
   dynatempMaxFeature,
@@ -68,6 +69,7 @@ export {
   presencePenaltyFeature,
   repetitionPenaltyFeature,
   repetitionPenaltyRangeFeature,
+  repetitionPenaltySlopeFeature,
   seedFeature,
   smoothingCurveFeature,
   smoothingFactorFeature,
@@ -97,3 +99,15 @@ export type {
 } from "./hosts";
 
 export { TEXT_MODEL_ADAPTERS, adapterForTextModel } from "./registry";
+
+/**
+ * The exact ids of the registered models.
+ *
+ * Published because an exact model id is a PERSISTED value — it sits on chats
+ * and worlds, it keys the registry, and the application keys behaviour on it —
+ * so every spelling of one is a place a typo reads as "no adapter" rather than
+ * as a failure. One definition owns each id and everything else imports it.
+ */
+export { FABLE_FUSION_711_ID, F451_ULTRA_PRO_WRITER_ID } from "./families/qwen3-6-27b/davidau-non-thinking";
+export { DARKIDOL_QWEN38_ID } from "./families/qwen3-8-27b/darkidol-qwen3-8-27b-v1-1";
+export { ASMODEUS_24B_V3_ID } from "./families/mistral-24b/asmodeus-24b-v3";

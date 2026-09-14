@@ -309,12 +309,40 @@ export function bindTextModelProfile(
   adapter: TextModelAdapter,
   host: TextModelHost = adapter.host,
 ): BoundTextProfile {
+  const declared: Record<string, TextProfileValue> = {};
+  for (const featureId of adapter.capabilities) {
+    const value = adapter.profile[featureId];
+    if (value !== undefined) declared[featureId] = value;
+  }
+  return bindTextProfileValues(declared, host);
+}
+
+/**
+ * Bind a handful of feature values for a host, without an adapter to read them
+ * off.
+ *
+ * The same law as `bindTextModelProfile` — that function is this one with an
+ * adapter's declared values read out in `capabilities` order — and it exists for
+ * the layer above a profile: a value one CALL asks for, such as the
+ * minimum-token floor a lane applies to a single retry. Without it the
+ * application would have to spell that value's wire field itself, and "wire
+ * spellings live in the dialects alone" would stop being true the first time a
+ * lane needed a per-call knob.
+ *
+ * It validates nothing, exactly as binding a profile validates nothing: a value
+ * is checked against its feature's band when the adapter is DEFINED, and a
+ * caller passing a per-call value is passing one it already holds — most often
+ * straight off an adapter's own execution hints.
+ *
+ * Iteration follows the given object's key order, so the caller decides the
+ * result's order the same way a definition's `capabilities` decides a profile's.
+ */
+export function bindTextProfileValues(values: TextModelProfile, host: TextModelHost): BoundTextProfile {
   const settings: Partial<Record<TextCallSetting, TextWireValue>> = {};
   const body: Record<string, TextWireValue> = {};
   const withheld: WithheldTextSetting[] = [];
 
-  for (const featureId of adapter.capabilities) {
-    const value = adapter.profile[featureId];
+  for (const [featureId, value] of Object.entries(values)) {
     if (value === undefined) continue;
 
     const binding = bindingFor(host, featureId);

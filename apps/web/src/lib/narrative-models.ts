@@ -128,20 +128,21 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   //   empty reply, and the hidden retry below deliberately does not cover it. Each model
   //   warms independently, so a second row is a second cold start, not a shared one.
   // - **Nothing here is configured by family.** Thinking suppression, the sampler
-  //   baseline and the hidden empty-reply retry all live in `FEATHERLESS_MODEL_POLICY`
-  //   (server/ai/provider.ts), keyed to an EXACT id and earned by that id's own probe.
-  //   A row with no entry is asked exactly the way every OpenRouter narrator is asked.
+  //   baseline and the hidden empty-reply retry are an exact-model ADAPTER in
+  //   `@vesper/text-models`, resolved once at the model gateway
+  //   (server/ai/model-adapters.ts) and earned by that id's own probe. A row with no
+  //   adapter is asked exactly the way every OpenRouter narrator is asked.
   //
   // What is NOT shared is whether a row thinks. The two DavidAU rows below are thinking
   // models asked with thinking OFF: left alone each spends ~1,100–1,300 tokens of chain
   // before any prose, which misses the chat lane's first-token budget AND, under a
-  // bounded output budget, returns an empty reply. Their policy entry suppresses the
+  // bounded output budget, returns an empty reply. Their adapter suppresses the
   // chain and applies the merges' recommended non-thinking sampling (temp 0.7 / top-p
   // 0.8 / top-k 20 / presence 1.5), after which warm calls measure 0.7–2.8s to first
-  // token and 2–6s to a full reply; removing that entry makes those rows unusable, not
-  // merely slower. DarkIdol below has its own exact-model profile and deliberately keeps
+  // token and 2–6s to a full reply; removing that adapter makes those rows unusable, not
+  // merely slower. DarkIdol below has its own exact-model adapter and deliberately keeps
   // its short reasoning pass ON at medium effort instead of inheriting this Qwen3.6 rule.
-  // The Slimaki row emits no chain at all and therefore has no policy entry.
+  // The Slimaki row emits no chain at all and therefore has no adapter.
   //
   // `(32K)` is the usual context marker; see the note above the RP bench for what
   // it binds.
@@ -167,7 +168,7 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   //
   // Probed on 2026-08-19 through the production seam: eleven warm calls, every one
   // `finish_reason: "stop"` with prose and **zero** reasoning tokens — no chain to
-  // suppress, so it takes no policy entry, no sampler override and no hidden retry.
+  // suppress, so it takes no adapter, no sampler override and no hidden retry.
   // First token 0.9–1.6s on a small prompt and 5.1s behind a Vesper-sized ~8.9K-token
   // prefill; `[Name]` speaker tags land at line start with no stray bracketed names.
   // It is a bench candidate, not a promotion: no verdict has been recorded on it.
@@ -182,7 +183,7 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // 65,536 tokens when self-hosted, so the host is the binding context limit here.
   //
   // Unlike the DavidAU Qwen3.6 rows, DarkIdol is meant to reason briefly before prose.
-  // Its exact-model provider policy keeps that reasoning ON at medium effort and applies
+  // Its exact-model adapter keeps that reasoning ON at medium effort and applies
   // the author's supported sampler settings (temperature 1.0, min-p 0.05). The author's
   // DRY sampler recommendation is not sent because Featherless does not document DRY
   // request fields; sending undocumented fields would turn a style optimization into an
@@ -193,17 +194,22 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
     label: "DarkIdol Qwen3.8 27B v1.1 (32K)",
     provider: "featherless",
   },
-  // Added 2026-09-04 from Featherless's public `/v1/models` record, not a
-  // production-seam probe — the probe and the exact-model adapter it feeds are
-  // later stages of the same initiative. Host facts: class `mistral-24b`,
-  // 32,768 context, concurrency cost 2, tier `warm`, $0.70 / $1.16 per M
-  // tokens in/out, Mistral Tekken chat template, not a thinking model,
-  // Apache-2.0. The model card describes it as fully uncensored.
+  // Owner ask, 2026-09-04. A Mistral-Small-24B merge, and the first row asked with
+  // its AUTHOR's whole published profile: the exact-model adapter
+  // (`@vesper/text-models`, family `mistral-24b`) declares every value the author
+  // set and Featherless carries the seven it serves — temperature 1.0, top-p 1.0,
+  // top-k 100, min-p 0.1, repetition penalty 1.08, presence penalty 0, and an
+  // explicit 1,024-token output cap. The rest, top-n-sigma included, is withheld
+  // by host selection rather than deleted.
   //
-  // No policy entry and no sampler: this row is asked exactly the way every
-  // OpenRouter narrator is asked (temperature 0.85, nothing else) until an
-  // exact-model adapter exists for it. Do not add a policy entry here — that
-  // adapter is a separate, later stage keyed to this exact id.
+  // The cap is the one number worth knowing at this layer: without it the host
+  // reserves 4,096 output tokens inside the 32K window, so the usable prompt is
+  // ~28.7K rather than the label's 32K. `chat_template_kwargs` must never be sent
+  // to this row — it 400s on a Mistral tokenizer, empty object included.
+  //
+  // Everything else about how it behaves lives in its reference page,
+  // `docs/text-models/models/asmodeus-24b-v3.md`, which is where a measurement
+  // belongs; this list stays the UI's option registry.
   {
     id: "DarkArtsForge/Asmodeus-24B-v3",
     label: "Asmodeus 24B v3 (32K)",

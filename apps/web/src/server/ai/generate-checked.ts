@@ -3,6 +3,7 @@ import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
 import { classifyProviderError } from "./errors";
+import { textModelCall } from "./model-adapters";
 import { isDemoMode, providerRouting, routedProvider, stateModelId, textModel } from "./provider";
 
 /** An image handed to a vision-capable model alongside the prompt text. */
@@ -143,12 +144,21 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // OpenRouter per-call routing/decoding knobs (see the option docs above).
   // providerRouting also applies any per-model provider exclusions (e.g. drop
   // DeepInfra for GLM 5.2), so it runs regardless of lowLatencyRouting.
+  const modelId = opts.modelId ?? stateModelId();
   const orOptions: Record<string, JSONValue> = { ...(opts.providerOptions?.openrouter ?? {}) };
   if (opts.disableReasoning) orOptions.reasoning = { enabled: false };
   if (opts.usageAccounting) orOptions.usage = { include: true };
-  const routing = providerRouting(opts.modelId ?? stateModelId(), { sortLatency: opts.lowLatencyRouting });
+  const routing = providerRouting(modelId, { sortLatency: opts.lowLatencyRouting });
   if (routing) orOptions.provider = routing;
-  const providerOptions = Object.keys(orOptions).length > 0 ? { openrouter: orOptions } : undefined;
+  // The model gateway (./model-adapters.ts) owns the call's shape: this helper's
+  // own settings are the LANE's defaults, and an exact model's measured profile
+  // outranks them — which is how a Featherless narrator keeps its baseline on a
+  // call site that also sets a temperature. A model with no registered adapter
+  // is asked with exactly these settings and nothing else.
+  const call = textModelCall(modelId, {
+    laneDefaults: { temperature: opts.temperature ?? 0, maxTokens: opts.maxOutputTokens ?? 4096 },
+    ...(Object.keys(orOptions).length > 0 ? { providerOptions: { openrouter: orOptions } } : {}),
+  });
   // Provider + latency of the last *completed* call (set even when the response
   // then fails to parse): the Inspector reports them so a slow endpoint shows up.
   let provider: string | null = null;
@@ -169,11 +179,10 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   const attempt = async (prompt: string): Promise<T> => {
     const start = Date.now();
     const base = {
-      model: textModel(opts.modelId ?? stateModelId()),
-      temperature: opts.temperature ?? 0,
-      maxOutputTokens: opts.maxOutputTokens ?? 4096,
+      model: textModel(modelId),
+      ...call.settings,
       abortSignal: opts.signal,
-      providerOptions,
+      ...(call.providerOptions === undefined ? {} : { providerOptions: call.providerOptions }),
       system: [
         opts.system,
         "",

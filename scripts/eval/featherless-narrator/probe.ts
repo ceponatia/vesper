@@ -53,10 +53,15 @@ import { CHARACTER_CHAT_HISTORY_TURNS, streamCharacterChat, type ChatTurn } from
  * because the failure being looked for is the host quietly dropping the top of the
  * conversation and answering anyway.
  *
- * Each call's outgoing wire body is captured through a `fetch` wrapper and printed as
- * its sampler/thinking fields, which is how this proves the exact-model policy
- * reaches the provider rather than merely being configured. Message content is never
- * read out of the captured body.
+ * Each call's outgoing wire body is captured through a `fetch` wrapper and printed
+ * field by field, which is how this proves the exact-model ADAPTER reaches the
+ * provider rather than merely being registered. It reports every field the body
+ * carries except the ones that hold prompt or tool content, so a field the
+ * adapter starts binding appears in the capture on its first call rather than
+ * waiting for this script to be updated — and a field that must never be sent
+ * (`chat_template_kwargs` on a Mistral tokenizer) is reported as absent instead
+ * of simply missing from the line. Message content is never read out of the
+ * captured body, and any value long enough to be prose is elided to its length.
  */
 
 /** Attempts per case — a zero-text completion is intermittent, so one call proves nothing. */
@@ -69,16 +74,38 @@ const ATTEMPTS = Number(process.env.PROBE_ATTEMPTS ?? 3);
  */
 const MODEL_ID = process.env.PROBE_MODEL?.trim() || FABLE_FUSION_711_ID;
 
-/** The sampler/thinking fields worth reporting off the wire — never message content. */
-const WIRE_KEYS = [
-  "temperature",
-  "top_p",
-  "top_k",
-  "presence_penalty",
-  "repetition_penalty",
-  "min_tokens",
-  "max_tokens",
-] as const;
+/**
+ * Body fields that carry PROMPT OR TOOL CONTENT, and are never reported.
+ *
+ * A denylist rather than an allowlist, because the question this probe answers
+ * is "what did the adapter actually put on the wire" — and a fixed list of
+ * sampler names answers it only for the fields somebody remembered to add. Every
+ * other field is reported, so a newly bound one shows up in the capture the
+ * first time it is sent instead of the first time this list is updated.
+ */
+const WIRE_CONTENT_KEYS: ReadonlySet<string> = new Set([
+  "messages",
+  "prompt",
+  "input",
+  "tools",
+  "tool_choice",
+  "response_format",
+  "model",
+  "stream",
+  "stream_options",
+]);
+
+/**
+ * Fields reported even when absent, because their ABSENCE is the measurement.
+ *
+ * `chat_template_kwargs` is rejected outright on a Mistral tokenizer and is the
+ * only thing standing between two DavidAU rows and an empty reply, so "it was
+ * not sent" has to be visible rather than inferred from a missing column.
+ */
+const WIRE_PRESENCE_KEYS = ["chat_template_kwargs"] as const;
+
+/** Longest rendered value a field may report; anything larger is elided rather than printed. */
+const MAX_WIRE_VALUE = 160;
 
 /** Longest bracketed span the segmenter will read as a speaker tag (its TAG_RE bound). */
 const MAX_TAG_INNER = 64;
@@ -145,13 +172,17 @@ function describeWireBody(raw: string): string {
   }
   if (typeof parsed !== "object" || parsed === null) return "unparsed";
   const body = parsed as Record<string, unknown>;
-  const sampler = WIRE_KEYS.filter((key) => body[key] !== undefined).map((key) => `${key}=${String(body[key])}`);
-  const kwargs = body.chat_template_kwargs;
-  const thinking =
-    typeof kwargs === "object" && kwargs !== null
-      ? `chat_template_kwargs=${JSON.stringify(kwargs)}`
-      : "chat_template_kwargs=absent";
-  return [...sampler, thinking].join(" ");
+  const reported = Object.entries(body)
+    .filter(([key, value]) => !WIRE_CONTENT_KEYS.has(key) && value !== undefined)
+    .map(([key, value]) => `${key}=${renderWireValue(value)}`);
+  const absent = WIRE_PRESENCE_KEYS.filter((key) => body[key] === undefined).map((key) => `${key}=absent`);
+  return [...reported, ...absent].join(" ");
+}
+
+/** One field's value as one short token — JSON for a structured value, elided when long. */
+function renderWireValue(value: unknown): string {
+  const rendered = typeof value === "string" ? value : JSON.stringify(value);
+  return rendered.length > MAX_WIRE_VALUE ? `<${rendered.length} chars elided>` : rendered;
 }
 
 /** Wrap global fetch so each call's outgoing body is captured (sampler fields only). */

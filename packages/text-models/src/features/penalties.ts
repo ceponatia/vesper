@@ -43,6 +43,28 @@ export function repetitionPenaltyRangeFeature(): TextModelFeature {
 }
 
 /**
+ * How steeply the repetition penalty ramps across its window.
+ *
+ * Band: 0 or above, where 0 applies the full penalty flatly across the whole
+ * window — the KoboldCpp convention the author profiles are written in. Above 0
+ * the penalty leans toward the most recent tokens, so a higher number means a
+ * steeper ramp rather than a stronger penalty.
+ *
+ * It is meaningless without `repetitionPenaltyRange`: a slope describes the
+ * shape of a window, and a profile that sets one without the other is
+ * describing nothing. Nothing here enforces that pairing — the composer
+ * validates values one at a time — so it is a review finding rather than a
+ * definition-time refusal, exactly as the dynamic-temperature pair is.
+ */
+export function repetitionPenaltySlopeFeature(): TextModelFeature {
+  return numericFeature({
+    id: "repetitionPenaltySlope",
+    semantic: "Ramps the repetition penalty toward the most recent tokens instead of applying it flatly across the window.",
+    min: 0,
+  });
+}
+
+/**
  * Flat pressure against any token that has appeared at all.
  *
  * Band: -2 through 2, neutral at 0 — the OpenAI-compatible convention both

@@ -84,6 +84,28 @@ export function dryAllowedLengthFeature(): TextModelFeature {
 }
 
 /**
+ * How far back DRY looks for the sequence it is penalising.
+ *
+ * Band: whole numbers, 0 or above, where 0 means the whole context — the same
+ * convention `repetitionPenaltyRange` carries, and for the same reason: both
+ * numbers came out of KoboldCpp profiles, and two windows in one vocabulary
+ * that spelled "unlimited" differently would be a trap rather than a
+ * distinction. It is a token count, so a fractional value is a typo.
+ *
+ * Separate from `dryAllowedLength`, which the two are easy to confuse: allowed
+ * length is how long a repeat may be before DRY charges for it, this is how
+ * much history DRY searches for that repeat at all.
+ */
+export function dryRangeFeature(): TextModelFeature {
+  return numericFeature({
+    id: "dryRange",
+    semantic: "Limits DRY's search for a repeated sequence to the most recent tokens rather than the whole context.",
+    min: 0,
+    integer: true,
+  });
+}
+
+/**
  * The strings DRY treats as the end of a sequence.
  *
  * Literal text, at least one entry. Omitting the key is how a profile says it
