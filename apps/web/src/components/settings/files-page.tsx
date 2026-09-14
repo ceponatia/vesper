@@ -115,6 +115,8 @@ export function FilesPage() {
   // element's own boundary (every row is one) cannot flicker the overlay off
   // mid-drag — only reaching zero nested "entered" elements means "left".
   const dragDepthRef = useRef(0);
+  /** Paths of the drag in flight; `dataTransfer.getData` stays empty until the drop. */
+  const dragPathsRef = useRef<string[]>([]);
   const [showDropOverlay, setShowDropOverlay] = useState(false);
   // Same-tab record of what a row's own drag is carrying, used only for the
   // hover highlight. The drop handlers below re-derive the authoritative list
@@ -235,14 +237,22 @@ export function FilesPage() {
 
   /** Drop-target handlers shared by every internal-move surface: a folder row, a breadcrumb, and "Up one folder". */
   function dropTargetHandlers(destination: string) {
+    // A destination the move would refuse must not light up or take the pointer.
+    // The drop was already refused, but silently: the row highlighted, accepted
+    // the cursor, and then nothing happened. `dragPathsRef` is the payload of the
+    // drag in flight, since `dataTransfer.getData` is empty until the drop.
+    const blocked = () => {
+      const paths = dragPathsRef.current;
+      return paths.length === 0 || isBlockedDestination(destination, paths);
+    };
     return {
       onDragEnter: (event: DragEvent) => {
-        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE)) return;
+        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE) || blocked()) return;
         event.preventDefault();
         setDragOverTargetPath(destination);
       },
       onDragOver: (event: DragEvent) => {
-        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE)) return;
+        if (!event.dataTransfer.types.includes(ADMIN_FILES_DRAG_TYPE) || blocked()) return;
         event.preventDefault();
       },
       onDragLeave: () => setDragOverTargetPath((current) => (current === destination ? null : current)),
@@ -258,11 +268,18 @@ export function FilesPage() {
   }
 
   const onRowDragStart = (event: DragEvent, entryPath: string) => {
-    const paths = dragSourcePaths(selected, entryPath);
+    // Read the selection back through the rows on screen, as every other action
+    // here does: `selected` survives the reload after an upload, so a retired
+    // path could otherwise be dragged and come back as a `not_found` failure.
+    const paths = dragSourcePaths(new Set(selectedVisible.map((entry) => entry.path)), entryPath);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData(ADMIN_FILES_DRAG_TYPE, JSON.stringify(paths));
+    dragPathsRef.current = paths;
   };
-  const onRowDragEnd = () => setDragOverTargetPath(null);
+  const onRowDragEnd = () => {
+    dragPathsRef.current = [];
+    setDragOverTargetPath(null);
+  };
 
   // --- Upload: OS picker and desktop drag-and-drop ---------------------------
 
@@ -347,11 +364,21 @@ export function FilesPage() {
   }
 
   const handleExternalDrop = async (dataTransfer: DataTransfer) => {
-    const dropped = collectDropEntries(dataTransfer);
-    const plan: UploadPlan =
-      dropped.length > 0
-        ? await buildUploadPlan(dropped)
-        : { folders: [], files: Array.from(dataTransfer.files).map((file) => ({ relativePath: file.name, file })) };
+    let plan: UploadPlan;
+    try {
+      const dropped = collectDropEntries(dataTransfer);
+      plan =
+        dropped.length > 0
+          ? await buildUploadPlan(dropped)
+          : { folders: [], files: Array.from(dataTransfer.files).map((file) => ({ relativePath: file.name, file })) };
+    } catch {
+      // The browser refused to enumerate the drop — a folder it cannot read, or
+      // a file moved between dragstart and read. Without this the rejection was
+      // swallowed by the `void` at the call site and the drop did nothing at
+      // all, with no banner and no toast to explain it.
+      setActionError("That drop could not be read. Try the Upload files button instead.");
+      return;
+    }
     if (plan.files.length === 0 && plan.folders.length === 0) return;
     await runUploadPlan(plan);
   };
@@ -874,7 +901,7 @@ function MoveToDialog({
                 className="flex w-full items-center justify-between border-b border-ink-700 px-3 py-2 text-left text-sm text-paper-200 last:border-b-0 hover:bg-ink-700 disabled:cursor-not-allowed disabled:text-paper-600 disabled:hover:bg-transparent"
               >
                 <span className="truncate">{folder.name}/</span>
-                {folderBlocked ? <span className="text-xs text-paper-600">selected</span> : null}
+                {folderBlocked ? <span className="text-xs text-paper-500">selected</span> : null}
               </button>
             );
           })

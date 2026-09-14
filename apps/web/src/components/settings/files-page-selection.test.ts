@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AdminFileEntry } from "@/lib/client/api/admin-files";
+import type { AdminFileEntry } from "@/lib/client/api";
 import {
   ADMIN_FILES_DRAG_TYPE,
   breadcrumbSegments,
@@ -69,6 +69,16 @@ describe("joinPath", () => {
 
   it("slash-joins onto a non-empty base", () => {
     expect(joinPath("a", "b")).toBe("a/b");
+  });
+
+  // The upload path joins the current folder onto `parentPathFor(relativePath)`,
+  // which is `""` for every top-level entry of a dropped selection. Returning
+  // `"sub/"` there put a trailing separator on the wire and the server refused
+  // it, so uploading into any folder below the root failed outright.
+  it("returns the base unchanged when the segment is empty", () => {
+    expect(joinPath("sub", "")).toBe("sub");
+    expect(joinPath("a/b", "")).toBe("a/b");
+    expect(joinPath("", "")).toBe("");
   });
 });
 
@@ -178,6 +188,18 @@ describe("isBlockedDestination", () => {
 
   it("blocks a descendant of a source folder", () => {
     expect(isBlockedDestination("a/b", ["a"])).toBe(true);
+  });
+
+  // Dropping a selection back where it already lives asks for nothing, and the
+  // server can only answer `already_in_destination` — an error toast for a
+  // no-op gesture.
+  it("blocks a destination every source already sits in", () => {
+    expect(isBlockedDestination("", ["a.txt", "b.txt"])).toBe(true);
+    expect(isBlockedDestination("box", ["box/a.txt"])).toBe(true);
+  });
+
+  it("allows a destination only some sources already sit in", () => {
+    expect(isBlockedDestination("box", ["box/a.txt", "loose.txt"])).toBe(false);
   });
 
   it("allows an unrelated folder, including a same-prefix sibling", () => {

@@ -1,4 +1,4 @@
-import type { AdminFileEntry } from "@/lib/client/api/admin-files";
+import type { AdminFileEntry } from "@/lib/client/api";
 import { mediaPreviewType, type MediaPreviewKind } from "@/lib/media-preview";
 
 /**

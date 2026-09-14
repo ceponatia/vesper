@@ -334,7 +334,12 @@ function LightboxImage({
           src={playableSrc}
           controls
           aria-label={alt}
-          onLoadedData={handleLoaded}
+          // Metadata, not `loadeddata`: an audio element under `preload="metadata"`
+          // — Firefox's default and common in Safari — stops at HAVE_METADATA
+          // until playback starts, so `loadeddata` never fired and the loading
+          // line sat on top of a perfectly usable player. Video keeps
+          // `loadeddata`, where the first decoded frame is the real readiness.
+          onLoadedMetadata={handleLoaded}
           onError={handleError}
           className="w-full max-w-md"
         />

@@ -1,4 +1,4 @@
-import type { AdminFileFailure } from "@/lib/client/api/admin-files";
+import type { AdminFileFailure } from "@/lib/client/api";
 
 /**
  * `files-page.tsx`'s display copy, kept pure and beside its `.test.ts`

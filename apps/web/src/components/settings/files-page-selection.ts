@@ -1,4 +1,4 @@
-import type { AdminFileEntry } from "@/lib/client/api/admin-files";
+import type { AdminFileEntry } from "@/lib/client/api";
 
 /**
  * Pure page logic for `files-page.tsx`: the selection set, path/breadcrumb
@@ -27,8 +27,17 @@ export function parentPathFor(pathValue: string): string {
   return segments.join("/");
 }
 
-/** Appends one path segment under `base` — `base` may be `""` (the Files root). */
+/**
+ * Appends one path segment under `base`; either side may be `""` (the Files root).
+ *
+ * The empty `segment` is the case the upload path actually hits: a plan entry at
+ * the top of a dropped selection has `parentPathFor(...) === ""`, and joining
+ * that onto the current folder once produced `"sub/"` — a trailing separator the
+ * server validates segment-by-segment and refuses as `invalid_path`, so every
+ * upload below the Files root failed.
+ */
 export function joinPath(base: string, segment: string): string {
+  if (segment === "") return base;
   return base ? `${base}/${segment}` : segment;
 }
 
@@ -89,7 +98,12 @@ export function dragSourcePaths(selected: ReadonlySet<string>, rowPath: string):
  * rows and the drag-onto-folder highlight/drop.
  */
 export function isBlockedDestination(candidatePath: string, sourcePaths: readonly string[]): boolean {
-  return sourcePaths.some((source) => isPathWithin(candidatePath, source));
+  if (sourcePaths.some((source) => isPathWithin(candidatePath, source))) return true;
+  // A destination every source already sits in is a no-op the server can only
+  // answer with `already_in_destination`, which would surface as an error toast
+  // for a gesture that asked for nothing. A mixed selection is still a real
+  // move, so only the all-of-them case is blocked.
+  return sourcePaths.every((source) => parentPathFor(source) === candidatePath);
 }
 
 /**

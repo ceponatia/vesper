@@ -12,7 +12,11 @@ import {
 export const runtime = "nodejs";
 
 function expectedError(error: unknown): Response {
-  if (error instanceof AdminFilesError) return jsonError(error.code, error.message, error.status);
+  // Through `refusal` rather than `jsonError`, so the header really is a
+  // property of the route: `not_found`, `unsafe_path`, `not_file` and
+  // `invalid_path` all leave here, and the global header in `next.config.ts`
+  // was the only thing covering them.
+  if (error instanceof AdminFilesError) return refusal(error.code, error.message, error.status);
   throw error;
 }
 

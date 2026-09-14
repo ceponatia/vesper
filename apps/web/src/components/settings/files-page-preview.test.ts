@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AdminFileEntry } from "@/lib/client/api/admin-files";
+import type { AdminFileEntry } from "@/lib/client/api";
 import { previewKindForEntry } from "./files-page-preview";
 
 function entry(params: { name: string; kind: "file" | "folder" }): AdminFileEntry {
