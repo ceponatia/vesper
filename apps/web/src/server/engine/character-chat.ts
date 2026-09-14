@@ -1,4 +1,5 @@
-import { streamText, type JSONValue, type ModelMessage } from "ai";
+import type { TextModelProfile } from "@vesper/text-models";
+import { streamText, type ModelMessage } from "ai";
 import type { ChatReplyFailureCode } from "@/contracts";
 import {
   chatNarrativeModelId,
@@ -9,10 +10,11 @@ import {
   narratorEmptyRetryWorthwhile,
   narratorEmptyWasSilentStop,
   narratorHiddenRetryModel,
-  narratorRetryFloorOptions,
+  narratorRetryFloor,
   stripMisplacedSpeakerTagStream,
   stripNarratorArtifactStream,
   textModel,
+  textModelCall,
   type NarratorCompletion,
   type SpeakerTagVocabulary,
 } from "../ai";
@@ -135,7 +137,7 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     // exact-model policy; its only difference is the minimum-generation floor, and
     // only when attempt 1 was a genuinely silent stop.
     const retryFloor =
-      previous && narratorEmptyWasSilentStop(previous) ? narratorRetryFloorOptions(modelId) : undefined;
+      previous && narratorEmptyWasSilentStop(previous) ? narratorRetryFloor(modelId) : undefined;
     const { stream, outcome } = narratorAttempt({
       modelId,
       system: input.system,
@@ -199,18 +201,27 @@ function narratorAttempt(args: {
   messages: ModelMessage[];
   names: SpeakerTagVocabulary;
   signal?: AbortSignal;
-  /** Featherless `providerOptions` for the retry-only minimum-generation floor. */
-  retryFloor?: { featherless: Record<string, JSONValue> };
+  /**
+   * The retry-only minimum-generation floor, as feature values. The model
+   * gateway binds it for the host in force, so this lane never spells a wire
+   * field, and it rides the merge law's per-call layer — above the model's own
+   * profile, because it is the one thing chosen for this single attempt.
+   */
+  retryFloor?: TextModelProfile;
 }): { stream: AsyncGenerator<string>; outcome: () => RawAttemptOutcome | null } {
   let recorded: RawAttemptOutcome | null = null;
-  // Same provider options as the session narrator (server/ai/provider.ts): drop
-  // per-model bad endpoints (DeepInfra on GLM 5.2) and apply the eval-ruled per-model
-  // reasoning knob (the chat default GLM 5.2 → effort:low); undefined for plain models.
-  // A Featherless narrator gets no OpenRouter block at all — its exact-model policy
-  // (sampler + thinking off) rides the transport's request-body hook instead — except
-  // for the retry floor, which is per-call by nature.
+  // The whole call, built at the one model gateway (server/ai/model-adapters.ts):
+  // this lane's narrator temperature, then the exact model's measured profile,
+  // then the retry floor when there is one. The OpenRouter block it is handed —
+  // per-model bad endpoints dropped (DeepInfra on GLM 5.2) and the eval-ruled
+  // reasoning knob (the chat default GLM 5.2 → effort:low) — is merged in rather
+  // than replaced, and is undefined for every non-OpenRouter narrator.
   const openrouterOptions = narrativeProviderOptions(args.modelId);
-  const providerOptions = { ...(openrouterOptions ?? {}), ...(args.retryFloor ?? {}) };
+  const call = textModelCall(args.modelId, {
+    laneDefaults: { temperature: NARRATIVE_TEMPERATURE },
+    ...(args.retryFloor === undefined ? {} : { perCall: args.retryFloor }),
+    ...(openrouterOptions === undefined ? {} : { providerOptions: openrouterOptions }),
+  });
   // Not every provider failure throws. The AI SDK reports some — a Featherless cold
   // start's `503 capacity_exhausted` among them — as an error stream part, which ends
   // `textStream` cleanly with zero deltas and `finishReason: "error"`. Capturing it here
@@ -221,8 +232,8 @@ function narratorAttempt(args: {
     model: textModel(args.modelId),
     system: args.system,
     messages: args.messages,
-    temperature: NARRATIVE_TEMPERATURE,
-    ...(Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
+    ...call.settings,
+    ...(call.providerOptions === undefined ? {} : { providerOptions: call.providerOptions }),
     abortSignal: args.signal,
     onError: ({ error }) => {
       const classified = classifyProviderError(error);

@@ -3,8 +3,11 @@
  * respells.
  *
  * A feature is the answer to "what does Vesper want to ask for here?" — a
- * temperature, a nucleus cutoff, a repetition penalty, a thinking toggle —
- * stated once and reused by every model that asks for it. It is deliberately
+ * temperature, a nucleus cutoff, a repetition penalty, an output cap — stated
+ * once and reused by every model that asks for it. A chat-template argument is
+ * NOT one: it changes how a prompt is rendered rather than how tokens are drawn,
+ * it has to reach every call rather than the ones a lane calls narration, and a
+ * model that needs one states it as a quirk's request preparer. It is deliberately
  * NOT the answer to "which wire field carries it": that is a host dialect's
  * job, and it stays the dialect's job because the same semantic knob is spelled
  * differently on every upstream (`topK` here, `top_k` on an OpenAI-compatible
@@ -129,7 +132,16 @@ export function numericFeature(spec: NumericFeatureSpec): TextModelFeature {
   };
 }
 
-/** A boolean toggle: on, off, or absent — and absent is not the same as off. */
+/**
+ * A boolean toggle: on, off, or absent — and absent is not the same as off.
+ *
+ * Kept with no caller on purpose. These three constructors are what
+ * `TextProfileValue`'s shapes MEAN — a number, a toggle, a list of strings, a
+ * bias map — so removing the one no current feature happens to use would leave
+ * the value type declaring a shape the package had no way to validate. The
+ * vocabulary's own rule about unproven claims governs FEATURES, which are claims
+ * about a model; a constructor claims nothing.
+ */
 export function flagFeature(spec: { readonly id: string; readonly semantic: string }): TextModelFeature {
   const { id, semantic } = spec;
   return {

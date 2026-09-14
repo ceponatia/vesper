@@ -10,9 +10,12 @@ import type { NarratorCompletion } from "@/server/ai";
  * player", none of which need a live provider.
  *
  * `./constants` is real, `../ai/provider` is taken out of demo mode (the pure suite
- * forces `AI_FAKE=1`) and its transports are stubbed to plain model objects — the
- * request-body policy those transports carry has its own test in
- * `server/ai/provider.test.ts`.
+ * forces `AI_FAKE=1`) and its transports are stubbed to plain model objects. The
+ * model gateway (`../ai/model-adapters`) is NOT stubbed: what this lane hands
+ * `streamText` is part of the lane's behaviour, and the exact-model profile that
+ * arrives with it is what the retry-floor assertions below are written against.
+ * The gateway's own arithmetic is tested in `server/ai/model-adapters.test.ts`,
+ * and the serialized bodies in `server/ai/featherless-wire.test.ts`.
  */
 
 interface ScriptedAttempt {
@@ -82,6 +85,20 @@ vi.mock("ai", async (importOriginal) => {
 const { streamCharacterChat } = await import("./character-chat");
 
 const NAMES = { speakers: ["Mira"], plain: ["Brian"] };
+
+/**
+ * Fable Fusion's bound raw body — the half of its exact-model profile that has
+ * no SDK argument and therefore rides `providerOptions` (`@vesper/text-models`
+ * plus the Featherless dialect). Every attempt on that row carries it; the
+ * retry-only floor is what gets ADDED to it, never what replaces it.
+ *
+ * Its thinking suppression is deliberately NOT here. That is a chat-template
+ * argument rather than a sampler, so it is a request preparer applied at the
+ * transport boundary (`server/ai/model-adapters.ts` → `prepareTextRequestBody`)
+ * and never appears in a lane's call options — `featherless-wire.test.ts` is
+ * where it is asserted, on the serialized body where it actually travels.
+ */
+const FABLE_BODY = { top_k: 20, repetition_penalty: 1 };
 
 /** Drain the stream, returning what reached the player plus the reported completion. */
 async function run(options: {
@@ -207,8 +224,13 @@ describe("the hidden empty-reply retry", () => {
         { deltas: ["She speaks."], finishReason: "stop" },
       ],
     });
-    expect(script.requests[0]?.providerOptions).toBeUndefined();
-    expect(script.requests[1]?.providerOptions).toEqual({ featherless: { min_tokens: 48 } });
+    // The floor is the ONLY difference between the two attempts: attempt 2
+    // re-asserts the same prompt, history, model and exact-model profile, and
+    // adds one field. A retry that replaced the profile with the floor would ask
+    // the model for a minimum length while dropping the sampler baseline it was
+    // measured at.
+    expect(script.requests[0]?.providerOptions).toEqual({ featherless: FABLE_BODY });
+    expect(script.requests[1]?.providerOptions).toEqual({ featherless: { ...FABLE_BODY, min_tokens: 48 } });
   });
 
   // An empty that burned tokens already generated plenty — just not prose. Forcing MORE
@@ -222,7 +244,9 @@ describe("the hidden empty-reply retry", () => {
       ],
     });
     expect(script.requests).toHaveLength(2);
-    expect(script.requests[1]?.providerOptions).toBeUndefined();
+    // The model's own profile still travels; only the floor is withheld.
+    expect(script.requests[1]?.providerOptions).toEqual({ featherless: FABLE_BODY });
+    expect(script.requests[1]?.providerOptions).toEqual(script.requests[0]?.providerOptions);
   });
 
   it("stops after exactly two attempts and reports the final empty truthfully", async () => {
@@ -359,11 +383,20 @@ describe("the proven narrators' requests are unchanged", () => {
     expect(script.requests[0]?.providerOptions).toBeUndefined();
   });
 
-  // The Fable policy travels on the transport, not the call site — so its first call is
-  // shaped exactly like any other narrator's.
-  it("sends no OpenRouter block to the Featherless narrator", async () => {
+  // A Featherless narrator gets NO OpenRouter block — the routing, ignore/order
+  // lists and the reasoning knob are all OpenRouter API surface — and its own
+  // bound body instead, under its own host's key.
+  it("sends the Featherless narrator its own bound body and no OpenRouter block", async () => {
     await run({ model: FABLE_FUSION_711_ID, attempts: [{ deltas: ["She waits."] }] });
-    expect(script.requests[0]?.providerOptions).toBeUndefined();
-    expect(script.requests[0]?.temperature).toBe(0.85);
+    const request = script.requests[0];
+    expect(request?.providerOptions).toEqual({ featherless: FABLE_BODY });
+    const providerOptions = (request?.providerOptions ?? {}) as Record<string, unknown>;
+    expect(Object.keys(providerOptions)).toEqual(["featherless"]);
+    // The lane's own 0.85 is outranked by this model's measured baseline, which
+    // is the whole point of building the call at the gateway: a lane default
+    // that survived here would be the exact drift the join exists to prevent.
+    expect(request?.temperature).toBe(0.7);
+    expect(request?.topP).toBe(0.8);
+    expect(request?.presencePenalty).toBe(1.5);
   });
 });

@@ -52,9 +52,12 @@ than restate it, and no page under `docs/` may add a fourth.
    why they exist and how they are written.
 2. **Evidence records** — a dated *measurement*, where the date is what makes
    the measurement reproducible rather than a status marker, and it pairs with
-   the thing measured. Two shapes: the model catalog's dated `**Provenance:**`
-   line, which ties a probe date to the pinned provider version it read
-   (`docs/image-models/models/README.md` owns that line's exact form), and the
+   the thing measured. Two shapes: a model catalog's dated `**Provenance:**`
+   line, which ties a probe date to the exact thing it was read from — the
+   pinned provider version for an image model
+   (`docs/image-models/models/README.md` owns that line's form) or the host
+   and exact model record for a text model
+   (`docs/text-models/models/README.md` owns that one) — and the
    text-only record a measured trial or benchmark earns under the research rule
    in [issue authoring](issues.md), dated with the build, model version, or dataset it ran against. A
    date pinned to nothing is not an evidence record.

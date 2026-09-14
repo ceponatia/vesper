@@ -135,6 +135,9 @@ function liveRenderSeam(cut: NarrativeCut): RenderSeam {
         temperature: NARRATIVE_TEMPERATURE,
         ...(providerOptions === undefined ? {} : { providerOptions }),
         maxOutputTokens: 2_000,
+        // This leg IS the narration, so the exact model's measured profile
+        // outranks the two settings above (server/ai/model-adapters.ts).
+        applyModelProfile: true,
         code: "sim.narrator",
         fallback: () => deterministicFallbackResult(cut),
       },
@@ -409,6 +412,9 @@ function liveSoloSeam(fallbackProse: string): SoloRenderSeam {
         temperature: NARRATIVE_TEMPERATURE,
         ...(providerOptions === undefined ? {} : { providerOptions }),
         maxOutputTokens: 2_000,
+        // Narration, like the committed-cut render above: the model's profile
+        // outranks this lane's settings.
+        applyModelProfile: true,
         code: "sim.narrator.solo",
         fallback: () => ({ prose: fallbackProse }),
       },
@@ -553,6 +559,12 @@ export function buildLiveDeliberation(options: {
             .filter(Boolean)
             .join("\n"),
           modelId,
+          // Deliberately NO `applyModelProfile`. This leg runs on the chat's
+          // narrator model but is not narration: it asks for one strict JSON
+          // object at a classifier's temperature inside a 4s budget, and a
+          // narrator's prose profile — a high temperature, a wide top-k, a
+          // prose-sized output cap — would reshape a call nobody measured that
+          // way. Successor deliberation keeps its existing routing.
           temperature: 0.2,
           maxOutputTokens: 300,
           code: "sim.deliberator",

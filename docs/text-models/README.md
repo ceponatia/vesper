@@ -14,9 +14,15 @@ It owns none of the call itself. Which upstream serves a model id, what credenti
 
 Source: [`packages/text-models`](../../packages/text-models/README.md). The image system's equivalent, and the pattern this package mirrors, is [image-models](../image-models/README.md).
 
+| Page                                               | Owns                                                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| [Narrator model reference](models/README.md)       | Per-model host facts, field verdicts, template behavior, and each model's effective request |
+
 ## Feature vocabulary
 
 A feature is one semantic decoding knob. Ids are spelled in Vesper's normalized vocabulary — `topK`, never `top_k` — because the same knob is spelled differently on every upstream, and a feature carrying a wire name would have to be duplicated the first time a second host served it. Wire spellings live in the dialects alone.
+
+**A chat-template argument is not a feature.** `chat_template_kwargs` and its kind change how a prompt is RENDERED rather than how tokens are drawn, and they have to reach every call a model receives rather than only the ones an application decided were narration. A model that needs one states it as a quirk's request preparer, which runs at the model boundary for every call; the profile carries sampling and nothing else. Some hosts reject the field outright on some tokenizers, which is a second reason it never rides a profile.
 
 A feature owns its **value band**: the range outside which a number means nothing to any sampler, whatever host is asked. A value outside the band is refused when the adapter is defined. Absence is never the same as a neutral value — a knob a profile omits is one the lane's default governs.
 
@@ -31,16 +37,17 @@ The vocabulary is grown as needed. It is not an enumeration of every sampler a l
 | `seed`                   | Asks for a reproducible draw rather than a fresh one               | whole numbers, 0 or above                |
 | `repetitionPenalty`      | Scales down tokens that already appeared                           | 0 through 2                              |
 | `repetitionPenaltyRange` | Limits that penalty to the most recent tokens                      | whole numbers, 0 or above                |
+| `repetitionPenaltySlope` | Ramps that penalty toward the most recent tokens in the window     | 0 or above                               |
 | `presencePenalty`        | One flat penalty per token that has appeared at all                | -2 through 2                             |
 | `frequencyPenalty`       | A penalty proportional to how often a token appeared               | -2 through 2                             |
 | `stop`                   | Ends the completion at one of these literal strings                | one or more non-blank strings            |
 | `minTokens`              | Refuses to stop before this many tokens                            | whole numbers, 0 or above                |
 | `maxTokens`              | Caps how many tokens the completion may generate                   | whole numbers, 1 or above                |
-| `thinking`               | Turns the chat template's thinking mode on or off                  | `true` or `false`                        |
 | `topNsigma`              | Keeps tokens within this many standard deviations of the top logit | 0 or above                               |
 | `dryMultiplier`          | Scales DRY's penalty on a repeated sequence, and switches DRY on   | 0 or above                               |
 | `dryBase`                | How steeply DRY's penalty grows with sequence length               | 1 or above                               |
 | `dryAllowedLength`       | How long a repeat may be before DRY charges for it                 | whole numbers, 0 or above                |
+| `dryRange`               | Limits DRY's search for a repeat to the most recent tokens         | whole numbers, 0 or above                |
 | `drySequenceBreakers`    | Literal strings that end a sequence DRY is tracking                | one or more non-blank strings            |
 | `xtcThreshold`           | Marks tokens above this probability as excludable top choices      | 0 through 1                              |
 | `xtcProbability`         | How often XTC drops the marked top choices                         | 0 through 1                              |
@@ -80,16 +87,17 @@ Binding a profile for `self-hosted` nevertheless works, and that is deliberate: 
 | `seed`                   | setting `seed`              | setting `seed`             | body `sampler_seed`          |
 | `repetitionPenalty`      | body `repetition_penalty`   | body `repetition_penalty`  | body `rep_pen`               |
 | `repetitionPenaltyRange` | —                           | —                          | body `rep_pen_range`         |
+| `repetitionPenaltySlope` | —                           | —                          | body `rep_pen_slope`         |
 | `presencePenalty`        | setting `presencePenalty`   | setting `presencePenalty`  | body `presence_penalty`      |
 | `frequencyPenalty`       | setting `frequencyPenalty`  | setting `frequencyPenalty` | body `frequency_penalty`     |
 | `stop`                   | setting `stopSequences`     | setting `stopSequences`    | body `stop_sequence`         |
 | `minTokens`              | body `min_tokens`           | —                          | body `min_tokens`            |
 | `maxTokens`              | setting `maxOutputTokens`   | setting `maxOutputTokens`  | body `max_length`            |
-| `thinking`               | body `chat_template_kwargs` | —                          | body `chat_template_kwargs`  |
 | `topNsigma`              | —                           | —                          | body `nsigma`                |
 | `dryMultiplier`          | —                           | —                          | body `dry_multiplier`        |
 | `dryBase`                | —                           | —                          | body `dry_base`              |
 | `dryAllowedLength`       | —                           | —                          | body `dry_allowed_length`    |
+| `dryRange`               | —                           | —                          | body `dry_penalty_last_n`    |
 | `drySequenceBreakers`    | —                           | —                          | body `dry_sequence_breakers` |
 | `xtcThreshold`           | —                           | —                          | body `xtc_threshold`         |
 | `xtcProbability`         | —                           | —                          | body `xtc_probability`       |
@@ -136,6 +144,8 @@ It **withholds; it does not throw**. A withheld value never appears in `settings
 
 Taking the host as an argument is what makes host selection an application decision. Binding for a host other than the adapter's own answers "what would this profile look like over there?", so moving a model between upstreams is one argument rather than a second table.
 
+`bindTextProfileValues(values, host)` binds a handful of feature values with no adapter to read them off, under the same law — `bindTextModelProfile` is that function with an adapter's declared values read out in `capabilities` order. It exists for the layer above a profile: a value one CALL asks for, such as the minimum-token floor a lane applies to a single retry. Without it an application would have to spell that value's wire field itself, and "wire spellings live in the dialects alone" would stop being true the first time a lane needed a per-call knob. Like binding a profile, it validates nothing: a value is checked against its feature's band when the adapter is defined.
+
 Iteration follows `capabilities`, so a bound profile's key order is the definition's declaration order and two binds of one adapter are identical.
 
 ## Execution hints
@@ -173,7 +183,11 @@ A quirk contributes an adapter's optional members and is the only thing that doe
 
 **Null is the ordinary answer, never an error.** A model with no adapter is asked exactly as the lane asks every other model: no profile, no extra validation, no execution hints. The empty string resolves to null like any other miss — an unset selection is answered with lane defaults rather than a failed turn.
 
-`TEXT_MODEL_ADAPTERS` registers no model. A registered adapter is a claim that a specific model has been measured, and an entry added without that measurement is exactly the model-card guessing that exact-id keying prevents.
+`TEXT_MODEL_ADAPTERS` stays short, and each adapter supplies its own key, so an exact id is written once in the definition that owns it. A registered adapter is a claim that a specific model has been measured, and an entry added without that measurement is exactly the model-card guessing that exact-id keying prevents — so most narrators have no entry, and that is the correct answer rather than a gap.
+
+The registered ids are published from the package alongside the registry. An exact model id is a persisted value: it sits on chats and worlds, it keys the registry, and the application keys behavior on it, so every second spelling of one is a place a typo reads as "no adapter" rather than as a failure.
+
+What each registered model is asked for, and why, is its own page under [models/](models/README.md).
 
 ## Package boundary
 
@@ -205,6 +219,18 @@ Three properties follow, and they are the reason the join is one place rather th
 - **The host is the join's decision.** The package binds for whatever host it is handed, so an application that selects a host — behind a flag, a credential check, or a catalog row — changes an argument and nothing else. A profile's unhosted values are withheld for that host and remain declared.
 - **`withheld` is diagnostic, not an error.** A withheld value is the expected result of asking a model through a host that serves less than its author's profile. A join reports it where operators can read it and proceeds with the call.
 - **One join, or the lanes disagree.** Two call sites resolving adapters independently will eventually bind different hosts or different merge orders for the same model, and the difference shows up as a quality change nobody can attribute.
+
+### Vesper's join
+
+`apps/web/src/server/ai/model-adapters.ts` is that one place. Both narrator lanes — the character-chat stream and the successor narrator's structured call — build their request through `textModelCall(modelId, { laneDefaults, perCall, providerOptions })`, which returns the SDK's call settings already merged, the raw body fields under the transport's own provider-options key, the adapter's withheld list, and its execution hints.
+
+- **A profile belongs to the leg that IS the narration.** The chat stream is narration by definition. The structured helper serves many legs — post-turn agents, intake, the scene composer, vision, and the successor deliberator, which asks the chat's own narrator model for one strict JSON object at a classifier's temperature — so it takes a profile only when a caller states that the call is narration. The default is off, and the failure mode of forgetting is a narrator leg asked at lane defaults rather than an agent asked at a narrator's sampler.
+- **A lane's own setting is a lane DEFAULT, not a per-call override.** A caller asking a shared helper for a temperature is stating its lane's setting, and a measured exact-model baseline still outranks it. The per-call layer is reserved for what was chosen for one single call — a retry's minimum-token floor.
+- **Bound body fields travel as provider options.** Both transports Vesper uses spread `providerOptions.<provider>` into the request body, and the join merges into that key rather than replacing it, so an adapter's fields and a lane's existing routing block cannot clobber each other.
+- **`prepareRequest` runs at the transport.** The model boundary is the assembled body, after the SDK has spelled the call settings and spread the provider options, because that is the only moment a model-specific rewrite can see the whole request. A preparer owns the whole body it is handed.
+- **`withheld` is logged, not raised.** The join records the withheld feature ids at debug level with the model and host, and proceeds.
+
+`VESPER_TEXT_MODEL_HOST` names the host a profile binds for. Unset is the ordinary state: the transport serving a model already decides its dialect. A selection naming the host that serves the model is honoured; a selection naming any other host, and an unrecognised value, are reported and ignored — **selecting a host does not create a transport for it**, and binding one host's dialect onto another's wire would send a local-runtime spelling to an OpenAI-compatible endpoint and call it a profile.
 
 ## Adding another model
 

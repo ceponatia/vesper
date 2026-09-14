@@ -15,8 +15,13 @@ import { bodyBinding, settingBinding, type TextHostDialect } from "./host";
  * feature the table does not name is withheld rather than sent. That includes
  * every local-runtime sampler — top-n-sigma, DRY, XTC, typical, tail-free,
  * top-a, smoothing, dynamic temperature, mirostat, token bias — and
- * `repetitionPenaltyRange`, whose penalty this host applies over the whole
- * context with no window to narrow it.
+ * `repetitionPenaltyRange`, which this host accepts with no measurable effect
+ * inside a completion short enough to test.
+ *
+ * `chat_template_kwargs` is absent on purpose and is NOT a sampler: it is a
+ * chat-template argument, it is rejected outright on some tokenizers, and a
+ * model that needs one states it as a request preparer so that it travels on
+ * every call rather than only the ones a lane decided were narration.
  *
  * The table is deliberately trivial to edit: a measurement that proves this
  * host honours one more field adds one row, and nothing else in the package
@@ -36,11 +41,5 @@ export const FEATHERLESS_DIALECT: TextHostDialect = {
     minP: bodyBinding("min_p"),
     repetitionPenalty: bodyBinding("repetition_penalty"),
     minTokens: bodyBinding("min_tokens"),
-    // One key, not three. The host normalizes `enable_thinking`, `thinking` and
-    // `do_reasoning` to the same switch with `false` winning any conflict, and
-    // each was measured sufficient alone; sending all three would be redundancy
-    // against a hazard the evidence says does not exist. The feature's own
-    // validate has already refused anything but a boolean by the time this runs.
-    thinking: bodyBinding("chat_template_kwargs", (value) => ({ enable_thinking: value === true })),
   },
 };

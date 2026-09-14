@@ -3,6 +3,7 @@ import { z, type ZodType } from "zod";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { recordAgentFailure, type AgentTelemetry } from "./agent-failures";
 import { classifyProviderError } from "./errors";
+import { textModelCall, type TextModelCallSettings } from "./model-adapters";
 import { isDemoMode, providerRouting, routedProvider, stateModelId, textModel } from "./provider";
 
 /** An image handed to a vision-capable model alongside the prompt text. */
@@ -88,6 +89,25 @@ export interface GenerateCheckedOptions<T> {
    */
   usageAccounting?: boolean;
   /**
+   * Apply the exact model's measured call profile to this generation
+   * (`./model-adapters.ts`), with this helper's own `temperature` and
+   * `maxOutputTokens` as the lane's defaults for it to outrank.
+   *
+   * **Off by default, and the default is the safe one.** This helper serves the
+   * successor narrator, the post-turn agents, intake, the scene composer and
+   * vision, and only the first of those is NARRATION. A narrator's profile is
+   * tuned for prose — a high temperature, a wide top-k, a prose-sized output cap
+   * — and applying it to a strict-JSON classifier that happens to run on the
+   * chat's narrator model would reshape a leg nobody measured that way. The
+   * successor deliberator is exactly that leg: it asks the narrator model for one
+   * object at temperature 0.2 inside a 4s budget.
+   *
+   * So a call opts in when it IS the narration, and the failure mode of
+   * forgetting is a narrator leg quietly asked at lane defaults rather than an
+   * agent quietly asked at a narrator's sampler.
+   */
+  applyModelProfile?: boolean;
+  /**
    * Where this call lives (chat / session, which conversation, which exchange), so a
    * failure can be RECORDED and tallied rather than only logged
    * (`./agent-failures.ts`). Optional: without it the failure is still recorded, just
@@ -143,12 +163,30 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   // OpenRouter per-call routing/decoding knobs (see the option docs above).
   // providerRouting also applies any per-model provider exclusions (e.g. drop
   // DeepInfra for GLM 5.2), so it runs regardless of lowLatencyRouting.
+  const modelId = opts.modelId ?? stateModelId();
   const orOptions: Record<string, JSONValue> = { ...(opts.providerOptions?.openrouter ?? {}) };
   if (opts.disableReasoning) orOptions.reasoning = { enabled: false };
   if (opts.usageAccounting) orOptions.usage = { include: true };
-  const routing = providerRouting(opts.modelId ?? stateModelId(), { sortLatency: opts.lowLatencyRouting });
+  const routing = providerRouting(modelId, { sortLatency: opts.lowLatencyRouting });
   if (routing) orOptions.provider = routing;
-  const providerOptions = Object.keys(orOptions).length > 0 ? { openrouter: orOptions } : undefined;
+  const openrouterOptions = Object.keys(orOptions).length > 0 ? { openrouter: orOptions } : undefined;
+  // A NARRATION call goes through the model gateway (./model-adapters.ts), which
+  // owns its shape: the settings below are the lane's defaults and an exact
+  // model's measured profile outranks them, which is how a Featherless narrator
+  // keeps its baseline on a call site that also sets a temperature. Every other
+  // leg is asked exactly as it was before — see `applyModelProfile`.
+  const call =
+    opts.applyModelProfile === true
+      ? textModelCall(modelId, {
+          laneDefaults: { temperature: opts.temperature ?? 0, maxTokens: opts.maxOutputTokens ?? 4096 },
+          ...(openrouterOptions === undefined ? {} : { providerOptions: openrouterOptions }),
+        })
+      : null;
+  const settings: TextModelCallSettings = call?.settings ?? {
+    temperature: opts.temperature ?? 0,
+    maxOutputTokens: opts.maxOutputTokens ?? 4096,
+  };
+  const providerOptions = call === null ? openrouterOptions : call.providerOptions;
   // Provider + latency of the last *completed* call (set even when the response
   // then fails to parse): the Inspector reports them so a slow endpoint shows up.
   let provider: string | null = null;
@@ -169,9 +207,8 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
   const attempt = async (prompt: string): Promise<T> => {
     const start = Date.now();
     const base = {
-      model: textModel(opts.modelId ?? stateModelId()),
-      temperature: opts.temperature ?? 0,
-      maxOutputTokens: opts.maxOutputTokens ?? 4096,
+      model: textModel(modelId),
+      ...settings,
       abortSignal: opts.signal,
       providerOptions,
       system: [
@@ -278,7 +315,12 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     provider,
     latencyMs,
     promptChars: opts.system.length + opts.prompt.length,
-    maxOutputTokens: opts.maxOutputTokens ?? 4096,
+    // The EFFECTIVE cap, not the one this helper was asked for. An adapted
+    // narration binds its own — Asmodeus turns the successor lane's 2,000 into
+    // 1,024 — and this field is the Inspector's truncation signal, so recording
+    // a ceiling the request never carried points "was it cut off?" at a number
+    // that was never in play.
+    maxOutputTokens: settings.maxOutputTokens ?? opts.maxOutputTokens ?? 4096,
     reasoningProfile: opts.telemetry?.reasoningProfile,
     reasoningEnabled: opts.telemetry?.reasoningEnabled,
     detail: providerClassification?.detail ?? firstError,

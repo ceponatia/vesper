@@ -1,4 +1,7 @@
 import type { TextModelAdapter } from "./composer";
+import { asmodeus24bV3 } from "./families/mistral-24b/asmodeus-24b-v3";
+import { fableFusion711, f451UltraProWriter } from "./families/qwen3-6-27b/davidau-non-thinking";
+import { darkIdolQwen38V11 } from "./families/qwen3-8-27b/darkidol-qwen3-8-27b-v1-1";
 
 /**
  * Every model whose call profile Vesper has written down, keyed by the EXACT
@@ -11,12 +14,21 @@ import type { TextModelAdapter } from "./composer";
  * that fell back to a shared prefix would hand a model somebody else's
  * measurements and report nothing.
  *
- * Empty. The vocabulary, the dialects and the composer are what this package
- * publishes; a registered adapter is a claim that a specific model has been
- * measured, and an entry added without that measurement is the model-card
- * guessing the exact-id keying exists to prevent.
+ * Short, and it stays short. A registered adapter is a claim that a specific
+ * model has been measured, and an entry added without that measurement is the
+ * model-card guessing the exact-id keying exists to prevent. Every narrator not
+ * named here — every OpenRouter row, and the Featherless rows whose probes
+ * found nothing model-specific to say — is asked at lane defaults, which is the
+ * correct answer rather than a gap.
+ *
+ * Each adapter supplies its own key, so the id is written once, in the
+ * definition that owns it.
  */
-export const TEXT_MODEL_ADAPTERS: Readonly<Record<string, TextModelAdapter>> = {};
+export const TEXT_MODEL_ADAPTERS: Readonly<Record<string, TextModelAdapter>> = Object.freeze(
+  Object.fromEntries(
+    [fableFusion711, f451UltraProWriter, darkIdolQwen38V11, asmodeus24bV3].map((adapter) => [adapter.id, adapter]),
+  ),
+);
 
 /**
  * The adapter for a registered model, or null when Vesper has nothing special
@@ -34,5 +46,9 @@ export const TEXT_MODEL_ADAPTERS: Readonly<Record<string, TextModelAdapter>> = {
  * turn rather than a model asked at lane defaults.
  */
 export function adapterForTextModel(id: string): TextModelAdapter | null {
-  return TEXT_MODEL_ADAPTERS[id] ?? null;
+  // `hasOwn`, not a plain lookup: the table is an ordinary object, so `id` could
+  // otherwise name something off `Object.prototype` and answer a curated-looking
+  // miss with a builtin. Unreachable today — every caller passes an id a resolver
+  // already curated — and one word cheaper than being sure it stays that way.
+  return Object.hasOwn(TEXT_MODEL_ADAPTERS, id) ? (TEXT_MODEL_ADAPTERS[id] ?? null) : null;
 }

@@ -23,7 +23,10 @@ Model behavior reference: [docs/text-models/](../../docs/text-models/README.md).
 ### Features — what a model is asked for
 
 A feature is one semantic decoding knob, stated once and reused: a temperature,
-a nucleus cutoff, a repetition penalty, a thinking toggle. Ids are spelled in
+a nucleus cutoff, a repetition penalty, an output cap. A chat-template argument
+is not one — it changes how a prompt is rendered rather than how tokens are
+drawn, it must reach every call rather than the ones a lane calls narration, and
+a model that needs one states it as a quirk's request preparer. Ids are spelled in
 Vesper's normalized vocabulary — `topK`, never `top_k` — because the same knob
 is spelled differently on every upstream, and a feature that carried a wire name
 would have to be duplicated the first time a second host served it.
@@ -89,6 +92,13 @@ carry more by adding one dialect row.
 `mergeTextCallSettings` states the merge law once: the lane's default, then the
 adapter's profile, then any explicit per-call option.
 
+`bindTextProfileValues(values, host)` binds a handful of values with no adapter
+to read them off — `bindTextModelProfile` is that function with an adapter's
+declared values read out in declaration order. It is for the layer above a
+profile: a value one call asks for, such as a retry's minimum-token floor.
+Without it the application would spell that value's wire field itself, and wire
+spellings would stop living in the dialects alone.
+
 ### The registry — which model gets which adapter
 
 `adapterForTextModel(id)` resolves the **exact** model id, with no normalization
@@ -97,9 +107,14 @@ only in a suffix are asked differently the moment either is measured, so a
 lookup that fell back to a shared prefix would hand a model somebody else's
 measurements and report nothing.
 
-The registry is empty. A registered adapter is a claim that a specific model has
-been measured, and an entry added without that measurement is exactly the
-model-card guessing that exact-id keying exists to prevent.
+The registry stays short, and each adapter supplies its own key, so an exact id
+is written once in the definition that owns it and published from the package
+root alongside the registry — a model id is a persisted value, and a second
+spelling of one reads as "no adapter" rather than as a failure. A registered
+adapter is a claim that a specific model has been measured, and an entry added
+without that measurement is exactly the model-card guessing that exact-id keying
+exists to prevent. Definitions live under `src/families/<family>/`, one file per
+checkpoint unless several were deliberately measured as one.
 
 ## Boundary
 

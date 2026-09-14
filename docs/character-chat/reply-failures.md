@@ -72,9 +72,23 @@ same is true of `ChatReplyFailureCause`, the optional refinement of `empty_reply
 ## One hidden retry, for one model
 
 A narrator model may opt into a single hidden retry for a zero-visible-text completion
-(`narratorHiddenRetryModel`, keyed by exact id in `server/ai/provider.ts`). It runs only
+(`narratorHiddenRetryModel`, which reads the exact model's adapter in
+[text-models](../text-models/README.md)). It runs only
 when nothing reached the player — so nothing can be duplicated — and never after a
 content-filter or generation-error finish, a player abort, or a thrown exception. It
 lives inside `streamCharacterChat`, so both attempts share the caller's abort signal and
 the one first-token/overall watchdog budget. A partial reply is never retried, and every
-model without an explicit policy entry surfaces the empty reply immediately.
+model whose adapter does not earn the hint — including every model with no adapter at
+all — surfaces the empty reply immediately.
+
+The hint is earned by a **measured** intermittent empty reply on that exact model, never
+by family resemblance: a retry costs a player the latency of a second generation, so a
+model that has always answered must not pay for one that has not.
+
+The retry's only difference from the first attempt is a floor on generated tokens, and
+only when the first attempt was a genuinely silent stop (`narratorEmptyWasSilentStop`) —
+an empty that burned output tokens gets no floor, because it did not stop early. The
+floor rides the model gateway's per-call layer, so it outranks the model's own profile
+for that one attempt and the host dialect spells its wire field; the lane names no
+request field itself. A floor applied to every call, rather than to this one retry, is
+how narrator padding gets resurrected.

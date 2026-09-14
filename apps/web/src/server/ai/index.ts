@@ -1,4 +1,5 @@
 export * from "./provider";
+export * from "./model-adapters";
 export * from "./narrator-artifacts";
 export * from "./narrator-repeats";
 export * from "./narrator-speaker-tags";

@@ -222,7 +222,7 @@ export function classifyEmptyNarratorCompletion(completion: NarratorCompletion):
 
 /**
  * Whether a zero-visible-text completion is worth ONE hidden retry (PURE, and
- * exact-model gated by its caller — `narratorHiddenRetryModel` in `./provider`).
+ * exact-model gated by its caller — `narratorHiddenRetryModel` in `./model-adapters`).
  *
  * Everything the caller already knows about — a player abort, a watchdog trip, a
  * thrown auth/credit/context/network/provider exception — never reaches here,
