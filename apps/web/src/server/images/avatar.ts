@@ -401,7 +401,16 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
   // row's failure sentence — never a silent fallback to a new variation.
   const replayPrecondition = avatarReplayPrecondition(replayEligibility, input.characterId, input.sink);
   const retrySeed = replayEligibility?.ok === true ? replayEligibility.seed : null;
-  const retrySourceIdForRow = retry?.mode === "same_composition" ? retry.sourceImageId : lineageSourceId;
+  // A REFUSED same-composition request names a source that is unowned,
+  // foreign, or does not exist — `images.source_image_id` carries no FK, so
+  // writing it verbatim would let a refused row point at (or let a caller
+  // probe the existence of) another owner's image. Only an ELIGIBLE replay's
+  // source is honest lineage; `new_variation`'s pointer is separately
+  // ownership-checked above (`lineageSourceId`).
+  const retrySourceIdForRow =
+    retry?.mode === "same_composition"
+      ? (replayEligibility?.ok === true ? retry.sourceImageId : undefined)
+      : lineageSourceId;
 
   // A two-candidate request mints one group id shared by both rows; a
   // single-candidate one (first-ever generation, or a plain retry) carries no

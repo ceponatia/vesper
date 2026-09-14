@@ -139,8 +139,8 @@ render today).
 
 **"Same composition" is a reproducibility REQUEST, never a pixel guarantee.** Replaying a stored
 `controls.seed` is honest reuse of the settings that produced a prior row — it is not a promise
-that the provider returns identical bytes. The portrait lane (issue #248) is the first caller of
-this: a same-composition retry reads the source row's `meta.render.seed` and sends it back as an
+that the provider returns identical bytes. The portrait lane is the first caller of this: a
+same-composition retry reads the source row's `meta.render.seed` and sends it back as an
 explicit `controls.seed`, but only when the eligibility table in
 [../pipelines/avatars.md](../pipelines/avatars.md) §Same-composition eligibility holds — an
 unrecorded seed, a changed model or version, or a world that moved since the source rendered must

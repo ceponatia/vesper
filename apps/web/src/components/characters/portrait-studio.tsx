@@ -288,9 +288,9 @@ export function PortraitStudio({
    * model/profile/version still current. A world-state change is only
    * detectable at request time, so "Same composition" can still be refused
    * even when this said nothing was wrong; the failure toast explains why.
-   * Only consulted from the ActionMenu branch below, which renders only once
-   * `avatarImageId` exists — there is always a candidate portrait to reason
-   * about here.
+   * Only consulted from the secondary "Same composition" button below, which
+   * renders only once `avatarImageId` exists — there is always a candidate
+   * portrait to reason about here.
    */
   const currentReplay = avatarImageId ? portraits.data?.replay?.[avatarImageId] : undefined;
   const sameCompositionDisabledReason =
@@ -527,38 +527,29 @@ export function PortraitStudio({
             )}
           </Field>
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={avatarImageId && !acceptance.isCurrent ? "ghost" : "primary"}
+              onClick={() =>
+                void generateAvatar(avatarImageId ? { mode: "new_variation", sourceImageId: avatarImageId } : undefined)
+              }
+              busy={generatingAvatar}
+              disabled={generationDisabled || pendingProposalCount > 0}
+              title={pendingProposalCount > 0 ? "Review pending character suggestions before generating a portrait" : undefined}
+            >
+              {avatarPhase === "saving" ? "Saving…" : avatarImageId ? "Regenerate portrait" : "Generate portrait"}
+            </Button>
             {avatarImageId ? (
-              <ActionMenu
-                label={avatarPhase === "saving" ? "Saving…" : avatarPhase === "generating" ? "Working…" : "Regenerate portrait"}
-                ariaLabel="Regenerate portrait"
-                items={[
-                  {
-                    label: "New variation",
-                    onSelect: () => void generateAvatar({ mode: "new_variation", sourceImageId: avatarImageId }),
-                    disabled: generationDisabled || pendingProposalCount > 0,
-                    busy: generatingAvatar,
-                  },
-                  {
-                    label: sameCompositionDisabledReason
-                      ? `Same composition (${sameCompositionDisabledReason})`
-                      : "Same composition",
-                    onSelect: () => void generateAvatar({ mode: "same_composition", sourceImageId: avatarImageId }),
-                    disabled: generationDisabled || pendingProposalCount > 0 || !!sameCompositionDisabledReason,
-                    busy: generatingAvatar,
-                  },
-                ]}
-              />
-            ) : (
               <Button
-                variant="primary"
-                onClick={() => void generateAvatar()}
+                variant="ghost"
+                size="sm"
+                onClick={() => void generateAvatar({ mode: "same_composition", sourceImageId: avatarImageId })}
                 busy={generatingAvatar}
-                disabled={generationDisabled || pendingProposalCount > 0}
-                title={pendingProposalCount > 0 ? "Review pending character suggestions before generating a portrait" : undefined}
+                disabled={generationDisabled || pendingProposalCount > 0 || !!sameCompositionDisabledReason}
+                title={sameCompositionDisabledReason ?? "Reuse this portrait's exact settings, including its seed"}
               >
-                {avatarPhase === "saving" ? "Saving…" : "Generate portrait"}
+                Same composition
               </Button>
-            )}
+            ) : null}
             <Button variant="ghost" onClick={() => setUploadOpen(true)}>
               Upload image
             </Button>
