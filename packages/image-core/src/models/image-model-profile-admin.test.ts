@@ -27,12 +27,12 @@ const model = (overrides: Partial<ImageModel> = {}): ImageModel =>
   });
 
 /** The slice `validateImageProfileConfiguration` reads, with inert defaults. */
-const profile = (
-  overrides: Partial<Pick<ImageModelProfile, "task" | "operation" | "providerOverrides">> = {},
-): Pick<ImageModelProfile, "task" | "operation" | "providerOverrides"> => ({
+type ValidatedProfile = Pick<ImageModelProfile, "task" | "operation" | "providerOverrides" | "controlDefaults">;
+const profile = (overrides: Partial<ValidatedProfile> = {}): ValidatedProfile => ({
   task: "scene",
   operation: "edit",
   providerOverrides: {},
+  controlDefaults: { seedPolicy: "random" },
   ...overrides,
 });
 
@@ -40,6 +40,13 @@ const kinds = (issues: ImageProfileConfigurationIssue[]): string[] => issues.map
 
 /** Advanced capabilities carrying only a probed known-field list. */
 const probedFields = (fields: string[]) => imageModelAdvancedCapabilitiesSchema.parse({ knownInputFields: fields });
+
+/** Advanced capabilities carrying probed CONTROL bindings, and their fields as known. */
+const probedControls = (controls: Record<string, { field: string; type: string }>) =>
+  imageModelAdvancedCapabilitiesSchema.parse({
+    controls,
+    knownInputFields: Object.values(controls).map((binding) => binding.field),
+  });
 
 describe("imageModelProfileCreateRequestSchema", () => {
   it("defaults a minimal request to the inert seeded-row values", () => {
@@ -217,9 +224,23 @@ describe("a created profile's reviewed settings, as the save path composes them"
     return { seeded, issues: validateImageProfileConfiguration(seeded, subject) };
   };
 
+  /** SDXL PuLID's production capabilities: guidance on `cfg`, the pair, the two raw keys. */
+  const pulidProbed = imageModelAdvancedCapabilitiesSchema.parse({
+    controls: {
+      guidance: { field: "cfg", type: "number" },
+      customWidth: { field: "width", type: "integer" },
+      customHeight: { field: "height", type: "integer" },
+    },
+    knownInputFields: ["cfg", "face_weight", "height", "method", "width"],
+  });
+
+  /** The reviewed controls an issue list says this version cannot carry. */
+  const unbound = (issues: ImageProfileConfigurationIssue[]): string[] =>
+    issues.flatMap((issue) => (issue.kind === "reviewed_control_unbound" ? [issue.control] : []));
+
   it("carries the reviewed settings of a probed reviewed model, with no issues", () => {
     const { seeded, issues } = saved(
-      model({ slug: "nsfw-api/sdxl-pulid:83bea6", advancedCapabilities: probedFields(["method", "face_weight"]) }),
+      model({ slug: "nsfw-api/sdxl-pulid:83bea6", advancedCapabilities: pulidProbed }),
       request(),
     );
     expect(seeded.providerOverrides).toEqual({ method: "fidelity", face_weight: 1 });
@@ -229,22 +250,54 @@ describe("a created profile's reviewed settings, as the save path composes them"
 
   it("carries Qwen Edit's accelerated-path ruling as a control, never as an override", () => {
     // A raw override would outrank the caller's own `fastMode` request at the
-    // compile step's final merge, so the ruling is a control — and a control is
-    // judged at render time against the version's binding, not here. The save
-    // therefore passes even unprobed, which is the same answer this validator
-    // already gives for every other reviewed control.
-    const { seeded, issues } = saved(model({ slug: "qwen/qwen-image-edit-2511" }), request());
+    // compile step's final merge, so the ruling is a control.
+    const { seeded, issues } = saved(
+      model({
+        slug: "qwen/qwen-image-edit-2511",
+        advancedCapabilities: probedControls({ fastMode: { field: "go_fast", type: "boolean" } }),
+      }),
+      request(),
+    );
     expect(seeded.controlDefaults).toMatchObject({ fastMode: false });
     expect(seeded.providerOverrides).toEqual({});
     expect(issues).toEqual([]);
   });
 
-  it("refuses an unprobed reviewed model's raw override, and says to re-probe", () => {
-    // Acceptance 3: an unprobed configuration fails the EXISTING validation
-    // rather than being stored with settings every render would drop.
-    const { issues } = saved(model({ slug: "nsfw-api/sdxl-pulid:83bea6" }), request());
-    expect(kinds(issues)).toEqual(["override_rejected", "override_rejected"]);
+  it("refuses a reviewed control this version declares no binding for", () => {
+    // Acceptance 3 for the control channel. Spelling a reviewed setting as a
+    // control takes it out of the override validator's reach, and the task
+    // profile is now the only thing carrying it: a row saved against a version
+    // with no `fastMode` binding would drop it at every render and leave an
+    // identity-critical model on the provider's own speed preset.
+    const { issues } = saved(model({ slug: "qwen/qwen-image-edit-2511" }), request());
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ kind: "reviewed_control_unbound", control: "fastMode" });
     expect(issues[0]?.message).toContain("re-probe it first");
+  });
+
+  it("says nothing about an ordinary profile's own controls on an unprobed model", () => {
+    // The narrowing that keeps this from becoming a second, stricter contract:
+    // only a REVIEWED model's REVIEWED controls are asked. A curated profile is
+    // free to state a control the version does not bind — the render path drops
+    // it with a recorded reason, which is the long-standing answer.
+    const issues = validateImageProfileConfiguration(
+      profile({ controlDefaults: { seedPolicy: "random", steps: 50, guidance: 3 } }),
+      model({ slug: "operator/added-yesterday" }),
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it("refuses an unprobed reviewed model on both channels, and says to re-probe", () => {
+    // Acceptance 3: an unprobed configuration fails the EXISTING validation
+    // rather than being stored with settings every render would drop. Both
+    // channels answer — the two raw keys through the override validator, the
+    // three bindable controls through the reviewed-control check.
+    const { issues } = saved(model({ slug: "nsfw-api/sdxl-pulid:83bea6" }), request());
+    expect(kinds(issues).filter((kind) => kind === "override_rejected")).toHaveLength(2);
+    // `resolution` is deliberately absent: it is the gate for the width/height
+    // pair and sends no field, so no version binds it and no save may wait on it.
+    expect(unbound(issues)).toEqual(["guidance", "width", "height"]);
+    for (const issue of issues) expect(issue.message).toContain("re-probe it first");
   });
 
   it("adds nothing to a request for an unreviewed model", () => {

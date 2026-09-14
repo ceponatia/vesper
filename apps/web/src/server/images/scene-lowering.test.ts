@@ -18,6 +18,7 @@ import {
   VISUAL_STATE_SCENE_PLAYER,
   type ChatGarmentStore,
 } from "@/contracts";
+import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
 import { exposedRegions, type RegionExposure } from "@/contracts/items/visibility";
@@ -418,12 +419,54 @@ describe("a ruled meter effect in a scene (issue #427)", () => {
       (fact) => fact.concept === "subject.current_state" && String(fact.value).includes("glassy"),
     );
     expect(effectFact).toBeDefined();
+    // The #544 F1 defect class: a bare join ("glassy, unfocused eyes") reaches
+    // the ordinary subject frame as a predicate complement and compiles a
+    // malformed sentence. The renderer states a trailing clause instead
+    // (`with glassy, unfocused eyes`), and this probe cast carries no
+    // wardrobe facts (`laneProbeShadowInput` sets no `garments`), so the 2511
+    // dialect's wardrobe band has nothing to attach the clause to and frames
+    // it in its own "seen" form — the imperative register the scene task
+    // defaults to (`registerFor`, `dialect-qwen-2511.ts`).
+    expect(drunk.prompt).not.toMatch(/\bis glassy, unfocused eyes\b/i);
+    expect(drunk.prompt).toContain("Show her with glassy, unfocused eyes.");
 
     const { program: sober } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.2));
     expect(sober.prompt).not.toMatch(/glassy/i);
 
     const { program: tipsy } = compileScene(plan, false, undefined, () => true, castAtIntoxication(0.5));
     expect(tipsy.prompt).not.toMatch(/glassy/i);
+  });
+
+  /**
+   * A condition and a meter can both claim the SAME real-world state: the
+   * catalog's own `unwashed` condition (`contracts/conditions/catalog.ts`)
+   * and the hygiene meter's `unwashed` band. The assembly composes the meter
+   * against already-produced conditions (`assemble.ts`) and withholds the
+   * meter's effect when an active condition already states it, so the
+   * compiled prompt says "unwashed" exactly once rather than restating the
+   * same fact in two vocabularies ("unwashed" AND "lank, greasy hair, grimy
+   * skin").
+   */
+  it("states an overlapping condition-and-meter pair once, never both", () => {
+    const unwashed: ActiveCondition = {
+      id: "cond_unwashed",
+      label: "unwashed",
+      startedAtMinutes: 0,
+      attributeEffects: [],
+    };
+    const cast = laneProbeCastSubjects().map((subject, index) =>
+      index === 0
+        ? { ...subject, shadow: { ...subject.shadow, conditions: [unwashed], meters: { hygiene: 0.2 } } }
+        : subject,
+    );
+    const { program } = compileScene(plan, false, undefined, () => true, cast);
+    expect(program.prompt).toMatch(/unwashed/i);
+    expect(program.prompt).not.toMatch(/lank, greasy hair/i);
+    expect(program.prompt).not.toMatch(/grimy skin/i);
+    const focal = program.subjects.find((subject) => subject.entityId === LANE_PROBE_SUBJECT_ID);
+    const currentStateFacts = focal?.facts.filter((fact) => fact.concept === "subject.current_state") ?? [];
+    const unwashedFacts = currentStateFacts.filter((fact) => String(fact.value).includes("unwashed"));
+    expect(unwashedFacts).toHaveLength(1);
   });
 });
 

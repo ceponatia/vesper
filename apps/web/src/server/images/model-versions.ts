@@ -104,6 +104,7 @@ const defaultDependencies: ImageModelVersionDependencies = {
 function profileFindings(
   profiles: readonly ImageModelProfile[],
   modelId: string,
+  modelSlug: string,
   candidate: SuccessfulProbe,
 ): ImageModelProfileFindings[] {
   return profiles
@@ -112,7 +113,9 @@ function profileFindings(
       profileId: profile.id,
       key: profile.key,
       label: profile.label,
-      findings: validateImageProfileForCandidate(profile, candidate),
+      // The slug carries the model's IDENTITY, which is what says whether a
+      // control this profile states is one of Vesper's reviewed corrections.
+      findings: validateImageProfileForCandidate(profile, candidate, modelSlug),
     }));
 }
 
@@ -158,7 +161,7 @@ export async function probeLatestCandidate(
     activatable: candidate.versionId !== null,
     latestDiffers: candidate.versionId !== null && candidate.versionId !== pinnedImageModelVersion(model),
     diff: diffImageModelCapabilities(model, candidate),
-    profiles: profileFindings(await deps.loadProfiles(sink), modelId, candidate),
+    profiles: profileFindings(await deps.loadProfiles(sink), modelId, model.slug, candidate),
   };
 }
 
@@ -356,7 +359,7 @@ export async function activateCandidateVersion(
   const probed = await probeExactCandidate(deps, basePath, input.versionId);
   if (!probed.ok) return { ok: false, code: "version_unavailable", message: probed.message };
 
-  const profiles = profileFindings(await deps.loadProfiles(sink), modelId, probed.probe);
+  const profiles = profileFindings(await deps.loadProfiles(sink), modelId, model.slug, probed.probe);
   const blocked = profiles.filter((entry) => entry.findings.some((finding) => finding.level === "blocking"));
   if (blocked.length > 0) {
     const names = blocked

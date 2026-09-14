@@ -34,6 +34,11 @@ import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CheckOption, NumberField, TASK_LABELS, TextField } from "./image-admin-shared";
+import {
+  imageProfileControlDefaults,
+  imageProfileControlForm,
+  type ImageProfileBooleanField,
+} from "./image-profile-form-state";
 
 /**
  * The task profiles nested under one model card: list, create, edit, switch off,
@@ -262,7 +267,10 @@ function ImageModelProfileForm({
   // page-level because the form is the only consumer and mounts on demand.
   const loras = useAsyncData(() => imageLorasApi.list(), []);
 
-  const defaults = profile?.controlDefaults;
+  // Both directions of the control block live in one pure module, because the
+  // save REPLACES `control_defaults` wholesale: a control the form reads but
+  // cannot write back is deleted by an untouched Save (#244).
+  const initialControls = imageProfileControlForm(profile?.controlDefaults);
   const [label, setLabel] = useState(profile?.label ?? "");
   const [key, setKey] = useState(profile?.key ?? "");
   const [task, setTask] = useState<ImageProfileTask>(profile?.task ?? "portrait");
@@ -274,26 +282,23 @@ function ImageModelProfileForm({
   const [policyText, setPolicyText] = useState(
     profile ? JSON.stringify(profile.referencePolicy, null, 2) : "",
   );
-  const [seedPolicy, setSeedPolicy] = useState<ImageSeedPolicy>(defaults?.seedPolicy ?? "random");
-  const [guidance, setGuidance] = useState(defaults?.guidance === undefined ? "" : String(defaults.guidance));
-  const [steps, setSteps] = useState(defaults?.steps === undefined ? "" : String(defaults.steps));
-  const [negativePrompt, setNegativePrompt] = useState(defaults?.negativePrompt ?? "");
-  const [editStrength, setEditStrength] = useState(
-    defaults?.editStrength === undefined ? "" : String(defaults.editStrength),
-  );
-  const [resolution, setResolution] = useState<"" | ImageResolutionTier>(defaults?.resolution ?? "");
-  const [width, setWidth] = useState(defaults?.width === undefined ? "" : String(defaults.width));
-  const [height, setHeight] = useState(defaults?.height === undefined ? "" : String(defaults.height));
+  const [seedPolicy, setSeedPolicy] = useState<ImageSeedPolicy>(initialControls.seedPolicy);
+  const [guidance, setGuidance] = useState(initialControls.guidance);
+  const [steps, setSteps] = useState(initialControls.steps);
+  const [negativePrompt, setNegativePrompt] = useState(initialControls.negativePrompt);
+  const [clearNegativePrompt, setClearNegativePrompt] = useState(initialControls.clearNegativePrompt);
+  const [editStrength, setEditStrength] = useState(initialControls.editStrength);
+  const [resolution, setResolution] = useState<"" | ImageResolutionTier>(initialControls.resolution);
+  const [width, setWidth] = useState(initialControls.width);
+  const [height, setHeight] = useState(initialControls.height);
   // Absent (`""`) means "the lane decides" — the field never sees a numeric
-  // ratio, only the `W:H` spelling `resolveRenderTarget` parses back.
-  const [aspectRatio, setAspectRatio] = useState(defaults?.aspectRatio ?? "");
+  // ratio, only the `W:H` spelling `resolveRenderTarget` parses back (#247).
+  const [aspectRatio, setAspectRatio] = useState(initialControls.aspectRatio);
   const ratioOptions = ratioShapeOptions(model);
-  const [thinkingMode, setThinkingMode] = useState<"" | "on" | "off">(
-    defaults?.thinkingMode === undefined ? "" : defaults.thinkingMode ? "on" : "off",
-  );
-  const loraDefault = defaults?.lora;
-  const [loraId, setLoraId] = useState(loraDefault?.id ?? "");
-  const [loraScale, setLoraScale] = useState(loraDefault?.scale === undefined ? "" : String(loraDefault.scale));
+  const [fastMode, setFastMode] = useState<ImageProfileBooleanField>(initialControls.fastMode);
+  const [thinkingMode, setThinkingMode] = useState<ImageProfileBooleanField>(initialControls.thinkingMode);
+  const [loraId, setLoraId] = useState(initialControls.loraId);
+  const [loraScale, setLoraScale] = useState(initialControls.loraScale);
   const [overridesText, setOverridesText] = useState(
     profile && Object.keys(profile.providerOverrides).length > 0
       ? JSON.stringify(profile.providerOverrides, null, 2)
@@ -356,21 +361,32 @@ function ImageModelProfileForm({
     if (!numbers.guidance.ok || !numbers.steps.ok || !numbers.editStrength.ok) return;
     if (!numbers.width.ok || !numbers.height.ok || !numbers.loraScale.ok || !numbers.sort.ok) return;
 
-    const controlDefaults: ImageControlDefaults = {
-      seedPolicy,
-      ...(numbers.guidance.value === undefined ? {} : { guidance: numbers.guidance.value }),
-      ...(numbers.steps.value === undefined ? {} : { steps: numbers.steps.value }),
-      ...(negativePrompt.trim() === "" ? {} : { negativePrompt: negativePrompt.trim() }),
-      ...(numbers.editStrength.value === undefined ? {} : { editStrength: numbers.editStrength.value }),
-      ...(resolution === "" ? {} : { resolution }),
-      ...(numbers.width.value === undefined ? {} : { width: numbers.width.value }),
-      ...(numbers.height.value === undefined ? {} : { height: numbers.height.value }),
-      ...(aspectRatio === "" ? {} : { aspectRatio }),
-      ...(thinkingMode === "" ? {} : { thinkingMode: thinkingMode === "on" }),
-      ...(loraId === ""
-        ? {}
-        : { lora: { id: loraId, ...(numbers.loraScale.value === undefined ? {} : { scale: numbers.loraScale.value }) } }),
-    };
+    const controlDefaults: ImageControlDefaults = imageProfileControlDefaults(
+      {
+        seedPolicy,
+        guidance,
+        steps,
+        negativePrompt,
+        clearNegativePrompt,
+        editStrength,
+        resolution,
+        width,
+        height,
+        aspectRatio,
+        fastMode,
+        thinkingMode,
+        loraId,
+        loraScale,
+      },
+      {
+        ...(numbers.guidance.value === undefined ? {} : { guidance: numbers.guidance.value }),
+        ...(numbers.steps.value === undefined ? {} : { steps: numbers.steps.value }),
+        ...(numbers.editStrength.value === undefined ? {} : { editStrength: numbers.editStrength.value }),
+        ...(numbers.width.value === undefined ? {} : { width: numbers.width.value }),
+        ...(numbers.height.value === undefined ? {} : { height: numbers.height.value }),
+        ...(numbers.loraScale.value === undefined ? {} : { loraScale: numbers.loraScale.value }),
+      },
+    );
 
     const body: ImageModelProfileCreateRequest = {
       key: key.trim(),
@@ -560,15 +576,35 @@ function ImageModelProfileForm({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Thinking mode" hint="Sent only when the model's probed bindings carry it.">
+          <Field label="Fast mode" hint="Off is a request: several wrappers default their accelerated path on.">
             {(id) => (
-              <Select id={id} value={thinkingMode} onChange={(e) => setThinkingMode(e.target.value as "" | "on" | "off")}>
+              <Select
+                id={id}
+                value={fastMode}
+                onChange={(e) => setFastMode(e.target.value as ImageProfileBooleanField)}
+              >
                 <option value="">unset</option>
                 <option value="on">on</option>
                 <option value="off">off</option>
               </Select>
             )}
           </Field>
+          <Field label="Thinking mode" hint="Sent only when the model's probed bindings carry it.">
+            {(id) => (
+              <Select
+                id={id}
+                value={thinkingMode}
+                onChange={(e) => setThinkingMode(e.target.value as ImageProfileBooleanField)}
+              >
+                <option value="">unset</option>
+                <option value="on">on</option>
+                <option value="off">off</option>
+              </Select>
+            )}
+          </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
           <Field label="LoRA" hint="A library row; compatibility is judged at render time.">
             {(id) => (
               <Select id={id} value={loraId} onChange={(e) => setLoraId(e.target.value)}>
@@ -591,17 +627,25 @@ function ImageModelProfileForm({
           />
         </div>
 
-        <Field label="Negative prompt" hint="Stored default; sent only where the model binds one.">
-          {(id) => (
-            <Textarea
-              id={id}
-              rows={2}
-              maxLength={2000}
-              value={negativePrompt}
-              onChange={(e) => setNegativePrompt(e.target.value)}
-            />
-          )}
-        </Field>
+        <div className="space-y-2">
+          <Field label="Negative prompt" hint="Stored default; sent only where the model binds one.">
+            {(id) => (
+              <Textarea
+                id={id}
+                rows={2}
+                maxLength={2000}
+                value={negativePrompt}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+              />
+            )}
+          </Field>
+          <CheckOption
+            label="Send an empty negative prompt"
+            checked={clearNegativePrompt}
+            title="Applies when the box above is empty: sends an empty value, which CLEARS a wrapper's own negative default, instead of leaving the control unset"
+            onToggle={() => setClearNegativePrompt(!clearNegativePrompt)}
+          />
+        </div>
 
         <Field
           label="Provider overrides (JSON, advanced)"

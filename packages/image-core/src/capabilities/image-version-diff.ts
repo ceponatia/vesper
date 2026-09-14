@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { stableJson } from "../render-kernel/stable-json";
 import type { ImageControlDefaults, ImageModelProfile } from "../models/image-model-profiles";
+import { reviewedUnboundControls } from "../models/reviewed-profile-controls";
 import {
   resolveImageLoraBindingPair,
   type ImageModelAdvancedCapabilities,
@@ -245,6 +246,7 @@ export const imageProfileCandidateFindingCodes = [
   "override_field_unknown",
   "lora_binding_missing",
   "control_binding_missing",
+  "reviewed_control_unbound",
 ] as const;
 export type ImageProfileCandidateFindingCode = (typeof imageProfileCandidateFindingCodes)[number];
 
@@ -331,16 +333,31 @@ const CONTROL_DEFAULT_BINDINGS: ReadonlyArray<{
  *   the operator can still fix the profile before a render silently loses it;
  * - a `controlDefaults.lora` selection while the candidate exposes no usable
  *   LoRA weights/scale pair (`resolveImageLoraBindingPair`) — missing, or the
- *   two fields disagreeing on shape.
+ *   two fields disagreeing on shape;
+ * - a REVIEWED control the profile carries that the candidate binds nowhere
+ *   (`reviewedUnboundControls`). It shares the override key's level for the
+ *   override key's reason: since #244 the task profile is the ONLY thing
+ *   carrying Vesper's reviewed corrections, so activating a version that
+ *   strands one leaves an identity-critical model silently running the provider
+ *   default the reviewed judgment exists to correct. Activation is the last
+ *   moment an operator can see that, and the save-time check refuses the same
+ *   configuration, so waving it through here would let promotion do what an edit
+ *   cannot.
  *
  * WARNING (allowed, reported): a tuned control default whose binding the
  * candidate does not declare ({@link CONTROL_DEFAULT_BINDINGS}) — it degrades
  * to the mapper's recorded `no_binding` drop, exactly what live renders on an
- * unprobed row already do.
+ * unprobed row already do. A control already named BLOCKING above is not
+ * repeated here: one control, one answer, and the stronger one.
+ *
+ * `modelSlug` is required rather than optional because the reviewed question
+ * cannot be asked without it, and a caller that omitted it would silently get
+ * the weaker answer.
  */
 export function validateImageProfileForCandidate(
   profile: ImageProfileCandidateInput,
   candidate: ImageCandidateCapabilities,
+  modelSlug: string,
 ): ImageProfileCandidateFinding[] {
   const findings: ImageProfileCandidateFinding[] = [];
   const { controls, knownInputFields } = candidate.advancedCapabilities;
@@ -392,8 +409,19 @@ export function validateImageProfileForCandidate(
     });
   }
 
+  const reviewedUnbound = new Set(reviewedUnboundControls(modelSlug, controls, profile.controlDefaults));
+  for (const control of reviewedUnbound) {
+    findings.push({
+      level: "blocking",
+      code: "reviewed_control_unbound",
+      message: `the reviewed "${control}" setting has no binding on the candidate version, so every render would drop it`,
+      context: { control, slug: modelSlug },
+    });
+  }
+
   for (const { control, slot, isSet } of CONTROL_DEFAULT_BINDINGS) {
     if (!isSet(profile.controlDefaults) || controls[slot] !== undefined) continue;
+    if (reviewedUnbound.has(control)) continue;
     findings.push({
       level: "warning",
       code: "control_binding_missing",

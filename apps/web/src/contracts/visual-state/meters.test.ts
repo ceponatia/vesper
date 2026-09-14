@@ -1,15 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
+import type { ActiveCondition } from "../conditions/condition";
 import { DiagnosticCollector } from "../diagnostics";
-import { VISUAL_STATE_VALUE_INVALID } from "./diagnostics";
+import { projectActiveConditionFeatures } from "./conditions";
+import { VISUAL_STATE_METER_EFFECT_ALREADY_STATED, VISUAL_STATE_VALUE_INVALID } from "./diagnostics";
+import type { VisualStateFeature } from "./feature";
 import { VISUAL_STATE_FIXTURE_SUBJECT_ID } from "./fixtures";
 import { VISUAL_STATE_METER_VISIBLE_EFFECT_KIND_ID } from "./kinds";
-import { projectMeterFeatures } from "./meters";
+import { projectMeterFeatures, type VisualStateMeterProjection } from "./meters";
 
 const SUBJECT = VISUAL_STATE_FIXTURE_SUBJECT_ID;
 
+function projectFull(
+  meters: Readonly<Record<string, number>>,
+  options: { sink?: DiagnosticCollector; composeAgainst?: readonly VisualStateFeature[] } = {},
+): VisualStateMeterProjection {
+  return projectMeterFeatures({
+    subjectId: SUBJECT,
+    meters,
+    ...(options.sink === undefined ? {} : { sink: options.sink }),
+    ...(options.composeAgainst === undefined ? {} : { composeAgainst: options.composeAgainst }),
+  });
+}
+
 function project(meters: Readonly<Record<string, number>>, sink?: DiagnosticCollector) {
-  return projectMeterFeatures({ subjectId: SUBJECT, meters, sink });
+  return projectFull(meters, { sink }).features;
+}
+
+/** An active `unwashed` condition, as `projectActiveConditionFeatures` would produce it. */
+function unwashedConditionFeature(): readonly VisualStateFeature[] {
+  const condition: ActiveCondition = {
+    id: "cond_unwashed",
+    label: "unwashed",
+    startedAtMinutes: 0,
+    attributeEffects: [],
+  };
+  return projectActiveConditionFeatures({ subjectId: SUBJECT, conditions: [condition], atMinutes: 30 });
 }
 
 /**
@@ -121,5 +147,61 @@ describe("projectMeterFeatures", () => {
 
   it("empty meters project nothing", () => {
     expect(project({})).toEqual([]);
+  });
+});
+
+/**
+ * Composition against an already-active condition (issue #427 reviewer
+ * finding): the catalog's own `unwashed` condition
+ * (`contracts/conditions/catalog.ts`) already states hygiene's `unwashed`
+ * band under its own label, so the meter must not restate it as a second,
+ * differently-worded current-state fact.
+ */
+describe("projectMeterFeatures composed against an active condition", () => {
+  it("withholds the hygiene effect when an active `unwashed` condition already states it, and records why", () => {
+    const composeAgainst = unwashedConditionFeature();
+    expect(composeAgainst).not.toEqual([]); // control: the condition feature exists to compose against
+
+    const projection = projectFull({ hygiene: 0.2 }, { composeAgainst });
+    expect(projection.features).toEqual([]);
+    expect(projection.suppressions).toEqual([
+      {
+        key: `${SUBJECT}/subject:${SUBJECT}/meter.visible_effect:hygiene`,
+        code: VISUAL_STATE_METER_EFFECT_ALREADY_STATED,
+        detail: "condition:unwashed",
+      },
+    ]);
+  });
+
+  it("still projects the hygiene effect when no overlapping condition is active", () => {
+    const projection = projectFull({ hygiene: 0.2 });
+    expect(projection.features).toHaveLength(1);
+    expect(projection.suppressions).toEqual([]);
+  });
+
+  it("an unrelated active condition does not withhold a meter with no overlap row", () => {
+    // `unwashed` only overlaps `hygiene` (issue #427's evidenced catalog scan);
+    // intoxication has no catalog condition stating it, so it still projects.
+    const composeAgainst = unwashedConditionFeature();
+    const projection = projectFull({ intoxication: 0.8 }, { composeAgainst });
+    expect(projection.features).toHaveLength(1);
+    expect(projection.suppressions).toEqual([]);
+  });
+
+  it("a condition on a DIFFERENT subject never withholds this subject's effect", () => {
+    const other: ActiveCondition = {
+      id: "cond_other",
+      label: "unwashed",
+      startedAtMinutes: 0,
+      attributeEffects: [],
+    };
+    const composeAgainst = projectActiveConditionFeatures({
+      subjectId: "someone_else",
+      conditions: [other],
+      atMinutes: 30,
+    });
+    const projection = projectFull({ hygiene: 0.2 }, { composeAgainst });
+    expect(projection.features).toHaveLength(1);
+    expect(projection.suppressions).toEqual([]);
   });
 });
