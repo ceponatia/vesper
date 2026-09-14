@@ -106,12 +106,19 @@ describe.runIf(ready)("settleChatTurnMembers threads the shared lane onto a pres
 
     // Mara starts dressed and MODELLED in two garments — the jacket the typed
     // op below will move, and the shirt that must survive untouched.
+    //
+    // `editChatState` seeds a missing row with `seedChatState(profile)` first,
+    // which sets `outfitPresetId` to the profile's DEFAULT preset ("cozy",
+    // outfits[0]) before the patch below even applies — an unset
+    // `outfitPresetId` here would already read "cozy" whether or not the
+    // personal pass's preset proposal ever folds, so the patch explicitly
+    // clears it to make the later assertion discriminate the two outcomes.
     await editChatState({
       chatId: chat.chatId,
       characterId: memberId,
       ownerId: fixture.userId,
       profile: characterProfileSchema.parse(maraProfile),
-      patch: { wornItemIds: [jacketDef(), shirtDef()], mindNote: "start" },
+      patch: { wornItemIds: [jacketDef(), shirtDef()], outfitPresetId: "", mindNote: "start" },
     });
 
     // The shared continuity leg proposes a typed op over Mara's ENUMERATED

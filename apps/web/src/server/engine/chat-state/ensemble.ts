@@ -17,7 +17,15 @@ import {
   outfitChangeEvidenceValidated,
 } from "./outfit-evidence";
 import { foldRelationshipArc, appendSecretMilestones } from "./character-fold";
-import type { EnsembleWardrobeReport, FinalizeChatStateInput } from "./finalize-types";
+import type { EnsembleWardrobeReport } from "./finalize-types";
+
+// Re-exported so existing consumers of this module keep one import site;
+// the implementation lives in the leaf module `ensemble-roster.ts` so
+// `finalize-agents.ts` and `wardrobe-fold.ts` can depend on it without
+// completing the finalize-agents -> ensemble -> character-fold ->
+// finalize-agents cycle this module's OWN `character-fold` import would
+// otherwise close.
+export { presentEnsembleMembers, type EnsembleRosterMember } from "./ensemble-roster";
 
 /**
  * Fold one ensemble member's exchange results into their state (followups rulings
@@ -160,31 +168,14 @@ export function settleEnsembleMember(args: {
   return exchangeMilestones.length ? { ...next, milestones: appendMilestones(next.milestones, exchangeMilestones) } : next;
 }
 
-// --- Design #298: threading the shared continuity leg's grounded garment lane ---
+// --- #298: threading the shared continuity leg's grounded garment lane ---
 // through the ensemble roster. Two small, PURE decisions (the same "pure with an
 // optional sink" convention `settleEnsembleMember` above already uses) so they
-// are unit-testable without a database: which present members join the handle
-// enumeration + materialization pass, what worn list a member's settle starts
+// are unit-testable without a database: what worn list a member's settle starts
 // from, and whether their personal pass's own free-text outfit fold must sit
 // out this exchange because a typed operation already moved that wardrobe.
-
-/** One roster member as `FinalizeChatStateInput.roster` carries it. */
-export type EnsembleRosterMember = NonNullable<FinalizeChatStateInput["roster"]>[number];
-
-/**
- * The present members besides the primary — the set the shared continuity leg
- * enumerates into the garment handle table and the wardrobe fold materializes
- * on the write. Both reads must agree on exactly this set, so it is computed in
- * ONE place rather than re-filtered by each caller.
- */
-export function presentEnsembleMembers(
-  roster: FinalizeChatStateInput["roster"],
-  primaryCharacterId: string,
-): EnsembleRosterMember[] {
-  return (roster ?? []).filter(
-    (member) => member.presence === "present" && member.characterId !== primaryCharacterId,
-  );
-}
+// (Which present members join the handle enumeration + materialization pass is
+// `presentEnsembleMembers`, re-exported above from the leaf module.)
 
 /**
  * The member's pre-settle state, with `wornItemIds` swapped for the shared

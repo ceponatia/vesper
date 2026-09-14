@@ -497,7 +497,7 @@ export async function syncGarmentsForExchange(input: {
   /** The player's state with this change's outfit patch already applied. */
   playerStateAfterFold: ChatPlayerState;
   /**
-   * Present ensemble members beyond the primary (design #298 step 3):
+   * Present ensemble members beyond the primary (#298):
    * materialized on THIS write with `preWornItemIds === wornItemIds === their
    * roster worn list` — a behavior-neutral materialization for a member with no
    * instances yet (the same clothes, now as instances, so the NEXT exchange's

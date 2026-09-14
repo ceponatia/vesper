@@ -107,8 +107,8 @@ exchange SAYING the outfit changed replaces — and only for the owner it says i
   loaded worn items + the character's preset pool — a removed garment drops its id, an
   unmatched added garment rides the overlay (both degrade with a diagnostic, never fail the
   turn).
-- A member the shared continuity leg's grounded lane did NOT enumerate this
-  exchange keeps the free-text bridge: their **personal pass** runs the same two
+- A member the shared continuity leg did NOT enumerate through typed
+  operations this exchange keeps the free-text bridge: their **personal pass** runs the same two
   description rungs through the pure `settleEnsembleMember`
   (`chat-state/ensemble.ts`; [multi-character.md](multi-character.md) §Multi-character) —
   a whole-look description naming an authored preset re-seeds their worn list exactly like the
@@ -119,9 +119,9 @@ exchange SAYING the outfit changed replaces — and only for the owner it says i
   description's unworn garments needs an item load and that fold is pure. Garment-level
   `removed`/`added` remain the primary's IO-backed path. Rollback-safe:
   `worn_item_ids`/`outfit_preset_id` ride `storedChatStateSchema`. A member the
-  lane DID enumerate skips this personal-pass fold for the exchange instead
-  (`chat_garments.ensemble_outfit_typed_lane`, §The garment store) — their
-  wardrobe already moved through the typed dispatcher.
+  lane DID enumerate through typed operations skips this personal-pass fold for
+  the exchange instead (`chat_garments.ensemble_outfit_typed_lane`, §The garment
+  store) — their wardrobe already moved through the typed dispatcher.
 
 ## The garment store — instances under the projection
 
@@ -169,10 +169,12 @@ autonomously, drying at a material-scaled rate via the shared fixed-point kernel
   materialized lazily on this exchange's write from their roster worn list (the
   same clothes, now as instances — behavior-neutral), so they carry handles
   from the NEXT exchange on. The free-text fold still runs as a degraded bridge
-  (`chat_garments.legacy_outfit_bridge`) for a member the table never
-  enumerates; an enumerated member's own personal pass instead skips its
-  free-text outfit fold for the exchange (`chat_garments.ensemble_outfit_typed_lane`)
-  — the same one-path-per-exchange rule the primary and player already follow
+  (`chat_garments.legacy_outfit_bridge`) for a member the exchange did not
+  enumerate through typed operations (no handle in the table, or a lane that
+  never resolved one); a member it DID enumerate that way has their own
+  personal pass skip its free-text outfit fold for the exchange instead
+  (`chat_garments.ensemble_outfit_typed_lane`) — the same one-path-per-exchange
+  rule the primary and player already follow
   ([multi-character.md](multi-character.md) §Multi-character). Per-exchange
   traces surface in the admin inspector.
 - **Narration** (behind `CHAT_GARMENT_CUES`, default off): an authoritative per-actor

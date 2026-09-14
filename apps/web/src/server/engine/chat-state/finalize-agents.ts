@@ -15,7 +15,7 @@ import { lifeStageForAge, lifeStageThirdPersonLine } from "@/contracts/world/lif
 import { runChatPulse } from "./pulse-agent";
 import { runChatExtraction } from "../chat-memory";
 import type { FinalizeChatStateInput } from "./finalize-types";
-import { presentEnsembleMembers } from "./ensemble";
+import { presentEnsembleMembers } from "./ensemble-roster";
 
 type RunFinalizationAgentsInput = Pick<
   FinalizeChatStateInput,
@@ -84,7 +84,7 @@ export async function runFinalizationAgents(
   // exactly the handles the model was just shown.
   const scenePlaceName = currentScenePlace(input.scenario.sceneMemory)?.name;
   // Present ensemble members join the table AFTER the primary and the player
-  // (design #298 step 2, corrected): `buildGarmentHandleTable` collects EVERY
+  // (#298, corrected): `buildGarmentHandleTable` collects EVERY
   // actor's worn garments before the cap runs, in actor order, so putting
   // members ahead of the player would let a crowded roster's worn instances
   // push the player's own worn garments — and therefore the player's own

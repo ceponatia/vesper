@@ -340,23 +340,26 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
   const MARA_ID = "chat-garment-ops-int-mara";
   const MARA_ACTOR = () => garmentActorForCharacter(MARA_ID);
   const MARA_SCARF_DEF = "def-mara-scarf";
+  // A SECOND worn garment: moving the scarf to a scene locus (nobody's) must
+  // not leave Mara owning zero instances, or `actorHasGarmentInstances` reads
+  // her as unmodelled again and `garmentProjectionOr` silently falls back to
+  // the roster's PRE-exchange list instead of the store's real projection.
+  const MARA_SHIRT_DEF = "def-mara-shirt";
 
-  /** `dressedChat()`, plus Mara already modelled and wearing a scarf. */
+  /** `dressedChat()`, plus Mara already modelled and wearing a scarf + a shirt. */
   async function ensembleChat(): Promise<ChatSeat & { scenario: ChatScenario }> {
     const chat = await dressedChat();
     let n = 0;
     const mintId = () => `mara-int-${(n += 1)}`;
-    const seed: GarmentSeed = {
-      definitionId: MARA_SCARF_DEF,
-      name: "a green scarf",
-      categoryId: "top",
-      coverage: ["shoulders", "chest"],
-    };
+    const seeds = new Map<string, GarmentSeed>([
+      [MARA_SCARF_DEF, { definitionId: MARA_SCARF_DEF, name: "a green scarf", categoryId: "top", coverage: ["shoulders", "chest"] }],
+      [MARA_SHIRT_DEF, { definitionId: MARA_SHIRT_DEF, name: "a linen shirt", categoryId: "top", coverage: ["shoulders", "chest", "back"] }],
+    ]);
     const garments = syncWornGarments({
       store: chat.scenario.garments,
       actorId: MARA_ACTOR(),
-      wornDefinitionIds: [MARA_SCARF_DEF],
-      seeds: new Map([[MARA_SCARF_DEF, seed]]),
+      wornDefinitionIds: [MARA_SCARF_DEF, MARA_SHIRT_DEF],
+      seeds,
       mintId,
       atMinutes: chat.scenario.clockMinutes,
     });
@@ -380,14 +383,16 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     const { scenario, state, sink, outcome } = await settle({
       chat,
       scenario: chat.scenario,
-      roster: rosterWithMara([MARA_SCARF_DEF]),
+      roster: rosterWithMara([MARA_SCARF_DEF, MARA_SHIRT_DEF]),
       archivist: withOps([{ op: "move", garment: "mara.scarf", to: "left_here", anchor: "on the desk" }]),
     });
 
     // The scarf is located at the SAME place the enumeration used, not destroyed.
     const left = garmentsAtScenePlace(scenario.garments, "the study");
     expect(left.map((i) => i.name)).toEqual(["a green scarf"]);
-    expect(wornGarmentDefinitionIds(scenario.garments, MARA_ACTOR())).toEqual([]);
+    // The shirt survives worn — Mara keeps a worn instance, so the projection
+    // below reads the STORE, not a stale "unmodelled" fallback.
+    expect(wornGarmentDefinitionIds(scenario.garments, MARA_ACTOR())).toEqual([MARA_SHIRT_DEF]);
     // The primary's own wardrobe never moved — one handle, one actor.
     expect(wornGarmentDefinitionIds(scenario.garments, ACTOR())).toEqual([shirtDef(), jacketDef()]);
     expect(state.wornItemIds).toEqual([shirtDef(), jacketDef()]);
@@ -395,8 +400,9 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     expect(sink.items.map((d) => d.code)).not.toContain("chat_garments.legacy_outfit_bridge");
     expect(outcome.ensembleWardrobe.lane).toBe("operations");
     expect(outcome.ensembleWardrobe.enumeratedCharacterIds).toContain(MARA_ID);
-    // Her worn projection re-derives from the store, exactly like the primary's.
-    expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([]);
+    // Her worn projection re-derives from the store — the shirt she still
+    // wears, not the scarf the op moved away.
+    expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([MARA_SHIRT_DEF]);
   });
 
   it("an unresolvable member handle drops with the EXISTING diagnostic — no new rejection code, nothing touched", async () => {
@@ -405,7 +411,7 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     const { scenario, sink } = await settle({
       chat,
       scenario: chat.scenario,
-      roster: rosterWithMara([MARA_SCARF_DEF]),
+      roster: rosterWithMara([MARA_SCARF_DEF, MARA_SHIRT_DEF]),
       archivist: withOps([{ op: "roll", garment: "mara.necklace", part: "root", degree: "slight" }]),
     });
     expect(JSON.stringify(scenario.garments)).toBe(before);

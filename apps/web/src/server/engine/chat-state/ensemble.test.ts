@@ -5,7 +5,8 @@ import { makeProfile } from "@/server/test-support";
 import { seedChatState } from "./seed";
 import type { ChatState } from "./types";
 import type { EnsembleWardrobeReport } from "./finalize-types";
-import { applyEnsembleWardrobeProjection, ensembleMemberPersonalNotes, presentEnsembleMembers } from "./ensemble";
+import { applyEnsembleWardrobeProjection, ensembleMemberPersonalNotes } from "./ensemble";
+import { presentEnsembleMembers } from "./ensemble-roster";
 
 /**
  * Design #298 — threading the shared continuity leg's grounded garment lane

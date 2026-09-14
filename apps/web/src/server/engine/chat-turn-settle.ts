@@ -140,7 +140,7 @@ export async function settleChatTurnMembers(args: {
             : Promise.resolve(null),
         ]);
         const isSelfieTarget = selfieTargetOther?.characterId === member.characterId;
-        // Design #298 step 6: the shared continuity leg's grounded garment
+        // #298: the shared continuity leg's grounded garment
         // lane, threaded onto this member's settle. (a) their pre-settle state
         // picks up the leg's post-typed-ops worn projection when this exchange
         // enumerated them; (b) their personal pass's own free-text outfit

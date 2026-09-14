@@ -167,6 +167,43 @@ describe("buildGarmentHandleTable", () => {
     expect(table.entries.map((e) => e.handle)).toEqual(["mara.jeans", "mara.tee"]);
   });
 
+  it("orders the primary and the player ahead of members, so a crowded roster's members trim first (#298)", () => {
+    const KIRA = garmentActorForCharacter("kira");
+    const mint = counterIds();
+    let store = dressed(
+      MARA,
+      [seed("i1", "grey tee", "top"), seed("i2", "blue jeans", "pants")],
+      emptyChatGarmentStore(),
+      mint,
+    );
+    store = dressed(GARMENT_PLAYER_ACTOR, [seed("i3", "white shirt", "top"), seed("i4", "dark shorts", "shorts")], store, mint);
+    store = dressed(KIRA, [seed("i5", "red dress", "dress"), seed("i6", "black boots", "footwear")], store, mint);
+
+    // Six worn garments across three actors; a cap that can hold only half.
+    const actors = [
+      { actorId: MARA, label: "Mara" },
+      { actorId: GARMENT_PLAYER_ACTOR, label: "You", slug: "you" },
+      { actorId: KIRA, label: "Kira" },
+    ];
+    const table = buildGarmentHandleTable({ store, actors, limit: 3 });
+
+    expect(table.trimmed).toBe(true);
+    // The primary's two lead, the player's first survives — the cap runs out
+    // before Kira, listed LAST, earns a single handle. This is the mechanism
+    // `finalize-agents.ts` relies on (docs/character-chat/wardrobe.md §The
+    // extraction lane): the caller must order the primary and the player
+    // ahead of every ensemble member, so a crowded roster's members trim
+    // before the player ever loses a handle to them.
+    expect(table.entries.map((e) => e.handle)).toEqual(["mara.tee", "mara.jeans", "you.shirt"]);
+    expect(table.entries.some((e) => e.handle.startsWith("you."))).toBe(true);
+    // Kira is still a MODELLED actor (she owns instances) even though the cap
+    // left her zero entries — `table.actors` and `table.entries` answer two
+    // different questions, and a caller must check entries for "had a
+    // handle", never actors alone.
+    expect(table.actors.map((a) => a.handle)).toEqual(["mara", "you", "kira"]);
+    expect(table.entries.some((e) => e.handle.startsWith("kira."))).toBe(false);
+  });
+
   it("caps part handles per garment", () => {
     const store = dressed(MARA, [seed("i1", "linen dress", "dress")]);
     const table = buildGarmentHandleTable({ store, actors: ACTORS });
