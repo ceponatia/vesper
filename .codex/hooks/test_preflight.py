@@ -91,6 +91,19 @@ REFUSED = [
     ("pnpm exec --package=typescript tsc", "the same hole in the pnpm walk"),
     ("pnpm dlx --yes eslint .", "a flag before the linter"),
     ("npx --package=x -- next build", "a bundler behind the separator"),
+    # pnpm's own global options sit before the subcommand, in both the inline
+    # and the separate-value form. Locating the script position was tried twice
+    # and leaked twice (PR review, 2026-09-14, twice): a fixed option list
+    # stopped at the first unlisted option, and skipping any dash token left the
+    # separate-value form landing on the value. The segment is scanned now.
+    ("pnpm --silent exec tsc --noEmit", "a global flag before the subcommand"),
+    ("pnpm --dir=apps/web exec tsc --noEmit", "an inline-value global option"),
+    ("pnpm --dir apps/web exec tsc", "a separate-value global option"),
+    ("pnpm -C apps/web exec tsc", "its short form"),
+    ("pnpm --loglevel error exec tsc --noEmit", "a value that is not itself an option"),
+    ("pnpm --workspace-concurrency 1 exec tsc", "a numeric option value"),
+    ("pnpm --reporter default exec tsc", "a value that looks like a script name"),
+    ("pnpm --silent test", "a global flag before a gate script"),
 ]
 
 # Each must keep working. A hook that blocks ordinary work gets routed around.
@@ -110,6 +123,14 @@ ALLOWED = [
     "rg --files-with-matches eslint",
     "npx --yes prettier --check .",
     "npx --package=cowsay -- cowsay hello",
+    # The scan errs toward refusing a pnpm segment, so these pin the line it
+    # must not cross: ordinary installs and inspection, and the documented
+    # documentation exception, in their optioned forms too.
+    "pnpm --silent install",
+    "pnpm run lint:docs",
+    "pnpm add -D typescript",
+    "pnpm why lint-staged",
+    "pnpm install --prefer-offline",
     "sed -n '1,40p' apps/web/src/lib/media-preview.ts",
 ]
 

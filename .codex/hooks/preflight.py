@@ -256,28 +256,32 @@ def gate_violation(seg: list[str]) -> str | None:
 
     if seg[0] != "pnpm":
         return None
-    i = 1
-    while i < len(seg):
-        t = seg[i]
-        if t in PNPM_PASSTHROUGH or t.startswith("--workspace-concurrency") or t.startswith("--filter="):
-            i += 1
-        elif t in ("--filter", "-F", "-C", "--dir"):
-            i += 2
-        elif t.startswith("-"):
-            # Same hole as the runners: `pnpm exec --package=typescript tsc`
-            # parked an option where the script name was expected.
-            i += 1
-        else:
-            break
-    if i >= len(seg):
-        return None
-    script = seg[i]
-    if GATE_SCRIPT.match(script) and script not in GATE_ALLOWED:
-        return f"pnpm {script}"
-    # `pnpm exec tsc`, `pnpm dlx eslint`, `pnpm run build` into a bundler.
-    behind_pnpm = gate_behind(seg, i)
-    if behind_pnpm:
-        return f"pnpm {behind_pnpm}"
+
+    # Scan every token rather than parsing pnpm's option grammar to locate the
+    # script position.
+    #
+    # Locating it was tried twice and leaked twice. A hard-coded option list
+    # stopped dead at the first unlisted option, so `pnpm --silent exec tsc`
+    # read `--silent` as the script. Skipping any `-` token fixed that and left
+    # the separate-value form — `pnpm --loglevel error exec tsc` consumes one
+    # token, lands on `error`, and calls that the script. Neither default is
+    # right for both, because whether an option takes a value is knowledge that
+    # lives in pnpm and drifts: every gap between that table and the real
+    # grammar is an allow, and an allow here is a silent full typecheck.
+    #
+    # So this errs the other way. Any gate name anywhere in a pnpm segment
+    # refuses it, which costs `pnpm ls vitest` and `pnpm why eslint` — rare
+    # inspection commands with obvious alternatives, and the refusal says why.
+    # `pnpm lint:docs` stays allowed through GATE_ALLOWED, as does any token
+    # that merely contains a gate name (`lint-staged`, `test-utils`), since
+    # GATE_SCRIPT is anchored.
+    for i in range(1, len(seg)):
+        token = seg[i]
+        if GATE_SCRIPT.match(token) and token not in GATE_ALLOWED:
+            return f"pnpm {token}"
+        behind_pnpm = gate_binary(token) or gate_builder(seg, i)
+        if behind_pnpm:
+            return f"pnpm {behind_pnpm}"
     return None
 
 
