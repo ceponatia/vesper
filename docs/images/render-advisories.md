@@ -111,7 +111,10 @@ unknown code — one this render never measured — is a 404, the same shape as 
 image. A second review on an entry that already has one REPLACES it; reviews never stack or
 average. The read-merge-write runs under a locked row (`SELECT … FOR UPDATE`) inside one
 transaction, so two reviews on different codes of the same image at the same time merge in
-sequence rather than one silently overwriting the other's stored result.
+sequence rather than one silently overwriting the other's stored result. The merge itself walks
+`images.meta.advisories` per entry rather than parsing the array as a whole, so a legacy or
+malformed sibling entry costs nothing — it is carried forward untouched and the matching code is
+still found and reviewed beside it.
 
 `components/ui/image-lightbox.tsx` shows one quiet line per advisory, gated on the same
 `useIsAdmin` signal as the provenance panel — a DIFFERENT region from that panel (not inside its

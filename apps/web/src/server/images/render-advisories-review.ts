@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { parseOr } from "@/lib/parse";
 import { imageMeta } from "./asset-storage";
 
 /**
@@ -16,10 +15,18 @@ import { imageMeta } from "./asset-storage";
  * keys by default), which would make a second review erase evidence of the
  * first instead of replacing it. Passthrough parsing is what lets an entry
  * round-trip everything it does not understand.
+ *
+ * The array itself is walked PER ENTRY, never parsed as a whole
+ * (`z.array(storedAdvisorySchema).safeParse(...)`) — a strict whole-array
+ * parse fails entirely the moment ANY one entry does not conform (a legacy
+ * shape, a hand-edited row, a future field this version does not expect),
+ * which would answer 404 for a code that is genuinely present beside it.
+ * Every element that does not parse as `{ code: string }`, or parses but
+ * names a different code, is carried forward VERBATIM in its own position —
+ * never dropped, never reshaped — so a malformed sibling costs nothing.
  */
 
 const storedAdvisorySchema = z.object({ code: z.string() }).loose();
-const storedAdvisoryListSchema = z.array(storedAdvisorySchema);
 
 export interface RenderAdvisoryReviewRequest {
   code: string;
@@ -32,7 +39,8 @@ export type RenderAdvisoryReviewOutcome =
   | {
       ok: true;
       /** The row's full `meta`, ready to write back — every other key
-       * untouched, `advisories` with the matched entry replaced. */
+       * untouched, `advisories` with the matched entry replaced and every
+       * sibling — parseable or not — preserved verbatim in place. */
       meta: Record<string, unknown>;
       /** The updated entry alone, for the route's response body. */
       advisory: Record<string, unknown>;
@@ -49,11 +57,11 @@ export type RenderAdvisoryReviewOutcome =
  * makes it a fixture-only test.
  *
  * `{ ok: false }` — matched by the route to a 404 — when `rawMeta` carries no
- * `advisories` array at all, or none of its entries has this code: an unknown
- * code is indistinguishable from "this render never measured that signal",
- * which is the honest answer either way. A second review on an entry that
- * already has one REPLACES it (the spread order below), never averages or
- * stacks reviews.
+ * `advisories` array at all, or NO entry that parses as `{ code: string }`
+ * names this code: an unknown code is indistinguishable from "this render
+ * never measured that signal", which is the honest answer either way. A
+ * second review on an entry that already has one REPLACES it (the spread
+ * order below), never averages or stacks reviews.
  */
 export function mergeRenderAdvisoryReview(
   rawMeta: unknown,
@@ -61,20 +69,32 @@ export function mergeRenderAdvisoryReview(
   reviewedAt: string,
 ): RenderAdvisoryReviewOutcome {
   const meta = imageMeta(rawMeta);
-  const advisories = parseOr(storedAdvisoryListSchema, meta.advisories, [], undefined, "images.meta.advisories");
-  const index = advisories.findIndex((advisory) => advisory.code === request.code);
-  const current = advisories[index];
-  if (index === -1 || current === undefined) return { ok: false };
+  const rawAdvisories: unknown[] = Array.isArray(meta.advisories) ? meta.advisories : [];
+
+  let matchedIndex = -1;
+  let matched: z.infer<typeof storedAdvisorySchema> | undefined;
+  for (let index = 0; index < rawAdvisories.length; index += 1) {
+    const parsed = storedAdvisorySchema.safeParse(rawAdvisories[index]);
+    if (parsed.success && parsed.data.code === request.code) {
+      matchedIndex = index;
+      matched = parsed.data;
+      break;
+    }
+  }
+  if (matchedIndex === -1 || matched === undefined) return { ok: false };
 
   const updated = {
-    ...current,
+    ...matched,
     review: {
       verdict: request.verdict,
       ...(request.note !== undefined ? { note: request.note } : {}),
       at: reviewedAt,
     },
   };
-  const nextAdvisories = advisories.slice();
-  nextAdvisories[index] = updated;
+  // A shallow copy of the RAW array, so every untouched index — parseable
+  // sibling or not — keeps its exact original value; only the matched index
+  // is replaced.
+  const nextAdvisories = rawAdvisories.slice();
+  nextAdvisories[matchedIndex] = updated;
   return { ok: true, meta: { ...meta, advisories: nextAdvisories }, advisory: updated };
 }

@@ -90,4 +90,36 @@ describe("mergeRenderAdvisoryReview", () => {
     const result = mergeRenderAdvisoryReview({ advisories: "not an array" }, { code: "blank_output", verdict: "agree" }, AT);
     expect(result.ok).toBe(false);
   });
+
+  it("merges the valid target and preserves malformed siblings byte-for-byte in place (per-entry parse, not whole-array)", () => {
+    // A whole-array `z.array(storedAdvisorySchema).safeParse(...)` would fail
+    // on ANY of these three siblings and answer 404 for a code that is
+    // genuinely present right beside them.
+    const stringSibling = "not an advisory at all";
+    const numberSibling = 42;
+    const noCodeSibling = { level: "advisory", reason: "no code field" };
+    const target = { code: "blank_output", version: 1 };
+    const meta = metaWithAdvisories([stringSibling, numberSibling, target, noCodeSibling]);
+
+    const result = mergeRenderAdvisoryReview(meta, { code: "blank_output", verdict: "agree" }, AT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+
+    expect(result.advisory).toEqual({ code: "blank_output", version: 1, review: { verdict: "agree", at: AT } });
+
+    const advisories = result.meta.advisories as unknown[];
+    expect(advisories).toHaveLength(4);
+    // Every non-matching element survives EXACTLY as given — same value,
+    // same position — never dropped, never reshaped.
+    expect(advisories[0]).toBe(stringSibling);
+    expect(advisories[1]).toBe(numberSibling);
+    expect(advisories[2]).toEqual({ code: "blank_output", version: 1, review: { verdict: "agree", at: AT } });
+    expect(advisories[3]).toBe(noCodeSibling);
+  });
+
+  it("refuses (ok:false) when the only entry is malformed, rather than treating it as a match", () => {
+    const meta = metaWithAdvisories(["not an advisory", 7, { level: "advisory" }]);
+    const result = mergeRenderAdvisoryReview(meta, { code: "blank_output", verdict: "agree" }, AT);
+    expect(result.ok).toBe(false);
+  });
 });
