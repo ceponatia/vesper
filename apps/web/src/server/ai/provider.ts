@@ -253,6 +253,9 @@ export const FABLE_FUSION_711_ID = "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncenso
 export const F451_ULTRA_PRO_WRITER_ID =
   "DavidAU/Qwen3.6-27B-F451-AND-TRI-Polar-Ultra-Pro-Writer-Uncensored-Heretic";
 
+/** The exact Featherless/Hugging Face id for the DarkIdol Qwen3.8 RP narrator. */
+export const DARKIDOL_QWEN38_ID = "aifeifei798/DarkIdol-Qwen3.8-27B-v1.1";
+
 /**
  * Per-model **runtime request policy** for a Featherless narrator, keyed by exact model
  * id. Opt-in per model, never a blanket flag — the same rule the OpenRouter reasoning
@@ -307,6 +310,8 @@ interface FeatherlessModelPolicy {
    * in the standard call settings at all.
    */
   sampler?: Readonly<Record<string, number>>;
+  /** Model-specific values consumed by the checkpoint's Jinja chat template. */
+  chatTemplateKwargs?: Readonly<Record<string, JSONValue>>;
   /**
    * This model earns the chat lane's ONE hidden retry for a zero-visible-text completion
    * (`streamCharacterChat`). Exact-model, because the retry is only defensible where a
@@ -352,6 +357,27 @@ const DAVIDAU_QWEN36_NON_THINKING: FeatherlessModelPolicy = {
 };
 
 /**
+ * DarkIdol's author-tuned roleplay profile. Keep this exact-model: it is intentionally
+ * the opposite of the DavidAU policy on reasoning — DarkIdol's short planning pass is a
+ * feature, and the model card recommends medium effort rather than disabling it.
+ *
+ * Featherless documents temperature, min_p and chat_template_kwargs on its chat endpoint,
+ * so those are the author recommendations we can transport faithfully. The same model card
+ * strongly recommends DRY (0.8 / 1.75 / allowed length 2), but Featherless does not
+ * document DRY request fields; do not send speculative fields that could make the provider
+ * reject the whole request. If Featherless adds DRY support, extend this exact policy.
+ */
+const DARKIDOL_QWEN38: FeatherlessModelPolicy = {
+  sampler: {
+    temperature: 1.0,
+    min_p: 0.05,
+  },
+  chatTemplateKwargs: {
+    reasoning_effort: "medium",
+  },
+};
+
+/**
  * Absence is a measurement, not an omission. `Naphula/Slimaki-Tavern-24B-v1.3` is a
  * curated Featherless narrator with no entry here on purpose: its 2026-08-19 probe
  * returned prose and zero reasoning tokens on every call, so there is no chain to
@@ -362,6 +388,7 @@ const DAVIDAU_QWEN36_NON_THINKING: FeatherlessModelPolicy = {
 const FEATHERLESS_MODEL_POLICY: Readonly<Record<string, FeatherlessModelPolicy>> = {
   [FABLE_FUSION_711_ID]: DAVIDAU_QWEN36_NON_THINKING,
   [F451_ULTRA_PRO_WRITER_ID]: DAVIDAU_QWEN36_NON_THINKING,
+  [DARKIDOL_QWEN38_ID]: DARKIDOL_QWEN38,
 };
 
 /**
@@ -385,10 +412,14 @@ export function featherlessRequestBody(body: Record<string, unknown>): Record<st
   const modelId = typeof body.model === "string" ? body.model : "";
   const policy = FEATHERLESS_MODEL_POLICY[modelId];
   if (!policy) return body;
+  const chatTemplateKwargs: Record<string, JSONValue> = {
+    ...(policy.chatTemplateKwargs ?? {}),
+    ...(policy.thinkingOff ? { enable_thinking: false } : {}),
+  };
   return {
     ...body,
     ...(policy.sampler ?? {}),
-    ...(policy.thinkingOff ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+    ...(Object.keys(chatTemplateKwargs).length > 0 ? { chat_template_kwargs: chatTemplateKwargs } : {}),
   };
 }
 
