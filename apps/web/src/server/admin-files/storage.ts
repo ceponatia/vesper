@@ -569,6 +569,13 @@ async function moveEntryUnlocked(
   if (sourceStat.isSymbolicLink()) {
     throw new AdminFilesError("unsafe_path", "symbolic links cannot be managed here", 409);
   }
+  // Before the rename, not after. `entryFromStat` refuses a FIFO, socket or
+  // device node too, but it runs on the moved entry — so the batch reported
+  // `moved: 0` with an `unsupported_entry` row for something it had already
+  // relocated, and the count and the filesystem disagreed.
+  if (!sourceStat.isFile() && !sourceStat.isDirectory()) {
+    throw new AdminFilesError("unsupported_entry", "unsupported filesystem entry", 409);
+  }
 
   const parentSegments = source.segments.slice(0, -1);
   if (segmentsEqual(parentSegments, destinationSegments)) {

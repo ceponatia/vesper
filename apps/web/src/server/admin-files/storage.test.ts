@@ -271,6 +271,36 @@ describe("admin Files storage", () => {
   );
 
   it.skipIf(process.platform === "win32")(
+    "refuses to move an unsupported entry without relocating it first",
+    async () => {
+      const root = await adminFilesRoot();
+      await createAdminFolder("", "box");
+
+      const server = net.createServer();
+      const socketPath = path.join(root, "socket.sock");
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(socketPath, resolve);
+      });
+
+      try {
+        // The kind check has to precede the rename. Refusing afterwards reported
+        // `moved: 0` for an entry that had already been relocated, so the count
+        // and the filesystem disagreed.
+        expect(await moveAdminEntries(["socket.sock"], "box")).toEqual({
+          moved: 0,
+          entries: [],
+          failures: [expect.objectContaining({ path: "socket.sock", code: "unsupported_entry" })],
+        });
+        expect((await fs.lstat(socketPath)).isSocket()).toBe(true);
+        expect(await listAdminFiles("box")).toEqual([]);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
     "reports a path routed through a file as one failure row rather than failing the batch",
     async () => {
       await uploadAdminFile("", "note.bin", bytes(1));
