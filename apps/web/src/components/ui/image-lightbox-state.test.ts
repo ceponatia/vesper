@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { advisoryReviewKey, lightboxStateForView, updateLightboxImageStatus, type LightboxView } from "./image-lightbox-state";
+import {
+  advisoryReviewKey,
+  appendRetryParam,
+  lightboxFailureMessage,
+  lightboxStateForView,
+  updateLightboxImageStatus,
+  type LightboxView,
+} from "./image-lightbox-state";
 
 const first: LightboxView = { viewKey: "front:attempt-1", imageId: "reference-1", comparisonImageId: "portrait", visible: true };
 
@@ -42,5 +49,32 @@ describe("lightbox view state", () => {
   it("advisoryReviewKey never collides across images sharing a code (#249 Codex round finding A)", () => {
     expect(advisoryReviewKey("reference-1", "blank_output")).not.toBe(advisoryReviewKey("reference-2", "blank_output"));
     expect(advisoryReviewKey("reference-1", "blank_output")).toBe(advisoryReviewKey("reference-1", "blank_output"));
+  });
+});
+
+describe("appendRetryParam", () => {
+  it("returns the url unchanged for the initial (zero) attempt", () => {
+    expect(appendRetryParam("/api/images/abc", 0)).toBe("/api/images/abc");
+  });
+
+  it("starts a query string for a url with none", () => {
+    expect(appendRetryParam("/api/images/abc", 1)).toBe("/api/images/abc?retry=1");
+  });
+
+  it("extends an existing query string instead of starting a second one", () => {
+    expect(appendRetryParam("/api/admin/self/files/preview?path=a%2Fb.mp4", 2)).toBe(
+      "/api/admin/self/files/preview?path=a%2Fb.mp4&retry=2",
+    );
+  });
+});
+
+describe("lightboxFailureMessage", () => {
+  it("keeps the pre-existing image wording", () => {
+    expect(lightboxFailureMessage("image")).toBe("This image could not be loaded.");
+  });
+
+  it("says video and audio cannot be played, rather than reusing the image wording", () => {
+    expect(lightboxFailureMessage("video")).toBe("This video cannot be played in this browser.");
+    expect(lightboxFailureMessage("audio")).toBe("This audio cannot be played in this browser.");
   });
 });
