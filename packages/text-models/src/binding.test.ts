@@ -27,8 +27,16 @@ import { bindingFor, hostsServing } from "./hosts";
  *   never applies while every assertion about the adapter still passes. The
  *   host that DOES model it takes it as a setting, which is why the split is
  *   per-dialect rather than a package-wide rule.
- * - **The thinking toggle sent as three keys or as a bare boolean.** One
- *   normalized key inside `chat_template_kwargs` is the measured shape.
+ * - **A value one host serves and another does not being treated as a property
+ *   of the PROFILE.** `minTokens` is a Featherless body field and nothing at
+ *   all on OpenRouter; the same declared profile has to carry it on one and
+ *   report it on the other, or moving a model between hosts stops being one
+ *   argument.
+ *
+ * Chat-template arguments are deliberately absent from all of this. They are
+ * not features and never bind: a model that needs one states it as a quirk's
+ * request preparer, so it reaches every call rather than the ones a lane calls
+ * narration (`registry.test.ts` owns that claim).
  */
 
 const adapter: TextModelAdapter = defineTextModel({
@@ -40,10 +48,10 @@ const adapter: TextModelAdapter = defineTextModel({
     features.temperatureFeature(),
     features.topKFeature(),
     features.minPFeature(),
-    features.thinkingFeature(),
+    features.minTokensFeature(),
     features.topNsigmaFeature(),
   ],
-  profile: { temperature: 1, topK: 100, minP: 0.1, thinking: false, topNsigma: 1.25 },
+  profile: { temperature: 1, topK: 100, minP: 0.1, minTokens: 48, topNsigma: 1.25 },
 });
 
 describe("bindTextModelProfile", () => {
@@ -51,11 +59,7 @@ describe("bindTextModelProfile", () => {
     const bound = bindTextModelProfile(adapter);
 
     expect(bound.settings).toEqual({ temperature: 1 });
-    expect(bound.body).toEqual({
-      top_k: 100,
-      min_p: 0.1,
-      chat_template_kwargs: { enable_thinking: false },
-    });
+    expect(bound.body).toEqual({ top_k: 100, min_p: 0.1, min_tokens: 48 });
   });
 
   it("withholds a value the host does not serve, with a reason, and sends it nowhere", () => {
@@ -79,7 +83,9 @@ describe("bindTextModelProfile", () => {
     // parameter: a lane that switches hosts changes an argument, not a table.
     expect(bound.settings).toEqual({ temperature: 1, topK: 100 });
     expect(bound.body).toEqual({ min_p: 0.1 });
-    expect(bound.withheld.map((entry) => entry.feature)).toEqual(["thinking", "topNsigma"]);
+    // And a value this host has no field for at all is reported rather than
+    // respelled — `minTokens` travels on Featherless and nowhere here.
+    expect(bound.withheld.map((entry) => entry.feature)).toEqual(["minTokens", "topNsigma"]);
   });
 
   it("still binds for a placeholder host, which serves nothing and withholds nothing", () => {
@@ -164,8 +170,16 @@ describe("the vocabulary and the placeholder dialect", () => {
 describe("hostsServing", () => {
   it("derives availability from the dialect tables, counting only hosts that have a transport", () => {
     expect(hostsServing("temperature")).toEqual(["featherless", "openrouter"]);
-    expect(hostsServing("thinking")).toEqual(["featherless"]);
+    expect(hostsServing("minTokens")).toEqual(["featherless"]);
     expect(hostsServing("topA")).toEqual(["openrouter"]);
+  });
+
+  // The vocabulary carries no chat-template argument at all any more, on any
+  // host: `thinking` was composed by nobody once both models that needed one
+  // moved to a request preparer, and a member no profile sets is an unproven
+  // claim. An id no dialect names answers empty, which is what this is.
+  it("names no chat-template argument, because none of them is a feature", () => {
+    expect(hostsServing("thinking")).toEqual([]);
   });
 
   it("answers with an empty list for a knob present in the vocabulary and off everywhere", () => {

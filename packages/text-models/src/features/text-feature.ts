@@ -132,7 +132,16 @@ export function numericFeature(spec: NumericFeatureSpec): TextModelFeature {
   };
 }
 
-/** A boolean toggle: on, off, or absent — and absent is not the same as off. */
+/**
+ * A boolean toggle: on, off, or absent — and absent is not the same as off.
+ *
+ * Kept with no caller on purpose. These three constructors are what
+ * `TextProfileValue`'s shapes MEAN — a number, a toggle, a list of strings, a
+ * bias map — so removing the one no current feature happens to use would leave
+ * the value type declaring a shape the package had no way to validate. The
+ * vocabulary's own rule about unproven claims governs FEATURES, which are claims
+ * about a model; a constructor claims nothing.
+ */
 export function flagFeature(spec: { readonly id: string; readonly semantic: string }): TextModelFeature {
   const { id, semantic } = spec;
   return {

@@ -24,6 +24,12 @@ import { TEXT_MODEL_ADAPTERS, adapterForTextModel } from "./registry";
  * - **The two DavidAU rows drifting apart.** They exist in the catalog to be
  *   compared; a sampler difference between them would confound the only
  *   question the comparison asks.
+ * - **A chat-template argument turning back into a profile value.** A profile
+ *   says how a model should be SAMPLED when it narrates, and an application is
+ *   free to decide a call is not narration and ask at its own settings. A
+ *   template argument is not that: it changes how the prompt is rendered, and a
+ *   model that must be told not to think must be told on every call it gets. A
+ *   preparer runs for all of them; a profile value does not.
  * - **Asmodeus's approved value set changing.** The owner ruled that exact set
  *   (2026-09-04), so the literal IS the contract here and is pinned as one —
  *   including the two values that are a hard host constraint rather than a
@@ -61,13 +67,63 @@ describe("TEXT_MODEL_ADAPTERS", () => {
     const fable = registered(FABLE_FUSION_711_ID);
     const writer = registered(F451_ULTRA_PRO_WRITER_ID);
 
+    // The preparers are compared by what they DO rather than by reference: one
+    // shared definition still builds a fresh closure per row, so two functions
+    // that behave identically are two different objects.
+    const { prepareRequest: writerPrepare, ...writerRest } = writer;
+    const { prepareRequest: fablePrepare, ...fableRest } = fable;
+
     expect(writer.id).not.toBe(fable.id);
-    expect({ ...writer, id: fable.id }).toEqual(fable);
-    // Stated outright as well as structurally: the thinking suppression is the
-    // difference between a narrator that answers and one that returns nothing.
-    expect(fable.profile.thinking).toBe(false);
-    expect(writer.profile.thinking).toBe(false);
+    expect({ ...writerRest, id: fable.id }).toEqual(fableRest);
+    const body = { model: writer.id, messages: [] };
+    expect(writerPrepare?.(body)).toEqual(fablePrepare?.(body));
     expect(fable.executionHints).toEqual({ hiddenEmptyRetry: true, retryMinTokens: 48 });
+  });
+
+  /**
+   * Thinking off is not a preference and not a sampler — it is the difference
+   * between a narrator that answers and one that returns nothing. Measured on
+   * both rows 2026-08-17: with the template's thinking mode on and a bounded
+   * output budget, 298 and 299 completion tokens of chain and zero characters of
+   * content.
+   *
+   * It is a PREPARER, and that placement is the claim. A profile value reaches
+   * only the calls a lane opted into as narration; this has to reach every call
+   * the model receives, which is exactly the hole a profile-borne version left
+   * in the successor deliberator.
+   */
+  it("suppresses thinking on both DavidAU rows through a preparer, with exactly one key", () => {
+    for (const id of [FABLE_FUSION_711_ID, F451_ULTRA_PRO_WRITER_ID]) {
+      const adapter = registered(id);
+      expect(adapter.prepareRequest, id).toBeTypeOf("function");
+
+      const prepared = adapter.prepareRequest?.({ model: id, messages: [] });
+      // `toEqual` is exact all the way down, so this pins the rest of the body
+      // through untouched AND pins `chat_template_kwargs` to ONE key. One is
+      // what was measured: the host normalizes `enable_thinking` / `thinking` /
+      // `do_reasoning` to the same switch and each was probed alone on this
+      // exact model, so sending the other two would be redundancy against a
+      // hazard the evidence says does not exist.
+      expect(prepared, id).toEqual({ model: id, messages: [], chat_template_kwargs: { enable_thinking: false } });
+      // The contract every preparer owes: a caller may prepare while planning a
+      // call and again on the way out, and the body must not grow each pass.
+      expect(adapter.prepareRequest?.(prepared ?? { model: id }), id).toEqual(prepared);
+    }
+  });
+
+  // Not a feature, on any host: the sampler vocabulary describes how tokens are
+  // drawn, and nothing in a profile can put this key on a wire any more.
+  it("states the thinking suppression nowhere in the profile", () => {
+    for (const id of [FABLE_FUSION_711_ID, F451_ULTRA_PRO_WRITER_ID]) {
+      expect(registered(id).capabilities, id).toEqual([
+        "temperature",
+        "topP",
+        "topK",
+        "presencePenalty",
+        "repetitionPenalty",
+      ]);
+      expect(registered(id).profile.thinking, id).toBeUndefined();
+    }
   });
 
   // The owner-ruled value set, pinned as a literal because the set IS the
@@ -97,15 +153,15 @@ describe("TEXT_MODEL_ADAPTERS", () => {
   });
 
   // `chat_template_kwargs` 400s on this model's Mistral tokenizer, empty object
-  // included, and the only two things that could put that key on its wire are a
-  // composed `thinking` feature and a request preparer. Neither exists, and this
-  // is the assertion that keeps it that way.
+  // included. A request preparer is now the ONLY thing in the package that can
+  // put that key on a wire — no feature binds it on any host — so this adapter
+  // having none is the whole guarantee, and it is worth stating outright next to
+  // two host-mates that both have one.
   it("gives Asmodeus no route to chat_template_kwargs at all", () => {
     const asmodeus = registered(ASMODEUS_24B_V3_ID);
 
-    expect(asmodeus.capabilities).not.toContain("thinking");
-    expect(asmodeus.profile.thinking).toBeUndefined();
     expect(asmodeus.prepareRequest).toBeUndefined();
+    expect(asmodeus.profile.thinking).toBeUndefined();
   });
 
   // Absence measured is recorded as absence: nine of nine probe calls returned
@@ -115,15 +171,29 @@ describe("TEXT_MODEL_ADAPTERS", () => {
     expect(registered(ASMODEUS_24B_V3_ID).executionHints).toEqual({ contextLength: 32_768, concurrencyCost: 2 });
   });
 
-  // DarkIdol is the opposite of the DavidAU rows on reasoning, and it says so
-  // through a preparer rather than the thinking toggle — the vocabulary's
-  // boolean cannot spell "medium".
-  it("keeps DarkIdol's reasoning pass on, as a request preparer rather than a profile value", () => {
+  // DarkIdol is the opposite of the DavidAU rows on reasoning — it keeps its
+  // short planning pass — and both say so through the same hook, which is the
+  // point: one mechanism for template arguments, whatever they ask for.
+  it("keeps DarkIdol's reasoning pass on, through the same preparer hook and not a profile value", () => {
     const darkidol = registered(DARKIDOL_QWEN38_ID);
 
     expect(darkidol.capabilities).toEqual(["temperature", "minP"]);
-    expect(darkidol.prepareRequest).toBeTypeOf("function");
+    expect(darkidol.prepareRequest?.({ model: DARKIDOL_QWEN38_ID })).toEqual({
+      model: DARKIDOL_QWEN38_ID,
+      chat_template_kwargs: { reasoning_effort: "medium" },
+    });
     expect(darkidol.executionHints).toBeUndefined();
+  });
+
+  // Neither model gets the other's, and neither key is ever both: the two rows
+  // share a host and a base template family and are asked in opposite reasoning
+  // configurations, which is the case exact-id keying exists for.
+  it("gives each adapted row its own template argument and no neighbour's", () => {
+    const davidau = registered(FABLE_FUSION_711_ID).prepareRequest?.({ model: FABLE_FUSION_711_ID });
+    const darkidol = registered(DARKIDOL_QWEN38_ID).prepareRequest?.({ model: DARKIDOL_QWEN38_ID });
+
+    expect(davidau?.chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(darkidol?.chat_template_kwargs).toEqual({ reasoning_effort: "medium" });
   });
 });
 
