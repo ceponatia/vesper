@@ -53,7 +53,7 @@ describe("admin Files storage", () => {
   it("never silently overwrites an existing file, but replaces it when explicitly requested", async () => {
     await uploadAdminFile("", "same.bin", bytes(1, 2, 3));
 
-    await expect(uploadAdminFile("", "same.bin", bytes(9, 9))).rejects.toMatchObject<Partial<AdminFilesError>>({
+    await expect(uploadAdminFile("", "same.bin", bytes(9, 9))).rejects.toMatchObject({
       code: "already_exists",
       status: 409,
     });
@@ -68,7 +68,7 @@ describe("admin Files storage", () => {
   it("refuses to delete a non-empty folder", async () => {
     await createAdminFolder("", "keep");
     await uploadAdminFile("keep", "inside.txt", new Blob(["hello"]).stream());
-    await expect(deleteAdminEntry("keep")).rejects.toMatchObject<Partial<AdminFilesError>>({
+    await expect(deleteAdminEntry("keep")).rejects.toMatchObject({
       code: "folder_not_empty",
       status: 409,
     });
@@ -90,7 +90,7 @@ describe("admin Files storage", () => {
       },
     });
 
-    await expect(uploadAdminFile("", "broken.bin", broken)).rejects.toMatchObject<Partial<AdminFilesError>>({
+    await expect(uploadAdminFile("", "broken.bin", broken)).rejects.toMatchObject({
       code: "upload_failed",
     });
     expect(await listAdminFiles("")).toEqual([]);
@@ -103,7 +103,7 @@ describe("admin Files storage", () => {
     await fs.writeFile(path.join(outside, "secret.txt"), "secret");
     await fs.symlink(outside, path.join(root, "linked"), "dir");
 
-    await expect(listAdminFiles("linked")).rejects.toMatchObject<Partial<AdminFilesError>>({ code: "unsafe_path" });
-    await expect(getAdminFileDownload("linked/secret.txt")).rejects.toMatchObject<Partial<AdminFilesError>>({ code: "unsafe_path" });
+    await expect(listAdminFiles("linked")).rejects.toMatchObject({ code: "unsafe_path" });
+    await expect(getAdminFileDownload("linked/secret.txt")).rejects.toMatchObject({ code: "unsafe_path" });
   });
 });
