@@ -168,6 +168,34 @@ describe("E4.1 deriveEventObservations", () => {
     expect(observed[1]).toMatchObject({ witnessActorId: "player", channel: "sight", detailTier: 2 });
   });
 
+  it("derives NO observation for a garment operation — it carries no captured witness set (#296)", () => {
+    // `garment_operation_applied` joined the no-observation group in
+    // `deriveEventObservations`'s exhaustive switch. That placement is a
+    // perception RULING, not a type formality: every perceptible item event
+    // carries its own `observerActorIds`, and this one has none, so deriving
+    // live bystanders from co-location instead would turn every unfastened
+    // button into something the whole room witnessed and remembers. The
+    // physical channels that really move — a doff, a wash — are witnessed
+    // through `item_transferred` and the item-condition family. Moving the
+    // label into a co-location arm compiles cleanly; this is what catches it.
+    const operated = event({
+      type: "garment_operation_applied",
+      actorIds: ["mara"],
+      entityIds: ["shirt-1"],
+      locationId: "loc-cafe",
+      payload: {
+        actorId: "mara",
+        itemId: "shirt-1",
+        operation: { kind: "set_closure" },
+        after: { presentation: {}, condition: {} },
+        derived: { atStoryMinute: Math.floor(NOW / 60), blueprintHash: "hash-1" },
+      },
+    });
+    // Mara and the player share zone-hall and Iris shares the location, so a
+    // co-location arm would have produced three witnesses here.
+    expect(deriveEventObservations(operated, fixtureSpace())).toEqual([]);
+  });
+
   it("keeps threshold entry to its captured witnesses — no blanket co-location", () => {
     const entered = event({
       type: "zone_entered",

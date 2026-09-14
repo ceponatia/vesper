@@ -820,7 +820,35 @@ describe.runIf(harness.ready)("#295 — the garment blueprint is a fork-copied s
       placements: [{ actorId, locationId, zoneId }],
     });
 
+    // A rebuild with NO events to replay is unfalsifiable here: the from-zero
+    // seed (`seedProjectionForReplay`) spreads the same assembled items the
+    // live hash is computed from, so `matches` would be true whatever the fold
+    // did with the blueprint. One accepted transfer makes the fold actually run
+    // over this item, which is the thing the title claims.
+    const doff = transferItemCommandSchema.parse({
+      id: newId(),
+      branchId,
+      expectedVersion: 0,
+      idempotencyKey: newId(),
+      principal: { kind: "system", principalId: newId(), controlledActorIds: [actorId] },
+      submittedAtWallClock: "2026-07-17T16:00:00.000Z",
+      type: "transfer_item",
+      schemaVersion: 2,
+      correlationId: newId(),
+      payload: {
+        actorId,
+        itemId: garmentId,
+        fromLocus: { kind: "worn", actorId, slotKey: successorWornSlotKey("outerwear", 0) },
+        toLocus: { kind: "held", actorId },
+      },
+    });
+    expect(await submitDurableTransferItem(doff)).toMatchObject({ status: "accepted" });
+
     const rebuild = await rebuildDurableBranchProjection(branchId);
+    // Not vacuous: the fold really re-derived this item from an event, and an
+    // `applyMaterialEvent` that rebuilt the item without carrying its
+    // `garmentBlueprint` through would land on a different hash here.
+    expect(rebuild.replayedEventCount).toBe(1);
     expect(rebuild.matches).toBe(true);
   });
 });

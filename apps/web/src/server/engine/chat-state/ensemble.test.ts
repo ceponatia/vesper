@@ -21,6 +21,25 @@ import { presentEnsembleMembers } from "./ensemble-roster";
  * `chat-garment-ops.int.test.ts` proves the database-backed end-to-end path
  * (the store, the projections, rollback); this file proves these three
  * decisions in isolation.
+ *
+ * **The defects this file kills**, one per function — each of which a
+ * database-backed suite would report only as a confusing final worn list:
+ *
+ * 1. A member settled from their PRE-exchange worn list while the shared leg
+ *    had already moved that wardrobe through the typed dispatcher — the write
+ *    then silently reverts the operation the model just proposed
+ *    (`applyEnsembleWardrobeProjection`; the guard is that an ABSENT entry
+ *    passes the state through untouched rather than blanking it).
+ * 2. The same member mutated TWICE in one exchange, once by the typed
+ *    operation and again by their personal pass's free-text restatement of it
+ *    (`ensembleMemberPersonalNotes`) — and the mirror defect, neutralizing the
+ *    free-text fold for a member the lane never enumerated, which would strip
+ *    the only wardrobe path they have.
+ * 3. The two callers that must share one membership set —
+ *    `finalize-agents.ts`'s handle enumeration and `wardrobe-fold.ts`'s
+ *    materialization — disagreeing about who is present, so a member gets a
+ *    handle they are never materialized for or the reverse
+ *    (`presentEnsembleMembers`).
  */
 
 const state = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });

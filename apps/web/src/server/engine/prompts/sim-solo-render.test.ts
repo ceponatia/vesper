@@ -118,6 +118,37 @@ describe("buildSimSoloRenderPrompt", () => {
     expect(prompt).toContain("Do NOT reply as if Bri said or did any of it");
   });
 
+  it("renders the structured garment digest instead of the outfit line (#297)", () => {
+    // The solo cut shares `buildPresentationStateBlock` with the co-present
+    // render, but it passes its OWN `context.garments` through
+    // (`sim-solo-render.ts`'s presentation node). Dropping that one field would
+    // leave every solo turn narrating the stale outfit line while the
+    // co-present turn read the authoritative digest — and no prompt-shape or
+    // block-order assertion in this file would notice.
+    const { prompt } = buildSimSoloRenderPrompt(
+      context({
+        outfitLine: "a linen shirt",
+        garments: {
+          status: "structured",
+          digest: "Wardrobe right now (authoritative): - Nora: linen shirt, front partly open",
+        },
+      }),
+    );
+    expect(prompt).toContain("Wardrobe right now (authoritative)");
+    expect(prompt).toContain("front partly open");
+    // One truth, one shape: the digest REPLACES the outfit line rather than
+    // joining it.
+    expect(prompt).not.toContain("Nora is wearing a linen shirt right now");
+  });
+
+  it("keeps the outfit line when the garment read is not structured (#297)", () => {
+    const { prompt } = buildSimSoloRenderPrompt(
+      context({ outfitLine: "a linen shirt", garments: { status: "fallback" } }),
+    );
+    expect(prompt).toContain("Nora is wearing a linen shirt right now");
+    expect(prompt).not.toContain("Wardrobe right now (authoritative)");
+  });
+
   it("shows an in-transit player with an ETA in the player-side block", () => {
     const transiting: SoloCutContext = {
       ...SOLO,

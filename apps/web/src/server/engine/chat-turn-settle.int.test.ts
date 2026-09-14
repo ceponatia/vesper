@@ -15,6 +15,17 @@ import { newId } from "@/lib/ids";
  * directly; this file proves the OTHER half by driving the real settle path —
  * a full `submitChatMessage` exchange with a second, present roster member —
  * because that is the only place `settleChatTurnMembers` runs.
+ *
+ * **The defect this file kills: a member's wardrobe change that lives only in
+ * the garment store.** `finalizeChatState` can report a perfect
+ * `ensembleWardrobe` and the exchange still end with the member's persisted
+ * `worn_item_ids` naming the clothes they were wearing before the operation —
+ * the store and the row then disagree, and the next exchange's reconcile
+ * re-dresses them from the stale row, undoing the operation. Its twin is the
+ * double fold: the projection landing AND the member's personal pass folding
+ * its own free-text restatement of the same change on top, so one exchange
+ * mutates one wardrobe along two paths. Nothing upstream of `settleChatTurnMembers`
+ * can observe either, which is why this suite drives the whole pipeline.
  */
 
 const mock = vi.hoisted(() => ({ archivist: { value: null as ChatArchivist | null, degraded: false } }));

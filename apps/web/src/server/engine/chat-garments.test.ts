@@ -121,6 +121,30 @@ describe("buildChatGarmentNarration", () => {
     expect(narration.cues).toEqual([]);
   });
 
+  it("keeps a third actor's garments out of scope — a roster member is in the store, not in the narration (#298)", () => {
+    const MEMBER = garmentActorForCharacter("char_mara");
+    const store = storeOf([
+      instance({ id: "g_shirt", name: "linen shirt", blueprint: SHIRT }),
+      // A present ensemble member's own wardrobe, materialized into the SAME
+      // chat-wide store by the shared continuity leg. Before #298 no third
+      // actor could exist here at all, so `buildChatGarmentNarration`'s
+      // actor-scoping was never exercised by anything — the invariant was true
+      // only because nothing could violate it.
+      instance({ id: "g_scarf", name: "green scarf", blueprint: SHIRT, locus: { kind: "worn", actorId: MEMBER } }),
+    ]);
+    const narration = buildChatGarmentNarration({ store, actors: actors(), atMinutes: 40, placeName: "the study" });
+
+    expect(narration.digest).toContain("linen shirt");
+    // Scope is the primary and the player. A member's garment is neither
+    // narrated nor allowed to spend one of the two cue slots…
+    expect(narration.digest).not.toContain("green scarf");
+    expect(narration.cues.join(" ")).not.toContain("scarf");
+    expect(narration.sceneNotes.join(" ")).not.toContain("scarf");
+    // …and it takes no mention history either: persisting cue memory for a
+    // garment the narrator never saw would suppress its FIRST real cue later.
+    expect(JSON.stringify(narration.nextCues)).not.toContain("g_scarf");
+  });
+
   it("surfaces a change once, then never again while it stands", () => {
     const rolled = storeOf([
       instance({

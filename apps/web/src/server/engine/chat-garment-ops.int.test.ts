@@ -346,8 +346,14 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
   // the roster's PRE-exchange list instead of the store's real projection.
   const MARA_SHIRT_DEF = "def-mara-shirt";
 
-  /** `dressedChat()`, plus Mara already modelled and wearing a scarf + a shirt. */
-  async function ensembleChat(): Promise<ChatSeat & { scenario: ChatScenario }> {
+  /**
+   * `dressedChat()`, plus Mara already modelled and wearing `wornDefinitionIds`
+   * (a scarf + a shirt by default; pass `[MARA_SCARF_DEF]` for the case where
+   * her LAST instance can leave her actor slice).
+   */
+  async function ensembleChat(
+    wornDefinitionIds: readonly string[] = [MARA_SCARF_DEF, MARA_SHIRT_DEF],
+  ): Promise<ChatSeat & { scenario: ChatScenario }> {
     const chat = await dressedChat();
     let n = 0;
     const mintId = () => `mara-int-${(n += 1)}`;
@@ -358,7 +364,7 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     const garments = syncWornGarments({
       store: chat.scenario.garments,
       actorId: MARA_ACTOR(),
-      wornDefinitionIds: [MARA_SCARF_DEF, MARA_SHIRT_DEF],
+      wornDefinitionIds: [...wornDefinitionIds],
       seeds,
       mintId,
       atMinutes: chat.scenario.clockMinutes,
@@ -403,6 +409,38 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
     // Her worn projection re-derives from the store — the shirt she still
     // wears, not the scarf the op moved away.
     expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([MARA_SHIRT_DEF]);
+  });
+
+  it("reports the PRE-EXCHANGE roster list, not an empty one, when the member's last instance leaves her actor slice", async () => {
+    // Mara owns exactly ONE instance this time, and the op moves it to a scene
+    // locus — which belongs to nobody, so `actorHasGarmentInstances` reads her
+    // as unmodelled again and `garmentProjectionOr` takes its documented
+    // fallback: the caller's list, which here is the roster's PRE-exchange
+    // worn ids.
+    const chat = await ensembleChat([MARA_SCARF_DEF]);
+    const { scenario, outcome } = await settle({
+      chat,
+      scenario: chat.scenario,
+      roster: rosterWithMara([MARA_SCARF_DEF]),
+      archivist: withOps([{ op: "move", garment: "mara.scarf", to: "left_here", anchor: "on the desk" }]),
+    });
+
+    // The store is unambiguous: the scarf is on the desk and Mara wears nothing.
+    expect(garmentsAtScenePlace(scenario.garments, "the study").map((i) => i.name)).toEqual(["a green scarf"]);
+    expect(wornGarmentDefinitionIds(scenario.garments, MARA_ACTOR())).toEqual([]);
+
+    // The REPORT nevertheless still names the scarf. That divergence is the
+    // fallback's whole shape and it is pinned here deliberately: the id list is
+    // a compatibility projection that can only be read once an actor is
+    // modelled, so "modelled, wearing nothing" and "never materialized" are the
+    // two states it cannot tell apart, and it fails toward the caller's last
+    // known truth rather than toward an unexplained strip. A change that made
+    // this `[]` would be stripping every member the store cannot currently see
+    // — including one whose reconcile was withheld — so it must be a deliberate
+    // change to `garmentProjectionOr`, not a silent one.
+    expect(outcome.ensembleWardrobe.lane).toBe("operations");
+    expect(outcome.ensembleWardrobe.enumeratedCharacterIds).toContain(MARA_ID);
+    expect(outcome.ensembleWardrobe.wornItemIds[MARA_ID]).toEqual([MARA_SCARF_DEF]);
   });
 
   it("an unresolvable member handle drops with the EXISTING diagnostic — no new rejection code, nothing touched", async () => {

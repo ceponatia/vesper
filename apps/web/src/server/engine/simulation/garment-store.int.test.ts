@@ -28,6 +28,7 @@ import {
   simCommand,
   simulationSuiteHarness,
 } from "@/server/test-support";
+import { seedDurableActionDefinitions, submitDurableStartActivity } from "./activity-store";
 import { submitDurableApplyGarmentOperation } from "./garment-store";
 import { submitDurableTransferItem } from "./material-store";
 
@@ -40,6 +41,14 @@ import { submitDurableTransferItem } from "./material-store";
  * rows and the bands a reader would see; and a fork inherits that state and
  * then diverges from it. The fourth block is the negative space — a rejected
  * operation must leave the row and the stream exactly as they were.
+ *
+ * **The defect this suite kills: a projection that disagrees with its own
+ * history.** `sim_item_garment_state` is a fold of `garment_operation_applied`,
+ * so any implementation that re-runs the reducer at replay time, writes the row
+ * from a local variable instead of the event payload, or records an event for
+ * an operation it refused, produces a world whose every FORK is dressed
+ * differently from its parent — and the disagreement only surfaces on the fork,
+ * long after the write that caused it.
  *
  * Nothing in the successor lane produces these commands yet, which is why this
  * fixture is the proof rather than a narration consumer.
@@ -54,6 +63,13 @@ const harness = await simulationSuiteHarness({
 const SEED_SECOND = 40_000;
 const SEED_MINUTE = Math.floor(SEED_SECOND / 60);
 const SHIRT_COVERAGE = ["chest", "shoulders", "upper_arms"] as const;
+/**
+ * The authored material kind the mending action's resource cost selects on.
+ * Only `reservedShirtId` carries it, so the reservation the rejection case
+ * arms lands on THAT garment and never on the shirt every other case operates
+ * on.
+ */
+const MENDING_KIND = "e296-mending-garment";
 
 interface Case {
   worldId: string;
@@ -64,6 +80,12 @@ interface Case {
   zoneId: string;
   shirtId: string;
   plainId: string;
+  /** A strongbox the actor CARRIES but holds no key to (`allow_list: [otherActorId]`). */
+  lockedBoxId: string;
+  /** A second blueprint-bearing shirt, inside that strongbox. */
+  boxedShirtId: string;
+  /** A third blueprint-bearing shirt, held by the actor, reservable by an activity. */
+  reservedShirtId: string;
 }
 
 function makeCase(): Case {
@@ -78,6 +100,9 @@ function makeCase(): Case {
     zoneId: `${branchId}-zone-room`,
     shirtId: newId(),
     plainId: newId(),
+    lockedBoxId: newId(),
+    boxedShirtId: newId(),
+    reservedShirtId: newId(),
   };
 }
 
@@ -121,6 +146,30 @@ async function seedCase(ids: Case): Promise<void> {
       },
       // No `garmentBlueprint`: exactly how every pre-#295 seed reads.
       { id: ids.plainId, name: "tin cup", locus: { kind: "held", actorId: ids.actorId } },
+      {
+        id: ids.lockedBoxId,
+        name: "strongbox",
+        // HELD by the acting actor on purpose: the root then resolves to the
+        // actor himself, so the co-location and root-actor checks both pass and
+        // the container's OWN access rule is the guard that has to decide. A
+        // box resting in the zone would be refused a step earlier and would
+        // never exercise `containerAccessAllowed`.
+        container: { capacityCount: 4, access: { kind: "allow_list", actorIds: [ids.otherActorId] } },
+        locus: { kind: "held", actorId: ids.actorId },
+      },
+      {
+        id: ids.boxedShirtId,
+        name: "packed shirt",
+        garmentBlueprint: shirtBlueprintJson(),
+        locus: { kind: "container", containerItemId: ids.lockedBoxId },
+      },
+      {
+        id: ids.reservedShirtId,
+        name: "mending shirt",
+        materialKindKey: MENDING_KIND,
+        garmentBlueprint: shirtBlueprintJson(),
+        locus: { kind: "held", actorId: ids.actorId },
+      },
     ],
     locations: [{ id: ids.locationId, worldId: ids.worldId, kind: "home", defaultAccessPolicy: "private" }],
     zones: [{ id: ids.zoneId, locationId: ids.locationId, kind: "room", privacyPolicy: "private" }],
@@ -258,6 +307,45 @@ async function runAcceptedSequence(ids: Case): Promise<void> {
       degree: "slight",
     }),
     "damage",
+  );
+}
+
+/**
+ * Arm a LIVE activity holding a start-time reservation on `reservedShirtId` —
+ * the same leg `material-store.int.test.ts` uses to prove `item_reserved` on
+ * `consume_item`, pointed at a garment instead of a meal. The start appends its
+ * own events (`activity_started` + the completion trigger), so a caller that
+ * asserts "the stream is untouched" must snapshot AFTER calling this.
+ */
+async function reserveMendingShirt(ids: Case): Promise<void> {
+  await seedDurableActionDefinitions({
+    branchId: ids.branchId,
+    definitions: [
+      {
+        id: "mend-a-garment",
+        version: 1,
+        controllerKinds: ["npc_policy"],
+        duration: { kind: "fixed", seconds: 600 },
+        preconditions: [],
+        requiredClaims: [],
+        interruptibility: "free",
+        noticeability: "private",
+        resourceCosts: [{ materialKindKey: MENDING_KIND, quantity: 1, disposition: "use" }],
+      },
+    ],
+  });
+  expectAccepted(
+    await submitDurableStartActivity(
+      simCommand({
+        branchId: ids.branchId,
+        name: "start mending",
+        type: "start_activity",
+        principal: npcPrincipal(ids.actorId),
+        payload: { actionDefinitionId: "mend-a-garment", actorId: ids.actorId },
+      }),
+      ADMIT_AT_LOCKED_VERSION,
+    ),
+    "start the mending activity",
   );
 }
 
@@ -428,6 +516,9 @@ describe.runIf(harness.ready)("#296 — a rejected operation writes nothing", ()
     const ids = makeCase();
     await seedCase(ids);
     await runAcceptedSequence(ids);
+    // Armed BEFORE the snapshot, because starting an activity is itself
+    // history: everything asserted unchanged below is measured from here.
+    await reserveMendingShirt(ids);
 
     const before = await rawGarmentRow(ids.branchId, ids.shirtId);
     const eventsBefore = await readBranchEvents(ids.branchId);
@@ -495,6 +586,43 @@ describe.runIf(harness.ready)("#296 — a rejected operation writes nothing", ()
     expectRejected(repeat, "operation_rejected", "no change");
     expect(repeat).toMatchObject({ publicReason: "garment_op.no_change" });
 
+    // Inside a strongbox the actor carries but has no key to. The root-actor
+    // check passes (it is his own carry), so the container's access rule is the
+    // guard that decides — `container_access_denied`, exactly as
+    // `resolveApplyItemConditionSource` refuses the same reach. This block is a
+    // hand copy of that resolver's order, so each of its arms needs its own
+    // case or a reordered copy passes the suite.
+    expectRejected(
+      await applyOperation(
+        ids.branchId,
+        ids,
+        "operate a shirt inside a closed container",
+        { kind: "set_roll", garmentId: ids.boxedShirtId, partId: "sleeve_left", degree: "moderate" },
+        ids.boxedShirtId,
+      ),
+      "container_access_denied",
+      "a container closed to the actor",
+    );
+
+    // Reserved by a LIVE activity: only that activity's own completion or
+    // interruption machinery may move it, so a garment operation is refused
+    // before the reducer ever runs — the last arm of the reach chain.
+    expectRejected(
+      await applyOperation(
+        ids.branchId,
+        ids,
+        "operate a reserved garment",
+        { kind: "set_roll", garmentId: ids.reservedShirtId, partId: "sleeve_left", degree: "moderate" },
+        ids.reservedShirtId,
+      ),
+      "item_reserved",
+      "a garment a live activity reserved",
+    );
+
+    // Neither refusal minted a projection row for the item it refused — a
+    // rejected operation writes nothing ANYWHERE, not merely nothing new.
+    expect(await rawGarmentRow(ids.branchId, ids.boxedShirtId)).toBeUndefined();
+    expect(await rawGarmentRow(ids.branchId, ids.reservedShirtId)).toBeUndefined();
     expect(await rawGarmentRow(ids.branchId, ids.shirtId)).toEqual(before);
     expect((await readBranchEvents(ids.branchId)).length).toBe(eventsBefore.length);
   });

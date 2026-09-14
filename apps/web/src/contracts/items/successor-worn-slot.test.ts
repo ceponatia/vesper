@@ -10,6 +10,31 @@ import {
   SUCCESSOR_WORN_SLOT_UNKNOWN_HEAD,
 } from "./successor-worn-slot";
 
+/**
+ * #295 — the successor lane's worn-slot vocabulary and its blueprint mint.
+ *
+ * **The defect this file kills: a slot string treated as a structural
+ * reference.** `sim_item_holdings.slot_key` is free text, and two vocabularies
+ * have been written into it — `<clothing-category-id>-<n>` (new seeds) and
+ * `<body-location-id>-<n>` (earlier seeds). An implementation that guessed
+ * instead of parsing would resolve a garment noun, an unregistered head, or a
+ * `top-x` typo into SOME coverage set, and the read adapter would then report
+ * a covered body as bare — or a bare one as covered — with nothing marked
+ * unreliable. So every case here is a parse boundary: the two vocabularies are
+ * proven disjoint (so precedence can never reclassify a key), everything the
+ * registries do not know reads back `unknown` carrying its raw string, and
+ * `unknown` expands to no coverage at all rather than to a guess.
+ *
+ * The second half guards the mint: `successorGarmentBlueprint` must rescope a
+ * definition's coverage to what the DEFINITION claims, never to the category
+ * template — a bandeau instantiated from the `top` template would silently
+ * cover shoulders, back and waist nobody dressed.
+ *
+ * Expectations are derived from `clothingCategories` and `bodyLocationRegistry`
+ * rather than copied, so adding a category or a body location extends the proof
+ * instead of leaving a hole.
+ */
+
 /** Every coverage-relevant location, derived — never a copied list. */
 const coverageLocations = bodyLocationRegistry.all.filter((location) => location.coverageRelevant !== false);
 
