@@ -147,10 +147,21 @@ Subagents never run on the session's own model when that model is Fable.
 
 ## Testing, CI, and live evidence
 
-- Do not run local application tests (including any Vitest form), lint, typecheck, or builds. Diagnose from
-  code and CI logs. `pnpm lint:docs` is the documentation exception.
+- Do not run application tests (including any Vitest form), lint, typecheck, or builds on this machine. The
+  ban is on the check, not on how it is spelled or where it runs: invoking the compiler, linter or bundler
+  directly (`tsc`, `npx tsc`, `pnpm exec tsc`, `./node_modules/.bin/tsc`, `eslint`, `next build`), pointing it
+  at a hand-written or throwaway config, or running it from a temp directory or a copy of the sources is the
+  same application gate, because each resolves this repository's code or dependency types. Do not look for a
+  spelling that gets through; `.codex/hooks/preflight.py` refuses these and routing around it is itself a
+  violation. Diagnose from code and CI logs, and satisfy a compiler constraint by construction: under
+  `noUncheckedIndexedAccess` an indexed read is `T | undefined`, so guard it with an explicit `=== undefined`
+  or length check rather than a non-null assertion, which `no-non-null-assertion` forbids anyway. Report a
+  genuine type ambiguity to the parent rather than reconstructing a compiler. `pnpm lint:docs` is the
+  documentation exception.
 - Dependency-free offline fixtures for skill/helper behavior may run locally if they import no application
-  code, start no service, and make no external mutation. They never substitute for application CI.
+  code, start no service, and make no external mutation. "Imports no application code" is literal: a check that
+  resolves this repository's sources or its dependency types is an application gate however it is configured,
+  and the exception does not reach it. Fixtures never substitute for application CI.
 - GitHub Actions CI on GitHub-hosted runners is the gate. Draft PRs run no gates; ready PRs run applicable
   jobs. The aggregate `verify` check is required on `main` and `prod`.
 - Do not add a CI workflow without an explicit owner decision.

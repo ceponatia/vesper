@@ -22,7 +22,10 @@ test files name the defect they kill.
 
 Edit tests only. Report production defects with the failing expectation as
 evidence rather than fixing them. Never weaken, skip or delete a test so a suite
-passes. Never run Vitest, lint, typecheck or builds on this machine: verify by
+passes. Never run Vitest, lint, typecheck or builds on this machine — nor the
+checkers themselves however invoked (`tsc`, `npx tsc`, `pnpm exec tsc`,
+`eslint`), against a throwaway config or a copy of the sources included, since
+each resolves this repository's types and is the same gate. Verify by
 reading each assertion against its code path and, when the change is on a PR,
 by the current head's CI through `.agents/skills/vesper-pr-review/ci-failure.sh`.
 

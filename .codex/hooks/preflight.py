@@ -37,10 +37,34 @@ ACK_INDEX = "VESPER_INDEX_OK=1"
 # The settings deny list catches the bare families; this catches every
 # `pnpm test:*` / `pnpm lint:*` sub-script, `pnpm run …`, and scripts/verify.sh,
 # which the deny syntax (space-star prefixes only) cannot express.
-GATE_SCRIPT = re.compile(r"^(test|lint|typecheck|verify|vitest)(?::[\w.-]+)?$")
+GATE_SCRIPT = re.compile(r"^(test|lint|typecheck|verify|vitest|build)(?::[\w.-]+)?$")
 GATE_ALLOWED = {"lint:docs"}  # sanctioned for documentation-only changes (AGENTS.md)
 PNPM_PASSTHROUGH = {"run", "exec", "dlx", "-r", "--recursive", "-w", "--workspace-root", "--stream", "--parallel"}
 RUNNERS = {"npx", "pnpx", "bunx"}  # `npx vitest …` — owner ruling 2026-09-04: no local vitest either
+# Runner options that consume the NEXT token, so the checker is not simply the
+# word after the runner. `npx --package=typescript -- tsc` and `npx --yes tsc`
+# are documented npm-exec spellings, and reading only the first argument let
+# both through (PR review, 2026-09-14).
+RUNNER_VALUE_OPTS = {"--package", "-p", "--userconfig", "--cache", "--shell", "--npm", "--node-arg"}
+# `-c`/`--call` runs its value as a shell string: `npx -c "tsc --noEmit"`. The
+# command lives inside one token, so it is re-tokenized rather than skipped.
+RUNNER_CALL_OPTS = {"-c", "--call"}
+# The checkers themselves, caught by basename so a path-qualified or
+# runner-prefixed spelling lands the same way: `tsc`, `npx tsc`,
+# `pnpm exec tsc`, `./node_modules/.bin/tsc`.
+#
+# Naming the pnpm scripts was not enough. A worker that had read the ban
+# reasoned its way to "a throwaway tsconfig, outside the project" because the
+# rule it had been given was a list of command names and its command was not on
+# it. The gate is the CHECK, not the spelling: a config written to resolve this
+# repository's dependency types is an application typecheck wherever it sits.
+GATE_BINARIES = {"tsc", "tsgo", "eslint", "vitest", "jest", "tsd", "attw"}
+# Same idea for the bundlers, which only count when actually building: `next`
+# and `vite` also front `next dev` / `vite preview`, which the run workflow owns.
+GATE_BUILDERS = {"next": {"build"}, "vite": {"build"}, "turbo": {"build", "run"}}
+# Substrings that make `main` bother tokenizing at all. Derived from the rules
+# above rather than retyped, so a checker added to either set stays reachable.
+PREFILTER = ("fly", "git", "pnpm", "verify.sh", *sorted(GATE_BINARIES), *sorted(GATE_BUILDERS))
 SEPARATORS = {"&&", "||", ";", "|", "&"}
 COMMIT_VALUE_OPTS = {
     "-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c",
@@ -149,34 +173,115 @@ def commit_pathspec(args: list[str]) -> tuple[bool, bool]:
     return has_path, all_flag
 
 
+def skip_runner_options(seg: list[str], start: int) -> tuple[int, str | None]:
+    """Advance past a runner's own options to the command it will run.
+
+    Returns `(index, call_value)`. A `--` ends the options outright; a
+    value-taking option consumes two tokens; any other `-` token consumes one.
+    `call_value` is set when the command was handed over as a shell string
+    instead, which the caller re-tokenizes.
+    """
+    i = start
+    while i < len(seg):
+        token = seg[i]
+        if token == "--":
+            return i + 1, None
+        if token in RUNNER_CALL_OPTS:
+            return i + 2, (seg[i + 1] if i + 1 < len(seg) else None)
+        if token in RUNNER_VALUE_OPTS:
+            i += 2
+            continue
+        if token.startswith("-"):
+            # `--package=typescript` carries its value inline; a bare flag such
+            # as `--yes` carries none. Either way it is one token.
+            i += 1
+            continue
+        return i, None
+    return i, None
+
+
+def gate_behind(seg: list[str], start: int) -> str | None:
+    """The checker a runner is about to execute, past that runner's options."""
+    index, call = skip_runner_options(seg, start)
+    if call is not None:
+        inner = tokenize(call)
+        return gate_binary(inner[0]) or gate_builder(inner, 0) if inner else None
+    if index >= len(seg):
+        return None
+    return gate_binary(seg[index]) or gate_builder(seg, index)
+
+
+def gate_binary(token: str) -> str | None:
+    """The checker a token names, ignoring any directory and `.cmd`/`.exe` tail."""
+    base = os.path.basename(token)
+    for suffix in (".cmd", ".exe", ".ps1", ".bat", ".js", ".mjs"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+    return base if base in GATE_BINARIES else None
+
+
+def gate_builder(seg: list[str], start: int) -> str | None:
+    """`next build` / `vite build` / `turbo run …`, at `start` in the segment."""
+    if start >= len(seg):
+        return None
+    base = os.path.basename(seg[start])
+    subcommands = GATE_BUILDERS.get(base)
+    if subcommands is None:
+        return None
+    following = [t for t in seg[start + 1 :] if not t.startswith("-")]
+    if following and following[0] in subcommands:
+        return f"{base} {following[0]}"
+    return None
+
+
 def gate_violation(seg: list[str]) -> str | None:
-    """A local gate run: pnpm test/lint/typecheck/verify (any sub-script) or scripts/verify.sh."""
+    """A local application gate: the checkers themselves however invoked, a
+    pnpm test/lint/typecheck/verify script, or scripts/verify.sh."""
     if not seg:
         return None
     # running the script (directly or via a shell), not merely naming it
     invoked = seg[0] if seg[0] not in ("bash", "sh", "zsh", "source", ".") else (seg[1] if len(seg) > 1 else "")
     if invoked.endswith("scripts/verify.sh"):
         return "scripts/verify.sh"
-    if os.path.basename(seg[0]) == "vitest":
-        return "vitest"
-    if seg[0] in RUNNERS and len(seg) > 1 and seg[1] == "vitest":
-        return f"{seg[0]} vitest"
+
+    # The checker invoked directly, at the head of the segment or behind a
+    # runner. `pnpm exec tsc` reaches this through the passthrough walk below.
+    direct = gate_binary(seg[0]) or gate_builder(seg, 0)
+    if direct:
+        return direct
+    if seg[0] in RUNNERS and len(seg) > 1:
+        behind = gate_behind(seg, 1)
+        if behind:
+            return f"{seg[0]} {behind}"
+
     if seg[0] != "pnpm":
         return None
-    i = 1
-    while i < len(seg):
-        t = seg[i]
-        if t in PNPM_PASSTHROUGH or t.startswith("--workspace-concurrency") or t.startswith("--filter="):
-            i += 1
-        elif t in ("--filter", "-F", "-C", "--dir"):
-            i += 2
-        else:
-            break
-    if i >= len(seg):
-        return None
-    script = seg[i]
-    if GATE_SCRIPT.match(script) and script not in GATE_ALLOWED:
-        return f"pnpm {script}"
+
+    # Scan every token rather than parsing pnpm's option grammar to locate the
+    # script position.
+    #
+    # Locating it was tried twice and leaked twice. A hard-coded option list
+    # stopped dead at the first unlisted option, so `pnpm --silent exec tsc`
+    # read `--silent` as the script. Skipping any `-` token fixed that and left
+    # the separate-value form — `pnpm --loglevel error exec tsc` consumes one
+    # token, lands on `error`, and calls that the script. Neither default is
+    # right for both, because whether an option takes a value is knowledge that
+    # lives in pnpm and drifts: every gap between that table and the real
+    # grammar is an allow, and an allow here is a silent full typecheck.
+    #
+    # So this errs the other way. Any gate name anywhere in a pnpm segment
+    # refuses it, which costs `pnpm ls vitest` and `pnpm why eslint` — rare
+    # inspection commands with obvious alternatives, and the refusal says why.
+    # `pnpm lint:docs` stays allowed through GATE_ALLOWED, as does any token
+    # that merely contains a gate name (`lint-staged`, `test-utils`), since
+    # GATE_SCRIPT is anchored.
+    for i in range(1, len(seg)):
+        token = seg[i]
+        if GATE_SCRIPT.match(token) and token not in GATE_ALLOWED:
+            return f"pnpm {token}"
+        behind_pnpm = gate_binary(token) or gate_builder(seg, i)
+        if behind_pnpm:
+            return f"pnpm {behind_pnpm}"
     return None
 
 
@@ -187,10 +292,18 @@ def check(command: str, start_cwd: str) -> tuple[str | None, str | None]:
         gate = gate_violation(strip_env_prefix(raw))
         if gate:
             return (
-                f"[vesper preflight] `{gate}` is a local gate run, and those are off-limits here "
+                f"[vesper preflight] `{gate}` is a local application gate, and those are off-limits here "
                 "(owner ruling 2026-08-22, tightened 2026-08-24 after a local lint run coincided with the desktop "
-                "crashing). CI on GitHub-hosted runners is the gate: push the branch and read the result "
+                "crashing). The ban is on the CHECK, not on how it is spelled or where it runs: a hand-written or "
+                "throwaway tsconfig, a copy of the sources in a temp directory, and a different working directory are "
+                "all the same typecheck, because each one resolves this repository's code or dependency types. Do not "
+                "look for a spelling that gets through. "
+                "CI on GitHub-hosted runners is the gate: push the branch and read the result "
                 "(.agents/skills/vesper-pr-review/wait-ci.sh, ci-failure.sh). Diagnose from CI logs and by reading code. "
+                "Satisfy a compiler constraint by construction instead — under `noUncheckedIndexedAccess` an indexed "
+                "read is `T | undefined`, so guard it with an explicit `=== undefined` or length check and never a "
+                "non-null assertion, which `no-non-null-assertion` forbids anyway. Report a genuine type ambiguity to "
+                "the parent rather than reconstructing a compiler. "
                 "Only `pnpm lint:docs` is sanctioned locally, for documentation-only changes.",
                 None,
             )
@@ -296,7 +409,12 @@ def main() -> int:
     if payload.get("tool_name") != "Bash":
         return 0
     command = (payload.get("tool_input") or {}).get("command") or ""
-    if not any(k in command for k in ("fly", "git", "pnpm", "verify.sh", "vitest")):
+    # Cheap prefilter before the tokenizer. Every gate this hook refuses must
+    # have a substring here or `check` never sees it: `npx tsc --noEmit` carries
+    # none of the original five keys and was allowed straight through, which made
+    # the checker-binary rules below unreachable from the real entry point. A
+    # false positive here costs one tokenize; a miss costs the whole gate.
+    if not any(k in command for k in PREFILTER):
         return 0
     start = payload.get("cwd") or os.getcwd()
 

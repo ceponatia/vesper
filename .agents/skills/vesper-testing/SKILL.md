@@ -9,10 +9,12 @@ description: Decide whether a Vesper change needs a test, choose the one owning 
 
 Do not run application gates on this machine. This includes every form of Vitest (`pnpm test*`, direct `vitest`, package-filtered Vitest, and watch mode), application lint, typecheck, build, and integration setup. Use CI through the task's authorized delivery workflow.
 
+The ban is on the check, not on how it is spelled or where it runs: invoking the compiler, linter or bundler directly (`tsc`, `npx tsc`, `pnpm exec tsc`, `./node_modules/.bin/tsc`, `eslint`, `next build`), pointing it at a hand-written or throwaway config, or running it from a temp directory or a copy of the sources is the same application gate, because each one resolves this repository's code or dependency types. Do not look for a spelling that gets through; `.codex/hooks/preflight.py` refuses these, and routing around it is itself a violation. Satisfy a compiler constraint by construction instead: under `noUncheckedIndexedAccess` an indexed read is `T | undefined`, so guard it with an explicit `=== undefined` or length check rather than a non-null assertion, which `no-non-null-assertion` forbids anyway.
+
 Two narrow local checks remain allowed:
 
 - `pnpm lint:docs` for documentation-only changes.
-- Dependency-free offline fixtures for skill-owned shell or Python helpers when they do not start Vesper, a database, or an external service.
+- Dependency-free offline fixtures for skill-owned shell or Python helpers when they do not start Vesper, a database, or an external service. "Dependency-free" is literal: a fixture that resolves application sources or their dependency types is an application gate, not a fixture.
 
 ## Decide before writing
 
