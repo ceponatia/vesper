@@ -147,6 +147,13 @@ export function SettingsPage() {
             </Link>{" "}
             — blinded A/B runs comparing identity-reference strategies before one is promoted.
           </p>
+          <p className="mt-2 text-sm text-paper-400">
+            <Link href="/settings/image-advisories" className="underline underline-offset-4">
+              Image advisories
+            </Link>{" "}
+            — the comparison record for advisory render signals: annotated counts against your own
+            agree/disagree review, never a gate.
+          </p>
           <p className="mt-3 text-xs text-paper-500">
             The image generator, image lab, and image model registry moved to your account menu, above Engine
             Comparison.

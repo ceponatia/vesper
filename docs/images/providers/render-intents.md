@@ -137,6 +137,11 @@ image's own pixel size, and the crop actually performed (`null` when none was ne
 target ratio, the placement, the exact rect, and where the focal box came from — `"none"` on every
 render today).
 
+A third sibling key, `images.meta.advisories`, carries ADVISORY annotations measured on the same
+successful render — never a gate, never a substituted model
+([../render-advisories.md](../render-advisories.md)) — present only when at least one signal
+triggered.
+
 ## Selection stays fail-visible
 
 `routeSceneAttempts` (`packages/image-core/src/provider-interface/attempts.ts`) orders one model's

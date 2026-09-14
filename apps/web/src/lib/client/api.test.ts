@@ -88,6 +88,39 @@ describe("imageRecordSchema", () => {
     // Degraded shapes miss cleanly rather than failing the record.
     expect(imageRecordSchema.parse({ id: "img-2", meta: { render: "not-an-object" } }).meta.render).toBeUndefined();
   });
+
+  it("carries render advisories through the parse, including a reviewed one (issue #249)", () => {
+    const advisories = [
+      {
+        version: 1,
+        code: "blank_output",
+        level: "advisory",
+        reason: "The render came back as a flat, near-uniform image with almost no visible detail.",
+        evidence: { grayVariance: 1, laplacianVariance: 0 },
+        offers: ["retry_same", "new_variation"],
+        review: { verdict: "agree", at: "2026-09-13T00:00:00.000Z" },
+      },
+    ];
+    const parsed = imageRecordSchema.parse({
+      id: "img-3",
+      kind: "scene",
+      status: "ready",
+      prompt: "scene prompt",
+      meta: { model: "replicate/qwen/qwen-image-2512", advisories },
+    });
+    expect(parsed.meta.advisories).toEqual(advisories);
+  });
+
+  it("degrades a malformed advisories entry to absent rather than failing the record", () => {
+    // A code outside the known enum (a stale client reading a row a newer or
+    // older deploy wrote) must miss cleanly, the same rule every other
+    // member of `imageRowMetaSchema` follows.
+    const parsed = imageRecordSchema.parse({
+      id: "img-4",
+      meta: { advisories: [{ code: "not_a_real_code" }] },
+    });
+    expect(parsed.meta.advisories).toBeUndefined();
+  });
 });
 
 describe("request plumbing", () => {

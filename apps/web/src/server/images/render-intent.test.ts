@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 import {
   type ImageLoraRenderBinding,
   imageModelProfileSchema,
@@ -6,6 +7,7 @@ import {
   type ImageRenderIntent,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 
 /**
  * The orchestration entry point's OWN decisions: seed resolution — the one
@@ -72,6 +74,24 @@ function intent(over: Partial<ImageRenderIntent> = {}): ImageRenderIntent {
 function sentControlInput(): Record<string, unknown> {
   const call = mockRender.mock.calls.at(-1)?.[0] as RenderWithModelInput | undefined;
   return call?.controlInput ?? {};
+}
+
+/**
+ * Real, small, `sharp`-decodable buffers for the advisory evaluators to
+ * measure — a mocked buffer like `Buffer.from("img")` cannot decode, which is
+ * exactly the "unmeasured" case this suite also exercises deliberately.
+ */
+async function solidGrayPng(size: number, value: number): Promise<Buffer> {
+  const data = Buffer.alloc(size * size, value);
+  return sharp(data, { raw: { width: size, height: size, channels: 1 } }).png().toBuffer();
+}
+
+async function checkerboardPng(size: number): Promise<Buffer> {
+  const data = Buffer.alloc(size * size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) data[y * size + x] = (x + y) % 2 === 0 ? 255 : 0;
+  }
+  return sharp(data, { raw: { width: size, height: size, channels: 1 } }).png().toBuffer();
 }
 
 beforeEach(() => {
@@ -358,8 +378,92 @@ describe("LoRA credential completion", () => {
 
 describe("renderAttemptMeta", () => {
   it("wraps an attempt under the render key and vanishes without one", async () => {
+    // The mocked transport's `Buffer.from("img")` cannot decode, so this
+    // render's advisories measure empty — the exact case that must leave
+    // `meta` byte-identical to before advisories existed.
     const result = await renderImageIntent(intent({ controls: { seed: 5 } }));
+    expect(result.advisories).toEqual([]);
     expect(renderAttemptMeta(result.attempt)).toEqual({ meta: { render: result.attempt } });
     expect(renderAttemptMeta(undefined)).toEqual({});
+  });
+
+  it("adds the advisories key beside render when this attempt measured any", async () => {
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: await solidGrayPng(8, 128),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent({ controls: { seed: 5 } }));
+    expect(result.advisories).toHaveLength(1);
+    expect(renderAttemptMeta(result.attempt)).toEqual({
+      meta: { render: result.attempt, advisories: result.advisories },
+    });
+  });
+});
+
+describe("render advisories (#249)", () => {
+  it("attaches a blank_output advisory when the returned image decodes to a flat fill", async () => {
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: await solidGrayPng(8, 128),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent());
+    expect(result.advisories).toHaveLength(1);
+    expect(result.advisories?.[0]?.code).toBe("blank_output");
+  });
+
+  it("attaches nothing on a sharp, high-contrast render", async () => {
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: await checkerboardPng(16),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent());
+    expect(result.advisories).toEqual([]);
+  });
+
+  it("degrades with an unmeasured diagnostic when the transport's buffer cannot be decoded, never fails the render", async () => {
+    const sink = new DiagnosticCollector();
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: Buffer.from("not an image"),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent(), sink);
+    expect(result.ok).toBe(true);
+    expect(result.advisories).toEqual([]);
+    expect(sink.items.some((item) => item.code === "images.advisory.unmeasured")).toBe(true);
+  });
+
+  it("is never a gate: a render carrying every advisory this suite can trigger still returns ok:true and the image", async () => {
+    mockRender.mockResolvedValue({
+      ok: true,
+      image: await solidGrayPng(8, 128),
+      predictionId: "pred-1",
+      executedVersionId: "v-exec",
+      shape: {
+        mode: "target_ratio",
+        field: "aspect_ratio",
+        value: "3:4",
+        expectedAspect: 1,
+        cropTarget: 3 / 4,
+        crop: {
+          targetRatio: 3 / 4,
+          placement: "center",
+          rect: { left: 0, top: 0, width: 100, height: 100 },
+          focalSource: "none",
+        },
+      },
+    } satisfies RenderWithModelResult);
+    const result = await renderImageIntent(intent());
+    expect(result.ok).toBe(true);
+    expect(result.image).toBeInstanceOf(Buffer);
+    const codes = (result.advisories ?? []).map((advisory) => advisory.code).sort();
+    expect(codes).toEqual(["blank_output", "harmful_crop_loss"]);
   });
 });

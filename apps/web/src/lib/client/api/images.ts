@@ -5,7 +5,7 @@ import {
   portraitVariantKinds,
   type PortraitVariantKind,
 } from "@/contracts";
-import { sceneReferenceSchema } from "@vesper/image-core";
+import { renderAdvisorySchema, sceneReferenceSchema } from "@vesper/image-core";
 
 import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "./http";
 import {
@@ -16,6 +16,25 @@ import {
   optionalText,
   textOr,
 } from "./shared";
+
+/**
+ * The owner's agree/disagree verdict on one advisory, merged on by
+ * `PATCH /api/images/:imageId/advisories`. Not part of the producer-side
+ * `renderAdvisorySchema` (that module knows nothing about review) — layered
+ * on here, the one place the client reads a reviewed advisory.
+ */
+const renderAdvisoryReviewSchema = z.object({
+  verdict: z.enum(["agree", "disagree"]),
+  note: z.string().optional(),
+  at: z.string(),
+});
+
+/** One stored render advisory as the client reads it: the producer shape
+ * plus the optional owner review. */
+export const clientRenderAdvisorySchema = renderAdvisorySchema.extend({
+  review: renderAdvisoryReviewSchema.optional(),
+});
+export type ClientRenderAdvisory = z.infer<typeof clientRenderAdvisorySchema>;
 
 /**
  * One image row's `meta`, as every client surface reads it.
@@ -68,6 +87,16 @@ export const imageRowMetaSchema = z
       )
       .optional()
       .catch(undefined),
+    /**
+     * Advisory annotations this render measured (issue #249) — harmful crop
+     * loss, a blank or severely blurred output — each with the owner's
+     * agree/disagree review once one is given. The producer shape
+     * (`renderAdvisorySchema`, `@vesper/image-core`) extended with the
+     * review the PATCH route merges on; loose and `.catch`, the same rule as
+     * every member here, so a row a newer or older deploy wrote degrades to
+     * "no advisories" rather than an unparsable image.
+     */
+    advisories: z.array(clientRenderAdvisorySchema).optional().catch(undefined),
   })
   .catch({});
 
@@ -189,4 +218,44 @@ export const galleryApi = {
     apiPost(z.object({ deleted: z.number().catch(0) }), "/api/gallery/delete", {
       ids,
     }),
+};
+
+// ---------------------------------------------------------------------------
+// Render advisories (issue #249) — NOT re-exported through the top
+// `lib/client/api.ts` barrel today, since that curated list is out of this
+// change's owned paths; import from this module path directly
+// (`@/lib/client/api/images`) until the barrel line is added.
+// ---------------------------------------------------------------------------
+
+/** Per-code counts plus the most recently reviewed rows — the comparison
+ * record an owner reads to write a verdict (annotate / reject / propose a
+ * narrow promotion check) for each advisory signal. */
+export const imageAdvisorySummarySchema = z.object({
+  codes: arrayOf(
+    z.object({
+      code: z.string(),
+      annotated: z.number().catch(0),
+      agreed: z.number().catch(0),
+      disagreed: z.number().catch(0),
+      unreviewed: z.number().catch(0),
+    }),
+  ),
+  reviewed: arrayOf(
+    z.object({
+      imageId: idSchema,
+      code: z.string(),
+      verdict: z.enum(["agree", "disagree"]).catch("agree"),
+      note: z.string().nullable().catch(null),
+      reviewedAt: z.string().nullable().catch(null),
+    }),
+  ),
+});
+export type ImageAdvisorySummary = z.infer<typeof imageAdvisorySummarySchema>;
+
+export const imageAdvisoriesApi = {
+  /** Record the owner's agree/disagree verdict on one render advisory. */
+  review: (imageId: string, body: { code: string; verdict: "agree" | "disagree"; note?: string }) =>
+    apiPatch(z.object({ advisory: clientRenderAdvisorySchema }), `/api/images/${imageId}/advisories`, body),
+  /** The comparison-record table (#249's acceptance bullet 1). */
+  summary: () => apiGet(imageAdvisorySummarySchema, "/api/admin/self/image-advisories/summary"),
 };
