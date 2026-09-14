@@ -11,7 +11,7 @@ import {
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -194,22 +194,17 @@ export function ImageModelsPage() {
           list — one fetch, so the two can never disagree about which models exist. */}
       <ImageLoraLibrary models={models} />
 
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
         title={`Remove ${pendingDelete?.label ?? "this model"}?`}
-        footer={
-          <>
-            <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
-            <Button variant="danger" busy={busyId === pendingDelete?.id} onClick={() => void confirmDelete()}>
-              Remove
-            </Button>
-          </>
-        }
+        confirmLabel="Remove"
+        busy={busyId === pendingDelete?.id}
       >
         It disappears from every picker, and its profiles go with it. Existing images are untouched, and any
         conversation still pointing at it falls back to the default for that job.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

@@ -13,7 +13,7 @@ import {
   type ImageVersionSmokeResponse,
 } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
@@ -283,48 +283,32 @@ export function ImageModelVersionPanel({
         </div>
       ) : null}
 
-      <Dialog
+      <ConfirmDialog
         open={smokeOpen}
-        onClose={() => {
-          if (!smoking) setSmokeOpen(false);
-        }}
+        onClose={() => setSmokeOpen(false)}
+        onConfirm={() => void runSmoke()}
         title="Run a paid smoke test?"
-        footer={
-          <>
-            <Button onClick={() => setSmokeOpen(false)} disabled={smoking}>
-              Cancel
-            </Button>
-            <Button variant="primary" busy={smoking} onClick={() => void runSmoke()}>
-              Spend one render
-            </Button>
-          </>
-        }
+        confirmLabel="Spend one render"
+        tone="primary"
+        busy={smoking}
       >
         This sends ONE real prediction to the candidate version through{" "}
         {enabledProfiles.find((profile) => profile.id === smokeProfileId)?.label ?? "the selected profile"} — it spends
         provider money, and nothing is kept: the image is measured and dropped.
-      </Dialog>
+      </ConfirmDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={activateOpen}
-        onClose={() => {
-          if (!activating) setActivateOpen(false);
-        }}
+        onClose={() => setActivateOpen(false)}
+        onConfirm={() => void activate()}
         title={`Pin ${model.label} to the candidate?`}
-        footer={
-          <>
-            <Button onClick={() => setActivateOpen(false)} disabled={activating}>
-              Cancel
-            </Button>
-            <Button variant="primary" busy={activating} onClick={() => void activate()}>
-              Activate
-            </Button>
-          </>
-        }
+        confirmLabel="Activate"
+        tone="primary"
+        busy={activating}
       >
         Every future render on this model runs the candidate version, and the slug is pinned to it. Activation re-probes
         the exact version first and refuses if any enabled profile would stop being runnable.
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

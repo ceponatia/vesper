@@ -16,7 +16,7 @@ import {
 } from "@/components/characters/identity-pack-copy";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -203,21 +203,15 @@ export function IdentityTrialRunDetail({ runId, onBack }: { runId: string; onBac
       {tab === "review" ? <IdentityTrialReview runId={runId} /> : null}
       {tab === "summary" ? <IdentityTrialSummary runId={runId} onChanged={() => detail.reload({ silent: true })} /> : null}
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void remove()}
         title={`Delete ${run.label}?`}
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={() => void remove()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         The run, its grades, and every output image it rendered are removed. The grades cannot be recovered.
-      </Dialog>
+      </ConfirmDialog>
     </div>
   );
 }

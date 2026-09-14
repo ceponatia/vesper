@@ -13,8 +13,8 @@ import { imageLabApi, imageUrl } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
-import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -791,21 +791,15 @@ export function ImageLabExperimentDetail({
         </section>
       ) : null}
 
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={() => void remove()}
         title="Delete this experiment?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={() => void remove()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         The record, its verdict, and the image it rendered are removed. Fixtures it used are not touched.
-      </Dialog>
+      </ConfirmDialog>
 
       <ImageLightbox
         imageId={enlarged}

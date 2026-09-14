@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { charactersApi, itemsApi, locationsApi, socialCardsApi, type ApiResult, type Visibility } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import {
   CHARACTER_PUBLISH_CONFIRM,
@@ -85,25 +85,22 @@ export function PublishToggle({ kind, id, visibility, onChanged }: { kind: Share
       </Button>
       {!confirmable ? <p className="max-w-xs text-xs text-paper-500">{CLONE_DISCLOSURE[kind]}</p> : null}
       {confirmable ? (
-        <Dialog
+        <ConfirmDialog
           open={confirming}
           onClose={() => setConfirming(false)}
+          onConfirm={() => void apply()}
           title={CHARACTER_PUBLISH_CONFIRM.title}
-          footer={
-            <>
-              <Button onClick={() => setConfirming(false)}>{CHARACTER_PUBLISH_CONFIRM.cancelLabel}</Button>
-              <Button variant="primary" busy={busy} onClick={() => void apply()}>
-                {CHARACTER_PUBLISH_CONFIRM.confirmLabel}
-              </Button>
-            </>
-          }
+          cancelLabel={CHARACTER_PUBLISH_CONFIRM.cancelLabel}
+          confirmLabel={CHARACTER_PUBLISH_CONFIRM.confirmLabel}
+          tone="primary"
+          busy={busy}
         >
           <div className="flex flex-col gap-2">
             {CHARACTER_PUBLISH_CONFIRM.paragraphs.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}
           </div>
-        </Dialog>
+        </ConfirmDialog>
       ) : null}
     </div>
   );

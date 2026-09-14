@@ -7,7 +7,7 @@ import { decideDraftSeed } from "@/components/hooks/draft-seed";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -419,59 +419,41 @@ export function NarratorPromptsPage({ initialPromptId }: { initialPromptId?: str
         )}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={pendingNav !== null}
         onClose={() => setPendingNav(null)}
+        onConfirm={() => {
+          if (pendingNav !== null) runNav(pendingNav);
+        }}
         title="Unsaved changes"
-        footer={
-          <>
-            <Button onClick={() => setPendingNav(null)}>Keep editing</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                if (pendingNav !== null) runNav(pendingNav);
-              }}
-            >
-              Discard and continue
-            </Button>
-          </>
-        }
+        cancelLabel="Keep editing"
+        confirmLabel="Discard and continue"
       >
         {pendingNavCopy}
-      </Dialog>
+      </ConfirmDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={pendingInUseSave}
         onClose={() => setPendingInUseSave(false)}
+        onConfirm={() => void save(true)}
         title="This prompt is in use"
-        footer={
-          <>
-            <Button onClick={() => setPendingInUseSave(false)}>Cancel</Button>
-            <Button variant="primary" busy={busyAction === "save"} onClick={() => void save(true)}>
-              Save anyway
-            </Button>
-          </>
-        }
+        confirmLabel="Save anyway"
+        tone="primary"
+        busy={busyAction === "save"}
       >
         <p>{session === null ? "" : inUseSaveWarning(session.usageCount, session.currentRevision + 1)}</p>
         <p className="mt-2 text-paper-400">
           The revision they are on now is kept. It stays attached to the replies it already produced, so nothing
           written down about those replies stops making sense.
         </p>
-      </Dialog>
+      </ConfirmDialog>
 
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete}
         onClose={() => setPendingDelete(false)}
+        onConfirm={() => void confirmDelete()}
         title={session === null ? "Delete this prompt?" : `Delete “${session.loaded.name}”?`}
-        footer={
-          <>
-            <Button onClick={() => setPendingDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={busyAction === "delete"} onClick={() => void confirmDelete()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={busyAction === "delete"}
       >
         <p>
           It disappears from this library, and any conversation currently using it falls back to Vesper’s production
@@ -484,7 +466,7 @@ export function NarratorPromptsPage({ initialPromptId }: { initialPromptId?: str
         {session !== null && session.usageCount > 0 ? (
           <p className="mt-2 text-danger-300">{`In use by ${usageCountLabel(session.usageCount)} right now.`}</p>
         ) : null}
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

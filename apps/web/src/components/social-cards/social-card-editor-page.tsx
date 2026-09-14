@@ -12,7 +12,7 @@ import { PublishToggle } from "@/components/library/publish-toggle";
 import { SocialCardFields } from "@/components/personality/social-card-fields";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -207,21 +207,15 @@ export function SocialCardEditorPage({ cardId }: { cardId: string }) {
           </Button>
         }
       />
-      <Dialog
+      <ConfirmDialog
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
+        onConfirm={remove}
         title="Delete this card?"
-        footer={
-          <>
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={remove}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         Worlds and characters keep their own inline copies — deleting the library card will not touch them.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }

@@ -17,7 +17,7 @@ import {
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -220,22 +220,17 @@ export function ImageLoraLibrary({ models }: { models: ImageModel[] }) {
         ) : null}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
         title={`Remove ${pendingDelete?.label ?? "this LoRA"}?`}
-        footer={
-          <>
-            <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
-            <Button variant="danger" busy={busyId === pendingDelete?.id} onClick={() => void confirmDelete()}>
-              Remove
-            </Button>
-          </>
-        }
+        confirmLabel="Remove"
+        busy={busyId === pendingDelete?.id}
       >
         It disappears from every picker. Existing images are untouched; anything still naming it refuses its next render
         with a reason rather than quietly sending different weights.
-      </Dialog>
+      </ConfirmDialog>
     </section>
   );
 }

@@ -40,6 +40,7 @@ import { SceneStrip } from "@/components/characters/chat-scene-strip";
 import { ChatStateToolsModal } from "@/components/characters/chat-state-tools";
 import { ActionChips, StatusStrip } from "@/components/characters/chat-status";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { EntityImage } from "@/components/ui/entity-image";
@@ -1092,22 +1093,13 @@ export function ChatConversation({ chatId }: { chatId: string }) {
         </div>
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteOpen}
-        onClose={() => {
-          if (!deleting) setDeleteOpen(false);
-        }}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={() => void deleteChat()}
         title="Delete this chat?"
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button onClick={() => setDeleteOpen(false)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={() => void deleteChat()} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete chat"}
-            </Button>
-          </div>
-        }
+        confirmLabel="Delete chat"
+        busy={deleting}
       >
         <div className="flex flex-col gap-3 text-sm text-paper-400">
           <p>
@@ -1127,7 +1119,7 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           ) : null}
           <p className="text-xs text-paper-500">Generated scene images are kept — find them in the Gallery.</p>
         </div>
-      </Dialog>
+      </ConfirmDialog>
 
       {renameOpen ? (
         <RenameDialog

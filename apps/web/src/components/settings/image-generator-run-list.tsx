@@ -8,8 +8,8 @@ import {
 } from "@/contracts/images/image-generator-outputs";
 import { imageGeneratorApi, imageUrl, type ApiError } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
-import { Dialog } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
@@ -275,21 +275,15 @@ export function ImageGeneratorRunList({ runs, loading, error, onReload, onSelect
         </p>
       ) : null}
 
-      <Dialog
+      <ConfirmDialog
         open={pending !== null}
         onClose={() => setPending(null)}
+        onConfirm={() => void confirmDelete()}
         title={pending !== null && pending.ids.length > 1 ? `Delete ${String(pending.ids.length)} runs?` : "Delete this run?"}
-        footer={
-          <>
-            <Button onClick={() => setPending(null)}>Cancel</Button>
-            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         {pending !== null ? deleteConfirmCopy(pending) : null}
-      </Dialog>
+      </ConfirmDialog>
     </section>
   );
 }

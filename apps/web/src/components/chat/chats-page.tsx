@@ -8,6 +8,7 @@ import { NewChatDialog } from "@/components/chat/new-chat-dialog";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -306,22 +307,12 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
         />
       </Dialog>
 
-      <Dialog
+      <ConfirmDialog
         open={deleteTarget !== null}
-        onClose={() => {
-          if (!deleting) setDeleteTarget(null);
-        }}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => void confirmDelete()}
         title="Delete conversation?"
-        footer={
-          <>
-            <Button onClick={() => setDeleteTarget(null)} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button variant="danger" busy={deleting} onClick={() => void confirmDelete()}>
-              Delete
-            </Button>
-          </>
-        }
+        busy={deleting}
       >
         This permanently deletes your conversation with{" "}
         <span className="text-paper-100">{deleteTarget?.characterName ?? "this character"}</span> — the transcript and
@@ -331,7 +322,7 @@ export function ChatsPage({ newCharacterId }: { newCharacterId?: string }) {
           ? "Its world goes too — the people, places, and everything that has happened there. That cannot be undone. "
           : ""}
         Scene images stay in the Gallery.
-      </Dialog>
+      </ConfirmDialog>
     </PageContainer>
   );
 }
