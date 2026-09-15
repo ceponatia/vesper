@@ -11,8 +11,13 @@ import {
 import { calendarStartSchema } from "@/lib/clock";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
-import { isSimRoutedAuthority, loadChatScenario, readChatEngineAuthority, seedChatScenario } from "@/server/engine";
-import { editChatScenario } from "@/server/engine/chat-state/focused-edit";
+import {
+  editChatScenario,
+  isSimRoutedAuthority,
+  loadChatScenario,
+  readChatEngineAuthority,
+  seedChatScenario,
+} from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 
 type Params = { chatId: string };
