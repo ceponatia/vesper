@@ -20,9 +20,9 @@ import {
 
 import { imageRecordSchema } from "./images";
 import { arrayOf, createdRefSchema, idSchema, listOf, textOr } from "./shared";
+import { chatScenarioViewSchema } from "./chat-state-resources";
 import {
   type AuthoredEdgeRecord,
-  type ChatStateEdit,
   chatRelationshipSchema,
   chatRelationshipsSchema,
   chatStateSnapshotSchema,
@@ -34,6 +34,18 @@ import {
   simMoveTogetherResultSchema,
   simTravelResultSchema,
 } from "./chat-schemas";
+
+/**
+ * Temporary compatibility for the scene-profile picker while the conversation
+ * component is split further. This is deliberately NOT a general ChatStateEdit:
+ * it writes only the focused scenario resource and then refreshes the aggregate
+ * read model.
+ */
+async function editSceneModelCompat(chatId: string, patch: { sceneModel: string }) {
+  const edited = await apiPatch(chatScenarioViewSchema, `/api/chats/${chatId}/scenario`, patch);
+  if (!edited.ok) return edited;
+  return apiGet(chatStateSnapshotSchema, `/api/chats/${chatId}/state`);
+}
 
 export const chatsApi = {
   /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
@@ -77,20 +89,14 @@ export const chatsApi = {
    */
   remove: (chatId: string) => apiDelete(`/api/chats/${chatId}`),
   // --- Light chat state, keyed per participant ---
-  // `characterId` targets any roster member's state (the per-character sheet);
-  // absent ⇒ the primary.
+  // Aggregate GET remains the compatibility read model; writes are focused resources.
   state: (chatId: string, characterId?: string) =>
     apiGet(
       chatStateSnapshotSchema,
       `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`,
     ),
-  /** Edit chat state fields from the character sheet / scenario modal; returns the refreshed snapshot. */
-  editState: (chatId: string, patch: ChatStateEdit, characterId?: string) =>
-    apiPatch(
-      chatStateSnapshotSchema,
-      `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`,
-      patch,
-    ),
+  /** @deprecated Use chatStateResourcesApi.editScenario. Scene-model-only compatibility. */
+  editState: editSceneModelCompat,
   /**
    * Upload ONE player photo for this conversation: a data-URL in, the
    * `chat_upload` asset id back — sent with the next message as
