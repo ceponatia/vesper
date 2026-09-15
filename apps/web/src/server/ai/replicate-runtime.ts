@@ -201,7 +201,7 @@ export function previewImageModelRequest(input: PreviewImageModelRequest): Previ
         prompt: input.prompt,
         aspect: input.aspect,
         controlInput: input.controlInput,
-        versionId: input.model.probedVersionId,
+        versionId: input.model.probedVersionId ?? undefined,
       }),
       sentShape: imageModelSentShape(input),
     };
