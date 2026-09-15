@@ -233,6 +233,7 @@ export function FaceRepairSection() {
               kinds={FACE_REPAIR_SOURCE_KINDS}
               value={sourceImageId}
               onChange={(imageId) => setSourceImageId(imageId)}
+              allowAdminFiles={false}
             />
           ) : (
             <p className="text-sm text-paper-500">Select a character first.</p>

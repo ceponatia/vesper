@@ -12,7 +12,7 @@ import {
 import { db, images } from "../db";
 import { imageMeta } from "./asset-storage";
 import { readOwnedImageBytes } from "./owned-image-reads";
-import { uploadImageGeneratorReference } from "./upload";
+import { importAdminFilesImageReference, uploadImageGeneratorReference } from "./upload";
 
 const ready = await probeIntegrationDb("image generator upload.int.test", "images");
 
@@ -68,6 +68,40 @@ describe.skipIf(!ready)("Image Generator direct uploads", () => {
     await expect(readOwnedImageBytes(result.imageId, otherOwnerId)).resolves.toBeNull();
   });
 
+  it("imports Files bytes into the same owner-scoped image-id contract", async () => {
+    const dataUrl = await testPngDataUrl(320, 240);
+    const payload = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    const result = await importAdminFilesImageReference({
+      userId: ownerId,
+      buffer: Buffer.from(payload, "base64"),
+      fileName: "reference.png",
+      adminFilePath: "references/reference.png",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const [row] = await db().select().from(images).where(eq(images.id, result.imageId)).limit(1);
+    expect(row).toMatchObject({
+      ownerId,
+      kind: "generator_output",
+      status: "ready",
+      entityKind: null,
+      entityId: null,
+      chatId: null,
+      prompt: "Imported Files reference — reference.png",
+    });
+    expect(imageMeta(row?.meta)).toMatchObject({
+      source: "admin_files_import",
+      mime: "image/png",
+      originalName: "reference.png",
+      adminFilePath: "references/reference.png",
+      width: 320,
+      height: 240,
+    });
+    await expect(readOwnedImageBytes(result.imageId, ownerId)).resolves.toBeInstanceOf(Buffer);
+    await expect(readOwnedImageBytes(result.imageId, otherOwnerId)).resolves.toBeNull();
+  });
+
   it("refuses unsupported raster MIME data before creating an image row", async () => {
     const before = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId));
     const result = await uploadImageGeneratorReference({
@@ -76,6 +110,19 @@ describe.skipIf(!ready)("Image Generator direct uploads", () => {
       fileName: "unsafe.svg",
     });
     expect(result).toEqual({ ok: false, error: "uploaded file is not a valid supported image" });
+    const after = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId));
+    expect(after).toHaveLength(before.length);
+  });
+
+  it("refuses corrupt Files bytes before creating a reusable image", async () => {
+    const before = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId));
+    const result = await importAdminFilesImageReference({
+      userId: ownerId,
+      buffer: Buffer.from("not an image"),
+      fileName: "broken.png",
+      adminFilePath: "broken.png",
+    });
+    expect(result.ok).toBe(false);
     const after = await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId));
     expect(after).toHaveLength(before.length);
   });

@@ -17,6 +17,7 @@ const adminFileListSchema = z.object({
 export type AdminFileList = z.infer<typeof adminFileListSchema>;
 
 const adminFileEntryEnvelopeSchema = z.object({ entry: adminFileEntrySchema });
+const adminFileImageImportSchema = z.object({ imageId: z.string().min(1) });
 
 /** One path a partial-success batch operation could not act on. */
 export const adminFileFailureSchema = z.object({
@@ -129,7 +130,6 @@ function uploadAdminFile(options: UploadOptions): Promise<ApiResult<{ entry: Adm
  */
 const ADMIN_FILES_BATCH_LIMIT = 500;
 
-/** Splits `items` into consecutive chunks of at most `size` (the last one short if it does not divide evenly). */
 /**
  * Turns the remainder of a chunked batch into failure rows.
  *
@@ -169,6 +169,9 @@ export const adminFilesApi = {
       path,
       name,
     }),
+  /** Import one Files raster into the ordinary owner-scoped image registry. */
+  importImage: (path: string) =>
+    apiPost(adminFileImageImportSchema, "/api/admin/self/files/import-image", { path }),
   /**
    * Hard-deletes one or more entries in a single confirmed action. `recursive`
    * must be sent explicitly — never implicitly — when the selection contains
@@ -227,7 +230,7 @@ export const adminFilesApi = {
     return { ok: true, data: { files, folders, bytes, truncated } };
   },
   /**
-   * Moves every path into `destination` (`""` = the Files root) in one call;
+   * Moves every path into one destination (`""` = the Files root) in one call;
    * partial success is reported per path in `failures`. Chunked and combined
    * the same way as `deleteMany` (see there); `entries` concatenates across
    * batches along with `failures`.
@@ -254,8 +257,8 @@ export const adminFilesApi = {
       }
       moved += result.data.moved;
       attempted += batch.length;
-      entries.push(...result.data.entries);
       failures.push(...result.data.failures);
+      entries.push(...result.data.entries);
     }
     return { ok: true, data: { moved, entries, failures } };
   },

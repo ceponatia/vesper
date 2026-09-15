@@ -23,6 +23,8 @@ export type UploadAvatarResult = { ok: true; avatarImageId: string } | { ok: fal
  * (The route-level data-URL string cap is lower still, set independently.)
  */
 const MAX_DECODED_BYTES = 4 * 1024 * 1024;
+/** Files imports use the same source-byte ceiling as direct Generator uploads. */
+export const IMAGE_REFERENCE_MAX_SOURCE_BYTES = MAX_DECODED_BYTES;
 
 /**
  * Raster formats sharp can safely rasterize without invoking a vector renderer.
@@ -30,6 +32,7 @@ const MAX_DECODED_BYTES = 4 * 1024 * 1024;
  * decode so it never touches sharp.
  */
 const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/avif"]);
+const ALLOWED_SHARP_FORMATS = new Set(["png", "jpeg", "webp", "avif"]);
 
 /**
  * Decode guards passed to every sharp call on untrusted input: cap the pixel
@@ -113,6 +116,63 @@ export interface UploadImageGeneratorReferenceInput {
 
 export type UploadImageGeneratorReferenceResult = { ok: true; imageId: string } | { ok: false; error: string };
 
+interface StoreReusableImageReferenceInput {
+  userId: string;
+  buffer: Buffer;
+  fileName?: string;
+  source: "generator_upload" | "admin_files_import";
+  adminFilePath?: string;
+  sink?: DiagnosticSink;
+}
+
+/**
+ * The one storage path for reusable owner-admin reference rasters. It validates
+ * the decoded format, materializes EXIF orientation, preserves composition, and
+ * then hands the raster to ordinary image storage. Callers differ only in where
+ * the bytes came from; after this function they are the same `imageId` contract.
+ */
+async function storeReusableImageReference(
+  input: StoreReusableImageReferenceInput,
+): Promise<UploadImageGeneratorReferenceResult> {
+  if (input.buffer.byteLength > IMAGE_REFERENCE_MAX_SOURCE_BYTES) {
+    return { ok: false, error: "uploaded image is too large" };
+  }
+
+  let buffer: Buffer;
+  let format: string | undefined;
+  try {
+    const image = sharp(input.buffer, SHARP_DECODE_LIMITS);
+    const metadata = await image.metadata();
+    format = metadata.format;
+    if (format === undefined || !ALLOWED_SHARP_FORMATS.has(format)) {
+      return { ok: false, error: "uploaded file is not a valid supported image" };
+    }
+    buffer = await image.rotate().toBuffer();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    input.sink?.push(diag("warn", "images.reference_import.decode_failed", message.slice(0, 300)));
+    return { ok: false, error: "could not read that image — try a different file" };
+  }
+
+  const originalName = input.fileName?.trim().slice(0, 255);
+  const sourceLabel = input.source === "admin_files_import" ? "Imported Files reference" : "Uploaded Generator reference";
+  const asset = await createImageAsset({
+    ownerId: input.userId,
+    kind: "generator_output",
+    prompt: originalName ? `${sourceLabel} — ${originalName}` : sourceLabel,
+    meta: {
+      source: input.source,
+      mime: format === "jpeg" ? "image/jpeg" : `image/${format}`,
+      ...(originalName ? { originalName } : {}),
+      ...(input.adminFilePath ? { adminFilePath: input.adminFilePath } : {}),
+    },
+  });
+
+  const saved = await saveImageBuffer(asset.id, buffer, input.sink);
+  if (saved?.status !== "ready") return { ok: false, error: "failed to save the uploaded image" };
+  return { ok: true, imageId: asset.id };
+}
+
 /**
  * Store a local file for reuse as an Image Generator input.
  *
@@ -136,37 +196,39 @@ export async function uploadImageGeneratorReference(
     );
     return { ok: false, error: "uploaded file is not a valid supported image" };
   }
-  if (decoded.buffer.byteLength > MAX_DECODED_BYTES) {
-    return { ok: false, error: "uploaded image is too large" };
-  }
-
-  const originalName = input.fileName?.trim().slice(0, 255);
-  const asset = await createImageAsset({
-    ownerId: input.userId,
-    kind: "generator_output",
-    prompt: originalName ? `Uploaded Generator reference — ${originalName}` : "Uploaded Generator reference",
-    meta: {
-      source: "generator_upload",
-      mime: decoded.mime,
-      ...(originalName ? { originalName } : {}),
-    },
+  return storeReusableImageReference({
+    userId: input.userId,
+    buffer: decoded.buffer,
+    source: "generator_upload",
+    ...(input.fileName ? { fileName: input.fileName } : {}),
+    ...(input.sink ? { sink: input.sink } : {}),
   });
+}
 
-  let buffer: Buffer;
-  try {
-    buffer = await sharp(decoded.buffer, SHARP_DECODE_LIMITS).rotate().toBuffer();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await failImage(asset.id, message);
-    input.sink?.push(
-      diag("warn", "images.generator_upload.decode_failed", message.slice(0, 300), { context: { imageId: asset.id } }),
-    );
-    return { ok: false, error: "could not read that image — try a different file" };
-  }
+export interface ImportAdminFilesImageReferenceInput {
+  userId: string;
+  buffer: Buffer;
+  fileName: string;
+  adminFilePath: string;
+  sink?: DiagnosticSink;
+}
 
-  const saved = await saveImageBuffer(asset.id, buffer, input.sink);
-  if (saved?.status !== "ready") return { ok: false, error: "failed to save the uploaded image" };
-  return { ok: true, imageId: asset.id };
+/**
+ * Copy a Files raster into the reusable owner image registry. The original
+ * Files path is provenance only: later rename/delete cannot invalidate the
+ * returned image id or any Generator/Lab record that stores it.
+ */
+export async function importAdminFilesImageReference(
+  input: ImportAdminFilesImageReferenceInput,
+): Promise<UploadImageGeneratorReferenceResult> {
+  return storeReusableImageReference({
+    userId: input.userId,
+    buffer: input.buffer,
+    fileName: input.fileName,
+    source: "admin_files_import",
+    adminFilePath: input.adminFilePath,
+    ...(input.sink ? { sink: input.sink } : {}),
+  });
 }
 
 export interface UploadChatAttachmentInput {

@@ -1,13 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { ownedImagesApi, type ApiError, type OwnedImageSourceRecord } from "@/lib/client/api";
+import {
+  adminFilesApi,
+  ownedImagesApi,
+  type ApiError,
+  type OwnedImageSourceRecord,
+} from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/components/ui/toast";
 import { ImageChoiceGrid } from "./image-lab-pickers";
 
 /**
@@ -22,6 +28,10 @@ import { ImageChoiceGrid } from "./image-lab-pickers";
  * Clicking the chosen tile again clears it (the lab render picker's idiom):
  * every caller has a legitimate "none", and a picker with no way back to empty
  * would hide it.
+ *
+ * Owner-admin bench callers may also import a raster from Admin Files. That
+ * source is copied into the ordinary image registry first; this component still
+ * answers only with an image id, so no Files path leaks into a render request.
  */
 
 /**
@@ -65,6 +75,123 @@ export function ownedImageKindLabel(kind: string): string {
 
 /** One endpoint page — the server's own default, restated for the has-more read below. */
 const PAGE_SIZE = 60;
+const ADMIN_FILE_IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "avif"]);
+
+function isAdminFileImage(name: string): boolean {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 && ADMIN_FILE_IMAGE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+
+function parentAdminFilesPath(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash < 0 ? "" : path.slice(0, slash);
+}
+
+function AdminFilesImageSource({ onImported }: { onImported: (imageId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [path, setPath] = useState("");
+  const [importing, setImporting] = useState<string | null>(null);
+  const directory = useAsyncData(() => adminFilesApi.list(path), [path]);
+  const toast = useToast();
+
+  const importImage = async (filePath: string) => {
+    setImporting(filePath);
+    const result = await adminFilesApi.importImage(filePath);
+    setImporting(null);
+    if (!result.ok) {
+      toast.push({ title: "Files import failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    onImported(result.data.imageId);
+    setOpen(false);
+    toast.push({
+      title: "Reference imported",
+      description: "Vesper copied the Files image into the reusable image library.",
+      tone: "success",
+    });
+  };
+
+  if (!open) {
+    return (
+      <div>
+        <Button size="sm" variant="quiet" onClick={() => setOpen(true)}>
+          Choose from Files
+        </Button>
+      </div>
+    );
+  }
+
+  const entries = directory.data?.entries ?? [];
+  const folders = entries.filter((entry) => entry.kind === "folder");
+  const images = entries.filter((entry) => entry.kind === "file" && isAdminFileImage(entry.name));
+
+  return (
+    <div className="rounded-card border border-ink-700 bg-ink-950/40 p-3">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] tracking-wide text-paper-500 uppercase">Files</p>
+          <p className="truncate text-xs text-paper-300">{path === "" ? "/" : `/${path}`}</p>
+        </div>
+        {path !== "" ? (
+          <Button size="sm" variant="quiet" onClick={() => setPath(parentAdminFilesPath(path))}>
+            Up
+          </Button>
+        ) : null}
+        {path !== "" ? (
+          <Button size="sm" variant="quiet" onClick={() => setPath("")}>
+            Root
+          </Button>
+        ) : null}
+        <Button size="sm" variant="quiet" onClick={() => setOpen(false)}>
+          Close
+        </Button>
+      </div>
+
+      {directory.error ? <ErrorState error={directory.error} onRetry={() => directory.reload()} /> : null}
+      {directory.loading && !directory.data ? <Skeleton className="h-24 w-full" /> : null}
+
+      {!directory.loading && directory.data ? (
+        <div className="flex flex-col gap-3">
+          {folders.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {folders.map((entry) => (
+                <Button key={entry.path} size="sm" variant="quiet" onClick={() => setPath(entry.path)}>
+                  {entry.name}/
+                </Button>
+              ))}
+            </div>
+          ) : null}
+
+          {images.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              {images.map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  disabled={importing !== null}
+                  onClick={() => void importImage(entry.path)}
+                  className="overflow-hidden rounded-card border border-ink-700 bg-ink-900 text-left transition-colors hover:border-ink-500 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element -- authorized Files preview route, not a static asset */}
+                  <img
+                    src={adminFilesApi.previewUrl(entry.path)}
+                    alt=""
+                    className="aspect-square w-full bg-ink-950 object-cover"
+                  />
+                  <span className="block truncate px-2 py-1.5 text-xs text-paper-300">
+                    {importing === entry.path ? "Importing…" : entry.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : folders.length === 0 ? (
+            <p className="text-xs text-paper-500">No PNG, JPEG, WebP, or AVIF images in this folder.</p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export interface OwnedImagePickerProps {
   label: string;
@@ -87,6 +214,11 @@ export interface OwnedImagePickerProps {
   excluded?: { imageId: string; reason: string } | null;
   /** Copy for an empty listing, in the caller's own nouns. */
   emptyHint?: string;
+  /**
+   * Admin benches default to Files as an additional source. Set false for a
+   * constrained workflow such as Face Repair whose source kinds carry meaning.
+   */
+  allowAdminFiles?: boolean;
 }
 
 export function OwnedImagePicker({
@@ -97,6 +229,7 @@ export function OwnedImagePicker({
   onChange,
   excluded = null,
   emptyHint,
+  allowAdminFiles = true,
 }: OwnedImagePickerProps) {
   const offeredKinds = kinds ?? OWNED_IMAGE_PICKER_KINDS;
   const [kindFilter, setKindFilter] = useState("");
@@ -166,6 +299,14 @@ export function OwnedImagePicker({
     <div className="flex flex-col gap-2">
       <Field label={label} hint={hint}>
         <div className="flex flex-col gap-2">
+          {allowAdminFiles ? (
+            <AdminFilesImageSource
+              onImported={(imageId) => {
+                onChange(imageId);
+                first.reload({ silent: true });
+              }}
+            />
+          ) : null}
           {offeredKinds.length > 1 ? (
             <Select
               value={kindFilter}
