@@ -6,8 +6,8 @@
  */
 export { meSchema, meApi } from "./api/account";
 export type { Me } from "./api/account";
-export { adminFileEntrySchema, adminFilesApi } from "./api/admin-files";
-export type { AdminFileEntry, AdminFileList, AdminFileUploadProgress } from "./api/admin-files";
+export { adminFileEntrySchema, adminFileFailureSchema, adminFilesApi, chunkPaths } from "./api/admin-files";
+export type { AdminFileEntry, AdminFileFailure, AdminFileList, AdminFileUploadProgress } from "./api/admin-files";
 export {
   replyTakesSchema,
   chatMessageSchema,

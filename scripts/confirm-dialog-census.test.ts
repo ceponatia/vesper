@@ -48,6 +48,7 @@ const ALLOWED_DIALOG_IMPORTERS: readonly string[] = [
   "apps/web/src/components/chat/chats-page.tsx",
   "apps/web/src/components/chat/new-chat-dialog.tsx",
   "apps/web/src/components/library/entity-picker.tsx",
+  "apps/web/src/components/settings/files-page.tsx",
   "apps/web/src/components/settings/identity-trials-page.tsx",
   "apps/web/src/components/ui/confirm-dialog.tsx",
 ];
@@ -114,6 +115,7 @@ describe("raw Dialog importer census", () => {
 const MIXED_USE_CONFIRM_SITES: ReadonlyMap<string, number> = new Map([
   ["apps/web/src/components/chat/chat-conversation.tsx", 1],
   ["apps/web/src/components/chat/chats-page.tsx", 1],
+  ["apps/web/src/components/settings/files-page.tsx", 1],
 ]);
 
 /** `<ConfirmDialog` sites in `file`, comments blanked so prose never counts. */
@@ -138,6 +140,46 @@ describe("mixed-use allowlisted components", () => {
         `${file} must still route ${expected} confirmation(s) through ConfirmDialog`,
       ).toBe(expected);
     }
+  });
+});
+
+/**
+ * The native browser dialogs, gone and staying gone.
+ *
+ * `window.confirm` and `window.prompt` block the whole thread on a dialog
+ * Vesper cannot style, cannot trap focus in and cannot hand a `busy` guard —
+ * and, the reason #589 had to restructure the Files upload loop rather than
+ * swap the call, cannot be answered from a React handler at all: the loop
+ * `await`ed a confirm per colliding file, a shape no React dialog can satisfy.
+ * `files-page.tsx` held the repository's last four call sites (two confirms and
+ * two prompts) until that change; this is what keeps it the last, and it is the
+ * regression test for their removal — it fails against the code as it stood
+ * before.
+ *
+ * Two scoping decisions, both deliberate. It walks `apps/web/src/components`
+ * because every `"use client"` file in the repository lives there, so a
+ * `window.` reference anywhere else never reaches a browser. And it matches the
+ * `window.`-qualified form only: the bare globals `confirm(...)` and
+ * `prompt(...)` are routinely shadowed by a local handler of the same name —
+ * `MoveToDialog`'s own `confirm` in `files-page.tsx` is one — so matching those
+ * would report components that call no native dialog at all.
+ */
+const NATIVE_DIALOG_CALL = /\bwindow\s*\.\s*(confirm|prompt)\s*\(/g;
+
+/** `window.confirm(` / `window.prompt(` sites in `file`, comments blanked so prose never counts. */
+function nativeDialogCalls(file: string): string[] {
+  const source = stripComments(fs.readFileSync(path.join(process.cwd(), file), "utf8"));
+  return [...source.matchAll(NATIVE_DIALOG_CALL)].map((match) => `${file}: window.${match[1] ?? ""}`);
+}
+
+describe("native browser dialogs", () => {
+  it("appear in no component, so every confirmation and name prompt stays a Vesper dialog", () => {
+    const sites = sourceFilesUnder(COMPONENTS_DIR)
+      .map((absolute) => repoRelative(absolute))
+      .flatMap((file) => nativeDialogCalls(file))
+      .sort();
+
+    expect(sites, "these sites belong on ConfirmDialog, or on a Dialog form for text input").toEqual([]);
   });
 });
 

@@ -1,15 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "./button";
 import { imageAdvisoriesApi, imageUrl, type ClientRenderAdvisory, type ImageRecord } from "@/lib/client/api";
 import { renderAdvisoryCodeCopy, renderAdvisoryOfferCopy } from "@/components/images/advisory-copy";
 import { renderAdvisoryCodes, renderAdvisoryOffers, type RenderAdvisoryCode, type RenderAdvisoryOffer } from "@vesper/image-core";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
+import type { MediaPreviewKind } from "@/lib/media-preview";
 import { cx } from "./cx";
 import { useFocusTrap } from "./use-focus-trap";
-import { advisoryReviewKey, lightboxStateForView, updateLightboxImageStatus, type LightboxImageStatus, type LightboxView } from "./image-lightbox-state";
+import {
+  advisoryReviewKey,
+  appendRetryParam,
+  lightboxFailureMessage,
+  lightboxStateForView,
+  updateLightboxImageStatus,
+  type LightboxImageStatus,
+  type LightboxView,
+} from "./image-lightbox-state";
 import { useToast } from "./toast";
 
 export interface ImageLightboxProps {
@@ -47,6 +56,17 @@ export interface ImageLightboxProps {
    * freely; the same gates decide whether it renders.
    */
   meta?: ImageRecord["meta"] | null;
+  /**
+   * Explicit media source, preferred by `LightboxImage` over resolving
+   * `imageUrl(imageId)` — for a caller that already has a URL rather than an
+   * `images` table row (Admin Files' inline preview route, #595). `imageId`
+   * still gates the admin-only panels above; pass `imageId: null` alongside
+   * `src` when there isn't one, and pass `open` explicitly, since `visible`
+   * can no longer fall back to `Boolean(imageId)`.
+   */
+  src?: string;
+  /** Which element plays `src`/`imageId`: `<img>` (default), `<video controls>`, or `<audio controls>`. */
+  media?: MediaPreviewKind;
 }
 
 /**
@@ -58,7 +78,7 @@ export interface ImageLightboxProps {
  * provenance — the resolved camera, the staging, and each reference view the
  * render sent (dev troubleshooting; docs/ui/conventions.md §Image lightbox).
  */
-export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, prompt, meta, comparisonImageId, controls, emptyMessage, onPrevious, onNext }: ImageLightboxProps) {
+export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, prompt, meta, comparisonImageId, controls, emptyMessage, onPrevious, onNext, src, media }: ImageLightboxProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const isAdmin = useIsAdmin();
   const toast = useToast();
@@ -151,7 +171,7 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
       ) : null}
       <div className="flex min-h-0 flex-1 items-stretch justify-center gap-4 overflow-auto px-3 pb-3 md:px-6" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
         <div className={cx("flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2", comparisonImageId && showComparison ? "hidden md:flex" : "")} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-          <LightboxImage key={JSON.stringify([viewKey, imageId, comparisonImageId])} imageId={imageId} alt={alt} emptyMessage={emptyMessage}
+          <LightboxImage key={JSON.stringify([viewKey, imageId, comparisonImageId])} imageId={imageId} src={src} media={media} alt={alt} emptyMessage={emptyMessage}
             onStatusChange={(status) => setViewState((previous) => updateLightboxImageStatus(previous, view, status))} />
           {caption ? <p className="shrink-0 text-center text-sm text-paper-300">{caption}</p> : null}
           {knownAdvisories.length > 0 ? (
@@ -247,22 +267,96 @@ export function ImageLightbox({ imageId, open, viewKey, alt, onClose, caption, p
   );
 }
 
-function LightboxImage({ imageId, alt, emptyMessage, onStatusChange }: { imageId: string | null; alt: string; emptyMessage?: string; onStatusChange?: (status: LightboxImageStatus) => void }) {
-  const imageRef = useRef<HTMLImageElement>(null);
+function LightboxImage({
+  imageId,
+  src,
+  media = "image",
+  alt,
+  emptyMessage,
+  onStatusChange,
+}: {
+  imageId: string | null;
+  src?: string;
+  media?: MediaPreviewKind;
+  alt: string;
+  emptyMessage?: string;
+  onStatusChange?: (status: LightboxImageStatus) => void;
+}) {
+  const elementRef = useRef<HTMLImageElement | HTMLVideoElement | HTMLAudioElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [retry, setRetry] = useState(0);
-  if (!imageId) return <p className="p-6 text-center text-paper-400">{emptyMessage ?? "No image is available."}</p>;
-  if (failed) return <div className="flex flex-col items-center gap-2 p-4" role="status"><p>This image could not be loaded.</p><Button size="sm" onClick={() => { setFailed(false); setLoaded(false); setRetry((value) => value + 1); onStatusChange?.("loading"); }}>Retry image</Button></div>;
-  return <>
-    {!loaded ? <p role="status" className="text-sm text-paper-400">Loading image…</p> : null}
-    {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; review preserves the entire image */}
-    <img key={retry} ref={imageRef} src={`${imageUrl(imageId)}${retry ? `?retry=${String(retry)}` : ""}`} alt={alt}
-      onLoad={(event) => { if (imageRef.current !== event.currentTarget || !event.currentTarget.isConnected) return; setLoaded(true); onStatusChange?.("loaded"); }}
-      onError={(event) => { if (imageRef.current !== event.currentTarget || !event.currentTarget.isConnected) return; setFailed(true); setLoaded(false); onStatusChange?.("failed"); }}
-      className="min-h-0 max-h-full max-w-full rounded-card border border-ink-600 object-contain shadow-lift" />
-  </>;
-
+  const resolvedSrc = src ?? (imageId ? imageUrl(imageId) : null);
+  if (resolvedSrc === null) return <p className="p-6 text-center text-paper-400">{emptyMessage ?? "No image is available."}</p>;
+  if (failed) {
+    return (
+      <div className="flex flex-col items-center gap-2 p-4" role="status">
+        <p>{lightboxFailureMessage(media)}</p>
+        <Button size="sm" onClick={() => { setFailed(false); setLoaded(false); setRetry((value) => value + 1); onStatusChange?.("loading"); }}>
+          Retry {media}
+        </Button>
+      </div>
+    );
+  }
+  const playableSrc = appendRetryParam(resolvedSrc, retry);
+  const attachRef = (element: HTMLImageElement | HTMLVideoElement | HTMLAudioElement | null) => {
+    elementRef.current = element;
+  };
+  const handleLoaded = (event: SyntheticEvent<HTMLImageElement | HTMLVideoElement | HTMLAudioElement>) => {
+    if (elementRef.current !== event.currentTarget || !event.currentTarget.isConnected) return;
+    setLoaded(true);
+    onStatusChange?.("loaded");
+  };
+  const handleError = (event: SyntheticEvent<HTMLImageElement | HTMLVideoElement | HTMLAudioElement>) => {
+    if (elementRef.current !== event.currentTarget || !event.currentTarget.isConnected) return;
+    setFailed(true);
+    setLoaded(false);
+    onStatusChange?.("failed");
+  };
+  return (
+    <>
+      {!loaded ? <p role="status" className="text-sm text-paper-400">Loading {media}…</p> : null}
+      {media === "video" ? (
+        <video
+          key={retry}
+          ref={attachRef}
+          src={playableSrc}
+          controls
+          aria-label={alt}
+          onLoadedData={handleLoaded}
+          onError={handleError}
+          className="min-h-0 max-h-full max-w-full rounded-card border border-ink-600 object-contain shadow-lift"
+        />
+      ) : media === "audio" ? (
+        <audio
+          key={retry}
+          ref={attachRef}
+          src={playableSrc}
+          controls
+          aria-label={alt}
+          // Metadata, not `loadeddata`: an audio element under `preload="metadata"`
+          // — Firefox's default and common in Safari — stops at HAVE_METADATA
+          // until playback starts, so `loadeddata` never fired and the loading
+          // line sat on top of a perfectly usable player. Video keeps
+          // `loadeddata`, where the first decoded frame is the real readiness.
+          onLoadedMetadata={handleLoaded}
+          onError={handleError}
+          className="w-full max-w-md"
+        />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- local asset route; review preserves the entire image
+        <img
+          key={retry}
+          ref={attachRef}
+          src={playableSrc}
+          alt={alt}
+          onLoad={handleLoaded}
+          onError={handleError}
+          className="min-h-0 max-h-full max-w-full rounded-card border border-ink-600 object-contain shadow-lift"
+        />
+      )}
+    </>
+  );
 }
 
 /**

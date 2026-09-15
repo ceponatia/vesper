@@ -17,9 +17,14 @@ Every route is beneath `/api/admin/self` and uses `withOwnerAdmin`, so a signed-
 | Route | Method | Purpose |
 | --- | --- | --- |
 | `/api/admin/self/files?path=...` | `GET` | List one folder. |
-| `/api/admin/self/files` | `POST` | Create a folder, rename an entry, or delete an entry. |
+| `/api/admin/self/files` | `POST` | Create a folder, rename an entry, delete one entry or a batch, move a batch into another folder, or count what a delete would remove. |
 | `/api/admin/self/files/upload?path=...&name=...` | `PUT` | Stream raw file bytes into the current folder. `overwrite=1` explicitly permits file replacement. |
 | `/api/admin/self/files/download?path=...` | `GET` | Download one file as inert `application/octet-stream` content. |
+| `/api/admin/self/files/preview?path=...` | `GET` | Serve one previewable file inline with its real content type, supporting range requests. |
+
+The batch actions — `delete_many`, `move` and `delete_preview` — take up to 500 paths and are partial-success operations. A refusal for one entry becomes a row in `failures` carrying that entry's path and error code, and the request still answers `200` even when every entry failed, so `deleted` and `moved` report what actually happened rather than what was asked for. One fact about the request as a whole still fails it outright: a `move` whose destination is missing or is not a folder is answered once, not repeated per path. A duplicated path is removed by its first occurrence and reported `not_found` by the rest.
+
+`delete_preview` sums the files, folders and bytes a recursive delete would remove, so a confirmation can name them before anything is unlinked. It counts a duplicated or overlapping selection once and spends a single 10,000-entry budget across the whole selection, reporting `truncated` when it stops there. It is a count and not a safety check: a path it cannot walk is skipped rather than failing the call, and the refusals below are enforced by the delete itself, so a tree that previews a total can still be refused whole.
 
 The upload route intentionally does **not** call the buffered JSON `readBody()` helper and does not define a Vesper-level file-size cap. Browser, Fly proxy, filesystem, available-volume-space, and other infrastructure limits still apply. A full volume returns a storage error rather than changing the global API body limit.
 
@@ -29,9 +34,11 @@ Compressed request bodies are refused because this utility promises to preserve 
 
 The managed tree is rooted at `DATA_ROOT/admin-files`. Relative paths are validated segment-by-segment; absolute paths, `..`, slash/backslash-bearing names, NUL/control characters, and symbolic-link traversal are rejected server-side. The API never executes uploaded content.
 
-Downloads always use `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and private/no-store caching. The server opens the requested file before deriving `Content-Length` and streams from that same descriptor, so a concurrent replacement cannot make headers describe one file while response bytes come from another. Uploading HTML, JavaScript, an executable, or any other arbitrary file therefore does not turn it into an application route or executable server artifact.
+The download route always uses `Content-Type: application/octet-stream`, `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff`, and private/no-store caching, and it is the only door for every file the preview route refuses. The server opens the requested file before deriving `Content-Length` and streams from that same descriptor, so a concurrent replacement cannot make headers describe one file while response bytes come from another. Uploading HTML, JavaScript, an executable, or any other arbitrary file therefore does not turn it into an application route or executable server artifact.
 
-Deleting a non-empty folder is refused with `folder_not_empty`; the owner must delete its contents first. Rename never silently overwrites an existing entry.
+The preview route is the single exception, and `nosniff` is what keeps the guarantee intact rather than merely narrowing it. It serves a real content type only for a strict extension allowlist — `png`, `jpg`, `jpeg`, `webp`, `gif` and `avif` as images; `mp4`, `webm` and `ogv` as video; `mp3`, `m4a`, `aac`, `ogg`, `oga`, `wav` and `flac` as audio — decided from the final extension of the name the server resolved, never sniffed from the bytes and never taken from a client-supplied type. Anything else is `415`. Because every response carries `nosniff`, a file named `x.png` whose bytes are HTML is served as `image/png` and the browser refuses to reinterpret it as a document: it renders as a broken image, and no markup or script in it reaches Vesper's origin. `svg` is deliberately absent from the allowlist and stays absent, because an SVG is a document that can carry script, and navigating to one served as `image/svg+xml` would execute it in that origin. The route opens the file through the same descriptor discipline as the download route, answers a single `bytes=` range with `206` and an unsatisfiable one with `416`, and advertises `Accept-Ranges: bytes` so a video can be sought. Playback is whatever the viewer's browser decodes natively; Vesper transcodes nothing, so a file whose codec the browser cannot decode reports that rather than showing an empty frame.
+
+Deleting a non-empty folder is refused with `folder_not_empty` unless the request explicitly asks for recursion (owner ruling 2026-09-14); recursion is never implicit in a request that did not ask for it. A recursive delete validates the entire subtree before it unlinks anything, and refuses one containing a symbolic link or an unsupported filesystem entry, so such a folder is left in place rather than emptied up to the entry the server will not manage. Rename and move never silently overwrite an existing entry, a folder cannot move into itself or into one of its own subfolders, and an entry already in the requested destination is refused with `already_in_destination`. A path routed through a component that is a file is refused with `not_directory`.
 
 ## UI behavior
 
@@ -40,12 +47,20 @@ The account menu exposes **Files** only to admins. The page supports:
 - folder breadcrumbs and parent navigation
 - creating folders
 - selecting one or more files with the browser/OS file picker on desktop or phone
-- per-file upload progress
-- explicit replace confirmation when a same-name file exists
-- download
+- dragging files from the desktop onto the listing, and whole folders, whose tree is recreated under the
+  current folder and whose contents are uploaded
+- per-file upload progress across the batch
+- a replace confirmation offering replace, skip, or replace every later collision in the same upload
+- multi-select with an indeterminate select-all, and a toolbar that deletes or moves the selection at once
+- moving a selection through a keyboard-operable destination picker, to the parent folder, or by dragging it
+  onto a folder row, a breadcrumb, or the parent target
+- opening a previewable file in the shared image lightbox, with video and audio playing in place
+- download, on every row and regardless of whether the file can be previewed
 - rename
-- confirmed delete
+- confirmed delete, counted before it runs
+
+Deleting asks the server first what the selection contains, so the confirmation names how many folders and files will go before the owner confirms it, and a selection larger than the preview's ten-thousand-entry budget is described as a floor rather than a count. A single row's delete travels the same batch path as a multi-row one, so the two cannot drift apart. Every confirmation and every name prompt is a Vesper dialog; the page uses no native browser dialog.
 
 Directory reads use the shared generation-guarded client loader, so a slower response for a folder the owner has already left cannot replace the listing for the current breadcrumbs. A multi-file batch also reloads the directory after stopping on a later-file failure, preserving visibility of files that were successfully published earlier in the batch.
 
-There are intentionally no public links, previews, content scanning, quotas, per-file permissions, database records, retention jobs, or normal-user surfaces. If Vesper later needs a product-level asset system, it should be designed separately rather than extending this temporary utility by accident.
+Preview is inline viewing for the owner-admin and nothing more: there are intentionally no public links, thumbnails in the listing, transcoding, poster frames, content scanning, quotas, per-file permissions, database records, retention jobs, or normal-user surfaces. If Vesper later needs a product-level asset system, it should be designed separately rather than extending this temporary utility by accident.

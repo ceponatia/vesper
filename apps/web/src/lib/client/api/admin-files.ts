@@ -17,7 +17,32 @@ const adminFileListSchema = z.object({
 export type AdminFileList = z.infer<typeof adminFileListSchema>;
 
 const adminFileEntryEnvelopeSchema = z.object({ entry: adminFileEntrySchema });
-const adminFileDeleteSchema = z.object({ ok: z.boolean() });
+
+/** One path a partial-success batch operation could not act on. */
+export const adminFileFailureSchema = z.object({
+  path: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+export type AdminFileFailure = z.infer<typeof adminFileFailureSchema>;
+
+const adminFileDeleteManySchema = z.object({
+  deleted: z.number().catch(0),
+  failures: z.array(adminFileFailureSchema).catch([]),
+});
+
+const adminFileDeletePreviewSchema = z.object({
+  files: z.number().catch(0),
+  folders: z.number().catch(0),
+  bytes: z.number().catch(0),
+  truncated: z.boolean().catch(false),
+});
+
+const adminFileMoveSchema = z.object({
+  moved: z.number().catch(0),
+  entries: z.array(adminFileEntrySchema).catch([]),
+  failures: z.array(adminFileFailureSchema).catch([]),
+});
 
 export interface AdminFileUploadProgress {
   loaded: number;
@@ -90,6 +115,46 @@ function uploadAdminFile(options: UploadOptions): Promise<ApiResult<{ entry: Adm
   });
 }
 
+/**
+ * The server's own per-request ceiling — `pathsSchema` in
+ * apps/web/src/app/api/admin/self/files/route.ts is
+ * `z.array(pathSchema).min(1).max(500)`, since every path in a batch request
+ * is walked while the whole request holds the mutation lock.
+ *
+ * Directory listing itself is unpaginated, so a folder with 501+ entries lets
+ * select-all build a selection past this ceiling — every bulk call then
+ * refused the whole request with `invalid_body`. Chunking the requests below
+ * (never capping the selection, which would silently act on only part of
+ * what the owner picked) is the fix.
+ */
+const ADMIN_FILES_BATCH_LIMIT = 500;
+
+/** Splits `items` into consecutive chunks of at most `size` (the last one short if it does not divide evenly). */
+/**
+ * Turns the remainder of a chunked batch into failure rows.
+ *
+ * A chunk that fails at the transport layer cannot un-delete the chunks before
+ * it. Returning the bare error there reported `deleted: 0` for a selection that
+ * was already five hundred smaller — the same disagreement between the count
+ * and the filesystem that the server goes to lengths to avoid. The paths that
+ * did not happen are reported as what they are, and the count stays truthful.
+ */
+function unattemptedFailures(
+  paths: readonly string[],
+  from: number,
+  error: { code: string; message: string },
+): AdminFileFailure[] {
+  return paths.slice(from).map((path) => ({ path, code: error.code, message: error.message }));
+}
+
+export function chunkPaths<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
 export const adminFilesApi = {
   list: (path: string) => apiGet(adminFileListSchema, withQuery("/api/admin/self/files", { path })),
   createFolder: (path: string, name: string) =>
@@ -104,11 +169,98 @@ export const adminFilesApi = {
       path,
       name,
     }),
-  delete: (path: string) =>
-    apiPost(adminFileDeleteSchema, "/api/admin/self/files", {
-      action: "delete",
-      path,
-    }),
+  /**
+   * Hard-deletes one or more entries in a single confirmed action. `recursive`
+   * must be sent explicitly — never implicitly — when the selection contains
+   * a folder; the server's non-empty-folder refusal only lifts then. Route a
+   * single-row delete through this with one path too, so that door cannot
+   * drift from the multi-row one (the `image-generator-run-list.tsx` convention).
+   *
+   * Sent as successive batches of at most `ADMIN_FILES_BATCH_LIMIT` paths
+   * when the selection is larger than that — see `chunkPaths` above.
+   * `deleted` sums across batches and `failures` concatenates, so one
+   * oversized selection still reads as the single action the owner took.
+   */
+  deleteMany: async (paths: string[], recursive?: boolean): Promise<ApiResult<{ deleted: number; failures: AdminFileFailure[] }>> => {
+    let deleted = 0;
+    let attempted = 0;
+    const failures: AdminFileFailure[] = [];
+    for (const batch of chunkPaths(paths, ADMIN_FILES_BATCH_LIMIT)) {
+      const result = await apiPost(adminFileDeleteManySchema, "/api/admin/self/files", {
+        action: "delete_many",
+        paths: batch,
+        recursive,
+      });
+      if (!result.ok) {
+        return { ok: true, data: { deleted, failures: [...failures, ...unattemptedFailures(paths, attempted, result.error)] } };
+      }
+      deleted += result.data.deleted;
+      attempted += batch.length;
+      failures.push(...result.data.failures);
+    }
+    return { ok: true, data: { deleted, failures } };
+  },
+  /**
+   * Counts what a `deleteMany` of these paths would remove, for the
+   * confirmation's title. Chunked and combined the same way as `deleteMany`
+   * (see there): the counts sum across batches, and `truncated` is true if
+   * any one batch's was.
+   */
+  deletePreview: async (
+    paths: string[],
+  ): Promise<ApiResult<{ files: number; folders: number; bytes: number; truncated: boolean }>> => {
+    let files = 0;
+    let folders = 0;
+    let bytes = 0;
+    let truncated = false;
+    for (const batch of chunkPaths(paths, ADMIN_FILES_BATCH_LIMIT)) {
+      const result = await apiPost(adminFileDeletePreviewSchema, "/api/admin/self/files", {
+        action: "delete_preview",
+        paths: batch,
+      });
+      if (!result.ok) return result;
+      files += result.data.files;
+      folders += result.data.folders;
+      bytes += result.data.bytes;
+      truncated = truncated || result.data.truncated;
+    }
+    return { ok: true, data: { files, folders, bytes, truncated } };
+  },
+  /**
+   * Moves every path into `destination` (`""` = the Files root) in one call;
+   * partial success is reported per path in `failures`. Chunked and combined
+   * the same way as `deleteMany` (see there); `entries` concatenates across
+   * batches along with `failures`.
+   */
+  move: async (
+    paths: string[],
+    destination: string,
+  ): Promise<ApiResult<{ moved: number; entries: AdminFileEntry[]; failures: AdminFileFailure[] }>> => {
+    let moved = 0;
+    let attempted = 0;
+    const entries: AdminFileEntry[] = [];
+    const failures: AdminFileFailure[] = [];
+    for (const batch of chunkPaths(paths, ADMIN_FILES_BATCH_LIMIT)) {
+      const result = await apiPost(adminFileMoveSchema, "/api/admin/self/files", {
+        action: "move",
+        paths: batch,
+        destination,
+      });
+      if (!result.ok) {
+        return {
+          ok: true,
+          data: { moved, entries, failures: [...failures, ...unattemptedFailures(paths, attempted, result.error)] },
+        };
+      }
+      moved += result.data.moved;
+      attempted += batch.length;
+      entries.push(...result.data.entries);
+      failures.push(...result.data.failures);
+    }
+    return { ok: true, data: { moved, entries, failures } };
+  },
   upload: uploadAdminFile,
   downloadUrl: (path: string) => withQuery("/api/admin/self/files/download", { path }),
+  /** Same `path` semantics as `downloadUrl`, for the inline preview route (#595) — never a `blob:`/`data:` URL, which the app's CSP blocks. */
+  previewUrl: (path: string) => withQuery("/api/admin/self/files/preview", { path }),
 };
