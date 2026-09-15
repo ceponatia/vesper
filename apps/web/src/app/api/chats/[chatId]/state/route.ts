@@ -178,11 +178,20 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     }
 
     const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+    const patch = { ...body.value };
 
     if (
       target.characterId === owned.participant.characterId &&
       isSimRoutedAuthority(await readChatEngineAuthority(chatId))
     ) {
+      if (patch.calendarStart !== undefined) {
+        return jsonError(
+          "sim_calendar_managed_by_world",
+          "this conversation's calendar is owned by the successor world; change the world calendar rather than the legacy chat scenario anchor",
+          409,
+        );
+      }
+
       const stored = (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile);
       const current = await resolveSeededOutfit(stored, user.id, profile);
       const [simMeters, simRelationship] = await Promise.all([
@@ -193,9 +202,9 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       const effectiveRegard = simRelationship?.regard ?? current.regard;
       const effectiveFamiliarity = simRelationship?.familiarity ?? current.familiarity;
       const worldOwnedChanged =
-        (body.value.regard !== undefined && body.value.regard !== effectiveRegard) ||
-        (body.value.familiarity !== undefined && body.value.familiarity !== effectiveFamiliarity) ||
-        (body.value.meters !== undefined && !sameRecord(body.value.meters, effectiveMeters));
+        (patch.regard !== undefined && patch.regard !== effectiveRegard) ||
+        (patch.familiarity !== undefined && patch.familiarity !== effectiveFamiliarity) ||
+        (patch.meters !== undefined && !sameRecord(patch.meters, effectiveMeters));
       if (worldOwnedChanged) {
         return jsonError(
           "sim_participant_state_managed_by_world",
@@ -203,13 +212,18 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
           409,
         );
       }
+      // Unchanged world-owned values are compatibility noise from whole-form
+      // submitters. Strip them rather than persisting shadow state the read path masks.
+      delete patch.regard;
+      delete patch.familiarity;
+      delete patch.meters;
 
       const wardrobeChanged =
-        (body.value.garmentOperations?.length ?? 0) > 0 ||
-        (body.value.wornItemIds !== undefined && !sameStrings(body.value.wornItemIds, current.wornItemIds)) ||
-        (body.value.outfitPresetId !== undefined && body.value.outfitPresetId !== current.outfitPresetId) ||
-        (body.value.outfit !== undefined && body.value.outfit !== current.outfit) ||
-        (body.value.outfitExposed !== undefined && body.value.outfitExposed !== current.outfitExposed);
+        (patch.garmentOperations?.length ?? 0) > 0 ||
+        (patch.wornItemIds !== undefined && !sameStrings(patch.wornItemIds, current.wornItemIds)) ||
+        (patch.outfitPresetId !== undefined && patch.outfitPresetId !== current.outfitPresetId) ||
+        (patch.outfit !== undefined && patch.outfit !== current.outfit) ||
+        (patch.outfitExposed !== undefined && patch.outfitExposed !== current.outfitExposed);
       if (wardrobeChanged) {
         return jsonError(
           "sim_wardrobe_managed_by_world",
@@ -217,6 +231,11 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
           409,
         );
       }
+      delete patch.wornItemIds;
+      delete patch.outfitPresetId;
+      delete patch.outfit;
+      delete patch.outfitExposed;
+      delete patch.garmentOperations;
     }
 
     const editSink = new DiagnosticCollector();
@@ -225,7 +244,7 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       characterId: target.characterId,
       ownerId: user.id,
       profile,
-      patch: body.value,
+      patch,
       sink: editSink,
     });
     const wardrobe = await resolveChatWardrobe(
