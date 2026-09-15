@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdminFileEntry } from "@/lib/client/api";
-import { chunkPaths } from "@/lib/client/api/admin-files";
+import { chunkPaths } from "@/lib/client/api";
 import {
   ADMIN_FILES_DRAG_TYPE,
   breadcrumbSegments,
@@ -301,5 +301,17 @@ describe("chunkPaths", () => {
     expect(chunks[1]).toHaveLength(1);
     // Nothing lost or reordered across the split.
     expect(chunks.flat()).toEqual(paths(501));
+  });
+
+  // A chunk that fails cannot un-delete the chunks before it. The client keeps
+  // the count of what already happened and reports the rest as failures, rather
+  // than returning a bare error that reads as "nothing was deleted".
+  it("splits a selection so the remainder can be reported when one chunk fails", () => {
+    const selection = paths(1200);
+    const chunks = chunkPaths(selection, 500);
+    expect(chunks).toHaveLength(3);
+    expect(chunks.map((chunk) => chunk.length)).toEqual([500, 500, 200]);
+    // The remainder after a failed second chunk is everything from index 500 on.
+    expect(selection.slice(500)).toHaveLength(700);
   });
 });

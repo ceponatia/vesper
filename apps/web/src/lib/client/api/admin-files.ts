@@ -130,6 +130,23 @@ function uploadAdminFile(options: UploadOptions): Promise<ApiResult<{ entry: Adm
 const ADMIN_FILES_BATCH_LIMIT = 500;
 
 /** Splits `items` into consecutive chunks of at most `size` (the last one short if it does not divide evenly). */
+/**
+ * Turns the remainder of a chunked batch into failure rows.
+ *
+ * A chunk that fails at the transport layer cannot un-delete the chunks before
+ * it. Returning the bare error there reported `deleted: 0` for a selection that
+ * was already five hundred smaller — the same disagreement between the count
+ * and the filesystem that the server goes to lengths to avoid. The paths that
+ * did not happen are reported as what they are, and the count stays truthful.
+ */
+function unattemptedFailures(
+  paths: readonly string[],
+  from: number,
+  error: { code: string; message: string },
+): AdminFileFailure[] {
+  return paths.slice(from).map((path) => ({ path, code: error.code, message: error.message }));
+}
+
 export function chunkPaths<T>(items: readonly T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
@@ -166,6 +183,7 @@ export const adminFilesApi = {
    */
   deleteMany: async (paths: string[], recursive?: boolean): Promise<ApiResult<{ deleted: number; failures: AdminFileFailure[] }>> => {
     let deleted = 0;
+    let attempted = 0;
     const failures: AdminFileFailure[] = [];
     for (const batch of chunkPaths(paths, ADMIN_FILES_BATCH_LIMIT)) {
       const result = await apiPost(adminFileDeleteManySchema, "/api/admin/self/files", {
@@ -173,8 +191,11 @@ export const adminFilesApi = {
         paths: batch,
         recursive,
       });
-      if (!result.ok) return result;
+      if (!result.ok) {
+        return { ok: true, data: { deleted, failures: [...failures, ...unattemptedFailures(paths, attempted, result.error)] } };
+      }
       deleted += result.data.deleted;
+      attempted += batch.length;
       failures.push(...result.data.failures);
     }
     return { ok: true, data: { deleted, failures } };
@@ -216,6 +237,7 @@ export const adminFilesApi = {
     destination: string,
   ): Promise<ApiResult<{ moved: number; entries: AdminFileEntry[]; failures: AdminFileFailure[] }>> => {
     let moved = 0;
+    let attempted = 0;
     const entries: AdminFileEntry[] = [];
     const failures: AdminFileFailure[] = [];
     for (const batch of chunkPaths(paths, ADMIN_FILES_BATCH_LIMIT)) {
@@ -224,8 +246,14 @@ export const adminFilesApi = {
         paths: batch,
         destination,
       });
-      if (!result.ok) return result;
+      if (!result.ok) {
+        return {
+          ok: true,
+          data: { moved, entries, failures: [...failures, ...unattemptedFailures(paths, attempted, result.error)] },
+        };
+      }
       moved += result.data.moved;
+      attempted += batch.length;
       entries.push(...result.data.entries);
       failures.push(...result.data.failures);
     }
