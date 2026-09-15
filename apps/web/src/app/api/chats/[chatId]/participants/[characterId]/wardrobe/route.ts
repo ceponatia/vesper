@@ -30,13 +30,7 @@ function targetMember(owned: OwnedChat, characterId: string) {
 }
 
 function profileFor(member: NonNullable<ReturnType<typeof targetMember>>) {
-  return parseOr(
-    characterProfileSchema,
-    member.character.profile ?? {},
-    emptyCharacterProfile(),
-    undefined,
-    "characters.profile",
-  );
+  return parseOr(characterProfileSchema, member.character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
 }
 
 async function readView(
@@ -52,15 +46,11 @@ async function readView(
   const stored = await loadChatState(chatId, characterId);
   const state = await resolveSeededOutfit(stored ?? seedChatState(profile), ownerId, profile);
   const scenario = (await loadChatScenario(chatId)) ?? seedChatScenario(profile);
-  return participantWardrobeView({
-    characterId,
-    state,
-    scenario,
-    ownerId,
-    profile,
-    diagnostics,
-  });
+  return participantWardrobeView({ characterId, state, scenario, ownerId, profile, diagnostics });
 }
+
+const sameStrings = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
 
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
@@ -81,6 +71,17 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     if (busy) return busy;
     const body = await readBody(req, patchSchema);
     if (!body.ok) return body.response;
+
+    const current = await readView(chatId, owned, user.id, characterId);
+    if (!current) return jsonError("not_found", "that character is not in this conversation", 404);
+    const changed =
+      (body.value.garmentOperations?.length ?? 0) > 0 ||
+      (body.value.wornItemIds !== undefined && !sameStrings(body.value.wornItemIds, current.wornItemIds)) ||
+      (body.value.outfitPresetId !== undefined && body.value.outfitPresetId !== current.outfitPresetId) ||
+      (body.value.outfit !== undefined && body.value.outfit !== current.outfit) ||
+      (body.value.outfitExposed !== undefined && body.value.outfitExposed !== current.outfitExposed);
+    if (!changed) return jsonOk(current);
+
     if (
       characterId === owned.participant.characterId &&
       isSimRoutedAuthority(await readChatEngineAuthority(chatId))
