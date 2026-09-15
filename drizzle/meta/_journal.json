@@ -1002,6 +1002,13 @@
       "when": 1789596000000,
       "tag": "0142_successor-garment-state",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1789682400000,
+      "tag": "0143_klein-4b-female-nsfw-lora",
+      "breakpoints": true
     }
   ]
 }
