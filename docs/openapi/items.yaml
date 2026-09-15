@@ -1,0 +1,346 @@
+openapi: 3.1.0
+info:
+  title: Vesper Items API
+  version: 0.1.0
+  description: >-
+    Authenticated item-library API for material objects, clothing and containers. Covers
+    discovery/CRUD, cloning, facet classification, and entity-image generation.
+servers:
+  - url: /
+x-vesper-auth: Authenticated Vesper user session required.
+tags:
+  - name: Items
+  - name: Item Automation
+  - name: Item Images
+paths:
+  /api/items:
+    get:
+      tags: [Items]
+      summary: List or resolve items
+      x-vesper-source: apps/web/src/app/api/items/route.ts
+      parameters:
+        - in: query
+          name: ids
+          schema: { type: string }
+          description: >-
+            Comma-separated owned item ids. When present, resolves exactly these ids in input order
+            and bypasses normal search/result caps.
+        - { in: query, name: q, schema: { type: string } }
+        - in: query
+          name: tag
+          schema: { type: string }
+          description: Comma-separated tags; tags are ANDed server-side.
+        - in: query
+          name: kind
+          schema: { type: string, enum: [clothing, object, container] }
+        - { in: query, name: category, schema: { type: string } }
+        - { in: query, name: subtype, schema: { type: string } }
+        - in: query
+          name: layer
+          schema: { type: integer, enum: [0, 1, 2, 3] }
+        - { in: query, name: wearer, schema: { type: string } }
+        - { in: query, name: color, schema: { type: string } }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [updated, name] }
+        - in: query
+          name: scope
+          schema: { type: string, enum: [owned, public, all] }
+          description: Defaults to owned.
+      responses:
+        '200':
+          description: Item summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ItemSummary' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Items]
+      summary: Create an item
+      x-vesper-source: apps/web/src/app/api/items/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemCreateRequest' }
+      responses:
+        '201':
+          description: Item created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/items/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Items]
+      summary: Read an owned or public item
+      x-vesper-source: apps/web/src/app/api/items/[id]/route.ts
+      responses:
+        '200':
+          description: Item detail and ownership flag.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item, mine]
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+                  mine: { type: boolean }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Items]
+      summary: Update an owned item
+      x-vesper-source: apps/web/src/app/api/items/[id]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemPatchRequest' }
+      responses:
+        '200':
+          description: Updated item.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item: { $ref: '#/components/schemas/Item' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Items]
+      summary: Delete an owned item
+      x-vesper-source: apps/web/src/app/api/items/[id]/route.ts
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/items/{id}/clone:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    post:
+      tags: [Items]
+      summary: Clone an item into the caller's private library
+      x-vesper-source: apps/web/src/app/api/items/[id]/clone/route.ts
+      responses:
+        '201':
+          description: Clone created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/items/classify:
+    post:
+      tags: [Item Automation]
+      summary: Queue missing-facet classification
+      description: >-
+        Classifies only missing item facets. Optional ids scope the work to a visible/filter result.
+        At most 200 candidate items are queued per request.
+      x-vesper-source: apps/web/src/app/api/items/classify/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: Nothing needed classification.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued]
+                properties:
+                  queued: { type: integer, const: 0 }
+        '202':
+          description: Background classification job queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, queued]
+                properties:
+                  jobId: { type: string }
+                  queued: { type: integer, minimum: 1, maximum: 200 }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/items/{id}/image:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      tags: [Item Images]
+      summary: Read the newest item image row
+      x-vesper-source: apps/web/src/app/api/items/[id]/image/route.ts
+      responses:
+        '200':
+          description: Latest image row or null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [image]
+                properties:
+                  image: { oneOf: [{ $ref: '#/components/schemas/ImageRecord' }, { type: 'null' }] }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Item Images]
+      summary: Queue item product-image generation
+      x-vesper-source: apps/web/src/app/api/items/[id]/image/route.ts
+      responses:
+        '202':
+          description: Entity-image job queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, status]
+                properties:
+                  jobId: { type: string }
+                  status: { type: string, const: pending }
+        '404': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  parameters:
+    ItemId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    ItemDefinition:
+      type: object
+      properties:
+        coverage:
+          type: array
+          items: { type: string }
+        category: { type: [string, 'null'] }
+        subtype: { type: [string, 'null'] }
+        wearer: { type: [string, 'null'] }
+        color:
+          oneOf:
+            - type: object
+              required: [family]
+              properties:
+                family: { type: string }
+                shade: { type: [string, 'null'] }
+                accent: { type: [string, 'null'] }
+            - type: 'null'
+        hairOcclusion: { type: [string, 'null'] }
+        layer: { type: [integer, 'null'], enum: [0, 1, 2, 3, null] }
+        opacity: { type: string, enum: [opaque, sheer], default: opaque }
+        sensory: { type: object, additionalProperties: true }
+        fields: { type: object, additionalProperties: true }
+      additionalProperties: true
+    ItemSummary:
+      type: object
+      required: [id, kind, name, description, tags, definition]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [clothing, object, container] }
+        name: { type: string }
+        description: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        imageId: { type: [string, 'null'] }
+        definition: { $ref: '#/components/schemas/ItemDefinition' }
+    Item:
+      allOf:
+        - $ref: '#/components/schemas/ItemSummary'
+        - type: object
+          properties:
+            visibility: { type: string, enum: [private, public] }
+          additionalProperties: true
+    ItemCreateRequest:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        kind: { type: string, enum: [clothing, object, container] }
+        description: { type: string, default: '' }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 60 }
+        definition: { $ref: '#/components/schemas/ItemDefinition' }
+    ItemPatchRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        kind: { type: string, enum: [clothing, object, container] }
+        description: { type: string }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 60 }
+        definition: { $ref: '#/components/schemas/ItemDefinition' }
+        visibility: { type: string, enum: [private, public] }
+      additionalProperties: false
+    ImageRecord:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string }
+        status: { type: string }
+        kind: { type: string }
+        entityKind: { type: string }
+        entityId: { type: [string, 'null'] }
