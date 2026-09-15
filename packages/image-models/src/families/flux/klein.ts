@@ -1,5 +1,13 @@
 import { defineImageModel, type ImageModelAdapter } from "../../composer";
-import { fastModeFeature, guidanceFeature, loraFeature } from "../../features";
+import {
+  aspectRatioFeature,
+  fastModeFeature,
+  guidanceFeature,
+  loraFeature,
+  negativePromptFeature,
+  promptFeature,
+  seedFeature,
+} from "../../features";
 import { FLUX2_KLEIN_FAMILY, kleinCoreFeatures, kleinOutputFeatures } from "./shared";
 
 /**
@@ -17,6 +25,27 @@ import { FLUX2_KLEIN_FAMILY, kleinCoreFeatures, kleinOutputFeatures } from "./sh
 export const fluxKleinDistilled: ImageModelAdapter = defineImageModel({
   family: FLUX2_KLEIN_FAMILY,
   features: [...kleinCoreFeatures(), fastModeFeature(), ...kleinOutputFeatures()],
+});
+
+/**
+ * Civitai's native DISTILLED Klein 4B generation lane.
+ *
+ * Civitai's current Flux2 Klein generation graph pins its 4B distilled
+ * checkpoint independently of Replicate and accepts additional LoRA resources
+ * on that same distilled lane. The Civitai transport therefore has its own
+ * adapter rather than inheriting the Replicate distilled endpoint's `go_fast`
+ * knob (which does not exist in Civitai's graph) or the Replicate Base-LoRA
+ * endpoint's output/safety fields.
+ *
+ * Initial scope is deliberately text-to-image only: prompt, aspect, reproducible
+ * seed, negative prompt, and one curated LoRA. Civitai also supports editing on
+ * Klein, but Vesper has not yet implemented its image upload/presigned-blob
+ * transport, so advertising references here would create a control the runtime
+ * cannot carry.
+ */
+export const fluxKleinCivitaiDistilledLora: ImageModelAdapter = defineImageModel({
+  family: FLUX2_KLEIN_FAMILY,
+  features: [promptFeature(), aspectRatioFeature(), seedFeature(), negativePromptFeature(), loraFeature()],
 });
 
 /**
