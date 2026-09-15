@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -98,6 +99,13 @@ export function FilesPage() {
   const [pathValue, setPathValue] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [upload, setUpload] = useState<UploadState | null>(null);
+  // True for the whole lifetime of one upload batch — from the moment a
+  // drop/pick is accepted, not from when `upload` first becomes non-null. A
+  // dropped tree's plan is still being built, and any folders in it still
+  // being created, before the first file's progress tick; a second batch
+  // starting in that window would run a second `runUploadPlan` against this
+  // same `upload`/`conflict` state and corrupt both.
+  const [uploadBatchActive, setUploadBatchActive] = useState(false);
   const directory = useAsyncData(() => adminFilesApi.list(pathValue), [pathValue]);
 
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
@@ -154,28 +162,25 @@ export function FilesPage() {
 
   // --- Create / rename ------------------------------------------------------
 
-  const createFolder = async (name: string): Promise<boolean> => {
-    if (name.trim() === "") return false;
-    setActionError(null);
-    const result = await adminFilesApi.createFolder(pathValue, name.trim());
-    if (!result.ok) {
-      setActionError(result.error.message);
-      return false;
-    }
+  /**
+   * Returns an error message on failure, `null` on success — never the page
+   * banner. `NewFolderDialog`/`RenameEntryDialog` render the message inline
+   * via `Field` (docs/ui/conventions.md §Forms and drafts) while staying
+   * open: the dialog sits fixed over the banner, so a refusal written there
+   * (a duplicate name, say) was invisible to the owner.
+   */
+  const createFolder = async (name: string): Promise<string | null> => {
+    const result = await adminFilesApi.createFolder(pathValue, name);
+    if (!result.ok) return result.error.message;
     directory.reload();
-    return true;
+    return null;
   };
 
-  const renameEntry = async (entry: AdminFileEntry, name: string): Promise<boolean> => {
-    if (name.trim() === "" || name.trim() === entry.name) return false;
-    setActionError(null);
-    const result = await adminFilesApi.rename(entry.path, name.trim());
-    if (!result.ok) {
-      setActionError(result.error.message);
-      return false;
-    }
+  const renameEntry = async (entry: AdminFileEntry, name: string): Promise<string | null> => {
+    const result = await adminFilesApi.rename(entry.path, name);
+    if (!result.ok) return result.error.message;
     directory.reload();
-    return true;
+    return null;
   };
 
   // --- Delete: preview -> ConfirmDialog -> deleteMany ------------------------
@@ -310,6 +315,11 @@ export function FilesPage() {
    * order; a same-name collision pauses the batch for the conflict dialog
    * rather than a blocking native dialog, and "Replace all" answers every
    * later collision in this same batch without asking again.
+   *
+   * Callers claim the batch's whole lifetime with `beginUploadBatch()` first
+   * (see there) — this function alone does not guard against a second
+   * concurrent call, and two runs sharing this `upload`/`conflict` state
+   * would corrupt each other.
    */
   const runUploadPlan = async (plan: UploadPlan) => {
     setActionError(null);
@@ -319,12 +329,31 @@ export function FilesPage() {
         const parent = joinPath(pathValue, parentPathFor(folderRelPath));
         const name = folderRelPath.split("/").pop() ?? folderRelPath;
         const result = await adminFilesApi.createFolder(parent, name);
-        // An existing destination folder is fine (owner ruling); any other
-        // failure stops the batch rather than uploading into a tree that
-        // never fully materialized.
-        if (!result.ok && result.error.code !== "already_exists") {
-          setActionError(`${folderRelPath}: ${result.error.message}`);
-          return;
+        if (!result.ok) {
+          // An existing destination folder is fine (owner ruling); any other
+          // failure stops the batch rather than uploading into a tree that
+          // never fully materialized.
+          if (result.error.code !== "already_exists") {
+            setActionError(`${folderRelPath}: ${result.error.message}`);
+            return;
+          }
+          // `already_exists` answers the same whether the collision already
+          // there is a folder (fine — the tree already has this branch) or a
+          // file: an empty dropped folder would then silently never exist,
+          // and a non-empty one would fail later on some child with a
+          // confusing "not a directory" message. Confirm which one it
+          // actually is before treating this as the idempotent success the
+          // owner ruling intends.
+          const listing = await adminFilesApi.list(parent);
+          if (!listing.ok) {
+            setActionError(`${folderRelPath}: ${listing.error.message}`);
+            return;
+          }
+          const existing = listing.data.entries.find((entry) => entry.name === name);
+          if (existing === undefined || existing.kind !== "folder") {
+            setActionError(`${folderRelPath}: "${name}" already exists as a file, not a folder`);
+            return;
+          }
         }
       }
 
@@ -354,10 +383,29 @@ export function FilesPage() {
     }
   };
 
+  /**
+   * Claims the whole lifetime of one upload batch, refusing a second
+   * drop/pick until this one finishes — not just while `upload` is
+   * non-null (see `uploadBatchActive`). Without this, a second drop starts
+   * a second `runUploadPlan` against the same `upload`/`conflict` state:
+   * the later `askConflict` overwrites the earlier resolver, and the first
+   * batch's promise never settles, so that upload hangs forever.
+   */
+  const beginUploadBatch = (): boolean => {
+    if (uploadBatchActive) {
+      setActionError("An upload is already in progress. Wait for it to finish before starting another.");
+      return false;
+    }
+    setUploadBatchActive(true);
+    return true;
+  };
+
   const onPickFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    if (!beginUploadBatch()) return;
     const plan: UploadPlan = { folders: [], files: Array.from(files).map((file) => ({ relativePath: file.name, file })) };
     void runUploadPlan(plan).finally(() => {
+      setUploadBatchActive(false);
       if (inputRef.current) inputRef.current.value = "";
     });
   };
@@ -374,23 +422,28 @@ export function FilesPage() {
   }
 
   const handleExternalDrop = async (dataTransfer: DataTransfer) => {
-    let plan: UploadPlan;
+    if (!beginUploadBatch()) return;
     try {
-      const dropped = collectDropEntries(dataTransfer);
-      plan =
-        dropped.length > 0
-          ? await buildUploadPlan(dropped)
-          : { folders: [], files: Array.from(dataTransfer.files).map((file) => ({ relativePath: file.name, file })) };
-    } catch {
-      // The browser refused to enumerate the drop — a folder it cannot read, or
-      // a file moved between dragstart and read. Without this the rejection was
-      // swallowed by the `void` at the call site and the drop did nothing at
-      // all, with no banner and no toast to explain it.
-      setActionError("That drop could not be read. Try the Upload files button instead.");
-      return;
+      let plan: UploadPlan;
+      try {
+        const dropped = collectDropEntries(dataTransfer);
+        plan =
+          dropped.length > 0
+            ? await buildUploadPlan(dropped)
+            : { folders: [], files: Array.from(dataTransfer.files).map((file) => ({ relativePath: file.name, file })) };
+      } catch {
+        // The browser refused to enumerate the drop — a folder it cannot read, or
+        // a file moved between dragstart and read. Without this the rejection was
+        // swallowed by the `void` at the call site and the drop did nothing at
+        // all, with no banner and no toast to explain it.
+        setActionError("That drop could not be read. Try the Upload files button instead.");
+        return;
+      }
+      if (plan.files.length === 0 && plan.folders.length === 0) return;
+      await runUploadPlan(plan);
+    } finally {
+      setUploadBatchActive(false);
     }
-    if (plan.files.length === 0 && plan.folders.length === 0) return;
-    await runUploadPlan(plan);
   };
 
   const onTableDragEnter = (event: DragEvent<HTMLDivElement>) => {
@@ -447,7 +500,7 @@ export function FilesPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => setNewFolderOpen(true)}>New folder</Button>
-            <Button variant="primary" onClick={() => inputRef.current?.click()} disabled={upload !== null}>
+            <Button variant="primary" onClick={() => inputRef.current?.click()} disabled={uploadBatchActive}>
               Upload files
             </Button>
             <input
@@ -732,15 +785,19 @@ export function FilesPage() {
 }
 
 /** Mounts fresh per open, so `useState` seeds from an empty name with no effect (the `RenameDialog` shape). */
-function NewFolderDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => Promise<boolean> }) {
+function NewFolderDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (name: string) => Promise<string | null> }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
+    const trimmed = name.trim();
+    if (trimmed === "") return;
     setSaving(true);
-    const ok = await onCreate(name.trim());
+    const message = await onCreate(trimmed);
     setSaving(false);
-    if (ok) onClose();
+    if (message === null) onClose();
+    else setError(message);
   };
 
   return (
@@ -761,7 +818,20 @@ function NewFolderDialog({ onClose, onCreate }: { onClose: () => void; onCreate:
         </>
       }
     >
-      <Input value={name} maxLength={255} onChange={(event) => setName(event.target.value)} placeholder="Folder name" autoFocus />
+      <Field label="Folder name" error={error}>
+        {(id) => (
+          <Input
+            id={id}
+            value={name}
+            maxLength={255}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (error) setError(null);
+            }}
+            autoFocus
+          />
+        )}
+      </Field>
     </Dialog>
   );
 }
@@ -774,16 +844,20 @@ function RenameEntryDialog({
 }: {
   entry: AdminFileEntry;
   onClose: () => void;
-  onRename: (name: string) => Promise<boolean>;
+  onRename: (name: string) => Promise<string | null>;
 }) {
   const [name, setName] = useState(entry.name);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
+    const trimmed = name.trim();
+    if (trimmed === "" || trimmed === entry.name) return;
     setSaving(true);
-    const ok = await onRename(name.trim());
+    const message = await onRename(trimmed);
     setSaving(false);
-    if (ok) onClose();
+    if (message === null) onClose();
+    else setError(message);
   };
 
   return (
@@ -809,7 +883,20 @@ function RenameEntryDialog({
         </>
       }
     >
-      <Input value={name} maxLength={255} onChange={(event) => setName(event.target.value)} autoFocus />
+      <Field label={`${entry.kind === "folder" ? "Folder" : "File"} name`} error={error}>
+        {(id) => (
+          <Input
+            id={id}
+            value={name}
+            maxLength={255}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (error) setError(null);
+            }}
+            autoFocus
+          />
+        )}
+      </Field>
     </Dialog>
   );
 }

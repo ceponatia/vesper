@@ -91,23 +91,30 @@ export function dragSourcePaths(selected: ReadonlySet<string>, rowPath: string):
 }
 
 /**
+ * Whether a drag in flight has nowhere to land on `destination`.
+ *
+ * An empty `paths` does NOT mean "block": a same-tab drag always seeds at
+ * least the dragged row (`dragSourcePaths` never returns an empty array), so
+ * empty here can only mean a drag that began in another browser tab —
+ * `dataTransfer` carries this page's custom MIME type, but `getData` stays
+ * unreadable until the drop itself. Refusing it would skip `preventDefault`
+ * on every dragover, and the browser would then never deliver the drop that
+ * could parse the authoritative payload out of `dataTransfer`. An unknown
+ * payload must read as "allow and let the drop decide" — `onDrop` already
+ * re-validates with {@link isBlockedDestination} once the real paths are
+ * readable, so nothing legitimate is left unchecked.
+ */
+export function isBlockedDragDestination(destination: string, paths: readonly string[]): boolean {
+  return paths.length > 0 && isBlockedDestination(destination, paths);
+}
+
+/**
  * True when `candidatePath` can never be a valid move destination for
  * `sourcePaths` — it equals one of them, or is nested under one of them. A
  * move is a containment problem: a folder must not move into itself or into
  * its own descendant, and this guards both the "Move to…" picker's disabled
  * rows and the drag-onto-folder highlight/drop.
  */
-/**
- * Whether a drag in flight has nowhere to land on `destination` — it carries
- * nothing, or the destination is one {@link isBlockedDestination} refuses.
- *
- * Separate from the component because the handlers read the drag payload out of
- * a ref, and a closure built during render may not touch one.
- */
-export function isBlockedDragDestination(destination: string, paths: readonly string[]): boolean {
-  return paths.length === 0 || isBlockedDestination(destination, paths);
-}
-
 export function isBlockedDestination(candidatePath: string, sourcePaths: readonly string[]): boolean {
   if (sourcePaths.some((source) => isPathWithin(candidatePath, source))) return true;
   // A destination every source already sits in is a no-op the server can only

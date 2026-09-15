@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdminFileEntry } from "@/lib/client/api";
+import { chunkPaths } from "@/lib/client/api/admin-files";
 import {
   ADMIN_FILES_DRAG_TYPE,
   breadcrumbSegments,
@@ -191,11 +192,18 @@ describe("dragSourcePaths", () => {
 });
 
 describe("isBlockedDragDestination", () => {
-  it("blocks a drag that carries nothing", () => {
-    expect(isBlockedDragDestination("box", [])).toBe(true);
+  // An empty payload means "unknown" (a drag that began in another browser
+  // tab, where `dataTransfer.getData` cannot be read until the drop itself),
+  // not "nothing valid to drop onto". Blocking it would skip `preventDefault`
+  // on every dragover, and the browser would then never deliver the drop
+  // that could parse the real payload out of `dataTransfer`. A local drag
+  // always seeds at least the dragged row (`dragSourcePaths` never returns
+  // an empty array), so nothing legitimate depends on the old "block" reading.
+  it("allows an unknown (cross-tab) payload so the drop can read the real one", () => {
+    expect(isBlockedDragDestination("box", [])).toBe(false);
   });
 
-  it("defers to isBlockedDestination when the drag carries paths", () => {
+  it("defers to isBlockedDestination once the drag carries paths", () => {
     expect(isBlockedDragDestination("a/b", ["a"])).toBe(true);
     expect(isBlockedDragDestination("box", ["loose.txt"])).toBe(false);
   });
@@ -259,5 +267,39 @@ describe("parseDragPayload", () => {
 
   it("degrades to an empty array for the empty string a missing type reads as", () => {
     expect(parseDragPayload("")).toEqual([]);
+  });
+});
+
+describe("chunkPaths", () => {
+  // Defined in admin-files.ts (apps/web/src/lib/client/api): it chunks a
+  // selection into successive batches of at most the server's own
+  // per-request ceiling (`pathsSchema.max(500)` in
+  // apps/web/src/app/api/admin/self/files/route.ts) instead of capping the
+  // selection itself — an unpaginated directory listing lets select-all
+  // build one past that ceiling. Tested here, this page's sibling
+  // pure-module test file, rather than in a new admin-files.test.ts.
+  const paths = (count: number) => Array.from({ length: count }, (_, index) => `p${index}`);
+
+  it("returns no chunks for an empty selection", () => {
+    expect(chunkPaths([], 500)).toEqual([]);
+  });
+
+  it("returns a single chunk under the limit", () => {
+    expect(chunkPaths(paths(10), 500)).toEqual([paths(10)]);
+  });
+
+  it("returns exactly one chunk at the limit (500)", () => {
+    const chunks = chunkPaths(paths(500), 500);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toHaveLength(500);
+  });
+
+  it("splits into two chunks just past the limit (501)", () => {
+    const chunks = chunkPaths(paths(501), 500);
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toHaveLength(500);
+    expect(chunks[1]).toHaveLength(1);
+    // Nothing lost or reordered across the split.
+    expect(chunks.flat()).toEqual(paths(501));
   });
 });
