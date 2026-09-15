@@ -1,6 +1,6 @@
 # Admin Files
 
-`/settings/files` is a deliberately small **owner-admin-only** file manager for temporary sharing between devices. It is a developer convenience, not a user-facing asset system and not part of chats, characters, image generation, or other game state.
+`/settings/files` is a deliberately small **owner-admin-only** file manager for temporary sharing between devices. It is a developer convenience, not a user-facing asset system and not part of chats, characters, or other game state. The Image Generator and Image Lab may explicitly **import** a supported raster from Files; that operation copies the bytes into the ordinary owner-scoped image registry and thereafter uses only the new image id. Files itself does not become image/game state.
 
 ## Storage
 
@@ -21,6 +21,9 @@ Every route is beneath `/api/admin/self` and uses `withOwnerAdmin`, so a signed-
 | `/api/admin/self/files/upload?path=...&name=...` | `PUT` | Stream raw file bytes into the current folder. `overwrite=1` explicitly permits file replacement. |
 | `/api/admin/self/files/download?path=...` | `GET` | Download one file as inert `application/octet-stream` content. |
 | `/api/admin/self/files/preview?path=...` | `GET` | Serve one previewable file inline with its real content type, supporting range requests. |
+| `/api/admin/self/files/import-image` | `POST` | Copy one PNG/JPEG/WebP/AVIF Files raster into the owner image registry and return its `imageId`. |
+
+The image-import route accepts `{ path }`, opens the file through the same symlink-safe descriptor path as download/preview, refuses unsupported extensions and sources over the reference-upload byte ceiling, applies the same image-storage and accepted-upload-byte budgets as a direct Generator upload, validates/decodes the raster with the shared Sharp limits, materializes EXIF orientation without cropping/resizing, and stores the result as a reusable owner-only image asset. Metadata records `source: "admin_files_import"`, the original name, and the Files path as provenance. That path is not a durable dependency: renaming or deleting the original Files entry does not affect the imported image.
 
 The batch actions — `delete_many`, `move` and `delete_preview` — take up to 500 paths and are partial-success operations. A refusal for one entry becomes a row in `failures` carrying that entry's path and error code, and the request still answers `200` even when every entry failed, so `deleted` and `moved` report what actually happened rather than what was asked for. One fact about the request as a whole still fails it outright: a `move` whose destination is missing or is not a folder is answered once, not repeated per path. A duplicated path is removed by its first occurrence and reported `not_found` by the rest.
 
@@ -59,8 +62,10 @@ The account menu exposes **Files** only to admins. The page supports:
 - rename
 - confirmed delete, counted before it runs
 
+The Image Generator and Image Lab's generic owner-image pickers additionally offer **Choose from Files**. That browser shows folders plus PNG/JPEG/WebP/AVIF files, previews them through the authorized Files preview route, and imports the chosen image before selecting it. A failed import leaves the previously selected reference unchanged. Face Repair deliberately does not expose Files because its source-kind contract is narrower than the generic bench reference contract.
+
 Deleting asks the server first what the selection contains, so the confirmation names how many folders and files will go before the owner confirms it, and a selection larger than the preview's ten-thousand-entry budget is described as a floor rather than a count. A single row's delete travels the same batch path as a multi-row one, so the two cannot drift apart. Every confirmation and every name prompt is a Vesper dialog; the page uses no native browser dialog.
 
 Directory reads use the shared generation-guarded client loader, so a slower response for a folder the owner has already left cannot replace the listing for the current breadcrumbs. A multi-file batch also reloads the directory after stopping on a later-file failure, preserving visibility of files that were successfully published earlier in the batch.
 
-Preview is inline viewing for the owner-admin and nothing more: there are intentionally no public links, thumbnails in the listing, transcoding, poster frames, content scanning, quotas, per-file permissions, database records, retention jobs, or normal-user surfaces. If Vesper later needs a product-level asset system, it should be designed separately rather than extending this temporary utility by accident.
+Preview is inline viewing for the owner-admin and nothing more: there are intentionally no public links, thumbnails in the Files listing, transcoding, poster frames, content scanning, quotas, per-file permissions, database records, retention jobs, or normal-user surfaces. The explicit Generator/Lab import does not change that boundary: it creates a separate ordinary image asset rather than extending Files into a product-level asset system.

@@ -1,6 +1,13 @@
 import path from "node:path";
 import { z } from "zod";
-import { jsonError, jsonOk, readBody, withOwnerAdmin } from "@/server/api";
+import {
+  dailyBudgetRejection,
+  jsonError,
+  jsonOk,
+  readBody,
+  storageQuotaRejection,
+  withOwnerAdmin,
+} from "@/server/api";
 import { AdminFilesError, getAdminFileDownload } from "@/server/admin-files";
 import { IMAGE_REFERENCE_MAX_SOURCE_BYTES, importAdminFilesImageReference } from "@/server/images";
 
@@ -36,6 +43,15 @@ export const POST = withOwnerAdmin(async (user, req) => {
     if (file.size > IMAGE_REFERENCE_MAX_SOURCE_BYTES) {
       return jsonError("image_too_large", "That image is too large to use as a reference.", 400);
     }
+
+    // Importing makes a second durable image copy, so it observes the same
+    // storage and accepted-byte budgets as a direct Generator upload. Charge
+    // before decoding: submission volume is the bounded resource even when a
+    // corrupt image is refused later.
+    const overQuota = await storageQuotaRejection(user, req, file.size);
+    if (overQuota) return overQuota;
+    const overDailyBytes = await dailyBudgetRejection("upload_bytes_day", user, req, file.size);
+    if (overDailyBytes) return overDailyBytes;
 
     const buffer = await file.handle.readFile();
     const result = await importAdminFilesImageReference({

@@ -42,6 +42,8 @@ See [Generating and reviewing control fixtures](generating-control-fixtures.md) 
 
 The create form (`apps/web/src/components/settings/image-lab-experiment-form.tsx`) owns selection state, data hooks, render-time resets, and submission. The experiment-family fields under `image-lab-form/` receive controlled values and reuse the Lab pickers; `image-lab-form/request.ts` translates those values into ordered inputs, readiness, prompt previews, and the existing create request. The package contract remains the validation authority, and prompt previews use the same compiler helpers as the runners.
 
+Generic owner-image pickers in the Lab — including fixture extraction sources, optional object references, and staged-location references — also offer **Choose from Files**. A Files choice is not stored in the experiment as a path or URL. `POST /api/admin/self/files/import-image` first copies the selected PNG/JPEG/WebP/AVIF into the ordinary owner image registry, preserving composition and recording Files provenance; the Lab receives only the resulting `imageId`. The original Files entry can then be renamed or deleted without changing the experiment or its historical inputs.
+
 All experiment kinds dispatch through `apps/web/src/server/images/image-lab-run.ts`. Shared contracts live in `packages/image-core/src/lab/image-lab.ts`; controlled recipe profiles live in `packages/image-core/src/lab/image-lab-recipes.ts`.
 
 ## Model/version behavior at a glance

@@ -109,7 +109,7 @@ A summary above the Run button states the resolved operation, version pin, refer
 controls, and advanced values. The summary and the POST assemble from the same state, so they cannot
 disagree.
 
-## Sources: choose an owned image or upload one
+## Sources: choose an owned image, import from Files, or upload one
 
 `GET /api/admin/self/owned-images` lists the requesting admin's own `ready` images — every kind
 except the two system-bookkeeping ones (`identity_face_crop`, `identity_trial_output`) — as ids plus
@@ -118,6 +118,16 @@ display metadata; bytes stay behind the authorized image file route.
 The shared picker component renders it with a kind filter and cursor paging, and feeds both the
 Generator's inputs and the Image Lab's generic roles: fixture extraction sources, the controlled
 portrait's optional object reference, and the staged scene's optional location reference.
+
+That same picker offers **Choose from Files** on the Generator/Lab admin benches. It browses the
+owner-admin Files tree and offers PNG, JPEG, WebP, and AVIF rasters. Choosing one calls
+`POST /api/admin/self/files/import-image`; the server opens the source through Files' safe descriptor
+path, enforces the same reference byte/decode limits and upload/storage budgets as a direct upload,
+materializes EXIF orientation without cropping/resizing, and saves a separate owner-scoped image
+asset. The picker then receives only the new `imageId`. Files paths and preview URLs never enter a
+Generator request, Lab experiment, render intent, recipe, adapter, or provider payload. Renaming or
+deleting the original Files item therefore cannot invalidate an already-selected or historical
+reference.
 
 Every Generator primary-reference row and every dedicated structural slot also offers **Upload
 image** beside **Choose image / Change image**. The upload accepts PNG, JPEG, WebP, or AVIF up to the
@@ -129,5 +139,5 @@ A successful upload is immediately selected in the slot that initiated it and cl
 picker. A failed upload leaves that slot's previous image unchanged. The stored image is owner-only,
 Generator-scoped, and has no character/entity/chat association; because it is an ordinary owned
 image id after storage, it can also be picked again on a later run. The run request itself never
-contains raw file bytes or a data URL, so direct uploads use exactly the same input loading,
-preparation, capacity and provider-routing path as images selected from the picker.
+contains raw file bytes or a data URL, so direct uploads and Files imports both use exactly the same
+input loading, preparation, capacity and provider-routing path as images selected from the picker.
