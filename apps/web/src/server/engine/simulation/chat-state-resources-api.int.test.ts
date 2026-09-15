@@ -1,7 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characterChats, characters, db, personas } from "@/server/db";
+import { newId } from "@/lib/ids";
+import { characterChats, characters, db, personas, simBranches, simWorlds } from "@/server/db";
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Chat State Resources Int", role: "admin" as const },
@@ -148,9 +149,10 @@ describe.runIf(ready)("focused chat-state resources", () => {
     let release!: () => void;
     const held = withKeyedLock(
       chatExchangeLockKey(chatId),
-      () => new Promise<void>((resolve) => {
-        release = resolve;
-      }),
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
       CHAT_LOCK_LABEL_REPLY,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -268,45 +270,65 @@ describe.runIf(ready)("focused chat-state resources", () => {
   });
 
   it("successor authority rejects incompatible calendar, relationship, and wardrobe shadow writes", async () => {
+    const worldId = newId();
+    const branchId = newId();
     await db()
-      .update(characterChats)
-      .set({ engineAuthority: "successor_narrative_view" })
-      .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)));
+      .insert(simWorlds)
+      .values({ id: worldId, worldTypeId: "chat-state-resources", seed: "chat-state-resources", rulesetVersion: "test" });
+    await db().insert(simBranches).values({ id: branchId, worldId });
 
-    const calendar = await scenarioPatch(
-      req(`/api/chats/${chatId}/scenario`, {
-        calendarStart: { year: 2030, month: 3, day: 4, hour: 9, minute: 0 },
-      }),
-      chatCtx(),
-    );
-    expect((await expectJson<{ error: { code: string } }>(calendar, 409)).error.code).toBe(
-      "sim_calendar_managed_by_world",
-    );
+    try {
+      await db()
+        .update(characterChats)
+        .set({
+          engineAuthority: "successor_narrative_view",
+          simBranchId: branchId,
+          simPlayerActorId: "chat-state-test-player",
+          simPrimaryActorId: "chat-state-test-primary",
+        })
+        .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)));
 
-    const current = await participantGet(
-      req(`/api/chats/${chatId}/participants/${characterId}/state`),
-      participantCtx(),
-    );
-    const currentState = await expectJson<{ regard: number }>(current, 200);
-    const relationship = await participantPatch(
-      req(`/api/chats/${chatId}/participants/${characterId}/state`, { regard: currentState.regard + 1 }),
-      participantCtx(),
-    );
-    expect((await expectJson<{ error: { code: string } }>(relationship, 409)).error.code).toBe(
-      "sim_participant_state_managed_by_world",
-    );
+      const calendar = await scenarioPatch(
+        req(`/api/chats/${chatId}/scenario`, {
+          calendarStart: { year: 2030, month: 3, day: 4, hour: 9, minute: 0 },
+        }),
+        chatCtx(),
+      );
+      expect((await expectJson<{ error: { code: string } }>(calendar, 409)).error.code).toBe(
+        "sim_calendar_managed_by_world",
+      );
 
-    const wardrobe = await wardrobePatch(
-      req(`/api/chats/${chatId}/participants/${characterId}/wardrobe`, { outfit: "shadow write" }),
-      participantCtx(),
-    );
-    expect((await expectJson<{ error: { code: string } }>(wardrobe, 409)).error.code).toBe(
-      "sim_wardrobe_managed_by_world",
-    );
+      const current = await participantGet(
+        req(`/api/chats/${chatId}/participants/${characterId}/state`),
+        participantCtx(),
+      );
+      const currentState = await expectJson<{ regard: number }>(current, 200);
+      const relationship = await participantPatch(
+        req(`/api/chats/${chatId}/participants/${characterId}/state`, { regard: currentState.regard + 1 }),
+        participantCtx(),
+      );
+      expect((await expectJson<{ error: { code: string } }>(relationship, 409)).error.code).toBe(
+        "sim_participant_state_managed_by_world",
+      );
 
-    await db()
-      .update(characterChats)
-      .set({ engineAuthority: "legacy_chat" })
-      .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)));
+      const wardrobe = await wardrobePatch(
+        req(`/api/chats/${chatId}/participants/${characterId}/wardrobe`, { outfit: "shadow write" }),
+        participantCtx(),
+      );
+      expect((await expectJson<{ error: { code: string } }>(wardrobe, 409)).error.code).toBe(
+        "sim_wardrobe_managed_by_world",
+      );
+    } finally {
+      await db()
+        .update(characterChats)
+        .set({
+          engineAuthority: "legacy_chat",
+          simBranchId: null,
+          simPlayerActorId: null,
+          simPrimaryActorId: null,
+        })
+        .where(and(eq(characterChats.id, chatId), eq(characterChats.ownerId, ownerId)));
+      await db().delete(simWorlds).where(eq(simWorlds.id, worldId));
+    }
   });
 });
