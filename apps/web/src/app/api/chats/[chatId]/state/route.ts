@@ -2,11 +2,9 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
   activeConditionSchema,
-  attributeValueSchema,
   characterProfileSchema,
   CHAT_MIND_NOTE_MAX_CHARS,
   CHAT_PREMISE_MAX_CHARS,
-  chatDrivesSchema,
   chatPlansSchema,
   DiagnosticCollector,
   effectiveTraitValue,
@@ -23,10 +21,8 @@ import { calendarStartSchema } from "@/lib/clock";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import {
-  chatFeelingStateSchema,
   chatStateSnapshot,
   garmentReadoutsFor,
-  selfieHistorySchema,
   driftChatState,
   editChatState,
   isSimRoutedAuthority,
@@ -47,93 +43,42 @@ import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The conversation-state API, keyed per participant, a sibling of the plain-text
- * reply stream so state never inlines into prose:
- *
- * - **GET** → the strip / premise-bar / state-tools snapshot, with the same
- *   drift-on-read the prompt build applies. No row ⇒ a rested seed from the
- *   authored defaults.
- * - **PATCH** → an author edit (premise **Save** + the state-tools modal): upsert
- *   the provided fields (seeding the rest if absent).
- *
- * The action chips no longer POST here — a tap is now a narrated `action_beat`
- * exchange through the character-chat pipeline, which applies the same
- * deterministic effect pre-narration so the reply reflects it.
+ * Aggregate compatibility read model. GET remains intentionally broad because
+ * the conversation screen consumes one projection. PATCH is deprecated: new
+ * first-party writes use `/scenario`, participant state/wardrobe, player state,
+ * and admin inspector resources. Engine/debug fields are no longer accepted here.
  */
+const editBodySchema = z
+  .object({
+    premise: z.string().trim().max(CHAT_PREMISE_MAX_CHARS).optional(),
+    regard: z.number().int().min(-100).max(100).optional(),
+    familiarity: z.number().int().min(0).max(100).optional(),
+    relationship: relationshipTextureSchema.optional(),
+    mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
+    meters: z.record(z.string(), z.number()).optional(),
+    conditions: z.array(activeConditionSchema).optional(),
+    wornItemIds: z.array(z.string().trim().min(1)).max(40).optional(),
+    outfitPresetId: z.string().max(120).optional(),
+    outfit: z.string().optional(),
+    outfitExposed: z.boolean().optional(),
+    garmentOperations: garmentOperationListSchema.optional(),
+    activeSocialCards: z.array(socialReactionCardSchema).optional(),
+    sceneAuto: z.enum(["off", "milestones"]).optional(),
+    sceneModel: z.string().trim().max(64).optional(),
+    playerState: chatPlayerStateSchema.optional(),
+    supportingCast: supportingCastSchema.optional(),
+    plans: chatPlansSchema.optional(),
+    calendarStart: calendarStartSchema.optional(),
+    whereabouts: z.string().trim().max(120).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, "at least one state field is required");
 
-const editBodySchema = z.object({
-  premise: z.string().trim().max(CHAT_PREMISE_MAX_CHARS).optional(),
-  regard: z.number().int().min(-100).max(100).optional(),
-  familiarity: z.number().int().min(0).max(100).optional(),
-  /** Authored relationship texture (kind/history/mask/looming) — the state-tools edit surface. */
-  relationship: relationshipTextureSchema.optional(),
-  mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
-  meters: z.record(z.string(), z.number()).optional(),
-  conditions: z.array(activeConditionSchema).optional(),
-  /** Structured worn item-definition ids — the sheet's equip editor. */
-  wornItemIds: z.array(z.string().trim().min(1)).max(40).optional(),
-  /** The active outfit preset id — the sheet's preset switcher. */
-  outfitPresetId: z.string().max(120).optional(),
-  outfit: z.string().optional(),
-  outfitExposed: z.boolean().optional(),
-  /**
-   * Typed garment operations — the sheet's
-   * presentation controls. `garmentOperationListSchema` is the trust boundary:
-   * it drops each malformed operation individually and caps the list, so one bad
-   * entry never voids the save (docs/resilience.md §1).
-   */
-  garmentOperations: garmentOperationListSchema.optional(),
-  activeSocialCards: z.array(socialReactionCardSchema).optional(),
-  // Inspector-grade fields: the dev/state-tools
-  // surface can rewrite everything stored — including the D11 gate bypass via `regard`.
-  openLoops: z.array(z.string().trim().max(200)).max(6).optional(),
-  memoryQueries: z.array(z.string().trim().max(200)).max(6).optional(),
-  surfacedCues: z.record(z.string(), z.string()).optional(),
-  attributeOverlays: z.array(attributeValueSchema).optional(),
-  /** Auto scene-generation mode: "off" | "milestones" (the scenario modal's toggle). */
-  sceneAuto: z.enum(["off", "milestones"]).optional(),
-  /**
-   * Scene-image model pick (the scene strip's save-on-select dropdown). A
-   * registry model id, free text rather than an enum: the model list is data
-   * now, so an enum here would mean redeploying the API to accept a model the
-   * admin page just added. Unknown ids degrade to the scene default at render.
-   */
-  sceneModel: z.string().trim().max(64).optional(),
-  /** Memory-callback ring — inspector-grade reset/edit. */
-  callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
-  /** Emotional weather — inspector-grade set/clear. */
-  feeling: chatFeelingStateSchema.optional(),
-  /** Selfie-send ring — inspector-grade reset/edit. */
-  selfieHistory: selfieHistorySchema.optional(),
-  /** Runtime drives — scenario/state-tools edit surface. */
-  drives: chatDrivesSchema.optional(),
-  /** Who the player is here + what they're wearing — the "Playing as" pick. */
-  playerState: chatPlayerStateSchema.optional(),
-  /** Recurring named side characters — the panel's whole-list save. */
-  supportingCast: supportingCastSchema.optional(),
-  /** Tracked plans & promises — the Plans panel's whole-list save. */
-  plans: chatPlansSchema.optional(),
-  /** The story-calendar anchor — the clock card's editor. */
-  calendarStart: calendarStartSchema.optional(),
-  /** Where an away member is — author-correctable phrase. */
-  whereabouts: z.string().trim().max(120).optional(),
-});
-
-/**
- * Mood-chip inputs for the snapshot: the character's `social.dominance`
- * tilts a low-valence read angry vs sad, and chat — a private intimate-capable 1-on-1 —
- * permits the `aroused` label (then gated purely on the arousal meter).
- */
 const snapshotOpts = (profile: CharacterProfile) => ({
   dominance: effectiveTraitValue(profile.traits, "social.dominance"),
   intimateContext: true,
 });
 
-/**
- * Resolve the TARGET participant (per-character sheets):
- * `?characterId=` picks any roster member's state; absent ⇒ the primary (the
- * pre-roster shape every 1-on-1 caller keeps using). Null ⇒ not in this roster.
- */
 function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string; profile: unknown } | null {
   const characterId = new URL(req.url).searchParams.get("characterId");
   if (!characterId) return { characterId: owned.participant.characterId, profile: owned.character.profile };
@@ -154,15 +99,9 @@ export const GET = withOwnedChat<Params, OwnedChat>(
     const sink = new DiagnosticCollector();
     const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
     const stored = await loadChatState(chatId, target.characterId, sink);
-    // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
-    // persisted those ids) — the character sheet must show the garment phrase.
     const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
     const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
     const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
-    // A sim-routed chat's meters come from the body substrate and its
-    // regard/familiarity from the relationship ledger — the mood chip, pips,
-    // and disposition bands then all DERIVE from world truth, since the
-    // snapshot computes from whatever state it is handed.
     const isPrimaryTarget = target.characterId === owned.participant.characterId;
     const [simMeters, simRelationship] = isPrimaryTarget
       ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])
@@ -172,34 +111,28 @@ export const GET = withOwnedChat<Params, OwnedChat>(
       ...(simMeters === null ? {} : { meters: { ...drifted.meters, ...simMeters } }),
       ...(simRelationship === null ? {} : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
     };
-    // Rendered garment phrase for the read-only strip chip: the structured
-    // worn items resolved through the shared seam, else the free-text overlay.
     const wardrobe = await resolveChatWardrobe(
       { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
       user.id,
       profile,
       sink,
     );
-    // A routed chat's outfit chip reads the simulation world's WORN items.
     const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
       ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
       outfitLabel: simOutfit ?? wardrobe.garments,
-      // The presentation graph for this member's worn garments: the
-      // controls the sheet offers plus the coverage they currently produce.
       garments: garmentReadoutsFor(
         scenario.garments,
         garmentActorForCharacter(target.characterId),
         scenario.clockMinutes,
       ),
       garmentDiagnostics: [],
-      // Sim-routed chats show the WORLD clock, not the character-chat scenario clock;
-      // null means this conversation uses the character-chat pipeline's clock.
       simClock: await readSimChatClock(chatId),
     });
   },
 );
 
+/** @deprecated First-party callers must use the focused chat-state resources. */
 export const PATCH = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
   async (user, owned, req: NextRequest, ctx) => {
@@ -213,18 +146,27 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     if (!body.ok) return body.response;
 
     const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+    const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
 
-    // Successor-routed primary characters wear simulation material items. The
-    // character-chat state row still exists as compatibility/storage for other
-    // surfaces, but it is NOT a second wardrobe authority. Reject only an actual
-    // wardrobe change (the state-tools form submits its unchanged wardrobe fields
-    // on every save) so unrelated state edits remain usable. Heal the comparison
-    // state through the same compatibility seam GET uses, so an older raw id-marker
-    // cannot make an unchanged form look like a wardrobe edit.
-    if (
-      target.characterId === owned.participant.characterId &&
-      isSimRoutedAuthority(await readChatEngineAuthority(chatId))
-    ) {
+    // Calendar ownership is chat-wide, regardless of which participant query
+    // parameter a legacy caller happened to send.
+    if (simRouted && body.value.calendarStart !== undefined) {
+      return jsonError(
+        "sim_calendar_managed_by_world",
+        "this conversation's calendar is owned by the successor world; change the world calendar instead",
+        409,
+      );
+    }
+
+    if (target.characterId === owned.participant.characterId && simRouted) {
+      if (body.value.regard !== undefined || body.value.familiarity !== undefined || body.value.meters !== undefined) {
+        return jsonError(
+          "sim_participant_state_managed_by_world",
+          "this character's relationship scalars and meters are owned by the successor world",
+          409,
+        );
+      }
+
       const current = await resolveSeededOutfit(
         (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile),
         user.id,
@@ -245,9 +187,6 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       }
     }
 
-    // Garment operations degrade rather than fail (docs/resilience.md): a rejected
-    // one is a stable-code diagnostic, collected here and handed back so the sheet
-    // can say WHY it did not take instead of silently discarding it.
     const editSink = new DiagnosticCollector();
     const { state, scenario } = await editChatState({
       chatId,
