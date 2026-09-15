@@ -3,8 +3,7 @@ import { z } from "zod";
 import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
-import { loadChatScenario, seedChatScenario } from "@/server/engine";
-import { editChatPlayerState } from "@/server/engine/chat-state/focused-edit";
+import { editChatPlayerState, loadChatScenario, seedChatScenario } from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 
 type Params = { chatId: string };
