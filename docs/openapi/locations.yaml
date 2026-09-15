@@ -1,0 +1,290 @@
+openapi: 3.1.0
+info:
+  title: Vesper Locations API
+  version: 0.1.0
+  description: >-
+    Authenticated location-library API for searchable places, authored ambient state,
+    undirected library links, cloning, and establishing-image generation.
+servers:
+  - url: /
+x-vesper-auth: Authenticated Vesper user session required.
+tags:
+  - name: Locations
+  - name: Location Images
+paths:
+  /api/locations:
+    get:
+      tags: [Locations]
+      summary: List discoverable locations
+      x-vesper-source: apps/web/src/app/api/locations/route.ts
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+        - in: query
+          name: tag
+          schema: { type: string }
+          description: Comma-separated tags; tags are ANDed server-side.
+        - in: query
+          name: sort
+          schema: { type: string, enum: [updated, name] }
+        - in: query
+          name: scope
+          schema: { type: string, enum: [owned, public, all] }
+          description: Defaults to owned.
+      responses:
+        '200':
+          description: Search-ordered location summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [locations]
+                properties:
+                  locations:
+                    type: array
+                    items: { $ref: '#/components/schemas/LocationSummary' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Locations]
+      summary: Create a location
+      x-vesper-source: apps/web/src/app/api/locations/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationCreateRequest' }
+      responses:
+        '201':
+          description: Location created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [location]
+                properties:
+                  location: { $ref: '#/components/schemas/Location' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/locations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/LocationId'
+    get:
+      tags: [Locations]
+      summary: Read an owned or public location
+      description: Includes the author's location-link projection and a mine ownership flag.
+      x-vesper-source: apps/web/src/app/api/locations/[id]/route.ts
+      responses:
+        '200':
+          description: Location detail.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [location, mine]
+                properties:
+                  location: { $ref: '#/components/schemas/Location' }
+                  mine: { type: boolean }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Locations]
+      summary: Update an owned location and/or its links
+      description: The links array is reconciled into the undirected location-link relation.
+      x-vesper-source: apps/web/src/app/api/locations/[id]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LocationPatchRequest' }
+      responses:
+        '200':
+          description: Updated location with current links.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [location]
+                properties:
+                  location: { $ref: '#/components/schemas/Location' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Locations]
+      summary: Delete an owned location
+      description: World/session snapshots are independent, so library deletion does not mutate them.
+      x-vesper-source: apps/web/src/app/api/locations/[id]/route.ts
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/locations/{id}/clone:
+    parameters:
+      - $ref: '#/components/parameters/LocationId'
+    post:
+      tags: [Locations]
+      summary: Clone a location into the caller's private library
+      x-vesper-source: apps/web/src/app/api/locations/[id]/clone/route.ts
+      responses:
+        '201':
+          description: Clone created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/locations/{id}/image:
+    parameters:
+      - $ref: '#/components/parameters/LocationId'
+    get:
+      tags: [Location Images]
+      summary: Read the newest location image row
+      x-vesper-source: apps/web/src/app/api/locations/[id]/image/route.ts
+      responses:
+        '200':
+          description: Latest image row or null.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [image]
+                properties:
+                  image:
+                    oneOf:
+                      - { $ref: '#/components/schemas/ImageRecord' }
+                      - { type: 'null' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Location Images]
+      summary: Queue location establishing-image generation
+      description: The renderer chooses landscape/interior treatment from location scale.
+      x-vesper-source: apps/web/src/app/api/locations/[id]/image/route.ts
+      responses:
+        '202':
+          description: Entity-image job queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, status]
+                properties:
+                  jobId: { type: string }
+                  status: { type: string, const: pending }
+        '404': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  parameters:
+    LocationId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    LocationScale:
+      type: string
+      enum: [intimate, room, hall, open, expanse]
+    LocationSummary:
+      type: object
+      required: [id, name, description, tags, scale]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        imageId: { type: [string, 'null'] }
+        scale: { $ref: '#/components/schemas/LocationScale' }
+    LocationLink:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+    Location:
+      allOf:
+        - $ref: '#/components/schemas/LocationSummary'
+        - type: object
+          properties:
+            ambient: { type: object, additionalProperties: true }
+            area: { type: [string, 'null'] }
+            links:
+              type: array
+              items: { $ref: '#/components/schemas/LocationLink' }
+            visibility: { type: string, enum: [private, public] }
+          additionalProperties: true
+    LocationCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, default: '' }
+        ambient: { type: object, additionalProperties: true }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 60 }
+        scale:
+          allOf:
+            - $ref: '#/components/schemas/LocationScale'
+          default: room
+        area: { type: string, maxLength: 100 }
+    LocationPatchRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        ambient: { type: object, additionalProperties: true }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 60 }
+        scale: { $ref: '#/components/schemas/LocationScale' }
+        area: { type: [string, 'null'], maxLength: 100 }
+        links:
+          type: array
+          items: { type: string, minLength: 1 }
+        visibility: { type: string, enum: [private, public] }
+      additionalProperties: false
+    ImageRecord:
+      type: object
+      additionalProperties: true
+      properties:
+        id: { type: string }
+        status: { type: string }
+        kind: { type: string }
+        entityKind: { type: string }
+        entityId: { type: [string, 'null'] }
