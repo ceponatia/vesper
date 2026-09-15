@@ -102,6 +102,73 @@ export async function uploadAvatar(input: UploadAvatarInput): Promise<UploadAvat
   return { ok: true, avatarImageId: asset.id };
 }
 
+export interface UploadImageGeneratorReferenceInput {
+  userId: string;
+  /** A `data:image/...;base64,...` URL read directly from the owner's local file. */
+  dataUrl: string;
+  /** Display/provenance only; MIME and decoding come from the validated data URL. */
+  fileName?: string;
+  sink?: DiagnosticSink;
+}
+
+export type UploadImageGeneratorReferenceResult = { ok: true; imageId: string } | { ok: false; error: string };
+
+/**
+ * Store a local file for reuse as an Image Generator input.
+ *
+ * This deliberately converges on the Generator's existing image-id contract:
+ * the run never carries a data URL and the renderer gets no special upload
+ * branch. The asset is a hidden `generator_output` because that is the
+ * Generator-owned, owner-only storage class; it has no entity/chat association
+ * and is not tied to any run output record, so run deletion does not claim it.
+ *
+ * Composition is preserved. `rotate()` only materializes EXIF orientation;
+ * there is no crop or resize before the ordinary storage path canonicalizes the
+ * raster to WebP.
+ */
+export async function uploadImageGeneratorReference(
+  input: UploadImageGeneratorReferenceInput,
+): Promise<UploadImageGeneratorReferenceResult> {
+  const decoded = decodeDataUrl(input.dataUrl);
+  if (!decoded) {
+    input.sink?.push(
+      diag("warn", "images.generator_upload.bad_data_url", "Generator upload was not a valid supported image data URL"),
+    );
+    return { ok: false, error: "uploaded file is not a valid supported image" };
+  }
+  if (decoded.buffer.byteLength > MAX_DECODED_BYTES) {
+    return { ok: false, error: "uploaded image is too large" };
+  }
+
+  const originalName = input.fileName?.trim().slice(0, 255);
+  const asset = await createImageAsset({
+    ownerId: input.userId,
+    kind: "generator_output",
+    prompt: originalName ? `Uploaded Generator reference — ${originalName}` : "Uploaded Generator reference",
+    meta: {
+      source: "generator_upload",
+      mime: decoded.mime,
+      ...(originalName ? { originalName } : {}),
+    },
+  });
+
+  let buffer: Buffer;
+  try {
+    buffer = await sharp(decoded.buffer, SHARP_DECODE_LIMITS).rotate().toBuffer();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await failImage(asset.id, message);
+    input.sink?.push(
+      diag("warn", "images.generator_upload.decode_failed", message.slice(0, 300), { context: { imageId: asset.id } }),
+    );
+    return { ok: false, error: "could not read that image — try a different file" };
+  }
+
+  const saved = await saveImageBuffer(asset.id, buffer, input.sink);
+  if (saved?.status !== "ready") return { ok: false, error: "failed to save the uploaded image" };
+  return { ok: true, imageId: asset.id };
+}
+
 export interface UploadChatAttachmentInput {
   chatId: string;
   userId: string;
