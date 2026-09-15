@@ -1,0 +1,514 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chats and Simulation API
+  version: 0.1.0
+  description: >-
+    Core authenticated conversation API: chat discovery/creation, transcript paging,
+    streamed exchanges, state editing, scene rendering, attachments, and successor-world
+    provisioning. Admin/inspector routes are intentionally excluded from this first pass.
+servers:
+  - url: /
+x-vesper-auth: Authenticated Vesper user session required.
+tags:
+  - name: Chats
+  - name: Transcript
+  - name: State
+  - name: Scenes
+  - name: Successor Worlds
+paths:
+  /api/chats:
+    get:
+      tags: [Chats]
+      summary: List conversations
+      x-vesper-source: apps/web/src/app/api/chats/route.ts
+      parameters:
+        - in: query
+          name: characterId
+          schema: { type: string }
+          description: Limit results to chats containing this character anywhere in the roster.
+        - in: query
+          name: archived
+          schema: { type: string, enum: ['1'] }
+          description: Set to 1 to list archived chats instead of active chats.
+      responses:
+        '200':
+          description: Recency-ordered conversations, capped at 100.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chats]
+                properties:
+                  chats:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChatSummary' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Chats]
+      summary: Create a conversation
+      description: Creates a one-to-four-character conversation and seeds its memory/scenario state.
+      x-vesper-source: apps/web/src/app/api/chats/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateChatRequest' }
+      responses:
+        '201':
+          description: Chat created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, memoryGroupId]
+                properties:
+                  id: { type: string }
+                  memoryGroupId: { type: string }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/chats/{chatId}:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    get:
+      tags: [Transcript]
+      summary: Load a chat bootstrap envelope and transcript page
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/route.ts
+      parameters:
+        - in: query
+          name: before
+          schema: { type: string }
+          description: Message id used as a keyset cursor for the next older page.
+      responses:
+        '200':
+          description: Up to 100 transcript rows plus chat, character and roster bootstrap data.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TranscriptEnvelope' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Transcript]
+      summary: Submit one exchange
+      description: >-
+        Runs either the legacy or successor exchange according to server-resolved authority.
+        The successful response is a plain-text stream; raw provider tokens are not guaranteed
+        to be exposed because successor narration is audited before paced reveal.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatExchangeRequest' }
+      responses:
+        '200':
+          description: Streamed narrator reply.
+          content:
+            text/plain:
+              schema: { type: string }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: Archived/busy chat or an operation unavailable in the selected engine lane.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '429': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Chats]
+      summary: Rename, archive/restore, or mark a chat as seen
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatchChatRequest' }
+      responses:
+        '200': { description: Chat metadata updated. }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Chats]
+      summary: Permanently delete a chat
+      description: Successor-routed chats also delete their owned simulation-world graph.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/route.ts
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/chats/{chatId}/stop:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    post:
+      tags: [Transcript]
+      summary: Stop an in-flight reply
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/stop/route.ts
+      responses:
+        '200': { description: Stop request accepted. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/chats/{chatId}/state:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+      - in: query
+        name: characterId
+        schema: { type: string }
+        description: Target a specific roster member; omitted targets the primary participant.
+    get:
+      tags: [State]
+      summary: Read the current conversation-state projection
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/state/route.ts
+      responses:
+        '200':
+          description: Drifted state snapshot plus wardrobe, garment and simulation-clock projections.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [State]
+      summary: Author-edit conversation or participant state
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/state/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatStatePatch' }
+      responses:
+        '200':
+          description: Updated state snapshot.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/chats/{chatId}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    post:
+      tags: [Transcript]
+      summary: Upload one player image attachment
+      description: Not currently available to successor-world chats.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/attachments/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  maxLength: 3000000
+                  description: Base64 image data URL beginning with data:image/.
+      responses:
+        '201':
+          description: Attachment stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/chats/{chatId}/scene:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    get:
+      tags: [Scenes]
+      summary: List scene images for this chat
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/scene/route.ts
+      responses:
+        '200':
+          description: Chat-scoped scenes and current render-job state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scenes, rendering]
+                properties:
+                  scenes:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+                  rendering: { type: boolean }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Scenes]
+      summary: Queue a character-chat scene render
+      description: Uses an empty JSON body; successor-world chats currently return 409.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/scene/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              maxProperties: 0
+      responses:
+        '202':
+          description: Render queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, chatId]
+                properties:
+                  jobId: { type: string }
+                  chatId: { type: string }
+        '409': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/successor-chats:
+    get:
+      tags: [Successor Worlds]
+      summary: List successor-world chats
+      description: Lists non-legacy chats with their linked world clock projection.
+      x-vesper-source: apps/web/src/app/api/successor-chats/route.ts
+      responses:
+        '200':
+          description: Successor-world chat list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chats]
+                properties:
+                  chats:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Successor Worlds]
+      summary: Provision a successor-world chat
+      description: >-
+        Resumable, idempotent world provisioning. requestId is required and binds one durable
+        provisioning intent. Successful completion returns the chat, world and branch ids.
+      x-vesper-source: apps/web/src/app/api/successor-chats/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SuccessorChatCreateRequest' }
+      responses:
+        '201':
+          description: Successor world is ready.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SuccessorChatCreateResponse' }
+        '409':
+          description: Provisioning conflict, stale replay, or world quota reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '500': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/successor-chats/{chatId}:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    patch:
+      tags: [Successor Worlds]
+      summary: Set or clear the successor world's calendar anchor
+      x-vesper-source: apps/web/src/app/api/successor-chats/[chatId]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [calendarStart]
+              properties:
+                calendarStart:
+                  type: [string, 'null']
+                  description: Simulation calendar day-zero anchor accepted by simCalendarStartSchema.
+      responses:
+        '200':
+          description: Updated simulation clock projection.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [simClock]
+                properties:
+                  simClock: { type: [object, 'null'], additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  parameters:
+    ChatId:
+      in: path
+      name: chatId
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    ChatSummary:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        archivedAt: { type: [string, 'null'], format: date-time }
+        lastMessageAt: { type: [string, 'null'], format: date-time }
+        characterId: { type: string }
+        characterName: { type: string }
+        avatarImageId: { type: [string, 'null'] }
+        lastLine: { type: [string, 'null'] }
+        say: { type: string }
+        isSuccessor: { type: boolean }
+      additionalProperties: true
+    CreateChatRequest:
+      type: object
+      additionalProperties: false
+      required: [characterIds, memory]
+      properties:
+        characterIds:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items: { type: string, minLength: 1 }
+        title: { type: string, maxLength: 120 }
+        memory: { type: string, enum: [shared, fresh] }
+        presetId: { type: string, minLength: 1 }
+    TranscriptEnvelope:
+      type: object
+      required: [messages, hasMore, nextBefore, chat, character, roster]
+      properties:
+        messages:
+          type: array
+          items: { type: object, additionalProperties: true }
+        hasMore: { type: boolean }
+        nextBefore: { type: [string, 'null'] }
+        chat: { type: object, additionalProperties: true }
+        character: { type: object, additionalProperties: true }
+        roster:
+          type: array
+          items: { type: object, additionalProperties: true }
+    ChatExchangeRequest:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [send, open, continue, action_beat, regenerate, rerun]
+          default: send
+        content: { type: string }
+        inputMode: { type: string, enum: [player, narrator], default: player }
+        model: { type: string, minLength: 1, maxLength: 120 }
+        cue: { type: string, maxLength: 200 }
+        initiative: { type: boolean }
+        action: { type: string, description: Valid chat action id from the shared contract. }
+        messageId: { type: string, minLength: 1, maxLength: 120 }
+        attachmentIds:
+          type: array
+          maxItems: 4
+          items: { type: string, minLength: 1, maxLength: 120 }
+      description: >-
+        send requires content or at least one attachment; rerun requires messageId;
+        action_beat requires action.
+    PatchChatRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        title: { type: string, maxLength: 120 }
+        archived: { type: boolean }
+        seen: { type: boolean }
+    ChatStatePatch:
+      type: object
+      properties:
+        premise: { type: string }
+        regard: { type: integer, minimum: -100, maximum: 100 }
+        familiarity: { type: integer, minimum: 0, maximum: 100 }
+        relationship: { type: object, additionalProperties: true }
+        mindNote: { type: string }
+        meters:
+          type: object
+          additionalProperties: { type: number }
+        conditions:
+          type: array
+          items: { type: object, additionalProperties: true }
+        wornItemIds:
+          type: array
+          maxItems: 40
+          items: { type: string, minLength: 1 }
+        outfitPresetId: { type: string, maxLength: 120 }
+        outfit: { type: string }
+        outfitExposed: { type: boolean }
+        garmentOperations:
+          type: array
+          items: { type: object, additionalProperties: true }
+        activeSocialCards:
+          type: array
+          items: { type: object, additionalProperties: true }
+        openLoops:
+          type: array
+          maxItems: 6
+          items: { type: string, maxLength: 200 }
+        memoryQueries:
+          type: array
+          maxItems: 6
+          items: { type: string, maxLength: 200 }
+        sceneAuto: { type: string, enum: [off, milestones] }
+        sceneModel: { type: string, maxLength: 64 }
+        supportingCast: { type: array, items: { type: object, additionalProperties: true } }
+        plans: { type: array, items: { type: object, additionalProperties: true } }
+        calendarStart: { type: object, additionalProperties: true }
+        whereabouts: { type: string, maxLength: 120 }
+      additionalProperties: true
+    SuccessorChatCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [characterId, requestId]
+      properties:
+        characterId: { type: string, minLength: 1, maxLength: 120 }
+        title: { type: string, maxLength: 120 }
+        requestId:
+          type: string
+          description: Durable provisioning request id accepted by provisioningRequestIdSchema.
+    SuccessorChatCreateResponse:
+      type: object
+      required: [id, worldId, branchId]
+      properties:
+        id: { type: string }
+        worldId: { type: string }
+        branchId: { type: string }
