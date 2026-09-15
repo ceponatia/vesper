@@ -8,7 +8,8 @@ import {
   type SocialReactionCard,
 } from "@/contracts";
 import { MONTHS } from "@/lib/clock";
-import { chatPresetsApi, chatsApi, imageProfilesApi, personasApi, type ChatStateEdit, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatPresetsApi, chatsApi, imageProfilesApi, personasApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatStateResourcesApi, type ChatScenarioPatch } from "@/lib/client/api/chat-state-resources";
 import { VisualStateNarrationToggle } from "@/components/chat/visual-state-narration-toggle";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { CalendarStartDialog } from "@/components/chat/calendar-start-dialog";
@@ -49,11 +50,6 @@ export function ChatScenarioModal({
   snapshot: ChatStateSnapshot;
   onSaved: (next: ChatStateSnapshot) => void;
 }) {
-  // Kept OUTSIDE the Dialog (a sibling, not a descendant): the overlay's own
-  // backdrop-blur establishes a containing block for `position: fixed`
-  // descendants (docs/ui/mobile.md §Sheet), and while this Dialog's own
-  // full-viewport overlay happens to make that harmless, a sibling sidesteps
-  // the question entirely instead of relying on that coincidence.
   const [editingCalendar, setEditingCalendar] = useState(false);
   return (
     <>
@@ -76,10 +72,6 @@ export function ChatScenarioModal({
           onClose={() => setEditingCalendar(false)}
           onSaved={(next) => {
             setEditingCalendar(false);
-            // Threads back through the SAME onSaved the form's own Save uses, so the
-            // conversation page's chatState (and every reader of it — the status
-            // strip's ambient chip, the desktop clock card) refreshes immediately;
-            // the anchor PATCHes independently of the rest of the scenario draft.
             onSaved(next);
           }}
         />
@@ -111,28 +103,14 @@ function ScenarioForm({
   const [cards, setCards] = useState<SocialReactionCard[]>([...snapshot.activeSocialCards]);
   const [personaId, setPersonaId] = useState(snapshot.playerState.personaId);
   const [saving, setSaving] = useState(false);
-  // Read directly off the live `snapshot` prop (not a local copy): the calendar dialog
-  // saves independently and hands its fresh snapshot back through the SAME onSaved this
-  // form uses, so re-render picks up the new anchor without any state to reconcile.
   const storyStart = chatGameTime(0, snapshot.calendarStart);
-
-  // Who the player can be here. Chat-wide, like the
-  // premise beside it. Blank ⇒ the resolver falls back to the owner's default persona,
-  // so an untouched chat still knows who you are.
   const personas = useAsyncData(() => personasApi.list({ sort: "name" }), []);
-
-  // --- Scenario presets — the form mounts per open, so this loads then.
   const presets = useAsyncData(() => chatPresetsApi.list(), []);
   const [appliedPresetId, setAppliedPresetId] = useState("");
   const [presetNameOpen, setPresetNameOpen] = useState(false);
   const [presetName, setPresetName] = useState("");
   const [presetBusy, setPresetBusy] = useState(false);
 
-  /**
-   * Fill the CHAT-WIDE draft fields from a preset — the user still hits Save to
-   * persist. The preset's outfit / starting relationship are per-character seeds
-   * and only apply when a NEW conversation is created from it.
-   */
   const applyPreset = (presetId: string) => {
     setAppliedPresetId(presetId);
     const preset = (presets.data ?? []).find((p) => p.id === presetId);
@@ -155,12 +133,6 @@ function ScenarioForm({
     }
   };
 
-  /**
-   * Capture the current draft + the chat's CURRENT relationship as the preset's
-   * starting point: both band ids and the kind/history/mask
-   * texture ride along, applied only when a NEW conversation seeds from this
-   * preset — never to a running chat.
-   */
   const savePreset = async () => {
     const name = presetName.trim();
     if (!name || presetBusy) return;
@@ -168,8 +140,6 @@ function ScenarioForm({
     const result = await chatPresetsApi.create({
       name,
       premise,
-      // Per-character seeds (applied to a NEW conversation's primary): captured
-      // from the primary's CURRENT sheet, since this modal no longer edits them.
       outfit: snapshot.outfit,
       outfitExposed: snapshot.outfitExposed,
       socialCards: cards,
@@ -195,36 +165,40 @@ function ScenarioForm({
     }
   };
 
-  // Only the touched fields go into the patch: a pre-first-exchange save upserts the
-  // state row, and the server seeds the untouched rest from the profile (authored
-  // stage, the character's own social cards) — an untouched field must not clobber
-  // that seed with this form's blank default.
   const save = async () => {
-    const patch: ChatStateEdit = {};
+    const patch: ChatScenarioPatch = {};
     if (premise !== snapshot.premise) patch.premise = premise;
     const sceneAutoMode = sceneAuto ? "milestones" : "off";
     if (sceneAutoMode !== snapshot.sceneAuto) patch.sceneAuto = sceneAutoMode;
     if (sceneModel !== (snapshot.sceneModel ?? "")) patch.sceneModel = sceneModel;
     if (JSON.stringify(cards) !== JSON.stringify(snapshot.activeSocialCards)) patch.activeSocialCards = cards;
-    // Switching persona RESETS the wardrobe rather than carrying it over: the worn list
-    // and overlay describe the person who was wearing them. A blank list re-seeds from
-    // the new persona's default outfit preset on the next resolve (resolveChatWardrobe),
-    // exactly as a fresh chat does.
-    if (personaId !== snapshot.playerState.personaId) {
-      // `seeded: false` is the load-bearing part — it re-arms the default-preset seed, so
-      // the new persona turns up dressed in their own clothes rather than naked.
-      patch.playerState = { personaId, wornItemIds: [], seeded: false, outfitPresetId: "", overlay: "" };
-    }
+
     setSaving(true);
-    const result = await chatsApi.editState(chatId, patch);
-    setSaving(false);
-    if (result.ok) {
-      onSaved(result.data);
-      toast.push({ title: "Scenario saved" });
-      onClose();
-    } else {
-      toast.push({ title: "Save failed", description: result.error.message, tone: "error" });
+    if (Object.keys(patch).length > 0) {
+      const scenarioResult = await chatStateResourcesApi.editScenario(chatId, patch);
+      if (!scenarioResult.ok) {
+        setSaving(false);
+        toast.push({ title: "Save failed", description: scenarioResult.error.message, tone: "error" });
+        return;
+      }
     }
+    if (personaId !== snapshot.playerState.personaId) {
+      const playerResult = await chatStateResourcesApi.editPlayerState(chatId, { personaId });
+      if (!playerResult.ok) {
+        setSaving(false);
+        toast.push({ title: "Persona change failed", description: playerResult.error.message, tone: "error" });
+        return;
+      }
+    }
+    const refreshed = await chatsApi.state(chatId);
+    setSaving(false);
+    if (!refreshed.ok) {
+      toast.push({ title: "Scenario saved, but refresh failed", description: refreshed.error.message, tone: "error" });
+      return;
+    }
+    onSaved(refreshed.data);
+    toast.push({ title: "Scenario saved" });
+    onClose();
   };
 
   return (
@@ -268,9 +242,6 @@ function ScenarioForm({
         <span className="text-[11px] text-paper-600">This chat only — it never touches {who}&rsquo;s saved bio or personality.</span>
       </label>
 
-      {/* The calendar anchor's editor — moved out of the Roster sheet, which no
-          longer shows the clock at all. Saves immediately through its own
-          dialog, independent of this form's Save. */}
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Story starts</span>
         <div className="flex items-center justify-between gap-2 rounded-md border border-ink-600 bg-ink-850 px-3 py-2">
