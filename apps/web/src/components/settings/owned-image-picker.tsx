@@ -87,8 +87,14 @@ function parentAdminFilesPath(path: string): string {
   return slash < 0 ? "" : path.slice(0, slash);
 }
 
-function AdminFilesImageSource({ onImported }: { onImported: (imageId: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** Mounted only while the Files chooser is open, so closed pickers do no Files I/O. */
+function AdminFilesImageBrowser({
+  onImported,
+  onClose,
+}: {
+  onImported: (imageId: string) => void;
+  onClose: () => void;
+}) {
   const [path, setPath] = useState("");
   const [importing, setImporting] = useState<string | null>(null);
   const directory = useAsyncData(() => adminFilesApi.list(path), [path]);
@@ -103,23 +109,12 @@ function AdminFilesImageSource({ onImported }: { onImported: (imageId: string) =
       return;
     }
     onImported(result.data.imageId);
-    setOpen(false);
     toast.push({
       title: "Reference imported",
       description: "Vesper copied the Files image into the reusable image library.",
       tone: "success",
     });
   };
-
-  if (!open) {
-    return (
-      <div>
-        <Button size="sm" variant="quiet" onClick={() => setOpen(true)}>
-          Choose from Files
-        </Button>
-      </div>
-    );
-  }
 
   const entries = directory.data?.entries ?? [];
   const folders = entries.filter((entry) => entry.kind === "folder");
@@ -142,7 +137,7 @@ function AdminFilesImageSource({ onImported }: { onImported: (imageId: string) =
             Root
           </Button>
         ) : null}
-        <Button size="sm" variant="quiet" onClick={() => setOpen(false)}>
+        <Button size="sm" variant="quiet" onClick={onClose}>
           Close
         </Button>
       </div>
@@ -190,6 +185,28 @@ function AdminFilesImageSource({ onImported }: { onImported: (imageId: string) =
         </div>
       ) : null}
     </div>
+  );
+}
+
+function AdminFilesImageSource({ onImported }: { onImported: (imageId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <div>
+        <Button size="sm" variant="quiet" onClick={() => setOpen(true)}>
+          Choose from Files
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <AdminFilesImageBrowser
+      onClose={() => setOpen(false)}
+      onImported={(imageId) => {
+        onImported(imageId);
+        setOpen(false);
+      }}
+    />
   );
 }
 

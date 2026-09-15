@@ -130,6 +130,7 @@ function uploadAdminFile(options: UploadOptions): Promise<ApiResult<{ entry: Adm
  */
 const ADMIN_FILES_BATCH_LIMIT = 500;
 
+/** Splits `items` into consecutive chunks of at most `size` (the last one short if it does not divide evenly). */
 /**
  * Turns the remainder of a chunked batch into failure rows.
  *
@@ -230,7 +231,7 @@ export const adminFilesApi = {
     return { ok: true, data: { files, folders, bytes, truncated } };
   },
   /**
-   * Moves every path into one destination (`""` = the Files root) in one call;
+   * Moves every path into `destination` (`""` = the Files root) in one call;
    * partial success is reported per path in `failures`. Chunked and combined
    * the same way as `deleteMany` (see there); `entries` concatenates across
    * batches along with `failures`.
@@ -257,8 +258,8 @@ export const adminFilesApi = {
       }
       moved += result.data.moved;
       attempted += batch.length;
-      failures.push(...result.data.failures);
       entries.push(...result.data.entries);
+      failures.push(...result.data.failures);
     }
     return { ok: true, data: { moved, entries, failures } };
   },
