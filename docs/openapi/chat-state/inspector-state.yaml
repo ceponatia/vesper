@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Participant Inspector State API
+  version: 1.0.0
+  description: >-
+    Admin/self-inspector home for engine carry-over and diagnostic participant state.
+    Gameplay resources stay focused while developer recovery/edit levers remain available.
+servers:
+  - url: /
+x-vesper-status: implemented
+x-vesper-auth: Admin-role-gated and owner-scoped using the existing chat-inspector authorization model.
+x-vesper-canonical-source: apps/web/src/app/api/admin/chat-inspector/[chatId]/participants/[characterId]/state/route.ts
+x-vesper-self-mirror-source: apps/web/src/app/api/admin/self/chat-inspector/[chatId]/participants/[characterId]/state/route.ts
+x-vesper-service: apps/web/src/server/engine/chat-state/focused-edit.ts#editChatParticipantInspectorState
+x-vesper-invariants:
+  - The canonical admin route and /self mirror are added together and covered by the existing parity test.
+  - Debug mutation is not available through an ordinary owner gameplay route.
+  - The existing rollback-safe ChatState fields remain the persistence source; there is no second store.
+  - lastPulseTrace and lastMemoryTrace remain read-only.
+tags:
+  - name: Participant Inspector State
+paths:
+  /api/admin/self/chat-inspector/{chatId}/participants/{characterId}/state:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Participant Inspector State]
+      operationId: getChatParticipantInspectorState
+      summary: Read engine carry-over and diagnostic state for one roster character
+      x-vesper-source: apps/web/src/app/api/admin/chat-inspector/[chatId]/participants/[characterId]/state/route.ts
+      responses:
+        '200':
+          description: Inspector-only participant state and traces.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectorStateView' }
+        '404':
+          description: Chat/participant not found, not owned, or caller cannot use the inspector.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Participant Inspector State]
+      operationId: patchChatParticipantInspectorState
+      summary: Apply an explicit developer/recovery edit to engine carry-over state
+      x-vesper-source: apps/web/src/app/api/admin/chat-inspector/[chatId]/participants/[characterId]/state/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InspectorStatePatch' }
+      responses:
+        '200':
+          description: Inspector state updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectorStateView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: chat_busy while an exchange/finalizer owns the row.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  parameters:
+    ChatId:
+      in: path
+      name: chatId
+      required: true
+      schema: { type: string, minLength: 1 }
+    CharacterId:
+      in: path
+      name: characterId
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    AttributeOverlay:
+      type: object
+      additionalProperties: true
+    TraitOverlay:
+      type: object
+      additionalProperties: true
+    VoiceExemplar:
+      type: object
+      additionalProperties: true
+    CallbackEntry:
+      type: object
+      additionalProperties: true
+    FeelingState:
+      type: object
+      additionalProperties: true
+    SelfieEntry:
+      type: object
+      additionalProperties: true
+    ChatDrive:
+      type: object
+      additionalProperties: true
+    InspectorStateView:
+      type: object
+      additionalProperties: false
+      required: [openLoops, memoryQueries, surfacedCues, attributeOverlays, traitOverlays, voiceExemplars, callbackHistory, feeling, selfieHistory, drives, lastPulseTrace, lastMemoryTrace]
+      properties:
+        openLoops:
+          type: array
+          maxItems: 3
+          items: { type: string, maxLength: 200 }
+        memoryQueries:
+          type: array
+          maxItems: 6
+          items: { type: string, maxLength: 200 }
+        surfacedCues:
+          type: object
+          additionalProperties: { type: string }
+        attributeOverlays:
+          type: array
+          items: { $ref: '#/components/schemas/AttributeOverlay' }
+        traitOverlays:
+          type: array
+          items: { $ref: '#/components/schemas/TraitOverlay' }
+        voiceExemplars:
+          type: array
+          items: { $ref: '#/components/schemas/VoiceExemplar' }
+        callbackHistory:
+          type: array
+          items: { $ref: '#/components/schemas/CallbackEntry' }
+        feeling: { $ref: '#/components/schemas/FeelingState' }
+        selfieHistory:
+          type: array
+          items: { $ref: '#/components/schemas/SelfieEntry' }
+        drives:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/ChatDrive' }
+        lastPulseTrace:
+          type: object
+          readOnly: true
+          additionalProperties: true
+        lastMemoryTrace:
+          type: object
+          readOnly: true
+          additionalProperties: true
+    InspectorStatePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        openLoops:
+          type: array
+          maxItems: 3
+          items: { type: string, maxLength: 200 }
+        memoryQueries:
+          type: array
+          maxItems: 6
+          items: { type: string, maxLength: 200 }
+        surfacedCues:
+          type: object
+          additionalProperties: { type: string }
+        attributeOverlays:
+          type: array
+          items: { $ref: '#/components/schemas/AttributeOverlay' }
+        traitOverlays:
+          type: array
+          items: { $ref: '#/components/schemas/TraitOverlay' }
+        voiceExemplars:
+          type: array
+          items: { $ref: '#/components/schemas/VoiceExemplar' }
+        callbackHistory:
+          type: array
+          items: { $ref: '#/components/schemas/CallbackEntry' }
+        feeling: { $ref: '#/components/schemas/FeelingState' }
+        selfieHistory:
+          type: array
+          items: { $ref: '#/components/schemas/SelfieEntry' }
+        drives:
+          type: array
+          maxItems: 3
+          items: { $ref: '#/components/schemas/ChatDrive' }
