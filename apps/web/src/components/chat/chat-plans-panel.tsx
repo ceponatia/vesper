@@ -14,6 +14,7 @@ import {
 import { newId } from "@/lib/ids";
 import type { CalendarStart } from "@/lib/clock";
 import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatStateResourcesApi } from "@/lib/client/api/chat-state-resources";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,7 @@ const DAY_OPTIONS: { value: number; label: string }[] = [
  * commitments, listed below Supporting Cast. Plans accrete as the story strikes them and
  * come due on the story clock; this panel is the manual override — seed a plan the fiction
  * hasn't stated yet, fix a when, mark one kept/canceled, or remove a mis-minted entry.
- * Saves are whole-list replacements through the state PATCH (chat-wide field); a 409 means a
+ * Saves are whole-list replacements through the focused scenario resource; a 409 means a
  * reply is streaming — try again after it settles.
  */
 export function ChatPlansPanel({
@@ -72,9 +73,9 @@ export function ChatPlansPanel({
 
   const save = async (next: ChatPlan[]) => {
     setSaving(true);
-    const result = await chatsApi.editState(chatId, { plans: next });
-    setSaving(false);
+    const result = await chatStateResourcesApi.editScenario(chatId, { plans: next });
     if (!result.ok) {
+      setSaving(false);
       toast.push({
         title: "Couldn't save the plans",
         description:
@@ -83,7 +84,13 @@ export function ChatPlansPanel({
       });
       return false;
     }
-    onSaved(result.data);
+    const refreshed = await chatsApi.state(chatId);
+    setSaving(false);
+    if (!refreshed.ok) {
+      toast.push({ title: "Plans saved, but refresh failed", description: refreshed.error.message, tone: "error" });
+      return false;
+    }
+    onSaved(refreshed.data);
     return true;
   };
 
