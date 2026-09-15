@@ -15,6 +15,7 @@ import {
   apiPatch,
   apiPost,
   apiPut,
+  type ApiResult,
   withQuery,
 } from "./http";
 
@@ -23,6 +24,7 @@ import { arrayOf, createdRefSchema, idSchema, listOf, textOr } from "./shared";
 import {
   type AuthoredEdgeRecord,
   type ChatStateEdit,
+  type ChatStateSnapshot,
   chatRelationshipSchema,
   chatRelationshipsSchema,
   chatStateSnapshotSchema,
@@ -34,6 +36,124 @@ import {
   simMoveTogetherResultSchema,
   simTravelResultSchema,
 } from "./chat-schemas";
+
+const hasFields = (value: Record<string, unknown>): boolean => Object.keys(value).length > 0;
+
+/**
+ * Transitional client adapter for the old UI edit shape. It no longer sends the
+ * mixed PATCH /state request: fields are partitioned by their focused authority,
+ * written to those resources, then the aggregate GET projection is refreshed.
+ * The legacy HTTP PATCH remains server-side only for external compatibility while
+ * the remaining call sites are renamed around the focused types.
+ */
+async function editStateThroughFocusedResources(
+  chatId: string,
+  patch: ChatStateEdit,
+  characterId?: string,
+): Promise<ApiResult<ChatStateSnapshot>> {
+  const needsCharacter =
+    patch.regard !== undefined ||
+    patch.familiarity !== undefined ||
+    patch.relationship !== undefined ||
+    patch.mindNote !== undefined ||
+    patch.meters !== undefined ||
+    patch.conditions !== undefined ||
+    patch.whereabouts !== undefined ||
+    patch.wornItemIds !== undefined ||
+    patch.outfitPresetId !== undefined ||
+    patch.outfit !== undefined ||
+    patch.outfitExposed !== undefined ||
+    patch.garmentOperations !== undefined ||
+    patch.openLoops !== undefined ||
+    patch.memoryQueries !== undefined ||
+    patch.surfacedCues !== undefined ||
+    patch.attributeOverlays !== undefined;
+
+  // Non-first-party compatibility only. Every current sheet supplies the roster
+  // character id, but retaining this fallback avoids silently changing the public
+  // helper's historic primary-target behavior for callers outside the migrated UI.
+  if (needsCharacter && !characterId) {
+    return apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, patch);
+  }
+
+  const scenario: Record<string, unknown> = {};
+  if (patch.premise !== undefined) scenario.premise = patch.premise;
+  if (patch.activeSocialCards !== undefined) scenario.activeSocialCards = patch.activeSocialCards;
+  if (patch.sceneAuto !== undefined) scenario.sceneAuto = patch.sceneAuto;
+  if (patch.sceneModel !== undefined) scenario.sceneModel = patch.sceneModel;
+  if (patch.supportingCast !== undefined) scenario.supportingCast = patch.supportingCast;
+  if (patch.plans !== undefined) scenario.plans = patch.plans;
+  if (patch.calendarStart !== undefined) scenario.calendarStart = patch.calendarStart;
+  if (hasFields(scenario)) {
+    const result = await apiPatch(z.unknown(), `/api/chats/${chatId}/scenario`, scenario);
+    if (!result.ok) return { ok: false, error: result.error };
+  }
+
+  if (patch.playerState !== undefined) {
+    const result = await apiPatch(z.unknown(), `/api/chats/${chatId}/player-state`, {
+      personaId: patch.playerState.personaId,
+    });
+    if (!result.ok) return { ok: false, error: result.error };
+  }
+
+  if (characterId) {
+    const participant: Record<string, unknown> = {};
+    if (patch.regard !== undefined) participant.regard = patch.regard;
+    if (patch.familiarity !== undefined) participant.familiarity = patch.familiarity;
+    if (patch.relationship !== undefined) participant.relationship = patch.relationship;
+    if (patch.mindNote !== undefined) participant.mindNote = patch.mindNote;
+    if (patch.meters !== undefined) participant.meters = patch.meters;
+    if (patch.conditions !== undefined) participant.conditions = patch.conditions;
+    if (patch.whereabouts !== undefined) participant.whereabouts = patch.whereabouts;
+    if (hasFields(participant)) {
+      const result = await apiPatch(
+        z.unknown(),
+        `/api/chats/${chatId}/participants/${characterId}/state`,
+        participant,
+      );
+      if (!result.ok) return { ok: false, error: result.error };
+    }
+
+    const wardrobe: Record<string, unknown> = {};
+    if (patch.wornItemIds !== undefined) wardrobe.wornItemIds = patch.wornItemIds;
+    if (patch.outfitPresetId !== undefined) wardrobe.outfitPresetId = patch.outfitPresetId;
+    if (patch.outfit !== undefined) wardrobe.outfit = patch.outfit;
+    if (patch.outfitExposed !== undefined) wardrobe.outfitExposed = patch.outfitExposed;
+    if (patch.garmentOperations !== undefined) wardrobe.garmentOperations = patch.garmentOperations;
+    if (hasFields(wardrobe)) {
+      const result = await apiPatch(
+        z.unknown(),
+        `/api/chats/${chatId}/participants/${characterId}/wardrobe`,
+        wardrobe,
+      );
+      if (!result.ok) return { ok: false, error: result.error };
+    }
+
+    const inspector: Record<string, unknown> = {};
+    if (patch.openLoops !== undefined) inspector.openLoops = patch.openLoops;
+    if (patch.memoryQueries !== undefined) inspector.memoryQueries = patch.memoryQueries;
+    if (patch.surfacedCues !== undefined) inspector.surfacedCues = patch.surfacedCues;
+    if (patch.attributeOverlays !== undefined) inspector.attributeOverlays = patch.attributeOverlays;
+    if (hasFields(inspector)) {
+      const result = await apiPatch(
+        z.unknown(),
+        `/api/admin/self/chat-inspector/${chatId}/participants/${characterId}/state`,
+        inspector,
+      );
+      // The sheet keeps these controls hidden for non-admins. A role-hidden edit
+      // therefore degrades to "no inspector edit" rather than breaking the normal
+      // gameplay save; real inspector failures still surface for admins.
+      if (!result.ok && result.error.status !== 403 && result.error.status !== 404) {
+        return { ok: false, error: result.error };
+      }
+    }
+  }
+
+  return apiGet(
+    chatStateSnapshotSchema,
+    `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`,
+  );
+}
 
 export const chatsApi = {
   /** Active conversations, newest first; scoped to one character and/or the archived shelf. */
@@ -77,25 +197,16 @@ export const chatsApi = {
    */
   remove: (chatId: string) => apiDelete(`/api/chats/${chatId}`),
   // --- Light chat state, keyed per participant ---
-  // `characterId` targets any roster member's state (the per-character sheet);
-  // absent ⇒ the primary.
+  // The aggregate read model stays during the migration so the conversation can
+  // refresh one projection after focused writes without multiplying GET requests.
   state: (chatId: string, characterId?: string) =>
     apiGet(
       chatStateSnapshotSchema,
       `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`,
     ),
-  /** Edit chat state fields from the character sheet / scenario modal; returns the refreshed snapshot. */
-  editState: (chatId: string, patch: ChatStateEdit, characterId?: string) =>
-    apiPatch(
-      chatStateSnapshotSchema,
-      `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`,
-      patch,
-    ),
-  /**
-   * Upload ONE player photo for this conversation: a data-URL in, the
-   * `chat_upload` asset id back — sent with the next message as
-   * `attachmentIds`. Input-only content: Gallery-hidden, deleted with its message.
-   */
+  /** @deprecated UI compatibility shape; writes are dispatched to focused resources. */
+  editState: editStateThroughFocusedResources,
+  /** Upload ONE player photo for this conversation. */
   uploadAttachment: (chatId: string, image: string) =>
     apiPost(z.object({ id: z.string() }), `/api/chats/${chatId}/attachments`, {
       image,
@@ -108,11 +219,7 @@ export const chatsApi = {
   /** Delete a single chat message (snip a refusal out of the context window). */
   deleteMessage: (chatId: string, messageId: string) =>
     apiDelete(`/api/chats/${chatId}/messages/${messageId}`),
-  /**
-   * Rendered scenes for the conversation's character (kind="scene"), newest first, plus
-   * whether a render job is live server-side (`rendering` — true through the composer
-   * step BEFORE the pending image row exists, so pollers don't go blind there).
-   */
+  /** Rendered scenes for the conversation, newest first. */
   scenes: (chatId: string) =>
     apiGet(
       z
@@ -123,36 +230,19 @@ export const chatsApi = {
         .catch({ scenes: [], rendering: false }),
       `/api/chats/${chatId}/scene`,
     ),
-  /** Queue a scene render from the recent chat (single-reference); poll `scenes` for the result. */
   generateScene: (chatId: string) =>
     apiPost(z.unknown(), `/api/chats/${chatId}/scene`, {}),
-  /** Cut the in-flight reply short; what already streamed persists with `meta.stopped`. */
   stop: (chatId: string) => apiPost(z.unknown(), `/api/chats/${chatId}/stop`),
-  /**
-   * "Remember this" (D15): pin a player note into the chat's long-term memory —
-   * always retrieved, floor-exempt, and never overridden by the background memory-writer.
-   */
   remember: (chatId: string, content: string) =>
     apiPost(
       z.object({ id: z.string().nullable().catch(null) }),
       `/api/chats/${chatId}/remember`,
       { content },
     ),
-  /**
-   * Player time skip (D14 — flavor-only v1): advances the in-game clock,
-   * expires running timed conditions, stamps the one-shot skip note. Meters untouched.
-   */
   timeSkip: (chatId: string, amount: ChatSkipAmount) =>
     apiPost(chatStateSnapshotSchema, `/api/chats/${chatId}/time-skip`, {
       amount,
     }),
-  /**
-   * Sim-routed time skip (R3 slice 4, ruling 17): ends the standing scene (the
-   * "Later →" wrap) and drains the world's bounded story-time advance. The chat
-   * skip affordances call THIS for sim-routed chats, never the legacy timeSkip.
-   * `requestId` is minted per call (command-integrity A1): a resend of the exact
-   * body replays the recorded response instead of advancing time twice.
-   */
   simAdvanceTime: (chatId: string, minutes: number) =>
     apiPost(
       z.object({
@@ -162,63 +252,32 @@ export const chatsApi = {
       `/api/chats/${chatId}/sim-command`,
       { kind: "advance_time", minutes, requestId: newId() },
     ),
-  /**
-   * The player-facing world read. Degraded / legacy /
-   * shadow ⇒ `!ok`, and the `ChatWorldCard` simply doesn't render (ruling-18-style
-   * affordance hiding).
-   */
   world: (chatId: string) =>
     apiGet(chatWorldSchema, `/api/chats/${chatId}/world`),
-  /**
-   * Skip-style travel (ruling 20): server-composed `move` + a bounded advance to
-   * the journey's earliest arrival. Returns a landing or the public refusal face
-   * (both `ok`); the card refreshes world + chat state on a landing.
-   */
   simTravel: (chatId: string, toZoneId: string) =>
     apiPost(simTravelResultSchema, `/api/chats/${chatId}/sim-command`, {
       kind: "travel",
       toZoneId,
       requestId: newId(),
     }),
-  /**
-   * Walk-with-me (command-integrity A4): invite the co-present primary to travel
-   * together via the ONE atomic `move_together` command (decide + scene-end + one
-   * shared journey + one arrival — the pair can no longer be stranded mid-move).
-   * The primary's acceptance is NPC agency (a deterministic policy, re-run inside
-   * the locked view); returns a co-travel landing or the public refusal face (both
-   * `ok`). `requestId` is minted per tap (A1): a resend replays the recorded
-   * response instead of moving twice. The card refreshes world + transcript on a landing.
-   */
   simMoveTogether: (chatId: string, toZoneId: string) =>
     apiPost(simMoveTogetherResultSchema, `/api/chats/${chatId}/sim-command`, {
       kind: "move_together",
       toZoneId,
       requestId: newId(),
     }),
-  /**
-   * Hand the player's held item to the primary (slice 3): a success or the
-   * public refusal face, both at 200. On success the server writes a `gave_item`
-   * world beat; the card refreshes the transcript + world.
-   */
   simGiveItem: (chatId: string, itemId: string) =>
     apiPost(simGiveItemResultSchema, `/api/chats/${chatId}/sim-command`, {
       kind: "give_item",
       itemId,
       requestId: newId(),
     }),
-  /**
-   * Perform a skip-style action (slice 3): server-composed `start_activity` + a
-   * bounded drain through the activity's duration (the completion trigger fires
-   * inside the drain). Returns a landing or the public refusal face (both `ok`);
-   * on success the server writes a `rested` world beat.
-   */
   simDoActivity: (chatId: string, actionDefinitionId: string) =>
     apiPost(simDoActivityResultSchema, `/api/chats/${chatId}/sim-command`, {
       kind: "do_activity",
       actionDefinitionId,
       requestId: newId(),
     }),
-  /** End the pair's standing scene (wiring lands now; its card UI is slice 4). */
   simEndScene: (chatId: string) =>
     apiPost(
       z.object({ status: z.string().catch("") }),
@@ -228,14 +287,10 @@ export const chatsApi = {
         requestId: newId(),
       },
     ),
-  /** The Relationship panel payload: stage, sparkline, milestones, story so far. */
   relationship: (chatId: string) =>
     apiGet(chatRelationshipSchema, `/api/chats/${chatId}/relationship`),
-  // --- Relationship matrix ---
-  /** The conversation's directed NPC↔NPC edges + roster (the matrix editor's data). */
   relationships: (chatId: string) =>
     apiGet(chatRelationshipsSchema, `/api/chats/${chatId}/relationships`),
-  /** Upsert authored NPC↔NPC edges and/or player edges (band picks + texture → live scalars server-side). */
   saveRelationships: (
     chatId: string,
     body: {
@@ -252,8 +307,6 @@ export const chatsApi = {
       `/api/chats/${chatId}/relationships`,
       body,
     ),
-  // --- Roster ---
-  /** Add a character to the roster (cap 4); D7 memory choice defaults to shared. */
   addParticipant: (
     chatId: string,
     characterId: string,
@@ -263,10 +316,8 @@ export const chatsApi = {
       characterId,
       memory,
     }),
-  /** Remove a roster member (never the last; removing the primary promotes the next). */
   removeParticipant: (chatId: string, characterId: string) =>
     apiDelete(`/api/chats/${chatId}/participants/${characterId}`),
-  /** Flip a member's narrative presence — the roster panel's manual override. */
   setPresence: (
     chatId: string,
     characterId: string,
@@ -275,7 +326,6 @@ export const chatsApi = {
     apiPatch(z.unknown(), `/api/chats/${chatId}/participants/${characterId}`, {
       presence,
     }),
-  /** "Mark this moment": pin a milestone on any message. */
   markMoment: (chatId: string, messageId: string, label?: string) =>
     apiPost(
       z.object({ milestones: z.array(milestoneSchema).catch([]) }),
@@ -285,17 +335,14 @@ export const chatsApi = {
         label,
       },
     ),
-  /** Re-fold the rolling summary from the full transcript — the recovery lever. */
   rebuildSummary: (chatId: string) =>
     apiPost(
       z.object({ summary: z.string().catch("") }),
       `/api/chats/${chatId}/summary/rebuild`,
       {},
     ),
-  /** Transcript export — a plain download URL for an anchor/window.open. */
   exportUrl: (chatId: string, format: "md" | "json", memory: boolean) =>
     `/api/chats/${chatId}/export?format=${format}${memory ? "&memory=1" : ""}`,
-  /** Make one recorded take the displayed reply (display-only); returns its content. */
   switchTake: (chatId: string, messageId: string, takeId: string) =>
     apiPatch(
       z.object({ content: z.string().catch("") }),
@@ -366,16 +413,6 @@ export const successorChatSummarySchema = z.object({
 });
 export type SuccessorChatSummary = z.infer<typeof successorChatSummarySchema>;
 
-/**
- * The successor front door (the Worlds page): create a complete successor chat
- * — fresh isolated world, actors mapped, authority flipped — in one call, and
- * list the caller's existing ones.
- *
- * `requestId` is REQUIRED: it is the
- * caller's idempotency key for one create INTENT. Resend the same id to retry a
- * failed create — the server resumes that world instead of minting a second —
- * and mint a fresh one for a genuinely new world.
- */
 export const successorChatsApi = {
   list: () =>
     apiGet(
@@ -384,7 +421,6 @@ export const successorChatsApi = {
     ),
   create: (body: { characterId: string; title?: string; requestId: string }) =>
     apiPost(z.object({ id: z.string().min(1) }), "/api/successor-chats", body),
-  /** R5 calendar (ruling 17): set (or clear) the linked world's calendar anchor. */
   setCalendar: (
     chatId: string,
     calendarStart: { year: number; month: number; day: number } | null,
