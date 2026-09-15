@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { SUPPORTING_CAST_MAX, type SupportingCastMember } from "@/contracts";
 import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatStateResourcesApi } from "@/lib/client/api/chat-state-resources";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,7 @@ import { useToast } from "@/components/ui/toast";
  * override — add someone before their first mention, fix a relation, or remove
  * an entry the system minted erroneously. Tapping a name opens a lightbox
  * editor for the member's texture (relation / details / voice / whereabouts).
- * Saves are whole-list replacements through the state PATCH (chat-wide field);
+ * Saves are whole-list replacements through the focused scenario resource;
  * a 409 means a reply is streaming — try again after it settles.
  */
 export function ChatSupportingCastPanel({
@@ -38,9 +39,9 @@ export function ChatSupportingCastPanel({
 
   const save = async (next: SupportingCastMember[]) => {
     setSaving(true);
-    const result = await chatsApi.editState(chatId, { supportingCast: next });
-    setSaving(false);
+    const result = await chatStateResourcesApi.editScenario(chatId, { supportingCast: next });
     if (!result.ok) {
+      setSaving(false);
       toast.push({
         title: "Couldn't save the cast",
         description:
@@ -49,7 +50,13 @@ export function ChatSupportingCastPanel({
       });
       return false;
     }
-    onSaved(result.data);
+    const refreshed = await chatsApi.state(chatId);
+    setSaving(false);
+    if (!refreshed.ok) {
+      toast.push({ title: "Cast saved, but refresh failed", description: refreshed.error.message, tone: "error" });
+      return false;
+    }
+    onSaved(refreshed.data);
     return true;
   };
 
