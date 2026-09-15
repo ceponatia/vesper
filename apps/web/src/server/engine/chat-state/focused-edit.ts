@@ -11,7 +11,6 @@ import {
   type SupportingCastMember,
   type TraitValue,
   type ChatPlayerState,
-  type AttributeValue,
   applyGarmentOperations,
   actorHasGarmentInstances,
   chatPlansSchema,
@@ -28,6 +27,7 @@ import {
   CHAT_PREMISE_MAX_CHARS,
   WHEREABOUTS_MAX_CHARS,
 } from "@/contracts";
+import type { AttributeValue } from "@/contracts/attributes/value";
 import type { CalendarStart } from "@/lib/clock";
 import { calendarStartSchema } from "@/lib/clock";
 import { newId } from "@/lib/ids";
