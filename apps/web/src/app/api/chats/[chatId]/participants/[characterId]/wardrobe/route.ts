@@ -8,7 +8,13 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
-import { isSimRoutedAuthority, readChatEngineAuthority, resolveSeededOutfit } from "@/server/engine";
+import {
+  isSimRoutedAuthority,
+  readChatEngineAuthority,
+  readSimChatGarments,
+  readSimChatOutfit,
+  resolveSeededOutfit,
+} from "@/server/engine";
 import { editParticipantWardrobe } from "@/server/engine/chat-state/focused-edit";
 import { participantWardrobeView } from "@/server/engine/chat-state/focused-read";
 import { seedChatScenario, seedChatState } from "@/server/engine/chat-state/seed";
@@ -46,7 +52,31 @@ async function readView(
   const stored = await loadChatState(chatId, characterId);
   const state = await resolveSeededOutfit(stored ?? seedChatState(profile), ownerId, profile);
   const scenario = (await loadChatScenario(chatId)) ?? seedChatScenario(profile);
-  return participantWardrobeView({ characterId, state, scenario, ownerId, profile, diagnostics });
+  const legacy = await participantWardrobeView({ characterId, state, scenario, ownerId, profile, diagnostics });
+
+  // The focused resource must read from the same authority it enforces on write.
+  // For the successor primary, character-chat garment state is compatibility
+  // storage only; project the simulation world's current worn material instead.
+  // If the structured sim read degrades but the name-list read succeeds, keep the
+  // authoritative label and deliberately expose no stale legacy readouts.
+  if (characterId !== owned.participant.characterId) return legacy;
+  const [simOutfit, simGarments] = await Promise.all([
+    readSimChatOutfit(chatId),
+    readSimChatGarments(chatId),
+  ]);
+  if (simOutfit === null && simGarments === null) return legacy;
+
+  const simLabel =
+    simOutfit ??
+    (simGarments?.status === "empty"
+      ? "no clothing"
+      : simGarments?.status === "fallback"
+        ? simGarments.names
+        : simGarments?.status === "structured"
+          ? simGarments.readouts.map((readout) => readout.name.trim()).filter(Boolean).join(", ")
+          : legacy.outfitLabel);
+  const simReadouts = simGarments?.status === "structured" ? simGarments.readouts : [];
+  return { ...legacy, outfitLabel: simLabel, garments: simReadouts };
 }
 
 const sameStrings = (a: readonly string[], b: readonly string[]): boolean =>
