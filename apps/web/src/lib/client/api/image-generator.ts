@@ -3,6 +3,7 @@ import {
   type ImageGeneratorCreateRunRequest,
   imageGeneratorRunSchema,
 } from "@/contracts/images/image-generator";
+import type { ImageGeneratorUploadRequest } from "@/contracts/images/image-generator-upload";
 
 import { apiDelete, apiGet, apiPost, withQuery } from "./http";
 import { listOf } from "./shared";
@@ -14,6 +15,15 @@ import { listOf } from "./shared";
 const IMAGE_GENERATOR_API_ROOT = "/api/admin/self/image-generator";
 
 export const imageGeneratorApi = {
+  uploads: {
+    /** Store one local raster and return the ready owner-scoped image id. */
+    create: (body: ImageGeneratorUploadRequest) =>
+      apiPost(
+        z.object({ imageId: z.string().min(1) }),
+        `${IMAGE_GENERATOR_API_ROOT}/uploads`,
+        body,
+      ),
+  },
   runs: {
     /** Latest first; `limit` defaults server-side to 50. */
     list: (limit?: number) =>
