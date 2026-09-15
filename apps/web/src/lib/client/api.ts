@@ -40,7 +40,6 @@ export type {
   GarmentDamageReadout,
   GarmentReadout,
   ChatStateSnapshot,
-  ChatStateEdit,
   ChatSummary,
   ChatRosterMember,
   ChatTranscript,
@@ -55,6 +54,29 @@ export type {
   SimGiveItemResult,
   SimDoActivityResult,
 } from "./api/chat-schemas";
+export {
+  chatStateResourcesApi,
+  chatScenarioViewSchema,
+  chatParticipantStateViewSchema,
+  chatParticipantWardrobeViewSchema,
+  chatPlayerWardrobeViewSchema,
+  chatPlayerStateViewSchema,
+  chatInspectorStateViewSchema,
+} from "./api/chat-state-resources";
+export type {
+  ChatScenarioView,
+  ChatScenarioPatch,
+  ChatParticipantStateView,
+  ChatParticipantStatePatch,
+  ChatParticipantWardrobeView,
+  ChatParticipantWardrobePatch,
+  ChatPlayerWardrobeView,
+  ChatPlayerWardrobePatch,
+  ChatPlayerStateView,
+  ChatPlayerStatePatch,
+  ChatInspectorStateView,
+  ChatInspectorStatePatch,
+} from "./api/chat-state-resources";
 export { sendChatMessage } from "./api/chat-stream";
 export type { ChatStreamOutcome } from "./api/chat-stream";
 export {
