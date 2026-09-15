@@ -1,0 +1,247 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Wardrobe API — Draft Target
+  version: 0.0.1-draft
+  description: >-
+    Proposed wardrobe resources extracted from the mixed chat-state PATCH. Character and
+    player wardrobe edits remain backed by the one chat-wide garment store; this API split
+    must not introduce a second material truth.
+servers:
+  - url: /
+x-vesper-status: proposed-not-implemented
+x-vesper-auth: Authenticated owner of the chat.
+x-vesper-current-source: apps/web/src/app/api/chats/[chatId]/state/route.ts
+x-vesper-current-service: apps/web/src/server/engine/chat-state/edit.ts
+x-vesper-material-authority: ChatScenario.garments; worn item id arrays are compatibility/read projections.
+x-vesper-design-invariants:
+  - Reconcile worn-set changes before applying ordered garmentOperations, matching current editChatState semantics.
+  - Persist the garment store once per successful wardrobe write and re-derive worn-id projections from it.
+  - Rejected garment operations degrade individually and return stable diagnostics rather than failing the whole save.
+  - A successor-routed primary character's wardrobe is simulation material truth and must reject this compatibility write.
+  - Player exposure is computed from coverage; the player resource intentionally has no outfitExposed flag.
+tags:
+  - name: Participant Wardrobe
+  - name: Player Wardrobe
+paths:
+  /api/chats/{chatId}/participants/{characterId}/wardrobe:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Participant Wardrobe]
+      operationId: getChatParticipantWardrobe
+      summary: Read one roster character's resolved wardrobe
+      x-vesper-proposed-source: apps/web/src/app/api/chats/[chatId]/participants/[characterId]/wardrobe/route.ts
+      responses:
+        '200':
+          description: Resolved participant wardrobe and presentation readouts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParticipantWardrobeView' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Participant Wardrobe]
+      operationId: patchChatParticipantWardrobe
+      summary: Edit one roster character's wardrobe
+      description: >-
+        Applies equip/preset/free-text changes and optional typed garment operations as one
+        material-state write. The current successor-primary restriction becomes a resource-level
+        authority check instead of a special case hidden inside the generic state PATCH.
+      x-vesper-proposed-source: apps/web/src/app/api/chats/[chatId]/participants/[characterId]/wardrobe/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ParticipantWardrobePatch' }
+      responses:
+        '200':
+          description: Wardrobe updated; diagnostics may report individually rejected garment operations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParticipantWardrobeView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: chat_busy or sim_wardrobe_managed_by_world.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+  /api/chats/{chatId}/player/wardrobe:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    get:
+      tags: [Player Wardrobe]
+      operationId: getChatPlayerWardrobe
+      summary: Read the player's chat-scoped wardrobe projection
+      x-vesper-proposed-source: apps/web/src/app/api/chats/[chatId]/player/wardrobe/route.ts
+      responses:
+        '200':
+          description: Player wardrobe state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerWardrobeView' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Player Wardrobe]
+      operationId: patchChatPlayerWardrobe
+      summary: Edit the player's chat-scoped wardrobe
+      description: >-
+        Callers never write the internal seeded proof flag directly. An explicit wornItemIds
+        write, including [], materializes the wardrobe and the server derives seeded=true.
+        Persona changes/reset semantics belong to /player-state.
+      x-vesper-proposed-source: apps/web/src/app/api/chats/[chatId]/player/wardrobe/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlayerWardrobePatch' }
+      responses:
+        '200':
+          description: Player wardrobe updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerWardrobeView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  parameters:
+    ChatId:
+      in: path
+      name: chatId
+      required: true
+      schema: { type: string, minLength: 1 }
+    CharacterId:
+      in: path
+      name: characterId
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    GarmentOperation:
+      type: object
+      additionalProperties: true
+      x-vesper-schema-source: apps/web/src/contracts#garmentOperationListSchema
+    GarmentReadout:
+      type: object
+      additionalProperties: true
+      x-vesper-schema-source: apps/web/src/lib/client/api/chat-schemas.ts#garmentReadoutSchema
+    GarmentDiagnostic:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+    ParticipantWardrobeView:
+      type: object
+      additionalProperties: false
+      required:
+        - characterId
+        - wornItemIds
+        - outfitPresetId
+        - outfit
+        - outfitExposed
+        - outfitLabel
+        - garments
+        - garmentDiagnostics
+      properties:
+        characterId: { type: string }
+        wornItemIds:
+          type: array
+          items: { type: string }
+        outfitPresetId: { type: string }
+        outfit:
+          type: string
+          description: Free-text overlay/legacy fallback.
+        outfitExposed:
+          type: boolean
+          description: Manual free-text-path flag; structured clothing computes exposure from coverage.
+        outfitLabel:
+          type: string
+          readOnly: true
+          description: Resolved garment phrase used by the read-only chat strip.
+        garments:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/GarmentReadout' }
+        garmentDiagnostics:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/GarmentDiagnostic' }
+    ParticipantWardrobePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        wornItemIds:
+          type: array
+          maxItems: 40
+          items: { type: string, minLength: 1 }
+        outfitPresetId: { type: string, maxLength: 120 }
+        outfit: { type: string }
+        outfitExposed: { type: boolean }
+        garmentOperations:
+          type: array
+          description: Applied after worn-set reconciliation and in request order.
+          items: { $ref: '#/components/schemas/GarmentOperation' }
+    PlayerWardrobeView:
+      type: object
+      additionalProperties: false
+      required: [wornItemIds, seeded, outfitPresetId, overlay, garments, garmentDiagnostics]
+      properties:
+        wornItemIds:
+          type: array
+          items: { type: string }
+        seeded:
+          type: boolean
+          readOnly: true
+          description: >-
+            False means resolve the selected persona's default outfit; true with [] proves an
+            explicitly stripped player. Callers never set this flag directly.
+        outfitPresetId: { type: string }
+        overlay:
+          type: string
+          description: Narrated-but-unowned garment text; contributes no coverage.
+        garments:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/GarmentReadout' }
+        garmentDiagnostics:
+          type: array
+          readOnly: true
+          items: { $ref: '#/components/schemas/GarmentDiagnostic' }
+    PlayerWardrobePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        wornItemIds:
+          type: array
+          maxItems: 40
+          items: { type: string, minLength: 1 }
+        outfitPresetId: { type: string, maxLength: 120 }
+        overlay: { type: string }
+        garmentOperations:
+          type: array
+          items: { $ref: '#/components/schemas/GarmentOperation' }
