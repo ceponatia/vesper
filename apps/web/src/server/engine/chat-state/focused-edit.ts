@@ -29,7 +29,7 @@ import type { AttributeValue } from "@/contracts/attributes/value";
 import { type CalendarStart, calendarStartSchema } from "@/lib/clock";
 import { newId } from "@/lib/ids";
 import { db, personas } from "@/server/db";
-import { resolveChatPersona } from "@/server/players/persona";
+import { resolveChatPersona } from "@/server/players";
 import type { CallbackEntry } from "../chat-callback";
 import type { ChatFeelingState } from "../chat-feeling";
 import {
