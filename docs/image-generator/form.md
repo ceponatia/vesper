@@ -109,7 +109,7 @@ A summary above the Run button states the resolved operation, version pin, refer
 controls, and advanced values. The summary and the POST assemble from the same state, so they cannot
 disagree.
 
-## Sources: the general owned-image picker
+## Sources: choose an owned image or upload one
 
 `GET /api/admin/self/owned-images` lists the requesting admin's own `ready` images — every kind
 except the two system-bookkeeping ones (`identity_face_crop`, `identity_trial_output`) — as ids plus
@@ -118,3 +118,16 @@ display metadata; bytes stay behind the authorized image file route.
 The shared picker component renders it with a kind filter and cursor paging, and feeds both the
 Generator's inputs and the Image Lab's generic roles: fixture extraction sources, the controlled
 portrait's optional object reference, and the staged scene's optional location reference.
+
+Every Generator primary-reference row and every dedicated structural slot also offers **Upload
+image** beside **Choose image / Change image**. The upload accepts PNG, JPEG, WebP, or AVIF up to the
+same data-URL ceiling the route enforces. It does not crop or reframe the source; EXIF orientation is
+materialized and the canonical storage path encodes the raster as WebP while preserving composition
+and dimensions.
+
+A successful upload is immediately selected in the slot that initiated it and closes an open image
+picker. A failed upload leaves that slot's previous image unchanged. The stored image is owner-only,
+Generator-scoped, and has no character/entity/chat association; because it is an ordinary owned
+image id after storage, it can also be picked again on a later run. The run request itself never
+contains raw file bytes or a data URL, so direct uploads use exactly the same input loading,
+preparation, capacity and provider-routing path as images selected from the picker.
