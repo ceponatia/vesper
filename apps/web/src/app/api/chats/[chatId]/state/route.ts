@@ -82,7 +82,7 @@ const editBodySchema = z.object({
   plans: chatPlansSchema.optional(),
   calendarStart: calendarStartSchema.optional(),
   whereabouts: z.string().trim().max(120).optional(),
-});
+}).strict();
 
 const snapshotOpts = (profile: CharacterProfile) => ({
   dominance: effectiveTraitValue(profile.traits, "social.dominance"),
