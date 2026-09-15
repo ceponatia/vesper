@@ -1,0 +1,389 @@
+openapi: 3.1.0
+info:
+  title: Vesper Characters API
+  version: 0.1.0
+  description: >-
+    Authenticated character-library and authoring API. Covers discovery, create/update/delete,
+    cloning, forge drafting, relationship defaults, and the main portrait-generation surface.
+    Deep identity-pack/reference-view operations remain a follow-up for this first pass.
+servers:
+  - url: /
+x-vesper-auth: Authenticated Vesper user session required.
+tags:
+  - name: Characters
+  - name: Authoring
+  - name: Relationships
+  - name: Portraits
+paths:
+  /api/characters:
+    get:
+      tags: [Characters]
+      summary: List discoverable characters
+      x-vesper-source: apps/web/src/app/api/characters/route.ts
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+        - in: query
+          name: tag
+          schema: { type: string }
+          description: Comma-separated tags; tags are ANDed server-side.
+        - in: query
+          name: sort
+          schema: { type: string, enum: [updated, name] }
+        - in: query
+          name: scope
+          schema: { type: string, enum: [owned, public, all] }
+          description: Defaults to owned.
+      responses:
+        '200':
+          description: Search-ordered character summaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [characters]
+                properties:
+                  characters:
+                    type: array
+                    items: { $ref: '#/components/schemas/CharacterSummary' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Characters]
+      summary: Create a character
+      description: Supports an optional stable creationRequestId for durable create intent replay.
+      x-vesper-source: apps/web/src/app/api/characters/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CharacterCreateRequest' }
+      responses:
+        '200':
+          description: Idempotent replay of a previously completed create.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '201':
+          description: Character created.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '409':
+          description: creationRequestId was already committed for a different payload.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Characters]
+      summary: Read an owned or public character
+      description: Public reads are projected/allow-listed and include a read-only mine flag.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/route.ts
+      responses:
+        '200':
+          description: Character detail plus public-safe portrait strip and owner-only acceptance state when applicable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [character, portraits, mine]
+                properties:
+                  character: { $ref: '#/components/schemas/Character' }
+                  portraits:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+                  mine: { type: boolean }
+                  acceptance: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Characters]
+      summary: Update an owned character
+      x-vesper-source: apps/web/src/app/api/characters/[id]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CharacterPatchRequest' }
+      responses:
+        '200':
+          description: Saved character plus diagnostics/materialized forge suggestions.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '409':
+          description: Optimistic character-content conflict.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Characters]
+      summary: Delete an owned character
+      description: Also deletes chats containing the character and non-Gallery character assets.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/route.ts
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/clone:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    post:
+      tags: [Characters]
+      summary: Clone a character into the caller's private library
+      x-vesper-source: apps/web/src/app/api/characters/[id]/clone/route.ts
+      requestBody:
+        required: false
+      responses:
+        '201':
+          description: Clone created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedRef' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/forge:
+    post:
+      tags: [Authoring]
+      summary: Draft or redraft character content with the forge
+      x-vesper-source: apps/web/src/app/api/characters/forge/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt: { type: string }
+                mode: { type: string, enum: [create, fill, redraft] }
+                section: { type: string, enum: [profile, attributes, outfit] }
+                scope:
+                  type: string
+                  description: Character-sheet scope accepted by the shared CharacterSheetScope contract.
+                draft: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Forge draft and diagnostics.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [draft, diagnostics]
+                properties:
+                  draft: { type: object, additionalProperties: true }
+                  diagnostics:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/relationships:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Relationships]
+      summary: Read the character's library-default outgoing relationship edges
+      x-vesper-source: apps/web/src/app/api/characters/[id]/relationships/route.ts
+      responses:
+        '200':
+          description: Edge set and revision.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      tags: [Relationships]
+      summary: Replace the character's default outgoing relationship edge set
+      x-vesper-source: apps/web/src/app/api/characters/[id]/relationships/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [baseRevision, edges]
+              properties:
+                baseRevision: { type: integer, minimum: 1 }
+                edges:
+                  type: array
+                  items:
+                    type: object
+                    required: [toCharacterId, record]
+                    properties:
+                      toCharacterId: { type: string }
+                      record: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Saved edge set and new revision.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '409':
+          description: Stale relationship revision.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/portraits:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Portraits]
+      summary: List owner-visible character portraits and render state
+      x-vesper-source: apps/web/src/app/api/characters/[id]/portraits/route.ts
+      parameters:
+        - in: query
+          name: modelId
+          schema: { type: string }
+          description: Optional current profile-picker model id used to compute replay hints.
+      responses:
+        '200':
+          description: Portrait list, live-job flag and replay hints.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [portraits, rendering, replay]
+                properties:
+                  portraits:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+                  rendering: { type: boolean }
+                  replay: { type: object, additionalProperties: true }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Portraits]
+      summary: Queue an identity-locked portrait variant
+      x-vesper-source: apps/web/src/app/api/characters/[id]/portraits/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, instruction]
+              properties:
+                kind:
+                  type: string
+                  description: Portrait variant kind accepted by portraitVariantKindSchema.
+                instruction: { type: string, minLength: 1, maxLength: 1000 }
+                modelId: { type: string, maxLength: 64 }
+      responses:
+        '202':
+          description: Portrait job queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobId, characterId]
+                properties:
+                  jobId: { type: string }
+                  characterId: { type: string }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  parameters:
+    CharacterId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    CreatedRef:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+    CharacterSummary:
+      type: object
+      required: [id, name, tags]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        avatarImageId: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'] }
+        speciesId: { type: [string, 'null'] }
+        gender: { type: [string, 'null'] }
+    Character:
+      allOf:
+        - $ref: '#/components/schemas/CharacterSummary'
+        - type: object
+          properties:
+            profile: { type: object, additionalProperties: true }
+            authoringRevision: { type: integer, minimum: 1 }
+            visibility: { type: string, enum: [private, public] }
+            chatModel: { type: string }
+          additionalProperties: true
+    CharacterCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        creationRequestId: { type: string, format: uuid }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        profile: { type: object, additionalProperties: true }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 60 }
+        suggestedItems:
+          type: array
+          maxItems: 50
+          items: { type: object, additionalProperties: true }
+    CharacterPatchRequest:
+      type: object
+      properties:
+        expectedUpdatedAt: { type: string, format: date-time }
+        expectedAuthoringRevision: { type: integer, minimum: 1, maximum: 2147483647 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        profile: { type: object, additionalProperties: true }
+        tags:
+          type: array
+          maxItems: 50
+          items: { type: string, maxLength: 60 }
+        visibility: { type: string, enum: [private, public] }
+        chatModel: { type: string, maxLength: 120 }
+        suggestedItems:
+          type: array
+          maxItems: 50
+          items: { type: object, additionalProperties: true }
+      additionalProperties: false
