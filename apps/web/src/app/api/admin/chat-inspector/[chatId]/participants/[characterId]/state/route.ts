@@ -35,28 +35,36 @@ const patchSchema = z.object({
   drives: chatDrivesSchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, "at least one inspector field is required");
 
-function memberOf(owned: Parameters<Parameters<typeof withSelfOwnedChat<Params>>[0]>[1], characterId: string) {
-  return owned.roster.find((member) => member.characterId === characterId) ?? null;
-}
-
 export const GET = withSelfOwnedChat<Params>(async (_user, owned, _req, ctx) => {
   const { chatId, characterId } = await ctx.params;
-  const member = memberOf(owned, characterId);
+  const member = owned.roster.find((candidate) => candidate.characterId === characterId);
   if (!member) return jsonError("not_found", "that character is not in this conversation", 404);
-  const profile = parseOr(characterProfileSchema, member.character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+  const profile = parseOr(
+    characterProfileSchema,
+    member.character.profile ?? {},
+    emptyCharacterProfile(),
+    undefined,
+    "characters.profile",
+  );
   const state = (await loadChatState(chatId, characterId)) ?? seedChatState(profile);
   return jsonOk(inspectorStateView(state));
 });
 
 export const PATCH = withSelfOwnedChat<Params>(async (_user, owned, req: NextRequest, ctx) => {
   const { chatId, characterId } = await ctx.params;
-  const member = memberOf(owned, characterId);
+  const member = owned.roster.find((candidate) => candidate.characterId === characterId);
   if (!member) return jsonError("not_found", "that character is not in this conversation", 404);
   const busy = chatBusyResponse(chatId);
   if (busy) return busy;
   const body = await readBody(req, patchSchema);
   if (!body.ok) return body.response;
-  const profile = parseOr(characterProfileSchema, member.character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+  const profile = parseOr(
+    characterProfileSchema,
+    member.character.profile ?? {},
+    emptyCharacterProfile(),
+    undefined,
+    "characters.profile",
+  );
   const state = await editInspectorState({ chatId, characterId, profile, patch: body.value });
   return jsonOk(inspectorStateView(state));
 });
