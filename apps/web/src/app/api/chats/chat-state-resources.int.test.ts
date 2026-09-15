@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characterChats, characterChatState, characters, db, personas } from "@/server/db";
+import { characterChats, characters, db, personas } from "@/server/db";
 
 const authState = vi.hoisted(() => ({
   user: { id: "", email: "", name: "Chat State Resources Int", role: "admin" as const },
