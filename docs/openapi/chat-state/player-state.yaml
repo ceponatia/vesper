@@ -1,0 +1,35 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Player State API
+  version: 1.0.0
+x-vesper-status: implemented
+paths:
+  /api/chats/{chatId}/player-state:
+    parameters:
+      - in: path
+        name: chatId
+        required: true
+        schema: { type: string }
+    get:
+      summary: Read the explicitly selected per-chat player persona id.
+      responses:
+        '200': { description: Selected persona id. }
+        '404': { description: Chat not found. }
+    patch:
+      summary: Select the per-chat player persona.
+      description: Changing persona atomically retires the old player garment projection and resets the stored wardrobe to unseeded so the new persona resolves its own default outfit. Re-selecting the same persona is a no-op and preserves wardrobe state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [personaId]
+              properties:
+                personaId: { type: string }
+              additionalProperties: false
+      responses:
+        '200': { description: Selected persona id. }
+        '400': { description: Invalid request. }
+        '404': { description: Chat or requested owner persona not found. }
+        '409': { description: chat_busy. }
