@@ -3,6 +3,7 @@ import type { ImageModelAdapter } from "./composer";
 import {
   fluxKleinBase,
   fluxKleinBaseLora,
+  fluxKleinCivitaiDistilledLora,
   fluxKleinDistilled,
   fluxKontextDev,
   qwenImage2512,
@@ -10,7 +11,7 @@ import {
   qwenImage3TextToImage,
   qwenImageEdit2511,
 } from "./families";
-import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
 
 /**
  * Every model whose family behavior Vesper has written down, keyed by BASE
@@ -24,10 +25,11 @@ import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
  * generic behavior coming back.
  *
  * Qwen Image 3's fal routes include an operation path (`/text-to-image` or
- * `/edit`) and therefore contain three path segments. They are intentionally
- * registered verbatim rather than passed through `baseImageModelSlug`, whose
- * `owner/name[:version]` grammar belongs to Replicate. The lookup handles those
- * two exact routes first.
+ * `/edit`) and therefore contain three path segments. Civitai's Vesper-owned
+ * registry identity is likewise not a Replicate owner/name slug. Those provider
+ * identities are intentionally registered verbatim rather than passed through
+ * `baseImageModelSlug`, whose `owner/name[:version]` grammar belongs to
+ * Replicate. The lookup handles those exact routes first.
  *
  * The Qwen family, the FLUX.2 klein bench-onboarding endpoints (#567), and the
  * FLUX.1 Kontext Dev endpoint (#574) are here. Other families (the production
@@ -40,6 +42,7 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   "qwen/qwen-image-2512": qwenImage2512,
   [FAL_QWEN3_TEXT_SLUG]: qwenImage3TextToImage,
   [FAL_QWEN3_EDIT_SLUG]: qwenImage3Edit,
+  [CIVITAI_FLUX2_KLEIN4B_SLUG]: fluxKleinCivitaiDistilledLora,
   // FLUX.2 klein (#567): 4B/9B parameter-count twins share one variant object.
   // Registering the 9B slugs is code support only — no 9B database row exists,
   // and adding one is #564's decision, not this registry's.
