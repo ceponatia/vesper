@@ -1009,6 +1009,13 @@
       "when": 1789682400000,
       "tag": "0143_klein-4b-female-nsfw-lora",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1789686000000,
+      "tag": "0144_klein-4b-female-nsfw-lora-hf-url",
+      "breakpoints": true
     }
   ]
 }
