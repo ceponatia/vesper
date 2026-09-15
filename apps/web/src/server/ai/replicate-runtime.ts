@@ -10,6 +10,11 @@ import {
 import { imageAspectInputField, type ImageModel, type ImageRenderPolicy } from "@vesper/image-core";
 import { imageModelProvider } from "@vesper/image-models";
 import {
+  hasCivitai,
+  previewCivitaiKleinRequest,
+  runCivitaiKleinImageModel,
+} from "./civitai-runtime";
+import {
   falQwen3PayloadFromUrls,
   hasFal,
   isFalQwen3Slug,
@@ -18,26 +23,23 @@ import {
 } from "./fal-runtime";
 
 /**
- * The application's Replicate runtime — the ONLY code in Vesper that reads
- * Replicate environment variables.
+ * The application's provider-dispatched image registry runtime.
  *
- * The transport package performs the network IO but owns no ambient
- * configuration. Deployment settings are the application's: this module
- * resolves them once, builds one configured client, and hands that client to
- * every render, preprocessor run and schema probe in the process.
- *
- * Qwen Image 3 is the narrow exception at the registry-render method: its two
- * fal endpoint rows are intercepted here and sent through `fal-runtime`. Keeping
- * the dispatch at this application boundary means all existing callers still
- * use one registry-render method while Replicate probes, preprocessors, LoRAs,
- * Qwen Image 2, 2511/2512 and every other model remain Replicate-native.
+ * Replicate remains the default transport and owns preprocessors/schema probes.
+ * Exact fal and Civitai registry identities are intercepted at the registry
+ * render seam, so callers continue to use one `runRegistryImageModel` method and
+ * provider-specific credentials/HTTP contracts stay here at the application
+ * boundary rather than leaking into `@vesper/image-core`.
  *
  * That single snapshot is what makes the Replicate safety posture single-source.
  * The render kernel fingerprints a plan with `disableSafetyChecker()` and the
  * Replicate payload builder writes `client.safetyCheckerDisabled`; because both
  * are the same resolved value, a process cannot hash one posture and send another.
  * fal Qwen 3 owns its explicit `enable_safety_checker: false` in its endpoint row
- * and transport instead.
+ * and transport instead. Civitai owns no equivalent toggle here: its zero-cost
+ * preflight reports whether the authenticated account may run the selected
+ * mature resources, and the Civitai transport refuses before Buzz spend when it
+ * may not.
  */
 
 let client: ReplicateClient | null = null;
@@ -70,7 +72,8 @@ export function resolveReplicateConfig(): ReplicateConfig {
 
 /**
  * The process's configured image registry client, preserving Replicate's public
- * client surface while routing the two fal Qwen Image 3 rows at render time.
+ * client surface while routing exact non-Replicate model identities at render
+ * time.
  *
  * A concrete object rather than a Proxy on purpose: all three methods stay
  * contextually typed as `ReplicateClient`, which keeps provider dispatch under
@@ -86,9 +89,16 @@ export function replicateClient(): ReplicateClient {
 
   const target = client;
   routedClient = {
-    configured: target.configured,
+    configured: target.configured || hasFal() || hasCivitai(),
     safetyCheckerDisabled: target.safetyCheckerDisabled,
     runRegistryImageModel: async (model, request, sink) => {
+      const provider = imageModelProvider(model.slug);
+      if (provider === "civitai") {
+        if ((request.controlReferences?.length ?? 0) > 0) {
+          return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
+        }
+        return runCivitaiKleinImageModel(model, request);
+      }
       if (isFalQwen3Slug(model.slug)) {
         if ((request.controlReferences?.length ?? 0) > 0) {
           return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
@@ -118,12 +128,19 @@ export function hasReplicate(): boolean {
 /** Whether the credential for this model's actual provider is configured. */
 export function hasImageProviderForModel(model: Pick<ImageModel, "slug"> | string): boolean {
   const slug = typeof model === "string" ? model : model.slug;
-  return imageModelProvider(slug) === "fal" ? hasFal() : hasReplicate();
+  switch (imageModelProvider(slug)) {
+    case "civitai":
+      return hasCivitai();
+    case "fal":
+      return hasFal();
+    case "replicate":
+      return hasReplicate();
+  }
 }
 
 /** Whether this deployment has at least one image transport configured. */
 export function hasAnyImageProvider(): boolean {
-  return hasFal() || hasReplicate();
+  return hasCivitai() || hasFal() || hasReplicate();
 }
 
 /** Stable persisted identity for the provider-qualified registry model. */
@@ -159,7 +176,11 @@ export function imageModelSentShape(input: {
   aspect: string | null;
   controlInput?: Readonly<Record<string, unknown>>;
 }): ImageModelSentShape {
-  if (imageModelProvider(input.model.slug) === "fal") {
+  const provider = imageModelProvider(input.model.slug);
+  if (provider === "civitai") {
+    return { field: "aspectRatio", value: input.aspect ?? "1:1" };
+  }
+  if (provider === "fal") {
     const tier = input.controlInput?.["image_size"] === "2K" ? "2K" : "1K";
     return { field: "image_size", value: qwen3ImageSize(input.aspect, tier) };
   }
@@ -170,7 +191,22 @@ export function imageModelSentShape(input: {
 }
 
 export function previewImageModelRequest(input: PreviewImageModelRequest): PreviewedImageModelRequest {
-  if (imageModelProvider(input.model.slug) === "fal") {
+  const provider = imageModelProvider(input.model.slug);
+  if (provider === "civitai") {
+    if (input.referenceCount > 0 || (input.controlReferences?.length ?? 0) > 0) {
+      throw new Error(`${input.model.slug} is currently registered for text-to-image generation only`);
+    }
+    return {
+      request: previewCivitaiKleinRequest(input.model, {
+        prompt: input.prompt,
+        aspect: input.aspect,
+        controlInput: input.controlInput,
+        versionId: input.model.probedVersionId,
+      }),
+      sentShape: imageModelSentShape(input),
+    };
+  }
+  if (provider === "fal") {
     if ((input.controlReferences?.length ?? 0) > 0) {
       throw new Error(`${input.model.slug} does not expose dedicated structural image inputs`);
     }
