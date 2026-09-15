@@ -1,0 +1,241 @@
+openapi: 3.1.0
+info:
+  title: Vesper Images and Gallery API
+  version: 0.1.0
+  description: >-
+    Authenticated generated-image API for Gallery browsing/lifecycle, immutable WebP delivery,
+    and owner feedback on non-blocking render advisories. Image generation entry points that
+    belong to characters/items/locations/chats are documented in those domain specs.
+servers:
+  - url: /
+x-vesper-auth: Authenticated Vesper user session required.
+tags:
+  - name: Gallery
+  - name: Image Files
+  - name: Advisories
+paths:
+  /api/gallery:
+    get:
+      tags: [Gallery]
+      summary: Browse generated Gallery images
+      description: Keyset-paginated, newest first. The scenes tab is the default.
+      x-vesper-source: apps/web/src/app/api/gallery/route.ts
+      parameters:
+        - in: query
+          name: tab
+          schema: { type: string, enum: [scenes, portraits, entity], default: scenes }
+        - in: query
+          name: cursor
+          schema: { type: string }
+          description: Keyset cursor in the form <createdAtMs>_<id>. Invalid cursors degrade to page one.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: Gallery page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [images, nextCursor]
+                properties:
+                  images:
+                    type: array
+                    items: { $ref: '#/components/schemas/GalleryImage' }
+                  nextCursor: { type: [string, 'null'] }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/gallery/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ImageId'
+    patch:
+      tags: [Gallery]
+      summary: Set a Gallery image favorite flag
+      x-vesper-source: apps/web/src/app/api/gallery/[id]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [favorite]
+              properties:
+                favorite: { type: boolean }
+      responses:
+        '200':
+          description: Favorite state updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [image]
+                properties:
+                  image:
+                    type: object
+                    required: [id, favorite]
+                    properties:
+                      id: { type: string }
+                      favorite: { type: boolean }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Gallery]
+      summary: Permanently delete one Gallery image
+      description: Clears soft entity pointers that referenced the deleted image.
+      x-vesper-source: apps/web/src/app/api/gallery/[id]/route.ts
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/gallery/delete:
+    post:
+      tags: [Gallery]
+      summary: Bulk-delete Gallery images
+      description: Deletes only caller-owned Gallery asset kinds and accepts at most 500 ids.
+      x-vesper-source: apps/web/src/app/api/gallery/delete/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: Number of rows actually removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted: { type: integer, minimum: 0, maximum: 500 }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/images/{id}/file:
+    parameters:
+      - $ref: '#/components/parameters/ImageId'
+    get:
+      tags: [Image Files]
+      summary: Serve an immutable ready image
+      description: >-
+        Returns WebP bytes. Owner assets are private-cacheable; a non-hidden image attached to a
+        public entity may be shared-cacheable after ownership/publication checks.
+      x-vesper-source: apps/web/src/app/api/images/[id]/file/route.ts
+      responses:
+        '200':
+          description: Ready image bytes.
+          headers:
+            Cache-Control:
+              schema: { type: string }
+          content:
+            image/webp:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/images/{id}/advisories:
+    parameters:
+      - $ref: '#/components/parameters/ImageId'
+    patch:
+      tags: [Advisories]
+      summary: Review one render advisory
+      description: Records owner agreement/disagreement; it never gates or mutates the rendered image itself.
+      x-vesper-source: apps/web/src/app/api/images/[id]/advisories/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, verdict]
+              properties:
+                code: { type: string, minLength: 1 }
+                verdict: { type: string, enum: [agree, disagree] }
+                note: { type: string, maxLength: 300 }
+      responses:
+        '200':
+          description: Updated advisory review projection.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [advisory]
+                properties:
+                  advisory: { type: object, additionalProperties: true }
+        '404':
+          description: Image is missing/foreign or the requested advisory code is not on the image.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+components:
+  parameters:
+    ImageId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean, const: true }
+    SceneReference:
+      type: object
+      required: [kind, id, name]
+      properties:
+        kind: { type: string, enum: [character, location] }
+        id: { type: string }
+        name: { type: string }
+    GalleryImage:
+      type: object
+      required: [id, favorite, references]
+      properties:
+        id: { type: string }
+        characterId: { type: [string, 'null'] }
+        characterName: { type: [string, 'null'] }
+        entityKind: { type: [string, 'null'] }
+        entityName: { type: [string, 'null'] }
+        prompt: { type: [string, 'null'] }
+        meta: { type: object, additionalProperties: true }
+        favorite: { type: boolean }
+        createdAt: { type: [string, 'null'], format: date-time }
+        references:
+          type: array
+          items: { $ref: '#/components/schemas/SceneReference' }
+      additionalProperties: true
