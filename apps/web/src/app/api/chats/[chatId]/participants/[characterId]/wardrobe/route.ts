@@ -10,6 +10,7 @@ import {
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import {
+  editChatParticipantWardrobe,
   garmentReadoutsFor,
   isSimRoutedAuthority,
   loadChatScenario,
@@ -21,7 +22,6 @@ import {
   seedChatScenario,
   seedChatState,
 } from "@/server/engine";
-import { editChatParticipantWardrobe } from "@/server/engine/chat-state/focused-edit";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../../../owned";
 
 type Params = { chatId: string; characterId: string };
@@ -40,6 +40,9 @@ const patchSchema = z
 function targetMember(owned: OwnedChat, characterId: string) {
   return owned.roster.find((member) => member.characterId === characterId) ?? null;
 }
+
+const sameStrings = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
 
 async function project(args: {
   chatId: string;
@@ -112,17 +115,6 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     const body = await readBody(req, patchSchema);
     if (!body.ok) return body.response;
 
-    if (
-      characterId === owned.participant.characterId &&
-      isSimRoutedAuthority(await readChatEngineAuthority(chatId))
-    ) {
-      return jsonError(
-        "sim_wardrobe_managed_by_world",
-        "this character's clothing is owned by the successor world's material state; change it through world actions",
-        409,
-      );
-    }
-
     const profile = parseOr(
       characterProfileSchema,
       member.character.profile ?? {},
@@ -130,6 +122,34 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       undefined,
       "characters.profile",
     );
+
+    if (
+      characterId === owned.participant.characterId &&
+      isSimRoutedAuthority(await readChatEngineAuthority(chatId))
+    ) {
+      const current = await project({
+        chatId,
+        characterId,
+        primaryCharacterId: owned.participant.characterId,
+        ownerId: user.id,
+        profile,
+      });
+      const incompatible =
+        (body.value.garmentOperations?.length ?? 0) > 0 ||
+        (body.value.wornItemIds !== undefined && !sameStrings(body.value.wornItemIds, current.wornItemIds)) ||
+        (body.value.outfitPresetId !== undefined && body.value.outfitPresetId !== current.outfitPresetId) ||
+        (body.value.outfit !== undefined && body.value.outfit !== current.outfit) ||
+        (body.value.outfitExposed !== undefined && body.value.outfitExposed !== current.outfitExposed);
+      if (incompatible) {
+        return jsonError(
+          "sim_wardrobe_managed_by_world",
+          "this character's clothing is owned by the successor world's material state; change it through world actions",
+          409,
+        );
+      }
+      return jsonOk(current);
+    }
+
     const sink = new DiagnosticCollector();
     const result = await editChatParticipantWardrobe({
       chatId,
