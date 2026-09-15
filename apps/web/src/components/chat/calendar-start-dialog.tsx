@@ -4,6 +4,7 @@ import { useState } from "react";
 import { chatGameTime, formatChatTime } from "@/contracts";
 import { MONTHS, to12Hour, from12Hour, type CalendarStart, type Meridiem } from "@/lib/clock";
 import { chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatStateResourcesApi } from "@/lib/client/api/chat-state-resources";
 import { Button } from "@/components/ui/button";
 import { daysInMonth, DatePicker, type DatePickerValue } from "@/components/ui/date-picker";
 import { Dialog } from "@/components/ui/dialog";
@@ -105,11 +106,11 @@ export function CalendarStartDialog({
 
   const save = async () => {
     setSaving(true);
-    const result = await chatsApi.editState(chatId, {
+    const result = await chatStateResourcesApi.editScenario(chatId, {
       calendarStart: { ...draft, hour: from12Hour(hour12, meridiem), minute: calendarStart.minute },
     });
-    setSaving(false);
     if (!result.ok) {
+      setSaving(false);
       toast.push({
         title: "Couldn't set the story start",
         description:
@@ -118,7 +119,13 @@ export function CalendarStartDialog({
       });
       return;
     }
-    onSaved(result.data);
+    const refreshed = await chatsApi.state(chatId);
+    setSaving(false);
+    if (!refreshed.ok) {
+      toast.push({ title: "Story start saved, but refresh failed", description: refreshed.error.message, tone: "error" });
+      return;
+    }
+    onSaved(refreshed.data);
   };
 
   const selectClass =
