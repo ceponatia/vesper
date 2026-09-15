@@ -12,6 +12,7 @@ import {
   type GarmentOperation,
 } from "@/contracts";
 import { charactersApi, chatsApi, type ChatStateSnapshot } from "@/lib/client/api";
+import { chatStateResourcesApi } from "@/lib/client/api/chat-state-resources";
 import { wearerHintForGender } from "@/lib/clothing-slots";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
@@ -106,23 +107,16 @@ function StateToolsDialog({
   const [outfitPresetId, setOutfitPresetId] = useState(snapshot.outfitPresetId);
   const [outfit, setOutfit] = useState(snapshot.outfit);
   const [outfitExposed, setOutfitExposed] = useState(snapshot.outfitExposed);
-  // The presentation graph: the last-saved readout plus the operations this sheet
-  // has queued but not yet sent.
   const [garments, setGarments] = useState(snapshot.garments);
   const [garmentOperations, setGarmentOperations] = useState<GarmentOperation[]>([]);
   const [garmentDiagnostics, setGarmentDiagnostics] = useState(snapshot.garmentDiagnostics);
   const [livePresence, setLivePresence] = useState(presence);
   const [presenceBusy, setPresenceBusy] = useState(false);
   const [newCondition, setNewCondition] = useState("");
-  // Inspector-grade fields: open loops + next-turn memory queries, edited as
-  // one-per-line text.
   const [openLoops, setOpenLoops] = useState(snapshot.openLoops.join("\n"));
   const [memoryQueries, setMemoryQueries] = useState(snapshot.memoryQueries.join("\n"));
   const [saving, setSaving] = useState(false);
 
-  // The character's authored profile — the outfit presets (the wardrobe switcher) and the
-  // wearer hint for the equip picker. Fetched once per sheet open; absent characterId or a
-  // failed fetch just leaves the presets empty (the equip slots + free text still work).
   const presetSource = useAsyncData(
     () =>
       characterId
@@ -139,10 +133,6 @@ function StateToolsDialog({
   const trace = snapshot.lastPulseTrace;
   const memory = snapshot.lastMemoryTrace;
   const attributeOverlays = snapshot.attributeOverlays;
-
-  // What the live (edited) state would surface to the narrator next turn: the
-  // foreground "just shifted" beat vs the standing cues, diffed against the bands
-  // surfaced last turn, plus the condition overlays.
   const cueSplit = splitStateCues(meters, snapshot.surfacedCues);
   const overlays = conditionAttributeOverlays(conditions);
 
@@ -158,47 +148,70 @@ function StateToolsDialog({
     ]);
   };
 
-  /** One-per-line textarea → trimmed list (blank lines drop). */
   const toLines = (text: string) => text.split("\n").map((l) => l.trim()).filter(Boolean);
 
   const save = async () => {
+    if (!characterId) {
+      toast.push({ title: "Update failed", description: "Character id is unavailable for this sheet.", tone: "error" });
+      return;
+    }
     setSaving(true);
-    const result = await chatsApi.editState(
-      chatId,
-      {
-        regard,
-        familiarity,
-        relationship,
-        meters,
-        conditions,
-        mindNote,
-        wornItemIds,
-        outfitPresetId,
-        outfit,
-        outfitExposed,
-        ...(garmentOperations.length > 0 ? { garmentOperations } : {}),
+
+    const participant = await chatStateResourcesApi.editParticipantState(chatId, characterId, {
+      regard,
+      familiarity,
+      relationship,
+      meters,
+      conditions,
+      mindNote,
+    });
+    if (!participant.ok) {
+      setSaving(false);
+      toast.push({ title: "Update failed", description: participant.error.message, tone: "error" });
+      return;
+    }
+
+    const wardrobe = await chatStateResourcesApi.editParticipantWardrobe(chatId, characterId, {
+      wornItemIds,
+      outfitPresetId,
+      outfit,
+      outfitExposed,
+      ...(garmentOperations.length > 0 ? { garmentOperations } : {}),
+    });
+    if (!wardrobe.ok) {
+      setSaving(false);
+      toast.push({ title: "Wardrobe update failed", description: wardrobe.error.message, tone: "error" });
+      return;
+    }
+
+    if (isAdmin) {
+      const inspector = await chatStateResourcesApi.editInspectorState(chatId, characterId, {
         openLoops: toLines(openLoops),
         memoryQueries: toLines(memoryQueries),
-      },
-      characterId,
-    );
-    setSaving(false);
-    if (result.ok) {
-      onSaved(result.data);
-      // A rejected garment operation is a diagnostic, not a failed save — keep the
-      // sheet open so the reason is readable instead of vanishing with the modal.
-      if (result.data.garmentDiagnostics.length > 0) {
-        setGarments(result.data.garments);
-        setGarmentOperations([]);
-        setGarmentDiagnostics(result.data.garmentDiagnostics);
-        toast.push({ title: "State updated", description: "Some garment changes were rejected — see the sheet." });
+      });
+      if (!inspector.ok) {
+        setSaving(false);
+        toast.push({ title: "Inspector update failed", description: inspector.error.message, tone: "error" });
         return;
       }
-      toast.push({ title: "State updated" });
-      onClose();
-    } else {
-      toast.push({ title: "Update failed", description: result.error.message, tone: "error" });
     }
+
+    const refreshed = await chatsApi.state(chatId, characterId);
+    setSaving(false);
+    if (!refreshed.ok) {
+      toast.push({ title: "State saved, but refresh failed", description: refreshed.error.message, tone: "error" });
+      return;
+    }
+    onSaved(refreshed.data);
+    if (wardrobe.data.garmentDiagnostics.length > 0) {
+      setGarments(wardrobe.data.garments);
+      setGarmentOperations([]);
+      setGarmentDiagnostics(wardrobe.data.garmentDiagnostics);
+      toast.push({ title: "State updated", description: "Some garment changes were rejected — see the sheet." });
+      return;
+    }
+    toast.push({ title: "State updated" });
+    onClose();
   };
 
   const flipPresence = async () => {
@@ -236,9 +249,6 @@ function StateToolsDialog({
         </div>
       ) : null}
 
-      {/* flex-wrap: label + range + value totals ~347px, wider than the ~318px
-          dialog column at a 390px viewport — the range+value pair drops to its
-          own line instead of overflowing. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Regard</span>
         <div className="flex items-center gap-2">
@@ -408,18 +418,18 @@ function StateToolsDialog({
         onChange={setGarmentOperations}
       />
 
-      <label className="flex flex-col gap-1">
-        <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Open loops (one per line, max 3)</span>
-        <Textarea
-          rows={2}
-          value={openLoops}
-          onChange={(e) => setOpenLoops(e.target.value)}
-          placeholder={"Unfinished business the character carries…\ne.g. promised to tell them about her sister"}
-        />
-      </label>
+      {isAdmin ? (
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium tracking-wide text-paper-400 uppercase">Open loops (one per line, max 3)</span>
+          <Textarea
+            rows={2}
+            value={openLoops}
+            onChange={(e) => setOpenLoops(e.target.value)}
+            placeholder={"Unfinished business the character carries…\ne.g. promised to tell them about her sister"}
+          />
+        </label>
+      ) : null}
 
-      {/* Engine surface below — admin-only. Players get the editable fields above;
-          the traces mirror /chat/:chatId/inspector. */}
       {isAdmin ? (
         <>
       <label className="flex flex-col gap-1">
@@ -526,8 +536,6 @@ function StateToolsDialog({
                 Attribute changes: <span className="text-paper-300">{memory.attributeChanges.join(", ")}</span>
               </li>
             ) : null}
-            {/* The grounded wardrobe lane: every proposal's fate, so a drop rate is
-                measured rather than guessed. */}
             {memory.garmentOperations.length ? (
               <li>
                 Garment ops ({memory.garmentLane}):{" "}
