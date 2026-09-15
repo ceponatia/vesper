@@ -40,13 +40,7 @@ function targetMember(owned: OwnedChat, characterId: string) {
 }
 
 function profileFor(member: NonNullable<ReturnType<typeof targetMember>>) {
-  return parseOr(
-    characterProfileSchema,
-    member.character.profile ?? {},
-    emptyCharacterProfile(),
-    undefined,
-    "characters.profile",
-  );
+  return parseOr(characterProfileSchema, member.character.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
 }
 
 async function readView(chatId: string, owned: OwnedChat, characterId: string) {
@@ -64,21 +58,20 @@ async function readView(chatId: string, owned: OwnedChat, characterId: string) {
   const state = {
     ...drifted,
     ...(simMeters === null ? {} : { meters: { ...drifted.meters, ...simMeters } }),
-    ...(simRelationship === null
-      ? {}
-      : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
+    ...(simRelationship === null ? {} : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
   };
   return participantStateView({ characterId, state, scenario, profile, persisted: stored !== null });
 }
+
+const sameRecord = (a: Record<string, number>, b: Record<string, number>): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
   async (_user, owned, _req, ctx) => {
     const { chatId, characterId } = await ctx.params;
     const view = await readView(chatId, owned, characterId);
-    return view
-      ? jsonOk(view)
-      : jsonError("not_found", "that character is not in this conversation", 404);
+    return view ? jsonOk(view) : jsonError("not_found", "that character is not in this conversation", 404);
   },
 );
 
@@ -93,25 +86,29 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     const body = await readBody(req, patchSchema);
     if (!body.ok) return body.response;
 
+    const patch = { ...body.value };
     const primary = characterId === owned.participant.characterId;
-    if (
-      primary &&
-      isSimRoutedAuthority(await readChatEngineAuthority(chatId)) &&
-      (body.value.regard !== undefined || body.value.familiarity !== undefined || body.value.meters !== undefined)
-    ) {
-      return jsonError(
-        "sim_participant_state_managed_by_world",
-        "this character's relationship scalars and meters are owned by the successor world; change them through world-authoritative actions instead",
-        409,
-      );
+    if (primary && isSimRoutedAuthority(await readChatEngineAuthority(chatId))) {
+      const current = await readView(chatId, owned, characterId);
+      if (!current) return jsonError("not_found", "that character is not in this conversation", 404);
+      const changed =
+        (patch.regard !== undefined && patch.regard !== current.regard) ||
+        (patch.familiarity !== undefined && patch.familiarity !== current.familiarity) ||
+        (patch.meters !== undefined && !sameRecord(patch.meters, current.meters));
+      if (changed) {
+        return jsonError(
+          "sim_participant_state_managed_by_world",
+          "this character's relationship scalars and meters are owned by the successor world; change them through world-authoritative actions instead",
+          409,
+        );
+      }
+      delete patch.regard;
+      delete patch.familiarity;
+      delete patch.meters;
+      if (Object.keys(patch).length === 0) return jsonOk(current);
     }
 
-    await editParticipantState({
-      chatId,
-      characterId,
-      profile: profileFor(member),
-      patch: body.value,
-    });
+    await editParticipantState({ chatId, characterId, profile: profileFor(member), patch });
     const view = await readView(chatId, owned, characterId);
     return view ? jsonOk(view) : jsonError("not_found", "that character is not in this conversation", 404);
   },
