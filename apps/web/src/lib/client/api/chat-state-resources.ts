@@ -14,6 +14,7 @@ import {
   type SupportingCastMember,
 } from "@/contracts";
 import { calendarStartSchema, type CalendarStart } from "@/lib/clock";
+import { apiGet, apiPatch } from "./http";
 import { textOr } from "./shared";
 import { garmentReadoutSchema } from "./chat-schemas";
 
@@ -133,3 +134,28 @@ export interface ChatInspectorStatePatch {
   openLoops?: string[];
   memoryQueries?: string[];
 }
+
+/** Focused mutation surface replacing the broad `/state` PATCH. */
+export const chatStateResourcesApi = {
+  scenario: (chatId: string) => apiGet(chatScenarioViewSchema, `/api/chats/${chatId}/scenario`),
+  editScenario: (chatId: string, patch: ChatScenarioPatch) =>
+    apiPatch(chatScenarioViewSchema, `/api/chats/${chatId}/scenario`, patch),
+  participantState: (chatId: string, characterId: string) =>
+    apiGet(chatParticipantStateViewSchema, `/api/chats/${chatId}/participants/${characterId}/state`),
+  editParticipantState: (chatId: string, characterId: string, patch: ChatParticipantStatePatch) =>
+    apiPatch(chatParticipantStateViewSchema, `/api/chats/${chatId}/participants/${characterId}/state`, patch),
+  participantWardrobe: (chatId: string, characterId: string) =>
+    apiGet(chatParticipantWardrobeViewSchema, `/api/chats/${chatId}/participants/${characterId}/wardrobe`),
+  editParticipantWardrobe: (chatId: string, characterId: string, patch: ChatParticipantWardrobePatch) =>
+    apiPatch(chatParticipantWardrobeViewSchema, `/api/chats/${chatId}/participants/${characterId}/wardrobe`, patch),
+  playerState: (chatId: string) => apiGet(chatPlayerStateViewSchema, `/api/chats/${chatId}/player-state`),
+  editPlayerState: (chatId: string, patch: ChatPlayerStatePatch) =>
+    apiPatch(chatPlayerStateViewSchema, `/api/chats/${chatId}/player-state`, patch),
+  playerWardrobe: (chatId: string) => apiGet(chatPlayerWardrobeViewSchema, `/api/chats/${chatId}/player/wardrobe`),
+  editPlayerWardrobe: (chatId: string, patch: ChatPlayerWardrobePatch) =>
+    apiPatch(chatPlayerWardrobeViewSchema, `/api/chats/${chatId}/player/wardrobe`, patch),
+  inspectorState: (chatId: string, characterId: string) =>
+    apiGet(chatInspectorStateViewSchema, `/api/admin/self/chat-inspector/${chatId}/participants/${characterId}/state`),
+  editInspectorState: (chatId: string, characterId: string, patch: ChatInspectorStatePatch) =>
+    apiPatch(chatInspectorStateViewSchema, `/api/admin/self/chat-inspector/${chatId}/participants/${characterId}/state`, patch),
+};
