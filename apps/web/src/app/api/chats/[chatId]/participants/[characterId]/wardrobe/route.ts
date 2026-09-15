@@ -39,18 +39,24 @@ function profileFor(member: NonNullable<ReturnType<typeof targetMember>>) {
   );
 }
 
-async function readView(chatId: string, owned: OwnedChat, characterId: string, diagnostics = [] as { code: string; message: string }[]) {
+async function readView(
+  chatId: string,
+  owned: OwnedChat,
+  ownerId: string,
+  characterId: string,
+  diagnostics = [] as { code: string; message: string }[],
+) {
   const member = targetMember(owned, characterId);
   if (!member) return null;
   const profile = profileFor(member);
   const stored = await loadChatState(chatId, characterId);
-  const state = await resolveSeededOutfit(stored ?? seedChatState(profile), owned.chat.ownerId, profile);
+  const state = await resolveSeededOutfit(stored ?? seedChatState(profile), ownerId, profile);
   const scenario = (await loadChatScenario(chatId)) ?? seedChatScenario(profile);
   return participantWardrobeView({
     characterId,
     state,
     scenario,
-    ownerId: owned.chat.ownerId,
+    ownerId,
     profile,
     diagnostics,
   });
@@ -58,9 +64,9 @@ async function readView(chatId: string, owned: OwnedChat, characterId: string, d
 
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
-  async (_user, owned, _req, ctx) => {
+  async (user, owned, _req, ctx) => {
     const { chatId, characterId } = await ctx.params;
-    const view = await readView(chatId, owned, characterId);
+    const view = await readView(chatId, owned, user.id, characterId);
     return view ? jsonOk(view) : jsonError("not_found", "that character is not in this conversation", 404);
   },
 );
