@@ -13,6 +13,7 @@ import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import {
   chatStateSnapshot,
   driftChatState,
+  editChatParticipantState,
   isSimRoutedAuthority,
   loadChatScenario,
   loadChatState,
@@ -22,7 +23,6 @@ import {
   seedChatScenario,
   seedChatState,
 } from "@/server/engine";
-import { editChatParticipantState } from "@/server/engine/chat-state/focused-edit";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../../../owned";
 
 type Params = { chatId: string; characterId: string };
@@ -42,6 +42,12 @@ const patchSchema = z
 
 function targetMember(owned: OwnedChat, characterId: string) {
   return owned.roster.find((member) => member.characterId === characterId) ?? null;
+}
+
+function sameNumberRecord(a: Record<string, number>, b: Record<string, number>): boolean {
+  const aKeys = Object.keys(a).sort();
+  const bKeys = Object.keys(b).sort();
+  return aKeys.length === bKeys.length && aKeys.every((key, index) => key === bKeys[index] && a[key] === b[key]);
 }
 
 async function project(args: {
@@ -124,18 +130,6 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
     const body = await readBody(req, patchSchema);
     if (!body.ok) return body.response;
 
-    if (
-      characterId === owned.participant.characterId &&
-      isSimRoutedAuthority(await readChatEngineAuthority(chatId)) &&
-      (body.value.regard !== undefined || body.value.familiarity !== undefined || body.value.meters !== undefined)
-    ) {
-      return jsonError(
-        "sim_participant_state_managed_by_world",
-        "this character's relationship scalars and meters are owned by the successor world",
-        409,
-      );
-    }
-
     const profile = parseOr(
       characterProfileSchema,
       member.character.profile ?? {},
@@ -143,7 +137,38 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       undefined,
       "characters.profile",
     );
-    const stored = await editChatParticipantState({ chatId, characterId, profile, patch: body.value });
+    const patch = { ...body.value };
+
+    if (
+      characterId === owned.participant.characterId &&
+      isSimRoutedAuthority(await readChatEngineAuthority(chatId))
+    ) {
+      const stored = await loadChatState(chatId, characterId);
+      const current = await project({
+        chatId,
+        characterId,
+        primaryCharacterId: owned.participant.characterId,
+        profile,
+        stored,
+      });
+      const incompatible =
+        (patch.regard !== undefined && patch.regard !== current.regard) ||
+        (patch.familiarity !== undefined && patch.familiarity !== current.familiarity) ||
+        (patch.meters !== undefined && !sameNumberRecord(patch.meters, current.meters));
+      if (incompatible) {
+        return jsonError(
+          "sim_participant_state_managed_by_world",
+          "this character's relationship scalars and meters are owned by the successor world",
+          409,
+        );
+      }
+      delete patch.regard;
+      delete patch.familiarity;
+      delete patch.meters;
+      if (Object.keys(patch).length === 0) return jsonOk(current);
+    }
+
+    const stored = await editChatParticipantState({ chatId, characterId, profile, patch });
     return jsonOk(
       await project({
         chatId,
