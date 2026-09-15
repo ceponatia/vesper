@@ -1,0 +1,73 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Wardrobe API
+  version: 1.0.0
+x-vesper-status: implemented
+paths:
+  /api/chats/{chatId}/participants/{characterId}/wardrobe:
+    parameters:
+      - in: path
+        name: chatId
+        required: true
+        schema: { type: string }
+      - in: path
+        name: characterId
+        required: true
+        schema: { type: string }
+    get:
+      summary: Read the garment-store-backed wardrobe projection for one participant.
+      responses:
+        '200': { description: Participant wardrobe and garment readouts. }
+        '404': { description: Chat or roster participant not found. }
+    patch:
+      summary: Reconcile participant wardrobe and apply ordered garment operations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                wornItemIds: { type: array, items: { type: string } }
+                outfitPresetId: { type: string }
+                outfit: { type: string }
+                outfitExposed: { type: boolean }
+                garmentOperations: { type: array, items: { type: object, additionalProperties: true } }
+              additionalProperties: false
+      responses:
+        '200': { description: Updated wardrobe projection; rejected operations are returned as garmentDiagnostics. }
+        '400': { description: Invalid request. }
+        '404': { description: Chat or roster participant not found. }
+        '409': { description: chat_busy or successor world owns the primary wardrobe. }
+  /api/chats/{chatId}/player/wardrobe:
+    parameters:
+      - in: path
+        name: chatId
+        required: true
+        schema: { type: string }
+    get:
+      summary: Read the player's effective garment-store-backed wardrobe projection.
+      responses:
+        '200': { description: Player wardrobe projection. }
+        '404': { description: Chat not found. }
+    patch:
+      summary: Reconcile player wardrobe and apply ordered garment operations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                wornItemIds: { type: array, items: { type: string } }
+                outfitPresetId: { type: string }
+                overlay: { type: string }
+                garmentOperations: { type: array, items: { type: object, additionalProperties: true } }
+              additionalProperties: false
+      responses:
+        '200': { description: Updated player wardrobe projection; rejected operations are returned as garmentDiagnostics. }
+        '400': { description: Invalid request. }
+        '404': { description: Chat not found. }
+        '409': { description: chat_busy. }
