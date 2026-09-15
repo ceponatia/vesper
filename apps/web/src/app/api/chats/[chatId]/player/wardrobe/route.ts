@@ -9,8 +9,12 @@ import {
 } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonOk, readBody, withOwnedChat } from "@/server/api";
-import { garmentReadoutsFor, loadChatScenario, seedChatScenario } from "@/server/engine";
-import { editChatPlayerWardrobe } from "@/server/engine/chat-state/focused-edit";
+import {
+  editChatPlayerWardrobe,
+  garmentReadoutsFor,
+  loadChatScenario,
+  seedChatScenario,
+} from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../../owned";
 
 type Params = { chatId: string };
