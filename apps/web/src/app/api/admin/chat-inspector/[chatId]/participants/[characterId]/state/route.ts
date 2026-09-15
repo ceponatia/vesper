@@ -13,7 +13,7 @@ import { jsonError, jsonOk, readBody } from "@/server/api";
 import { callbackHistorySchema, chatFeelingStateSchema, loadChatState, seedChatState, selfieHistorySchema } from "@/server/engine";
 import { editChatParticipantInspectorState } from "@/server/engine/chat-state/focused-edit";
 import { voiceExemplarsSchema } from "@/server/engine/chat-voice";
-import { chatBusyResponse } from "@/app/api/chats/owned";
+import { chatBusyResponse, type OwnedChat } from "@/app/api/chats/owned";
 import { withSelfOwnedChat } from "../../../../owned";
 
 type Params = { chatId: string; characterId: string };
@@ -51,7 +51,7 @@ function view(state: ReturnType<typeof seedChatState>) {
   };
 }
 
-function memberFor(owned: Parameters<Parameters<typeof withSelfOwnedChat<Params>>[0]>[1], characterId: string) {
+function memberFor(owned: OwnedChat, characterId: string) {
   return owned.roster.find((member) => member.characterId === characterId) ?? null;
 }
 
