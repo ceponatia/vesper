@@ -164,6 +164,9 @@ paths:
     get:
       tags: [State]
       summary: Read the current conversation-state projection
+      description: >-
+        Compatibility aggregate read model retained while first-party authoring uses the focused
+        resources documented under docs/openapi/chat-state/.
       x-vesper-source: apps/web/src/app/api/chats/[chatId]/state/route.ts
       responses:
         '200':
@@ -174,8 +177,15 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         default: { $ref: '#/components/responses/Error' }
     patch:
+      deprecated: true
       tags: [State]
-      summary: Author-edit conversation or participant state
+      summary: Deprecated aggregate author-edit compatibility endpoint
+      description: >-
+        Compatibility-only mutation surface. First-party callers must use the focused scenario,
+        participant-state, wardrobe, player-state, and inspector resources under
+        docs/openapi/chat-state/. Inspector/debug fields return 410 inspector_state_moved rather
+        than mutating gameplay state. Successor-world-owned relationship scalars, meters,
+        wardrobe, and calendar values reject real shadow-write attempts with 409.
       x-vesper-source: apps/web/src/app/api/chats/[chatId]/state/route.ts
       requestBody:
         required: true
@@ -184,12 +194,18 @@ paths:
             schema: { $ref: '#/components/schemas/ChatStatePatch' }
       responses:
         '200':
-          description: Updated state snapshot.
+          description: Updated compatibility state snapshot.
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+        '400': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+        '410':
+          description: Inspector/debug mutation moved to the admin self-inspector participant-state resource.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/chats/{chatId}/attachments:
@@ -455,6 +471,12 @@ components:
         seen: { type: boolean }
     ChatStatePatch:
       type: object
+      minProperties: 1
+      additionalProperties: false
+      description: >-
+        Deprecated compatibility mutation shape. Inspector/debug fields are intentionally absent;
+        use the admin self-inspector resource for those fields and the focused chat-state resources
+        for all new first-party writes.
       properties:
         premise: { type: string }
         regard: { type: integer, minimum: -100, maximum: 100 }
@@ -480,21 +502,16 @@ components:
         activeSocialCards:
           type: array
           items: { type: object, additionalProperties: true }
-        openLoops:
-          type: array
-          maxItems: 6
-          items: { type: string, maxLength: 200 }
-        memoryQueries:
-          type: array
-          maxItems: 6
-          items: { type: string, maxLength: 200 }
         sceneAuto: { type: string, enum: [off, milestones] }
         sceneModel: { type: string, maxLength: 64 }
+        playerState:
+          type: object
+          additionalProperties: true
+          description: Deprecated whole-object compatibility write; new callers use /player-state and /player/wardrobe.
         supportingCast: { type: array, items: { type: object, additionalProperties: true } }
         plans: { type: array, items: { type: object, additionalProperties: true } }
         calendarStart: { type: object, additionalProperties: true }
         whereabouts: { type: string, maxLength: 120 }
-      additionalProperties: true
     SuccessorChatCreateRequest:
       type: object
       additionalProperties: false

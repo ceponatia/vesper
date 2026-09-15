@@ -54,6 +54,10 @@ export * from "./chat-initiative";
 export * from "./chat-intent";
 export * from "./chat-relationships";
 export * from "./chat-selfie";
+// The inspector route validates the stored voice-exemplar shape; the append
+// and remove mutators stay pipeline-internal.
+export { voiceExemplarsSchema } from "./chat-voice";
+export type { VoiceExemplar } from "./chat-voice";
 export * from "./chat-vision";
 export * from "./chat-summary";
 export * from "./chat-affordances";
@@ -88,6 +92,28 @@ export { persistSurfaceTransferSettlement } from "./chat-state/surface-transfer"
 export type { ChatSurfaceTransferInput } from "./chat-state/surface-transfer";
 export { editChatState } from "./chat-state/edit";
 export type { ChatStateEdit } from "./chat-state/edit";
+export {
+  editChatScenario,
+  editInspectorState,
+  editParticipantState,
+  editParticipantWardrobe,
+  editPlayerPersona,
+  editPlayerWardrobe,
+} from "./chat-state/focused-edit";
+export type {
+  InspectorStateEdit,
+  ParticipantStateEdit,
+  ParticipantWardrobeEdit,
+  PlayerWardrobeEdit,
+  ScenarioEdit,
+} from "./chat-state/focused-edit";
+export {
+  inspectorStateView,
+  participantStateView,
+  participantWardrobeView,
+  playerWardrobeView,
+  scenarioView,
+} from "./chat-state/focused-read";
 export * from "./chat-memory";
 export * from "./chat-scene-sketch";
 export * from "./chat-meanwhile";

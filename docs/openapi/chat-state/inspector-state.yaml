@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Inspector State API
+  version: 1.0.0
+x-vesper-status: implemented
+paths:
+  /api/admin/self/chat-inspector/{chatId}/participants/{characterId}/state:
+    parameters:
+      - in: path
+        name: chatId
+        required: true
+        schema: { type: string }
+      - in: path
+        name: characterId
+        required: true
+        schema: { type: string }
+    get:
+      summary: Read engine/debug participant state under admin self-inspector authorization.
+      responses:
+        '200': { description: Inspector state projection. }
+        '404': { description: Not authorized, chat not found, or participant not in roster. }
+    patch:
+      summary: Mutate engine/debug participant state outside the ordinary gameplay API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                openLoops: { type: array, items: { type: string } }
+                memoryQueries: { type: array, items: { type: string } }
+                surfacedCues: { type: object, additionalProperties: { type: string } }
+                attributeOverlays: { type: array, items: { type: object, additionalProperties: true } }
+                traitOverlays: { type: array, items: { type: object, additionalProperties: true } }
+                voiceExemplars: { type: array, items: { type: object, additionalProperties: true } }
+                callbackHistory: { type: array, items: { type: object, additionalProperties: true } }
+                feeling: { type: object, additionalProperties: true }
+                selfieHistory: { type: array, items: { type: object, additionalProperties: true } }
+                drives: { type: array, items: { type: object, additionalProperties: true } }
+              additionalProperties: false
+      responses:
+        '200': { description: Updated inspector state projection. }
+        '400': { description: Invalid request. }
+        '404': { description: Not authorized, chat not found, or participant not in roster. }
+        '409': { description: chat_busy. }

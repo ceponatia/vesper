@@ -1,0 +1,40 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Scenario API
+  version: 1.0.0
+x-vesper-status: implemented
+paths:
+  /api/chats/{chatId}/scenario:
+    parameters:
+      - in: path
+        name: chatId
+        required: true
+        schema: { type: string }
+    get:
+      summary: Read focused chat-wide scenario authoring state.
+      responses:
+        '200': { description: Scenario projection. }
+        '404': { description: Chat not found. }
+    patch:
+      summary: Edit chat-wide scenario authoring state without writing participant state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                premise: { type: string }
+                activeSocialCards: { type: array, items: { type: object, additionalProperties: true } }
+                sceneAuto: { type: string, enum: [off, milestones] }
+                sceneModel: { type: string }
+                supportingCast: { type: array, items: { type: object, additionalProperties: true } }
+                plans: { type: array, items: { type: object, additionalProperties: true } }
+                calendarStart: { type: object, additionalProperties: true }
+              additionalProperties: false
+      responses:
+        '200': { description: Updated scenario projection. }
+        '400': { description: Invalid request. }
+        '404': { description: Chat not found. }
+        '409': { description: chat_busy, or successor world owns the requested calendar change. }

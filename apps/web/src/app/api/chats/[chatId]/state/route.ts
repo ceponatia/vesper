@@ -47,93 +47,48 @@ import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 type Params = { chatId: string };
 
 /**
- * The conversation-state API, keyed per participant, a sibling of the plain-text
- * reply stream so state never inlines into prose:
- *
- * - **GET** → the strip / premise-bar / state-tools snapshot, with the same
- *   drift-on-read the prompt build applies. No row ⇒ a rested seed from the
- *   authored defaults.
- * - **PATCH** → an author edit (premise **Save** + the state-tools modal): upsert
- *   the provided fields (seeding the rest if absent).
- *
- * The action chips no longer POST here — a tap is now a narrated `action_beat`
- * exchange through the character-chat pipeline, which applies the same
- * deterministic effect pre-narration so the reply reflects it.
+ * Aggregate state is now primarily a compatibility READ projection. PATCH stays
+ * temporarily for external callers while first-party UI writes are dispatched to
+ * focused resources. Inspector/debug fields are deliberately rejected here.
  */
-
 const editBodySchema = z.object({
   premise: z.string().trim().max(CHAT_PREMISE_MAX_CHARS).optional(),
   regard: z.number().int().min(-100).max(100).optional(),
   familiarity: z.number().int().min(0).max(100).optional(),
-  /** Authored relationship texture (kind/history/mask/looming) — the state-tools edit surface. */
   relationship: relationshipTextureSchema.optional(),
   mindNote: z.string().trim().max(CHAT_MIND_NOTE_MAX_CHARS).optional(),
   meters: z.record(z.string(), z.number()).optional(),
   conditions: z.array(activeConditionSchema).optional(),
-  /** Structured worn item-definition ids — the sheet's equip editor. */
   wornItemIds: z.array(z.string().trim().min(1)).max(40).optional(),
-  /** The active outfit preset id — the sheet's preset switcher. */
   outfitPresetId: z.string().max(120).optional(),
   outfit: z.string().optional(),
   outfitExposed: z.boolean().optional(),
-  /**
-   * Typed garment operations — the sheet's
-   * presentation controls. `garmentOperationListSchema` is the trust boundary:
-   * it drops each malformed operation individually and caps the list, so one bad
-   * entry never voids the save (docs/resilience.md §1).
-   */
   garmentOperations: garmentOperationListSchema.optional(),
   activeSocialCards: z.array(socialReactionCardSchema).optional(),
-  // Inspector-grade fields: the dev/state-tools
-  // surface can rewrite everything stored — including the D11 gate bypass via `regard`.
+  // Accepted only so legacy callers receive a deliberate migration error rather
+  // than having zod silently strip the field before we can explain its new home.
   openLoops: z.array(z.string().trim().max(200)).max(6).optional(),
   memoryQueries: z.array(z.string().trim().max(200)).max(6).optional(),
   surfacedCues: z.record(z.string(), z.string()).optional(),
   attributeOverlays: z.array(attributeValueSchema).optional(),
-  /** Auto scene-generation mode: "off" | "milestones" (the scenario modal's toggle). */
   sceneAuto: z.enum(["off", "milestones"]).optional(),
-  /**
-   * Scene-image model pick (the scene strip's save-on-select dropdown). A
-   * registry model id, free text rather than an enum: the model list is data
-   * now, so an enum here would mean redeploying the API to accept a model the
-   * admin page just added. Unknown ids degrade to the scene default at render.
-   */
   sceneModel: z.string().trim().max(64).optional(),
-  /** Memory-callback ring — inspector-grade reset/edit. */
   callbackHistory: z.array(z.object({ ref: z.string().max(80), atClockMinutes: z.number() })).max(20).optional(),
-  /** Emotional weather — inspector-grade set/clear. */
   feeling: chatFeelingStateSchema.optional(),
-  /** Selfie-send ring — inspector-grade reset/edit. */
   selfieHistory: selfieHistorySchema.optional(),
-  /** Runtime drives — scenario/state-tools edit surface. */
   drives: chatDrivesSchema.optional(),
-  /** Who the player is here + what they're wearing — the "Playing as" pick. */
   playerState: chatPlayerStateSchema.optional(),
-  /** Recurring named side characters — the panel's whole-list save. */
   supportingCast: supportingCastSchema.optional(),
-  /** Tracked plans & promises — the Plans panel's whole-list save. */
   plans: chatPlansSchema.optional(),
-  /** The story-calendar anchor — the clock card's editor. */
   calendarStart: calendarStartSchema.optional(),
-  /** Where an away member is — author-correctable phrase. */
   whereabouts: z.string().trim().max(120).optional(),
-});
+}).strict();
 
-/**
- * Mood-chip inputs for the snapshot: the character's `social.dominance`
- * tilts a low-valence read angry vs sad, and chat — a private intimate-capable 1-on-1 —
- * permits the `aroused` label (then gated purely on the arousal meter).
- */
 const snapshotOpts = (profile: CharacterProfile) => ({
   dominance: effectiveTraitValue(profile.traits, "social.dominance"),
   intimateContext: true,
 });
 
-/**
- * Resolve the TARGET participant (per-character sheets):
- * `?characterId=` picks any roster member's state; absent ⇒ the primary (the
- * pre-roster shape every 1-on-1 caller keeps using). Null ⇒ not in this roster.
- */
 function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string; profile: unknown } | null {
   const characterId = new URL(req.url).searchParams.get("characterId");
   if (!characterId) return { characterId: owned.participant.characterId, profile: owned.character.profile };
@@ -143,6 +98,22 @@ function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string
 
 const sameStrings = (a: readonly string[], b: readonly string[]): boolean =>
   a.length === b.length && a.every((value, index) => value === b[index]);
+
+const sameRecord = (a: Record<string, number>, b: Record<string, number>): boolean =>
+  JSON.stringify(a) === JSON.stringify(b);
+
+function hasInspectorMutation(value: z.infer<typeof editBodySchema>): boolean {
+  return (
+    value.openLoops !== undefined ||
+    value.memoryQueries !== undefined ||
+    value.surfacedCues !== undefined ||
+    value.attributeOverlays !== undefined ||
+    value.callbackHistory !== undefined ||
+    value.feeling !== undefined ||
+    value.selfieHistory !== undefined ||
+    value.drives !== undefined
+  );
+}
 
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
@@ -154,15 +125,9 @@ export const GET = withOwnedChat<Params, OwnedChat>(
     const sink = new DiagnosticCollector();
     const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
     const stored = await loadChatState(chatId, target.characterId, sink);
-    // resolveSeededOutfit: the seeded outfit is an item-id marker (and pre-fix rows
-    // persisted those ids) — the character sheet must show the garment phrase.
     const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
     const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
     const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
-    // A sim-routed chat's meters come from the body substrate and its
-    // regard/familiarity from the relationship ledger — the mood chip, pips,
-    // and disposition bands then all DERIVE from world truth, since the
-    // snapshot computes from whatever state it is handed.
     const isPrimaryTarget = target.characterId === owned.participant.characterId;
     const [simMeters, simRelationship] = isPrimaryTarget
       ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])
@@ -172,29 +137,22 @@ export const GET = withOwnedChat<Params, OwnedChat>(
       ...(simMeters === null ? {} : { meters: { ...drifted.meters, ...simMeters } }),
       ...(simRelationship === null ? {} : { regard: simRelationship.regard, familiarity: simRelationship.familiarity }),
     };
-    // Rendered garment phrase for the read-only strip chip: the structured
-    // worn items resolved through the shared seam, else the free-text overlay.
     const wardrobe = await resolveChatWardrobe(
       { ...state, garments: scenario.garments, garmentActorId: garmentActorForCharacter(target.characterId) },
       user.id,
       profile,
       sink,
     );
-    // A routed chat's outfit chip reads the simulation world's WORN items.
     const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
       ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
       outfitLabel: simOutfit ?? wardrobe.garments,
-      // The presentation graph for this member's worn garments: the
-      // controls the sheet offers plus the coverage they currently produce.
       garments: garmentReadoutsFor(
         scenario.garments,
         garmentActorForCharacter(target.characterId),
         scenario.clockMinutes,
       ),
       garmentDiagnostics: [],
-      // Sim-routed chats show the WORLD clock, not the character-chat scenario clock;
-      // null means this conversation uses the character-chat pipeline's clock.
       simClock: await readSimChatClock(chatId),
     });
   },
@@ -211,31 +169,61 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
 
     const body = await readBody(req, editBodySchema);
     if (!body.ok) return body.response;
+    if (hasInspectorMutation(body.value)) {
+      return jsonError(
+        "inspector_state_moved",
+        "engine/debug state is no longer writable through the gameplay state endpoint; use the admin self-inspector participant-state resource",
+        410,
+      );
+    }
 
     const profile = parseOr(characterProfileSchema, target.profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
+    const patch = { ...body.value };
 
-    // Successor-routed primary characters wear simulation material items. The
-    // character-chat state row still exists as compatibility/storage for other
-    // surfaces, but it is NOT a second wardrobe authority. Reject only an actual
-    // wardrobe change (the state-tools form submits its unchanged wardrobe fields
-    // on every save) so unrelated state edits remain usable. Heal the comparison
-    // state through the same compatibility seam GET uses, so an older raw id-marker
-    // cannot make an unchanged form look like a wardrobe edit.
     if (
       target.characterId === owned.participant.characterId &&
       isSimRoutedAuthority(await readChatEngineAuthority(chatId))
     ) {
-      const current = await resolveSeededOutfit(
-        (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile),
-        user.id,
-        profile,
-      );
+      if (patch.calendarStart !== undefined) {
+        return jsonError(
+          "sim_calendar_managed_by_world",
+          "this conversation's calendar is owned by the successor world; change the world calendar rather than the legacy chat scenario anchor",
+          409,
+        );
+      }
+
+      const stored = (await loadChatState(chatId, target.characterId)) ?? seedChatState(profile);
+      const current = await resolveSeededOutfit(stored, user.id, profile);
+      const [simMeters, simRelationship] = await Promise.all([
+        readSimChatMeters(chatId),
+        readSimChatRelationship(chatId),
+      ]);
+      const effectiveMeters = simMeters === null ? current.meters : { ...current.meters, ...simMeters };
+      const effectiveRegard = simRelationship?.regard ?? current.regard;
+      const effectiveFamiliarity = simRelationship?.familiarity ?? current.familiarity;
+      const worldOwnedChanged =
+        (patch.regard !== undefined && patch.regard !== effectiveRegard) ||
+        (patch.familiarity !== undefined && patch.familiarity !== effectiveFamiliarity) ||
+        (patch.meters !== undefined && !sameRecord(patch.meters, effectiveMeters));
+      if (worldOwnedChanged) {
+        return jsonError(
+          "sim_participant_state_managed_by_world",
+          "this character's relationship scalars and meters are owned by the successor world; change them through world-authoritative actions instead",
+          409,
+        );
+      }
+      // Unchanged world-owned values are compatibility noise from whole-form
+      // submitters. Strip them rather than persisting shadow state the read path masks.
+      delete patch.regard;
+      delete patch.familiarity;
+      delete patch.meters;
+
       const wardrobeChanged =
-        (body.value.garmentOperations?.length ?? 0) > 0 ||
-        (body.value.wornItemIds !== undefined && !sameStrings(body.value.wornItemIds, current.wornItemIds)) ||
-        (body.value.outfitPresetId !== undefined && body.value.outfitPresetId !== current.outfitPresetId) ||
-        (body.value.outfit !== undefined && body.value.outfit !== current.outfit) ||
-        (body.value.outfitExposed !== undefined && body.value.outfitExposed !== current.outfitExposed);
+        (patch.garmentOperations?.length ?? 0) > 0 ||
+        (patch.wornItemIds !== undefined && !sameStrings(patch.wornItemIds, current.wornItemIds)) ||
+        (patch.outfitPresetId !== undefined && patch.outfitPresetId !== current.outfitPresetId) ||
+        (patch.outfit !== undefined && patch.outfit !== current.outfit) ||
+        (patch.outfitExposed !== undefined && patch.outfitExposed !== current.outfitExposed);
       if (wardrobeChanged) {
         return jsonError(
           "sim_wardrobe_managed_by_world",
@@ -243,18 +231,20 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
           409,
         );
       }
+      delete patch.wornItemIds;
+      delete patch.outfitPresetId;
+      delete patch.outfit;
+      delete patch.outfitExposed;
+      delete patch.garmentOperations;
     }
 
-    // Garment operations degrade rather than fail (docs/resilience.md): a rejected
-    // one is a stable-code diagnostic, collected here and handed back so the sheet
-    // can say WHY it did not take instead of silently discarding it.
     const editSink = new DiagnosticCollector();
     const { state, scenario } = await editChatState({
       chatId,
       characterId: target.characterId,
       ownerId: user.id,
       profile,
-      patch: body.value,
+      patch,
       sink: editSink,
     });
     const wardrobe = await resolveChatWardrobe(
@@ -262,8 +252,7 @@ export const PATCH = withOwnedChat<Params, OwnedChat>(
       user.id,
       profile,
     );
-    const simOutfit =
-      target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
+    const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
       ...chatStateSnapshot(state, scenario, snapshotOpts(profile)),
       outfitLabel: simOutfit ?? wardrobe.garments,
