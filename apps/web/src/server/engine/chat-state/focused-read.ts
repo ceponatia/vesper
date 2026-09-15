@@ -83,14 +83,15 @@ export async function playerWardrobeView(args: {
   persona: PlayerPersona;
   diagnostics?: readonly { code: string; message: string }[];
 }) {
-  await resolvePlayerWardrobe(
+  const resolved = await resolvePlayerWardrobe(
     args.scenario.playerState,
     args.ownerId,
     args.persona.profile,
+    undefined,
     args.scenario.garments,
   );
   return {
-    wornItemIds: args.scenario.playerState.wornItemIds,
+    wornItemIds: resolved.wornItemIds,
     seeded: args.scenario.playerState.seeded,
     outfitPresetId: args.scenario.playerState.outfitPresetId,
     overlay: args.scenario.playerState.overlay,
