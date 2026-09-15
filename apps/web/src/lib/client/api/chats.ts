@@ -38,6 +38,12 @@ import {
 } from "./chat-schemas";
 
 const hasFields = (value: Record<string, unknown>): boolean => Object.keys(value).length > 0;
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+const focusedWardrobeResultSchema = z.object({
+  garmentDiagnostics: z
+    .array(z.object({ code: z.string(), message: z.string().catch("") }))
+    .catch([]),
+});
 
 /**
  * Transitional client adapter for the old UI edit shape. It no longer sends the
@@ -76,6 +82,19 @@ async function editStateThroughFocusedResources(
     return apiPatch(chatStateSnapshotSchema, `/api/chats/${chatId}/state`, patch);
   }
 
+  // The state-tools form is intentionally convenient and keeps local copies of the
+  // whole sheet, but the focused resources express write INTENT. Diff against the
+  // current aggregate read model before partitioning so a save of mindNote does not
+  // also manufacture writes for unchanged successor-owned meters/relationship or
+  // wardrobe fields. This is also useful for legacy chats: focused endpoints only
+  // receive fields the caller actually changed.
+  let current: ChatStateSnapshot | undefined;
+  if (needsCharacter && characterId) {
+    const result = await apiGet(chatStateSnapshotSchema, `/api/chats/${chatId}/state?characterId=${characterId}`);
+    if (!result.ok) return result;
+    current = result.data;
+  }
+
   const scenario: Record<string, unknown> = {};
   if (patch.premise !== undefined) scenario.premise = patch.premise;
   if (patch.activeSocialCards !== undefined) scenario.activeSocialCards = patch.activeSocialCards;
@@ -96,14 +115,23 @@ async function editStateThroughFocusedResources(
     if (!result.ok) return { ok: false, error: result.error };
   }
 
+  let garmentDiagnostics: ChatStateSnapshot["garmentDiagnostics"] = [];
   if (characterId) {
     const participant: Record<string, unknown> = {};
-    if (patch.regard !== undefined) participant.regard = patch.regard;
-    if (patch.familiarity !== undefined) participant.familiarity = patch.familiarity;
-    if (patch.relationship !== undefined) participant.relationship = patch.relationship;
-    if (patch.mindNote !== undefined) participant.mindNote = patch.mindNote;
-    if (patch.meters !== undefined) participant.meters = patch.meters;
-    if (patch.conditions !== undefined) participant.conditions = patch.conditions;
+    if (patch.regard !== undefined && patch.regard !== current?.regard) participant.regard = patch.regard;
+    if (patch.familiarity !== undefined && patch.familiarity !== current?.familiarity) {
+      participant.familiarity = patch.familiarity;
+    }
+    if (patch.relationship !== undefined && !sameJson(patch.relationship, current?.relationship)) {
+      participant.relationship = patch.relationship;
+    }
+    if (patch.mindNote !== undefined && patch.mindNote !== current?.mindNote) participant.mindNote = patch.mindNote;
+    if (patch.meters !== undefined && !sameJson(patch.meters, current?.meters)) participant.meters = patch.meters;
+    if (patch.conditions !== undefined && !sameJson(patch.conditions, current?.conditions)) {
+      participant.conditions = patch.conditions;
+    }
+    // `whereabouts` is intentionally absent from the aggregate compatibility snapshot,
+    // so an explicit caller value remains an explicit focused write.
     if (patch.whereabouts !== undefined) participant.whereabouts = patch.whereabouts;
     if (hasFields(participant)) {
       const result = await apiPatch(
@@ -115,25 +143,43 @@ async function editStateThroughFocusedResources(
     }
 
     const wardrobe: Record<string, unknown> = {};
-    if (patch.wornItemIds !== undefined) wardrobe.wornItemIds = patch.wornItemIds;
-    if (patch.outfitPresetId !== undefined) wardrobe.outfitPresetId = patch.outfitPresetId;
-    if (patch.outfit !== undefined) wardrobe.outfit = patch.outfit;
-    if (patch.outfitExposed !== undefined) wardrobe.outfitExposed = patch.outfitExposed;
-    if (patch.garmentOperations !== undefined) wardrobe.garmentOperations = patch.garmentOperations;
+    if (patch.wornItemIds !== undefined && !sameJson(patch.wornItemIds, current?.wornItemIds)) {
+      wardrobe.wornItemIds = patch.wornItemIds;
+    }
+    if (patch.outfitPresetId !== undefined && patch.outfitPresetId !== current?.outfitPresetId) {
+      wardrobe.outfitPresetId = patch.outfitPresetId;
+    }
+    if (patch.outfit !== undefined && patch.outfit !== current?.outfit) wardrobe.outfit = patch.outfit;
+    if (patch.outfitExposed !== undefined && patch.outfitExposed !== current?.outfitExposed) {
+      wardrobe.outfitExposed = patch.outfitExposed;
+    }
+    if ((patch.garmentOperations?.length ?? 0) > 0) wardrobe.garmentOperations = patch.garmentOperations;
     if (hasFields(wardrobe)) {
       const result = await apiPatch(
-        z.unknown(),
+        focusedWardrobeResultSchema,
         `/api/chats/${chatId}/participants/${characterId}/wardrobe`,
         wardrobe,
       );
       if (!result.ok) return { ok: false, error: result.error };
+      // Rejected garment operations are successful writes with diagnostics. The
+      // aggregate GET is deliberately stateless and returns [], so retain the
+      // focused response and merge it back after the refresh below.
+      garmentDiagnostics = result.data.garmentDiagnostics;
     }
 
     const inspector: Record<string, unknown> = {};
-    if (patch.openLoops !== undefined) inspector.openLoops = patch.openLoops;
-    if (patch.memoryQueries !== undefined) inspector.memoryQueries = patch.memoryQueries;
-    if (patch.surfacedCues !== undefined) inspector.surfacedCues = patch.surfacedCues;
-    if (patch.attributeOverlays !== undefined) inspector.attributeOverlays = patch.attributeOverlays;
+    if (patch.openLoops !== undefined && !sameJson(patch.openLoops, current?.openLoops)) {
+      inspector.openLoops = patch.openLoops;
+    }
+    if (patch.memoryQueries !== undefined && !sameJson(patch.memoryQueries, current?.memoryQueries)) {
+      inspector.memoryQueries = patch.memoryQueries;
+    }
+    if (patch.surfacedCues !== undefined && !sameJson(patch.surfacedCues, current?.surfacedCues)) {
+      inspector.surfacedCues = patch.surfacedCues;
+    }
+    if (patch.attributeOverlays !== undefined && !sameJson(patch.attributeOverlays, current?.attributeOverlays)) {
+      inspector.attributeOverlays = patch.attributeOverlays;
+    }
     if (hasFields(inspector)) {
       const result = await apiPatch(
         z.unknown(),
@@ -149,10 +195,15 @@ async function editStateThroughFocusedResources(
     }
   }
 
-  return apiGet(
+  const refreshed = await apiGet(
     chatStateSnapshotSchema,
     `/api/chats/${chatId}/state${characterId ? `?characterId=${characterId}` : ""}`,
   );
+  if (!refreshed.ok) return refreshed;
+  return {
+    ok: true,
+    data: { ...refreshed.data, garmentDiagnostics },
+  };
 }
 
 export const chatsApi = {
