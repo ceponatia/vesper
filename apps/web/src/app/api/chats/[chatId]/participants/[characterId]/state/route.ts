@@ -12,15 +12,17 @@ import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import {
   driftChatState,
+  editParticipantState,
   isSimRoutedAuthority,
+  loadChatScenario,
+  loadChatState,
+  participantStateView,
   readChatEngineAuthority,
   readSimChatMeters,
   readSimChatRelationship,
+  seedChatScenario,
+  seedChatState,
 } from "@/server/engine";
-import { editParticipantState } from "@/server/engine/chat-state/focused-edit";
-import { participantStateView } from "@/server/engine/chat-state/focused-read";
-import { seedChatScenario, seedChatState } from "@/server/engine/chat-state/seed";
-import { loadChatScenario, loadChatState } from "@/server/engine/chat-state/store";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../../../owned";
 
 type Params = { chatId: string; characterId: string };

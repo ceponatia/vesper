@@ -6,7 +6,7 @@ import {
 } from "@/contracts";
 import { garmentReadoutsFor } from "../chat-garments";
 import { resolveChatWardrobe, resolvePlayerWardrobe } from "../chat-wardrobe";
-import type { PlayerPersona } from "@/server/players/persona";
+import type { PlayerPersona } from "@/server/players";
 import { chatStateSnapshot } from "./readout";
 import type { ChatScenario, ChatState } from "./types";
 

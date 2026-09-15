@@ -5,9 +5,7 @@ import { characterProfileSchema, emptyCharacterProfile } from "@/contracts";
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import { db, personas } from "@/server/db";
-import { editPlayerPersona } from "@/server/engine/chat-state/focused-edit";
-import { seedChatScenario } from "@/server/engine/chat-state/seed";
-import { loadChatScenario } from "@/server/engine/chat-state/store";
+import { editPlayerPersona, loadChatScenario, seedChatScenario } from "@/server/engine";
 import { chatBusyResponse, loadOwnedChat, type OwnedChat } from "../../owned";
 
 type Params = { chatId: string };
