@@ -1,0 +1,210 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Scenario API — Draft Target
+  version: 0.0.1-draft
+  description: >-
+    Proposed focused replacement for the chat-wide fields currently mutated through
+    PATCH /api/chats/{chatId}/state. This contract is a design target and is not yet
+    implemented.
+servers:
+  - url: /
+x-vesper-status: proposed-not-implemented
+x-vesper-auth: Authenticated owner of the chat.
+x-vesper-current-source: apps/web/src/app/api/chats/[chatId]/state/route.ts
+x-vesper-current-service: apps/web/src/server/engine/chat-state/edit.ts
+x-vesper-storage-owner: ChatScenario on character_chats
+x-vesper-design-invariants:
+  - A scenario-only write must not seed, update, or otherwise persist a character_chat_state row.
+  - Scenario writes remain rollback-safe through pre_exchange_scenario.
+  - A write must return chat_busy while an exchange can overwrite the same scenario object.
+  - Player persona and wardrobe are intentionally excluded from this resource.
+tags:
+  - name: Chat Scenario
+paths:
+  /api/chats/{chatId}/scenario:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    get:
+      tags: [Chat Scenario]
+      operationId: getChatScenario
+      summary: Read the chat-wide authoring scenario
+      description: >-
+        Returns only chat-wide authored/settings state. Engine-owned placement, environment,
+        garment-store, skip-history, and other runtime scenario fields are deliberately omitted.
+        During migration, GET /api/chats/{chatId}/state may remain as the aggregate UI read model.
+      x-vesper-proposed-source: apps/web/src/app/api/chats/[chatId]/scenario/route.ts
+      responses:
+        '200':
+          description: Current chat-wide scenario authoring projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenarioView' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Chat Scenario]
+      operationId: patchChatScenario
+      summary: Edit chat-wide scenario authoring fields
+      description: >-
+        Applies only the supplied fields to ChatScenario. This operation must not load-and-persist
+        a participant ChatState merely to edit chat-wide data. calendarStart is the legacy
+        character-chat calendar anchor; a successor/world-routed calendar is a separate world
+        authority and must not be silently shadow-written here.
+      x-vesper-proposed-source: apps/web/src/app/api/chats/[chatId]/scenario/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScenarioPatch' }
+      responses:
+        '200':
+          description: Scenario updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenarioView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: >-
+            chat_busy, chat_archived if that restriction is retained, or a successor/world
+            authority conflict such as sim_calendar_managed_by_world.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  parameters:
+    ChatId:
+      in: path
+      name: chatId
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    CalendarStart:
+      type: object
+      additionalProperties: false
+      required: [year, month, day, hour, minute]
+      x-vesper-schema-source: apps/web/src/lib/clock.ts#calendarStartSchema
+      properties:
+        year: { type: integer }
+        month: { type: integer, minimum: 1, maximum: 12 }
+        day: { type: integer, minimum: 1, maximum: 31 }
+        hour: { type: integer, minimum: 0, maximum: 23, default: 8 }
+        minute: { type: integer, minimum: 0, maximum: 59, default: 0 }
+    SocialReactionCard:
+      type: object
+      additionalProperties: true
+      x-vesper-schema-source: apps/web/src/contracts#socialReactionCardSchema
+    SupportingCastMember:
+      type: object
+      additionalProperties: true
+      x-vesper-schema-source: apps/web/src/contracts#supportingCastSchema
+    ChatPlan:
+      type: object
+      additionalProperties: true
+      x-vesper-schema-source: apps/web/src/contracts#chatPlansSchema
+    ScenarioView:
+      type: object
+      additionalProperties: false
+      required:
+        - premise
+        - activeSocialCards
+        - sceneAuto
+        - sceneModel
+        - supportingCast
+        - plans
+        - calendarStart
+        - clockMinutes
+      properties:
+        premise:
+          type: string
+          description: Chat-only premise/scene setup text.
+        activeSocialCards:
+          type: array
+          description: Setting-wide social rules shared by the whole roster.
+          items: { $ref: '#/components/schemas/SocialReactionCard' }
+        sceneAuto:
+          type: string
+          enum: [off, milestones]
+        sceneModel:
+          type: string
+          maxLength: 64
+          description: Registry image-profile/model id. Empty selects the normal default.
+        supportingCast:
+          type: array
+          items: { $ref: '#/components/schemas/SupportingCastMember' }
+        plans:
+          type: array
+          items: { $ref: '#/components/schemas/ChatPlan' }
+        calendarStart:
+          $ref: '#/components/schemas/CalendarStart'
+        clockMinutes:
+          type: number
+          readOnly: true
+          description: Legacy shared chat clock. Time advancement remains owned by time-skip/turn settlement.
+    ScenarioPatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        premise:
+          type: string
+          description: Must use CHAT_PREMISE_MAX_CHARS from the canonical contract at implementation time.
+        activeSocialCards:
+          type: array
+          items: { $ref: '#/components/schemas/SocialReactionCard' }
+        sceneAuto:
+          type: string
+          enum: [off, milestones]
+        sceneModel:
+          type: string
+          maxLength: 64
+        supportingCast:
+          type: array
+          description: Whole-list replacement through supportingCastSchema.
+          items: { $ref: '#/components/schemas/SupportingCastMember' }
+        plans:
+          type: array
+          description: Whole-list replacement through chatPlansSchema; missing ids are filled server-side as today.
+          items: { $ref: '#/components/schemas/ChatPlan' }
+        calendarStart:
+          $ref: '#/components/schemas/CalendarStart'
+      x-vesper-excluded-current-fields:
+        - playerState
+        - wornItemIds
+        - outfitPresetId
+        - outfit
+        - outfitExposed
+        - garmentOperations
+        - regard
+        - familiarity
+        - relationship
+        - meters
+        - conditions
+        - mindNote
+        - openLoops
+        - memoryQueries
+        - surfacedCues
+        - attributeOverlays
+        - callbackHistory
+        - feeling
+        - selfieHistory
+        - drives
+        - whereabouts
