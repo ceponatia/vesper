@@ -1,12 +1,14 @@
 import type { ImageReferenceRole } from "@vesper/image-core";
 import { IMAGE_GENERATOR_MAX_PRIMARY, type ImageGeneratorDedicatedRole } from "@/contracts/images/image-generator";
-import { imageUrl } from "@/lib/client/api";
+import { IMAGE_GENERATOR_UPLOAD_DATA_URL_MAX_CHARS } from "@/contracts/images/image-generator-upload";
+import { imageGeneratorApi, imageUrl } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Tag } from "@/components/ui/tag";
+import { useToast } from "@/components/ui/toast";
 import { imageGeneratorRoleLabel } from "../image-generator-copy";
 import { OwnedImagePicker } from "../owned-image-picker";
-import type { Dispatch, SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { GeneratorModelView } from "./model";
 
 /**
@@ -37,6 +39,115 @@ export interface PrimaryRow {
   key: number;
   imageId: string | null;
   purpose: PurposeRole | "";
+}
+
+/**
+ * Mirror the route's data-URL ceiling in bytes. The small header allowance is
+ * deliberately conservative: if a file passes this check, base64 plus its MIME
+ * prefix fits the contract rather than failing only after the browser reads it.
+ */
+const DATA_URL_HEADER_CHARS = 64;
+const MAX_UPLOAD_BYTES = Math.floor((IMAGE_GENERATOR_UPLOAD_DATA_URL_MAX_CHARS - DATA_URL_HEADER_CHARS) / 4) * 3;
+const MAX_UPLOAD_LABEL = `${(MAX_UPLOAD_BYTES / (1024 * 1024)).toFixed(1)} MB`;
+const ALLOWED_UPLOAD_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/avif"]);
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Could not read that file."));
+    };
+    reader.onerror = () => reject(new Error("Could not read that file."));
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * One slot's direct-upload action. The server returns an ordinary owned image
+ * id; after that, callers cannot tell whether it was uploaded here or selected
+ * from the existing picker, which keeps all run routing on the one image-id
+ * contract.
+ */
+function GeneratorUploadButton({
+  label,
+  onUploaded,
+}: {
+  label: string;
+  onUploaded: (imageId: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const toast = useToast();
+
+  const upload = async (file: File) => {
+    if (!ALLOWED_UPLOAD_MIMES.has(file.type)) {
+      toast.push({
+        title: "Upload refused",
+        description: "Choose a PNG, JPEG, WebP, or AVIF image.",
+        tone: "error",
+      });
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      toast.push({
+        title: "Upload refused",
+        description: `That file is too large (max ${MAX_UPLOAD_LABEL}).`,
+        tone: "error",
+      });
+      return;
+    }
+
+    setUploading(true);
+    let dataUrl: string;
+    try {
+      dataUrl = await readFileAsDataUrl(file);
+    } catch (error) {
+      setUploading(false);
+      toast.push({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Could not read that file.",
+        tone: "error",
+      });
+      return;
+    }
+
+    const result = await imageGeneratorApi.uploads.create({ dataUrl, fileName: file.name });
+    setUploading(false);
+    if (!result.ok) {
+      toast.push({ title: "Upload failed", description: result.error.message, tone: "error" });
+      return;
+    }
+
+    onUploaded(result.data.imageId);
+    toast.push({ title: "Image uploaded", description: "The uploaded image is selected in this slot.", tone: "success" });
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="quiet"
+        busy={uploading}
+        disabled={uploading}
+        onClick={() => inputRef.current?.click()}
+      >
+        Upload image
+      </Button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/avif,.png,.jpg,.jpeg,.webp,.avif"
+        className="hidden"
+        aria-label={label}
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          event.currentTarget.value = "";
+          if (file) void upload(file);
+        }}
+      />
+    </>
+  );
 }
 
 export function GeneratorReferences({
@@ -171,6 +282,10 @@ export function GeneratorReferences({
                     >
                       {row.imageId === null ? "Choose image" : "Change image"}
                     </Button>
+                    <GeneratorUploadButton
+                      label={`Upload reference ${String(index + 1)} image`}
+                      onUploaded={(imageId) => setRowImage(row.key, imageId)}
+                    />
                     <Button size="sm" variant="quiet" onClick={() => removeRow(row.key)}>
                       Remove
                     </Button>
@@ -229,6 +344,10 @@ export function GeneratorReferences({
                       >
                         {imageId === null ? "Choose image" : "Change image"}
                       </Button>
+                      <GeneratorUploadButton
+                        label={`Upload ${imageGeneratorRoleLabel(slot.role)} image`}
+                        onUploaded={(uploadedImageId) => setDedicatedImage(slot.role, uploadedImageId)}
+                      />
                       {imageId !== null ? (
                         <Button size="sm" variant="quiet" onClick={() => setDedicatedImage(slot.role, null)}>
                           Clear
