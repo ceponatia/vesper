@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   fluxKleinBase,
   fluxKleinBaseLora,
+  fluxKleinCivitaiDistilledLora,
   fluxKleinDistilled,
   fluxKontextDev,
   qwenImage2512,
@@ -10,19 +11,26 @@ import {
   qwenImageEdit2511,
 } from "./families";
 import { adapterForImageModel } from "./registry";
-import { FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG, imageModelProvider } from "./provider";
+import {
+  CIVITAI_FLUX2_KLEIN4B_SLUG,
+  FAL_QWEN3_EDIT_SLUG,
+  FAL_QWEN3_TEXT_SLUG,
+  imageModelProvider,
+} from "./provider";
 
 /**
  * Adapter resolution.
  *
  * Replicate rows may carry `owner/name:version`, while fal Qwen Image 3 rows are
- * exact operation endpoints with a third path segment. The registry must resolve
- * both forms without prefix inheritance: similarly named siblings are separate
- * endpoints and a retired Replicate Qwen 3 slug must not inherit fal behavior.
+ * exact operation endpoints with a third path segment and Civitai uses a
+ * Vesper-owned exact provider identity. The registry must resolve all forms
+ * without prefix inheritance: similarly named siblings are separate endpoints
+ * and a retired Replicate Qwen 3 slug must not inherit fal behavior.
  *
  * The klein block below (#567) protects the companion requirement: six EXACT
- * base slugs resolve, `black-forest-labs/flux-2-klein-` is never matched as a
- * prefix, and the unrelated production Flux checkpoints keep answering null.
+ * Replicate base slugs resolve, `black-forest-labs/flux-2-klein-` is never
+ * matched as a prefix, and the unrelated production Flux checkpoints keep
+ * answering null.
  */
 describe("adapterForImageModel", () => {
   it("resolves every registered Qwen endpoint", () => {
@@ -71,13 +79,20 @@ describe("adapterForImageModel", () => {
 });
 
 describe("adapterForImageModel: FLUX.2 klein (#567)", () => {
-  it("resolves all six exact bare klein slugs, with 4B/9B twins sharing one variant object", () => {
+  it("resolves all six exact bare Replicate klein slugs, with 4B/9B twins sharing one variant object", () => {
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b")).toBe(fluxKleinDistilled);
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b")).toBe(fluxKleinDistilled);
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-base")).toBe(fluxKleinBase);
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b-base")).toBe(fluxKleinBase);
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-base-lora")).toBe(fluxKleinBaseLora);
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b-base-lora")).toBe(fluxKleinBaseLora);
+  });
+
+  it("resolves Civitai distilled 4B to its own LoRA-capable adapter", () => {
+    expect(adapterForImageModel(CIVITAI_FLUX2_KLEIN4B_SLUG)).toBe(fluxKleinCivitaiDistilledLora);
+    expect(fluxKleinCivitaiDistilledLora.capabilities).toContain("lora");
+    expect(fluxKleinCivitaiDistilledLora.capabilities).toContain("negativePrompt");
+    expect(fluxKleinCivitaiDistilledLora.capabilities).not.toContain("fastMode");
   });
 
   it("resolves pinned owner/name:version forms through the existing base-slug helper, with no new code", () => {
@@ -93,9 +108,10 @@ describe("adapterForImageModel: FLUX.2 klein (#567)", () => {
     ).toBe(fluxKleinBaseLora);
   });
 
-  it("does not resolve any adapter for a broad flux- prefix, only the six exact klein slugs", () => {
+  it("does not resolve any adapter for a broad flux- prefix, only the exact registered slugs", () => {
     expect(adapterForImageModel("black-forest-labs/flux-2-klein")).toBeNull();
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-4b-turbo")).toBeNull();
+    expect(adapterForImageModel("civitai/flux-2-klein-4b-base")).toBeNull();
   });
 });
 
@@ -137,7 +153,8 @@ describe("adapterForImageModel: FLUX.1 Kontext Dev (#574)", () => {
 });
 
 describe("imageModelProvider", () => {
-  it("classifies only the two reviewed fal endpoints as fal", () => {
+  it("classifies only reviewed exact non-Replicate identities away from Replicate", () => {
+    expect(imageModelProvider(CIVITAI_FLUX2_KLEIN4B_SLUG)).toBe("civitai");
     expect(imageModelProvider(FAL_QWEN3_TEXT_SLUG)).toBe("fal");
     expect(imageModelProvider(FAL_QWEN3_EDIT_SLUG)).toBe("fal");
     expect(imageModelProvider("alibaba/qwen-image-3")).toBe("replicate");
