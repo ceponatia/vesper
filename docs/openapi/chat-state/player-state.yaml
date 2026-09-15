@@ -1,0 +1,107 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Player State API
+  version: 1.0.0
+  description: >-
+    Focused owner for who the player is in a conversation. It replaces raw whole-object
+    playerState writes through the generic chat-state PATCH. Player wardrobe is a sibling resource.
+servers:
+  - url: /
+x-vesper-status: implemented
+x-vesper-auth: Authenticated owner of the chat.
+x-vesper-source: apps/web/src/app/api/chats/[chatId]/player-state/route.ts
+x-vesper-service: apps/web/src/server/engine/chat-state/focused-edit.ts#editChatPlayerState
+x-vesper-storage-owner: ChatScenario.playerState on character_chats
+x-vesper-invariants:
+  - Callers choose a persona; they do not replace the stored ChatPlayerState object.
+  - Changing persona atomically resets that player's wardrobe to unseeded state and retires old player garment instances.
+  - The reset preserves the invariant that an unseeded player resolves the new persona's default outfit instead of reading as stripped.
+  - Wardrobe fields and the internal seeded proof flag are not accepted here.
+tags:
+  - name: Player State
+paths:
+  /api/chats/{chatId}/player-state:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+    get:
+      tags: [Player State]
+      operationId: getChatPlayerState
+      summary: Read the player's chat-scoped identity selection
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/player-state/route.ts
+      responses:
+        '200':
+          description: Player identity selection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerStateView' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Player State]
+      operationId: patchChatPlayerState
+      summary: Select the persona played in this chat
+      description: >-
+        Empty personaId means resolve the owner's default persona. When the selected persona
+        changes, the server resets wardrobe internals; callers do not submit seeded=false or
+        clear wardrobe fields themselves.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/player-state/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlayerStatePatch' }
+      responses:
+        '200':
+          description: Player state updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerStateView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: chat_busy while an exchange can overwrite scenario/player state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  parameters:
+    ChatId:
+      in: path
+      name: chatId
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    PlayerStateView:
+      type: object
+      additionalProperties: false
+      required: [personaId]
+      properties:
+        personaId:
+          type: string
+          description: Stored persona id; empty means use the owner's default persona resolver.
+    PlayerStatePatch:
+      type: object
+      additionalProperties: false
+      required: [personaId]
+      properties:
+        personaId:
+          type: string
+          description: Persona id owned by the caller, or empty to return to the default persona.
