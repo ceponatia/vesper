@@ -125,10 +125,8 @@ components:
         kind: { type: string, maxLength: 80 }
         history: { type: string, maxLength: 280 }
         presented:
-          oneOf:
-            - $ref: '#/components/schemas/PresentedMask'
-            - type: 'null'
-          description: Omit/null for an honest presentation.
+          $ref: '#/components/schemas/PresentedMask'
+          description: Omitted for an honest presentation.
         looming: { type: boolean }
     PresentedMask:
       type: object
