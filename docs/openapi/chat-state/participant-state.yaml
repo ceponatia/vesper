@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Participant State API
+  version: 1.0.0
+  description: >-
+    Focused per-character live-state resource. It owns participant psychology/state
+    while excluding wardrobe, chat-wide scenario data, player identity, presence,
+    and engine/debug bookkeeping.
+servers:
+  - url: /
+x-vesper-status: implemented
+x-vesper-auth: Authenticated owner of the chat; characterId must be in the chat roster.
+x-vesper-source: apps/web/src/app/api/chats/[chatId]/participants/[characterId]/state/route.ts
+x-vesper-service: apps/web/src/server/engine/chat-state/focused-edit.ts#editChatParticipantState
+x-vesper-storage-owner: ChatState on character_chat_state keyed by (chatId, characterId)
+x-vesper-related-existing-routes:
+  presence: PATCH /api/chats/{chatId}/participants/{characterId}
+  relationship-matrix: GET/PUT /api/chats/{chatId}/relationships
+  relationship-panel: GET /api/chats/{chatId}/relationship
+x-vesper-invariants:
+  - A participant-state write does not rewrite ChatScenario.
+  - A rowless participant seeds from that character's authored defaults on first participant-state write.
+  - Writes are chat_busy protected.
+  - World-owned successor values reject shadow writes.
+tags:
+  - name: Participant State
+paths:
+  /api/chats/{chatId}/participants/{characterId}/state:
+    parameters:
+      - $ref: '#/components/parameters/ChatId'
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Participant State]
+      operationId: getChatParticipantState
+      summary: Read one roster character's focused live state
+      description: >-
+        A rowless member is projected from authored defaults with persisted=false.
+        For a successor-routed primary, meters and relationship scalars are projected
+        from world truth.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/participants/[characterId]/state/route.ts
+      responses:
+        '200':
+          description: Participant state projection.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParticipantStateView' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [Participant State]
+      operationId: patchChatParticipantState
+      summary: Author-edit one roster character's focused live state
+      description: >-
+        Presence stays on the existing participant PATCH and wardrobe has its own
+        resource. A successor-routed primary rejects regard, familiarity, or meters
+        with sim_participant_state_managed_by_world.
+      x-vesper-source: apps/web/src/app/api/chats/[chatId]/participants/[characterId]/state/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ParticipantStatePatch' }
+      responses:
+        '200':
+          description: Participant state updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ParticipantStateView' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: chat_busy or sim_participant_state_managed_by_world.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  parameters:
+    ChatId:
+      in: path
+      name: chatId
+      required: true
+      schema: { type: string, minLength: 1 }
+    CharacterId:
+      in: path
+      name: characterId
+      required: true
+      schema: { type: string, minLength: 1 }
+  responses:
+    Error:
+      description: Error response.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+  schemas:
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+          additionalProperties: true
+    Band:
+      type: object
+      additionalProperties: false
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
+    PresentedMask:
+      type: object
+      additionalProperties: false
+      required: [lean, note]
+      properties:
+        lean: { type: string, enum: [masks_warmth, masks_dislike] }
+        note: { type: string, maxLength: 160 }
+    RelationshipTexture:
+      type: object
+      additionalProperties: false
+      required: [kind, history, looming]
+      x-vesper-schema-source: apps/web/src/contracts/relationships/record.ts#relationshipTextureSchema
+      properties:
+        kind: { type: string, maxLength: 80 }
+        history: { type: string, maxLength: 280 }
+        presented: { $ref: '#/components/schemas/PresentedMask' }
+        looming: { type: boolean }
+    ActiveCondition:
+      type: object
+      additionalProperties: true
+      x-vesper-schema-source: apps/web/src/contracts#activeConditionSchema
+    EmotionView:
+      type: object
+      additionalProperties: false
+      required: [label, intensity]
+      properties:
+        label: { type: string }
+        intensity: { type: number, minimum: 0, maximum: 1 }
+    ParticipantStateView:
+      type: object
+      additionalProperties: false
+      required: [characterId, persisted, regard, familiarity, regardBand, familiarityBand, relationship, emotion, meters, conditions, mindNote, whereabouts]
+      properties:
+        characterId: { type: string }
+        persisted: { type: boolean }
+        regard: { type: integer, minimum: -100, maximum: 100 }
+        familiarity: { type: integer, minimum: 0, maximum: 100 }
+        regardBand: { $ref: '#/components/schemas/Band' }
+        familiarityBand: { $ref: '#/components/schemas/Band' }
+        relationship: { $ref: '#/components/schemas/RelationshipTexture' }
+        emotion: { $ref: '#/components/schemas/EmotionView' }
+        meters:
+          type: object
+          additionalProperties: { type: number }
+        conditions:
+          type: array
+          items: { $ref: '#/components/schemas/ActiveCondition' }
+        mindNote: { type: string, maxLength: 320 }
+        whereabouts: { type: string, maxLength: 120 }
+    ParticipantStatePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        regard: { type: integer, minimum: -100, maximum: 100 }
+        familiarity: { type: integer, minimum: 0, maximum: 100 }
+        relationship: { $ref: '#/components/schemas/RelationshipTexture' }
+        meters:
+          type: object
+          additionalProperties: { type: number }
+        conditions:
+          type: array
+          items: { $ref: '#/components/schemas/ActiveCondition' }
+        mindNote: { type: string, maxLength: 320 }
+        whereabouts: { type: string, maxLength: 120 }
