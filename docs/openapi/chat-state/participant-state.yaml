@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: Vesper Chat Participant State API
+  version: 1.0.0
+x-vesper-status: implemented
+paths:
+  /api/chats/{chatId}/participants/{characterId}/state:
+    parameters:
+      - in: path
+        name: chatId
+        required: true
+        schema: { type: string }
+      - in: path
+        name: characterId
+        required: true
+        schema: { type: string }
+    get:
+      summary: Read ordinary live state for one roster participant.
+      responses:
+        '200': { description: Participant-state projection. }
+        '404': { description: Chat or roster participant not found. }
+    patch:
+      summary: Edit per-character live state without saving ChatScenario.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                regard: { type: integer, minimum: -100, maximum: 100 }
+                familiarity: { type: integer, minimum: 0, maximum: 100 }
+                relationship: { type: object, additionalProperties: true }
+                meters: { type: object, additionalProperties: { type: number } }
+                conditions: { type: array, items: { type: object, additionalProperties: true } }
+                mindNote: { type: string }
+                whereabouts: { type: string }
+              additionalProperties: false
+      responses:
+        '200': { description: Updated participant-state projection. }
+        '400': { description: Invalid request. }
+        '404': { description: Chat or roster participant not found. }
+        '409': { description: chat_busy or attempted successor-world-owned scalar/meter change. }
