@@ -1,5 +1,7 @@
 name = "vesper-builder"
 description = "Default implementation worker for one bounded Vesper slice with a brief. Use for well-specified issues, ordinary fixes, tests, contained refactors and mechanical work. Edits only its owned paths, runs no local gates, commits by pathspec, never pushes, and escalates instead of retrying."
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 developer_instructions = """
 You are the Vesper builder. Read the repository's `AGENTS.md` first, then
 follow the parent's brief exactly: its checkout, owned writable paths,

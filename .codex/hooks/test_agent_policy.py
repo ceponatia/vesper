@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 import unittest
 
@@ -69,6 +70,8 @@ BRIEF_TEMPLATE = (
     / ".agents/skills/vesper-agent-build/templates/agent-brief.md"
 )
 ROLE_DIR = Path(__file__).resolve().parents[2] / ".claude/agents"
+CODEX_ROLE_DIR = Path(__file__).resolve().parents[1] / "agents"
+CODEX_CONFIG = Path(__file__).resolve().parents[1] / "config.toml"
 
 _BRIEF_TEMPLATE_TEXT = BRIEF_TEMPLATE.read_text(encoding="utf-8")
 
@@ -1532,6 +1535,13 @@ class PinnedRoleTableTests(unittest.TestCase):
     frontmatter pins a model but which PINNED omits is a role the policy silently stops
     protecting, and a mismatched entry makes the deny message name the wrong model."""
 
+    EXPECTED_ROLES = {
+        "vesper-builder": "sonnet",
+        "vesper-escalation": "opus",
+        "vesper-reviewer": "opus",
+        "vesper-test-keeper": "sonnet",
+    }
+
     def roles(self) -> dict:
         found = {}
         for path in sorted(ROLE_DIR.glob("*.md")):
@@ -1546,10 +1556,49 @@ class PinnedRoleTableTests(unittest.TestCase):
         self.assertTrue(found)
         self.assertEqual({name for name, model in found.items() if model}, set(HOOK.PINNED))
 
+    def test_claude_role_model_pins_match_the_routing_policy(self):
+        self.assertEqual(self.roles(), self.EXPECTED_ROLES)
+
     def test_hook_table_names_the_model_each_role_file_pins(self):
         for name, model in self.roles().items():
             with self.subTest(role=name):
                 self.assertEqual(HOOK.PINNED_MODEL.get(name), model)
+
+
+class CodexModelPolicyTests(unittest.TestCase):
+    """Prevent a routine Codex role, or the uncustomized fallback, from silently
+    moving off the owner-approved Terra tier; Sol is reserved for the two
+    deeper-reasoning routes."""
+
+    EXPECTED_ROLES = {
+        "vesper-builder": ("gpt-5.6-terra", "medium"),
+        "vesper-context-scout": ("gpt-5.6-terra", "low"),
+        "vesper-escalation": ("gpt-5.6-sol", "high"),
+        "vesper-scenario-reviewer": ("gpt-5.6-sol", "medium"),
+        "vesper-test-keeper": ("gpt-5.6-terra", "medium"),
+        "vesper-ui-reviewer": ("gpt-5.6-terra", "medium"),
+        "vesper-ux-reviewer": ("gpt-5.6-terra", "medium"),
+    }
+
+    def test_codex_role_model_and_effort_pins_match_the_routing_policy(self):
+        found = {}
+        for path in sorted(CODEX_ROLE_DIR.glob("*.toml")):
+            role = tomllib.loads(path.read_text(encoding="utf-8"))
+            found[role["name"]] = (
+                role.get("model"),
+                role.get("model_reasoning_effort"),
+            )
+        self.assertEqual(found, self.EXPECTED_ROLES)
+
+    def test_uncustomized_codex_subagents_default_to_terra_medium(self):
+        config = tomllib.loads(CODEX_CONFIG.read_text(encoding="utf-8"))
+        self.assertEqual(
+            config.get("agents"),
+            {
+                "default_subagent_model": "gpt-5.6-terra",
+                "default_subagent_reasoning_effort": "medium",
+            },
+        )
 
 
 if __name__ == "__main__":
