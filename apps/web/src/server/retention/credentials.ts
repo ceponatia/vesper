@@ -5,7 +5,11 @@
 // `auth.ts`, so a large backlog is ordinary cleanup (see `pass.ts`).
 import { inArray, lt } from "drizzle-orm";
 import { credentialFailures, db } from "@/server/db";
-import { decayCutoff } from "@/server/auth";
+// Import the owning leaf, not the `@/server/auth` barrel. The barrel also
+// initializes the real Better Auth instance; retention is reached from the image
+// barrel and test-support, so going through it closes an async vi.mock/module
+// cycle in route and identity-pack suites before their tests can even collect.
+import { decayCutoff } from "../auth/credential-guard";
 import { RETENTION_BATCH_SIZE, type RetentionPass } from "./pass";
 
 /**

@@ -2257,7 +2257,7 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
     }
   });
 
-  it("is the unique journal head after 0145 and carries no schema snapshot", async () => {
+  it("is the unique ordered entry after 0145 and carries no schema snapshot", async () => {
     const journal = JSON.parse(
       await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
     ) as { entries: { idx: number; tag: string; when: number }[] };
@@ -2268,7 +2268,9 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
     expect(previous?.tag).toBe(CIVITAI_MIGRATION_TAG);
     expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
     expect(journal.entries.filter((candidate) => candidate.idx === 146)).toHaveLength(1);
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(146);
+    // 0146 owns its own uniqueness and predecessor ordering. Once 0147 or later
+    // exists, asserting that this historical entry is still the repository HEAD
+    // turns a valid later migration into a failure.
 
     const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0146_snapshot.json"), "utf8").then(
       () => false,
