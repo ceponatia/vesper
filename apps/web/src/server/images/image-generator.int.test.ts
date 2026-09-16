@@ -21,6 +21,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
+import { disableSafetyChecker } from "../ai";
 import { db, imageGeneratorRuns, imageLoras, imageModels, images } from "../db";
 import { createImageAsset, imageMeta, saveImageBuffer, type ImageKind } from "./asset-storage";
 import { setImageGeneratorRendererForTesting, type GeneratorRenderRequest } from "./image-generator-render";
@@ -1539,6 +1540,93 @@ describe.skipIf(!ready)("image generator multi-image runs", () => {
     expect(codes(sink)).toContain(imageGeneratorDiagnosticCode("control_refused"));
   });
 });
+
+// ---------------------------------------------------------------------------
+// The seeded Seedream rows, as the Generator sees their final Replicate requests
+// ---------------------------------------------------------------------------
+
+/**
+ * #336/#337 regression: adding family adapters must keep both Seedream endpoints
+ * on their reviewed Replicate request shape. The Generator assembles the request
+ * with the provider package's own preview builder before spending; the injected
+ * renderer prevents a network call, while the stored record redacts reference
+ * URLs but keeps every literal provider key and setting.
+ */
+const SEEDREAM45_ID = "imgmdlseedream45aaaaaaaa";
+const SEEDREAM5_LITE_ID = "imgmdlseedream5liteaaaaa";
+const SEEDREAM45_VERSION = "9fe3b8282dcb9d9063b05e33210a1432801f7c5a6641db944baefcec4886761a";
+const SEEDREAM5_LITE_VERSION = "eeb2857d94c49a5bcbc9d6c6057416e1d3b1a2735a16e08e4def9bf7ee22ec71";
+
+describe.skipIf(!ready)("image generator over the seeded Seedream family", () => {
+  beforeAll(async () => {
+    if (!ready) return;
+    const rows = await db()
+      .select({ id: imageModels.id })
+      .from(imageModels)
+      .where(inArray(imageModels.id, [SEEDREAM45_ID, SEEDREAM5_LITE_ID]));
+    expect(rows, "the migrated database must carry both seeded Seedream rows").toHaveLength(2);
+  });
+
+  it.each([
+    {
+      endpoint: "Seedream 4.5",
+      modelId: SEEDREAM45_ID,
+      slug: "bytedance/seedream-4.5",
+      version: SEEDREAM45_VERSION,
+      fields: { size: "2K", max_images: 1, sequential_image_generation: "disabled" },
+    },
+    {
+      endpoint: "Seedream 5 Lite",
+      modelId: SEEDREAM5_LITE_ID,
+      slug: "bytedance/seedream-5-lite",
+      version: SEEDREAM5_LITE_VERSION,
+      fields: { size: "2K", max_images: 1, sequential_image_generation: "disabled", output_format: "png" },
+    },
+  ])("keeps the $endpoint literal provider request after family registration", async ({
+    modelId,
+    slug,
+    version,
+    fields,
+  }) => {
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_seedream_1",
+        executedVersionId: request.intent.versionId,
+      };
+    });
+    const first = await seedReadyImage();
+    const second = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId,
+      inputs: { primary: [{ imageId: first }, { imageId: second }], dedicated: [] },
+      controls: { aspect: "3:4" },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.intent.profile.model.slug).toBe(slug);
+    expect(captured[0]?.intent.versionId).toBe(version);
+    expect(captured[0]?.intent.references).toHaveLength(2);
+
+    const row = await storedRow(id);
+    const effective = imageMeta(row?.meta)["effectiveRequest"] as
+      | { prompt?: string; providerRequest?: Record<string, unknown> }
+      | undefined;
+    expect(effective?.prompt).toBe(row?.finalPrompt);
+    expect(effective?.providerRequest).toEqual({
+      prompt: row?.finalPrompt,
+      image_input: "[2 images]",
+      aspect_ratio: "3:4",
+      ...fields,
+      ...(modelId === SEEDREAM45_ID ? { disable_safety_checker: disableSafetyChecker() } : {}),
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The seeded FLUX.2 klein 4B rows, as the Generator sees them
 // ---------------------------------------------------------------------------
