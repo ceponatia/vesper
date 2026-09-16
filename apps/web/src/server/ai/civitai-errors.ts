@@ -120,7 +120,7 @@ export function civitaiAsyncFailure(
   if (reasons.includes("no_provider_available")) {
     return new CivitaiError({ code: "civitai_async_no_provider_available", retry: "deliberate", stage: "workflow_terminal" });
   }
-  if (reasons.includes("timeout") || status === "expired") {
+  if (reasons.includes("timeout") || reasons.includes("expired") || status === "expired") {
     return new CivitaiError({ code: "civitai_async_timeout", retry: "deliberate", stage: "workflow_terminal" });
   }
   if (reasons.includes("canceled") || reasons.includes("cancelled") || status === "canceled") {
@@ -131,7 +131,11 @@ export function civitaiAsyncFailure(
 
 /** Keeps only the documented async reason vocabulary used by the retry contract. */
 export function civitaiReasonCodes(value: unknown): string[] {
-  if (typeof value === "string") return DOCUMENTED_ASYNC_REASONS.has(value) ? [value] : ["provider_error"];
+  if (typeof value === "string") {
+    const code = value.trim();
+    if (code === "") return [];
+    return DOCUMENTED_ASYNC_REASONS.has(code) ? [code] : ["provider_error"];
+  }
   if (Array.isArray(value)) return value.flatMap(civitaiReasonCodes).slice(0, 5);
   if (typeof value !== "object" || value === null) return [];
   const record = value as Record<string, unknown>;

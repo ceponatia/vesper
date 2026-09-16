@@ -15,6 +15,8 @@ describe("classifyImageFailureMessage", () => {
     expect(classifyImageFailureMessage("fetch failed: ETIMEDOUT")).toBe("transient");
     expect(classifyImageFailureMessage("replicate 503: service unavailable")).toBe("transient");
     expect(classifyImageFailureMessage("Too Many Requests")).toBe("transient");
+    expect(classifyImageFailureMessage("Civitai workflow status failed (civitai_http_503; retry=automatic). Automatic read retries are exhausted.")).toBe("transient");
+    expect(classifyImageFailureMessage("Civitai workflow status failed (civitai_transport_failure; retry=automatic). Automatic read retries are exhausted.")).toBe("transient");
   });
 
   it("treats missing keys and unknown failures as other", () => {

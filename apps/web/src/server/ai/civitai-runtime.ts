@@ -183,13 +183,17 @@ function errorCodes(value: unknown): string[] {
 
 const MAX_GET_RETRIES = 2;
 
-async function waitForCivitaiGetRetry(attempt: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, civitaiGetRetryDelay(attempt)));
+async function waitForCivitaiGetRetry(attempt: number, deadline?: number): Promise<boolean> {
+  const delay = deadline === undefined ? civitaiGetRetryDelay(attempt) : Math.min(civitaiGetRetryDelay(attempt), deadline - Date.now());
+  if (delay <= 0) return false;
+  await new Promise<void>((resolve) => setTimeout(resolve, delay));
+  return deadline === undefined || Date.now() < deadline;
 }
 
-async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "workflow_status"): Promise<unknown> {
+async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "workflow_status", deadline?: number): Promise<unknown> {
   const method = init.method ?? "GET";
   for (let attempt = 0; ; attempt += 1) {
+    if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("Content-Type", "application/json");
@@ -200,14 +204,14 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
         ...init,
         headers,
         redirect: "error",
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(deadline === undefined ? REQUEST_TIMEOUT_MS : Math.max(1, Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now()))),
       });
       text = await response.text();
     } catch {
       const failure = civitaiTransportFailure(stage, method === "GET", attempt >= MAX_GET_RETRIES);
       if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
-        await waitForCivitaiGetRetry(attempt);
-        continue;
+        if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
+        throw civitaiAsyncFailure("expired", ["timeout"]);
       }
       throw failure;
     }
@@ -223,8 +227,8 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
         response.status, stage, method === "GET", civitaiValidationPaths(value), attempt >= MAX_GET_RETRIES,
       );
       if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
-        await waitForCivitaiGetRetry(attempt);
-        continue;
+        if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
+        throw civitaiAsyncFailure("expired", ["timeout"]);
       }
       throw failure;
     }
@@ -385,6 +389,10 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
     const loras = await resolveLoras(request, token);
     const preflightRequest = civitaiKleinWorkflow(model, request, references, loras);
     const preflight = parseCivitaiWorkflow(await sendWorkflow(preflightRequest, token, true), "Civitai generation preflight");
+    if (preflight.insufficient === true) throw civitaiInsufficientBuzzFailure();
+    if (FAILED_STATUSES.has(preflight.status) || preflight.errors.length > 0) {
+      throw civitaiAsyncFailure(preflight.status, preflight.errors, preflight.blocked);
+    }
     const refusal = validateCivitaiPreflightEcho(preflight, preflightRequest);
     if (refusal) return { ok: false, error: refusal };
 
@@ -401,7 +409,7 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
       if (Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2000, Math.max(1, deadline - Date.now()))));
       result = parseCivitaiWorkflow(await requestJson(`${WORKFLOWS_URL}/${encodeURIComponent(predictionId)}`,
-        { method: "GET" }, token, "workflow_status"));
+        { method: "GET" }, token, "workflow_status", deadline));
       if (result.id !== predictionId) throw new Error("Civitai returned a different workflow while polling");
     }
     if (result.insufficient === true) throw civitaiInsufficientBuzzFailure();

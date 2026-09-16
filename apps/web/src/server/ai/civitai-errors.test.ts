@@ -40,6 +40,9 @@ describe("Civitai error contract", () => {
     expect(civitaiInsufficientBuzzFailure()).toMatchObject({
       code: "civitai_async_insufficient_buzz", retry: "never",
     });
+    expect(civitaiAsyncFailure("failed", ["expired"])).toMatchObject({
+      code: "civitai_async_timeout", retry: "deliberate",
+    });
     expect(civitaiAsyncFailure("expired", [])).toMatchObject({
       code: "civitai_async_timeout", retry: "deliberate",
     });
@@ -71,6 +74,7 @@ describe("Civitai error contract", () => {
     const reasons = civitaiReasonCodes([{ reason: secret }, { reason: "no_provider_available" }]);
 
     expect(reasons).toEqual(["provider_error", "no_provider_available"]);
+    expect(civitaiReasonCodes([" ", "\n"])).toEqual([]);
     expect(JSON.stringify(reasons)).not.toContain("secret");
     expect(JSON.stringify(reasons)).not.toContain("prompt=");
   });

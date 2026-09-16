@@ -28,7 +28,7 @@ export interface ProviderRenderResult {
 
 const CONTENT_REJECTION = /moderation|sexual content|nsfw|safe[_ ]?mode|content policy|flagged|disallowed|prohibited|violation/;
 const TRANSIENT =
-  /timeout|timed out|abort|econn|etimedout|enotfound|socket hang up|network|fetch failed|rate limit|too many requests|\b(429|500|502|503|504)\b|temporarily/;
+  /civitai_(?:http_(?:429|5\d\d)|transport_failure); retry=automatic|timeout|timed out|abort|econn|etimedout|enotfound|socket hang up|network|fetch failed|rate limit|too many requests|\b(429|500|502|503|504)\b|temporarily/;
 /**
  * Billing failures are neither transient nor a content problem: retrying cannot
  * fix them and the prompt is not at fault. Checked FIRST because "payment

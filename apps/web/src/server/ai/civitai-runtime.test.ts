@@ -490,6 +490,27 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("private");
   });
 
+  it("ignores blank job failures on a successful workflow", () => {
+    const parsed = parseCivitaiWorkflow({ id: "workflow-blank", status: "succeeded", steps: [{
+      $type: "imageGen", input: {}, jobs: [{ reason: " ", blockedReason: "\t" }],
+      output: { images: [{ url: "https://image.civitai.com/output.jpg", available: true }] },
+    }] });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.blocked).toBe(false);
+  });
+
+  it("returns a stable preflight refusal without a paid POST", async () => {
+    const urls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url); urls.push(href);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({ ...workflowFrom(body, "estimate-blocked", "failed"), steps: [{ $type: "imageGen", input: {}, jobs: [{ reason: "no_provider_available" }], output: {} }] });
+    });
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_no_provider_available; retry=deliberate") });
+    expect(urls).toEqual([expect.stringContaining("whatif=true")]);
+  });
+
   it("does not make a paid submission after an insufficient-Buzz preflight", async () => {
     const workflowUrls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
