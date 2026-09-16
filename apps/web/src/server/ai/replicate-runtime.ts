@@ -198,7 +198,7 @@ export function providerInputRequest(
   if (imageModelProvider(model.slug) !== "civitai") return request;
   const steps = request.steps;
   if (!Array.isArray(steps)) return request;
-  const step = steps[0];
+  const step: unknown = steps[0];
   if (typeof step !== "object" || step === null || Array.isArray(step)) return request;
   const input = (step as Record<string, unknown>).input;
   return typeof input === "object" && input !== null && !Array.isArray(input)
