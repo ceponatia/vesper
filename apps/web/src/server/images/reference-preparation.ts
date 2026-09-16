@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import type { ImageModel } from "@vesper/image-core";
+import { imageModelProvider } from "@vesper/image-models";
 import type { PreparedReferenceBytes } from "@vesper/image-replicate";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { SHARP_DECODE_LIMITS, WEBP_QUALITY } from "./asset-storage";
@@ -27,15 +28,14 @@ import { SHARP_DECODE_LIMITS, WEBP_QUALITY } from "./asset-storage";
  * to produce nothing the transport needs.
  */
 
-/** The encodings preparation can produce; each is accepted by every model Vesper runs. */
+/** The encodings preparation can produce. Not every provider reads all three. */
 export type ReferenceImageFormat = "webp" | "jpeg" | "png";
 
 /**
  * What preparation encodes toward for one model.
  *
- * Derived per model ({@link referencePreparationTarget}) so a binding that
- * declares a format constraint has one seam to land in — today none does, so
- * every model gets the default.
+ * Derived per model ({@link referencePreparationTarget}) so a provider's format
+ * constraint has one seam to land in.
  */
 export interface ReferencePreparationTarget {
   format: ReferenceImageFormat;
@@ -45,18 +45,41 @@ export interface ReferencePreparationTarget {
    * data edit here, not so this module can invent one.
    */
   maxEdgePx: number | null;
+  /**
+   * Whether {@link format} is the only encoding the provider can render from.
+   *
+   * When true, preparation may not degrade to unconverted bytes in another
+   * format ({@link prepareOneReference}): for such a provider an unprepared
+   * reference is not a fidelity cost, it is the render.
+   */
+  formatRequired: boolean;
 }
 
 /**
  * The target for one model's references.
  *
- * Always the default today: no model binding declares an accepted-format list
- * or an input-dimension limit, and `model.outputFormat` deliberately does not
- * participate — it describes what the model PRODUCES, not what it reads.
+ * `model.outputFormat` deliberately does not participate — it describes what the
+ * model PRODUCES, not what it reads.
+ *
+ * Civitai is the exception to the webp default, and it is a SILENT one. Its
+ * orchestration accepts a webp data URI at every checkpoint that could refuse
+ * it — the upload ingests to a blob, the `whatif` preflight passes, the workflow
+ * schedules — and then the render job ends `failed` with no error, no reason, no
+ * blocked flag, and a full Buzz refund. Measured 2026-09-16 on Klein 4B: the
+ * identical image, prompt, sampling, LoRA and seed submitted as two concurrent
+ * workflows succeeded from a jpeg data URI (`5910720-20260916202815148`) and
+ * failed from the webp original (`5910720-20260916202815077`). Three earlier
+ * Image Generator runs had failed the same way while every direct jpeg probe of
+ * the same endpoint succeeded, which is what isolated the encoding.
+ *
+ * jpeg rather than png because jpeg is what those successful renders used; png
+ * is untested against this provider and an alpha-carrying reference has nothing
+ * to preserve here anyway — the edit operation composites over opaque pixels.
  */
 export function referencePreparationTarget(model: ImageModel): ReferencePreparationTarget {
-  void model;
-  return { format: "webp", maxEdgePx: null };
+  return imageModelProvider(model.slug) === "civitai"
+    ? { format: "jpeg", maxEdgePx: null, formatRequired: true }
+    : { format: "webp", maxEdgePx: null, formatRequired: false };
 }
 
 /** One image awaiting preparation, with the caller's name for what it is. */
@@ -93,6 +116,12 @@ const FORMAT_FACTS: Record<ReferenceImageFormat, { mediaType: string; extension:
  * the image. The degraded media type is sniffed from the bytes' own magic
  * numbers, falling back to webp — the stored-asset format, and exactly what
  * every reference was labeled before preparation existed.
+ *
+ * That trade reverses when the target's format is REQUIRED: bytes a provider
+ * cannot read are not a degraded render, they are a failed one, and Civitai
+ * charges for the attempt before refunding it without ever saying why. So a
+ * required-format target whose original bytes are in another encoding throws
+ * instead, and the render fails where it can be read as a failure.
  */
 export async function prepareRenderReferences(
   inputs: readonly RenderReferenceInput[],
@@ -148,13 +177,22 @@ async function prepareOneReference(
       height: info.height,
     };
   } catch (error) {
+    const sniffed = sniffImageMediaType(input.buffer);
+    if (target.formatRequired && sniffed?.mediaType !== facts.mediaType) {
+      sink?.push(
+        diag("error", "image_model.reference_preparation_failed", "a reference could not be encoded to the format this provider requires", {
+          path: "image_models",
+          context: { role: input.role, format: target.format, error: error instanceof Error ? error.message : String(error) },
+        }),
+      );
+      throw new Error(`Reference "${input.role}" could not be encoded to ${target.format}, which this model requires`);
+    }
     sink?.push(
       diag("warn", "image_model.reference_preparation_failed", "a reference could not be prepared; sending its original bytes", {
         path: "image_models",
         context: { role: input.role, error: error instanceof Error ? error.message : String(error) },
       }),
     );
-    const sniffed = sniffImageMediaType(input.buffer);
     return {
       bytes: input.buffer,
       mediaType: sniffed?.mediaType ?? "image/webp",

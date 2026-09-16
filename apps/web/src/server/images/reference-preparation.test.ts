@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { imageModelSchema } from "@vesper/image-core";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { testPngBuffer } from "@/server/test-support";
 import {
@@ -15,8 +16,8 @@ import {
  * alpha channels and EXIF blocks cannot be faked with a hand-written header.
  */
 
-const WEBP_TARGET: ReferencePreparationTarget = { format: "webp", maxEdgePx: null };
-const JPEG_TARGET: ReferencePreparationTarget = { format: "jpeg", maxEdgePx: null };
+const WEBP_TARGET: ReferencePreparationTarget = { format: "webp", maxEdgePx: null, formatRequired: false };
+const JPEG_TARGET: ReferencePreparationTarget = { format: "jpeg", maxEdgePx: null, formatRequired: false };
 
 /** An 8×12 JPEG whose EXIF says "rotate 90°" — displayed correctly it is 12×8. */
 async function orientedJpeg(): Promise<Buffer> {
@@ -40,19 +41,32 @@ async function prepareOne(buffer: Buffer, target: ReferencePreparationTarget, si
 }
 
 describe("referencePreparationTarget", () => {
-  it("is webp with no resize limit for every model today", () => {
-    // No binding declares an accepted-format list or a dimension limit yet; the
-    // function is the seam those facts will land in, not a per-model branch.
-    // `outputFormat` says what the model PRODUCES, so it must not leak in.
-    const model = imageModelSchema.parse({
+  const row = (slug: string) =>
+    imageModelSchema.parse({
       id: "m1",
-      slug: "owner/model-a",
+      slug,
       label: "Model A",
       canGenerate: true,
       canEdit: true,
       outputFormat: "png",
     });
-    expect(referencePreparationTarget(model)).toEqual({ format: "webp", maxEdgePx: null });
+
+  it("is webp with no resize limit for a Replicate-native model", () => {
+    // No binding declares a dimension limit yet, and `outputFormat` says what
+    // the model PRODUCES, so it must not leak in.
+    expect(referencePreparationTarget(row("owner/model-a"))).toEqual({
+      format: "webp", maxEdgePx: null, formatRequired: false,
+    });
+  });
+
+  it("is a REQUIRED jpeg for Civitai, which fails silently on webp", () => {
+    // Measured 2026-09-16: the same image, prompt, sampling and LoRA rendered
+    // from a jpeg data URI and failed — terminal `failed`, no reason, full
+    // refund — from the webp original. Keyed on the provider rather than the
+    // one slug because the constraint belongs to the orchestration endpoint.
+    expect(referencePreparationTarget(row(CIVITAI_FLUX2_KLEIN4B_SLUG))).toEqual({
+      format: "jpeg", maxEdgePx: null, formatRequired: true,
+    });
   });
 });
 
@@ -171,6 +185,32 @@ describe("prepareRenderReferences", () => {
     // A ceiling the image already fits under demands nothing: passthrough.
     const roomy = await prepareOne(clean, { format: "webp", maxEdgePx: 100 });
     expect(roomy.bytes).toBe(clean);
+  });
+
+  it("REFUSES to degrade when the target format is required and the bytes are not already in it", async () => {
+    const sink = new DiagnosticCollector();
+    const garbage = Buffer.from("not an image at all");
+    // Civitai renders nothing from webp and says nothing about why, so shipping
+    // unconverted bytes would buy a silent failure and a refund instead of a
+    // render. The failure belongs where it can be read as one.
+    await expect(
+      prepareOne(garbage, { format: "jpeg", maxEdgePx: null, formatRequired: true }, sink),
+    ).rejects.toThrow(/could not be encoded to jpeg/);
+    expect(sink.items.map((entry) => ({ severity: entry.severity, code: entry.code }))).toEqual([
+      { severity: "error", code: "image_model.reference_preparation_failed" },
+    ]);
+  });
+
+  it("still degrades under a required format when the ORIGINAL bytes already satisfy it", async () => {
+    const sink = new DiagnosticCollector();
+    // A real JPEG truncated mid-stream: sharp cannot re-encode it, but what the
+    // provider would receive is already the encoding it requires, so the
+    // ordinary fidelity trade applies and the render proceeds.
+    const truncated = (await orientedJpeg()).subarray(0, 40);
+    const reference = await prepareOne(truncated, { format: "jpeg", maxEdgePx: null, formatRequired: true }, sink);
+    expect(reference.bytes).toBe(truncated);
+    expect(reference.mediaType).toBe("image/jpeg");
+    expect(sink.items.map((entry) => entry.severity)).toEqual(["warn"]);
   });
 
   it("prepares a list in order, one result per input", async () => {
