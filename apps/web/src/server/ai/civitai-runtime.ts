@@ -3,6 +3,7 @@ import type { ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { civitaiApiToken } from "../images/lora-credentials";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiTransportFailure, civitaiValidationPaths } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -33,6 +34,7 @@ export interface CivitaiWorkflowResult {
   id: string;
   status: string;
   errors: string[];
+  blocked: boolean;
   insufficient: boolean | null;
   mature: boolean | null;
   currencies: string[] | null;
@@ -174,45 +176,64 @@ export function hasCivitai(): boolean {
   return civitaiApiToken() !== null;
 }
 
-/** Retain provider error codes, not arbitrary echoed prompts or signed URLs. */
+/** Retain only documented provider tokens, never echoed prompts or signed URLs. */
 function errorCodes(value: unknown): string[] {
-  if (typeof value === "string") {
-    return /^[a-z][a-z0-9_]{0,79}$/.test(value) ? [value] : ["provider_error"];
-  }
-  if (Array.isArray(value)) return value.flatMap(errorCodes).slice(0, 5);
-  const record = asRecord(value);
-  if (!record) return [];
-  const code = record.code ?? record.reason ?? record.type;
-  if (code !== undefined) return errorCodes(code);
-  return Object.keys(record).length > 0 ? ["provider_validation_error"] : [];
+  return civitaiReasonCodes(value);
 }
 
-async function requestJson(url: string, init: RequestInit, token: string, context: string): Promise<unknown> {
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  headers.set("Content-Type", "application/json");
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    redirect: "error",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  const text = await response.text();
-  let value: unknown;
-  try {
-    value = JSON.parse(text) as unknown;
-  } catch {
-    throw new Error(`${context} returned malformed JSON (HTTP ${String(response.status)})`);
+const MAX_GET_RETRIES = 2;
+
+async function waitForCivitaiGetRetry(attempt: number, deadline?: number): Promise<boolean> {
+  const delay = deadline === undefined ? civitaiGetRetryDelay(attempt) : Math.min(civitaiGetRetryDelay(attempt), deadline - Date.now());
+  if (delay <= 0) return false;
+  await new Promise<void>((resolve) => setTimeout(resolve, delay));
+  return deadline === undefined || Date.now() < deadline;
+}
+
+async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "workflow_status", deadline?: number): Promise<unknown> {
+  const method = init.method ?? "GET";
+  for (let attempt = 0; ; attempt += 1) {
+    if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    headers.set("Content-Type", "application/json");
+    let response: Response;
+    let text: string;
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers,
+        redirect: "error",
+        signal: AbortSignal.timeout(deadline === undefined ? REQUEST_TIMEOUT_MS : Math.max(1, Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now()))),
+      });
+      text = await response.text();
+    } catch {
+      const failure = civitaiTransportFailure(stage, method === "GET", attempt >= MAX_GET_RETRIES);
+      if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
+        if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
+        throw civitaiAsyncFailure("expired", ["timeout"]);
+      }
+      throw failure;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(text) as unknown;
+    } catch {
+      if (response.ok) throw new CivitaiError({ code: "civitai_malformed_response", retry: "never", stage });
+      value = null;
+    }
+    if (!response.ok) {
+      const failure = civitaiHttpFailure(
+        response.status, stage, method === "GET", civitaiValidationPaths(value), attempt >= MAX_GET_RETRIES,
+      );
+      if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
+        if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
+        throw civitaiAsyncFailure("expired", ["timeout"]);
+      }
+      throw failure;
+    }
+    return value;
   }
-  if (!response.ok) {
-    if (response.status === 401) throw new Error(`${context}: invalid Civitai API token (401)`);
-    if (response.status === 403) throw new Error(`${context}: token lacks recipe, resource, or mature-content permission (403)`);
-    if (response.status === 402) throw new Error(`${context}: billing refused, insufficient yellow Buzz or payment required (402)`);
-    const record = asRecord(value);
-    const details = errorCodes(record?.errors ?? record?.error ?? record?.code);
-    throw new Error(`${context} failed (HTTP ${String(response.status)})${details.length ? `: ${details.join(", ")}` : ""}`);
-  }
-  return value;
 }
 
 export function parseCivitaiWorkflow(value: unknown, context = "Civitai workflow"): CivitaiWorkflowResult {
@@ -226,6 +247,7 @@ export function parseCivitaiWorkflow(value: unknown, context = "Civitai workflow
   const step = asRecord(steps[0]);
   if (!step || steps.length !== 1 || step.$type !== "imageGen") throw new Error(`${context} returned an unexpected workflow step`);
   const output = asRecord(step.output);
+  const jobs = asArray(step.jobs).map(asRecord);
   const transactions = asRecord(body.transactions);
   const currencies = body.currencies;
   return {
@@ -234,7 +256,11 @@ export function parseCivitaiWorkflow(value: unknown, context = "Civitai workflow
     errors: [...new Set([
       ...errorCodes(body.errors), ...errorCodes(step.errors), ...errorCodes(step.error),
       ...errorCodes(step.reason), ...errorCodes(output?.errors),
+      ...jobs.flatMap((job) => [
+        ...errorCodes(job?.reason), ...errorCodes(job?.blockedReason), ...errorCodes(job?.errors),
+      ]),
     ])],
+    blocked: jobs.some((job) => job?.reason === "blocked" || (typeof job?.blockedReason === "string" && job.blockedReason.trim() !== "")),
     insufficient: typeof transactions?.insufficientBuzz === "boolean" ? transactions.insufficientBuzz : null,
     mature: typeof body.allowMatureContent === "boolean" ? body.allowMatureContent : null,
     currencies: Array.isArray(currencies) && currencies.every((currency): currency is string => typeof currency === "string")
@@ -284,7 +310,7 @@ export function validateCivitaiPreflightEcho(actual: CivitaiWorkflowResult, expe
 async function resolveLoras(request: KleinRequest, token: string): Promise<Record<string, number> | undefined> {
   const selected = selectedLora(request.controlInput);
   if (!selected) return undefined;
-  const value = await requestJson(`${MODEL_VERSIONS_URL}/${selected.version}`, { method: "GET" }, token, "Civitai LoRA metadata lookup");
+  const value = await requestJson(`${MODEL_VERSIONS_URL}/${selected.version}`, { method: "GET" }, token, "lora_metadata");
   const metadata = asRecord(value);
   const model = asRecord(metadata?.model);
   const modelId = metadata?.modelId;
@@ -296,40 +322,58 @@ async function resolveLoras(request: KleinRequest, token: string): Promise<Recor
 }
 
 async function sendWorkflow(body: CivitaiKleinWorkflow, token: string, whatif: boolean): Promise<unknown> {
-  const context = whatif ? "Civitai generation preflight" : "Civitai generation submit";
   return requestJson(`${WORKFLOWS_URL}?whatif=${String(whatif)}&wait=0`, {
     method: "POST",
     body: JSON.stringify(body),
-  }, token, context);
+  }, token, whatif ? "preflight" : "submit");
 }
 
 async function downloadOutput(url: string): Promise<Buffer> {
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new Error("Civitai returned an invalid output URL"); }
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || !isCivitaiHost(parsed.hostname)) {
-    throw new Error("Civitai returned an output URL outside Vesper's trusted Civitai hosts");
-  }
-  const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`Civitai output download failed (HTTP ${String(response.status)})`);
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) throw new Error("Civitai output exceeds 32 MiB");
-  if (!response.body) throw new Error("Civitai returned an empty output body");
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let size = 0;
   try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > MAX_OUTPUT_BYTES) throw new Error("Civitai output exceeds 32 MiB");
-      chunks.push(Buffer.from(chunk.value));
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
+    parsed = new URL(url);
+  } catch {
+    throw civitaiOutputFailure("civitai_output_invalid", "never");
   }
-  if (size === 0) throw new Error("Civitai returned an empty image");
-  return Buffer.concat(chunks, size);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || !isCivitaiHost(parsed.hostname)) {
+    throw civitaiOutputFailure("civitai_output_invalid", "never");
+  }
+  let response: Response;
+  try {
+    response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch {
+    throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+  }
+  if (!response.ok) {
+    const code = `civitai_output_http_${String(response.status)}` as `civitai_output_http_${number}`;
+    throw civitaiOutputFailure(code, "deliberate");
+  }
+  try {
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) {
+      throw civitaiOutputFailure("civitai_output_too_large", "never");
+    }
+    if (!response.body) throw civitaiOutputFailure("civitai_output_empty", "deliberate");
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > MAX_OUTPUT_BYTES) throw civitaiOutputFailure("civitai_output_too_large", "never");
+        chunks.push(Buffer.from(chunk.value));
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    if (size === 0) throw civitaiOutputFailure("civitai_output_empty", "deliberate");
+    return Buffer.concat(chunks, size);
+  } catch (error) {
+    if (error instanceof CivitaiError) throw error;
+    throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+  }
 }
 
 export async function runCivitaiKleinImageModel(model: ImageModel, request: RegistryModelRequest): Promise<ReplicateImageResult> {
@@ -345,6 +389,10 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
     const loras = await resolveLoras(request, token);
     const preflightRequest = civitaiKleinWorkflow(model, request, references, loras);
     const preflight = parseCivitaiWorkflow(await sendWorkflow(preflightRequest, token, true), "Civitai generation preflight");
+    if (preflight.insufficient === true) throw civitaiInsufficientBuzzFailure();
+    if (FAILED_STATUSES.has(preflight.status) || preflight.errors.length > 0) {
+      throw civitaiAsyncFailure(preflight.status, preflight.errors, preflight.blocked);
+    }
     const refusal = validateCivitaiPreflightEcho(preflight, preflightRequest);
     if (refusal) return { ok: false, error: refusal };
 
@@ -356,25 +404,27 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
     predictionId = result.id;
     const deadline = Date.now() + Math.max(30_000, request.timeoutMs ?? 300_000);
     while (PENDING_STATUSES.has(result.status)) {
-      if (result.insufficient === true) throw new Error("Civitai billing could not settle the workflow with yellow Buzz");
-      if (result.errors.length > 0) throw new Error(`Civitai workflow failed: ${result.errors.join(", ")}`);
-      if (Date.now() >= deadline) throw new Error("Civitai workflow timed out; no replacement was submitted");
+      if (result.insufficient === true) throw civitaiInsufficientBuzzFailure();
+      if (result.errors.length > 0) throw civitaiAsyncFailure(result.status, result.errors, result.blocked);
+      if (Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2000, Math.max(1, deadline - Date.now()))));
       result = parseCivitaiWorkflow(await requestJson(`${WORKFLOWS_URL}/${encodeURIComponent(predictionId)}`,
-        { method: "GET" }, token, "Civitai workflow status"));
+        { method: "GET" }, token, "workflow_status", deadline));
       if (result.id !== predictionId) throw new Error("Civitai returned a different workflow while polling");
     }
-    if (result.insufficient === true) throw new Error("Civitai billing could not settle the workflow with yellow Buzz");
+    if (result.insufficient === true) throw civitaiInsufficientBuzzFailure();
     if (result.mature !== true || result.currencies?.length !== 1 || result.currencies[0] !== "yellow") {
       throw new Error("Civitai workflow did not retain mature-content permission and yellow-only payment");
     }
     if (result.status !== "succeeded" || result.errors.length > 0) {
-      throw new Error(`Civitai workflow ${result.status}${result.errors.length ? `: ${result.errors.join(", ")}` : ""}`);
+      throw civitaiAsyncFailure(result.status, result.errors, result.blocked);
     }
     const image = result.images.find((candidate) => candidate.available && !candidate.hidden && !candidate.blocked && candidate.url);
     if (!image?.url) {
       const blocked = result.images.find((candidate) => candidate.blocked)?.blocked;
-      throw new Error(blocked ? `Civitai blocked the generated output: ${blocked}` : "Civitai workflow succeeded without an available, unblocked image");
+      throw blocked
+        ? civitaiAsyncFailure(result.status, [blocked], true)
+        : new CivitaiError({ code: "civitai_output_unavailable", retry: "deliberate", stage: "workflow_terminal" });
     }
     return {
       ok: true,

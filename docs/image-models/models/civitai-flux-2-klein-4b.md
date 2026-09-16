@@ -92,8 +92,17 @@ request policy for that variant.
   that a checkpoint and LoRA are incompatible.
 - A submitted workflow is polled by its id. A successful status alone does not
   prove usable output: an image must be available and unblocked before download.
+- Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, and `civitai_output_*` codes,
+  plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
+  backed off with jitter, and apply only to idempotent metadata or workflow-status reads; a paid submission and what-if
+  POST are never repeated automatically.
+- A documented `steps[].jobs[].reason` or `blockedReason` determines the async
+  classification when present. A terminal workflow with no documented reason
+  reports `civitai_async_unknown_terminal` and requires one deliberate
+  replacement decision.
 - Diagnostics retain actionable provider facts without credentials, signed URLs,
-  prompts, or reference bytes.
+  prompts, reference bytes, arbitrary provider prose, or RFC7807 values.
+  RFC7807 diagnostics retain only sanitized validation field paths.
 - Download policy requires credential-free HTTPS on Civitai hosts and refuses
   redirects. A different provider storage host requires explicit review; the
   OpenAPI's generic URI field is not an unrestricted network-download permission.
