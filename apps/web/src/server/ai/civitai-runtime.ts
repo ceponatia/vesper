@@ -26,6 +26,7 @@ export const CIVITAI_KLEIN_4B_ECOSYSTEM = "Flux2Klein_4B";
 export const CIVITAI_LORA_VERSION_FIELD = "civitai_lora_version";
 export const CIVITAI_LORA_STRENGTH_FIELD = "civitai_lora_strength";
 
+const CIVITAI_KLEIN_ASPECTS = new Set(["1:1", "2:3", "3:2"]);
 const CIVITAI_BASE_URL = "https://civitai.com";
 const WHAT_IF_PATH = "/api/trpc/orchestrator.whatIfFromGraph";
 const GENERATE_PATH = "/api/trpc/orchestrator.generateFromGraph";
@@ -175,6 +176,11 @@ export function civitaiKleinGraph(
     );
   }
 
+  const aspectRatio = request.aspect ?? "1:1";
+  if (!CIVITAI_KLEIN_ASPECTS.has(aspectRatio)) {
+    throw new Error(`Civitai FLUX.2 Klein 4B does not support aspect ratio ${aspectRatio}`);
+  }
+
   const controls = request.controlInput;
   const loraVersion = numericVersionId(controls?.[CIVITAI_LORA_VERSION_FIELD]);
   const loraStrength = numericControl(controls, CIVITAI_LORA_STRENGTH_FIELD);
@@ -194,7 +200,7 @@ export function civitaiKleinGraph(
     prompt: request.prompt,
     ...(negativePrompt ? { negativePrompt } : {}),
     quantity: 1,
-    aspectRatio: request.aspect ?? "1:1",
+    aspectRatio,
     model: { id: Number(CIVITAI_KLEIN_4B_VERSION_ID) },
     ...(loraVersion === null
       ? {}
