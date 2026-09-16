@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { chooseCropPlacement, imageModelSchema } from "@vesper/image-core";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { ReplicateClient, ReplicateImageResult } from "@vesper/image-replicate";
 
 /**
@@ -38,6 +39,21 @@ function wan() {
     id: "wan-1",
     slug: "vesper-test/wan",
     label: "Wan Fixture",
+    canGenerate: true,
+    canEdit: true,
+    aspectMode: "size",
+    supportedAspects: ["768*1024", "1536*2048", "3072*4096"],
+  });
+}
+
+/** Same shape as `wan()`, but a Civitai-classified slug — the fact
+ * `referencePreparationTarget` (and so `renderWithModel`) keys the required
+ * jpeg reference format on. */
+function civitaiModel() {
+  return imageModelSchema.parse({
+    id: "civitai-klein-1",
+    slug: CIVITAI_FLUX2_KLEIN4B_SLUG,
+    label: "Civitai Klein Fixture",
     canGenerate: true,
     canEdit: true,
     aspectMode: "size",
@@ -176,6 +192,53 @@ describe("renderWithModel reference roles and sent count", () => {
     runModel.mockResolvedValue({ ok: true, image: Buffer.from("img") });
     const uncounted = await renderWithModel({ model: wan(), prompt: "p" });
     expect("sentReferenceCount" in uncounted).toBe(false);
+  });
+});
+
+/**
+ * PROTECTS: the wiring between this wrapper and `referencePreparationTarget`
+ * (#626) — not the target-selection logic itself, which
+ * `reference-preparation.test.ts` owns in isolation. Before the fix, every
+ * provider shared one hardcoded webp target, so a clean webp reference
+ * reached Civitai byte-identical: accepted at every checkpoint that could
+ * refuse it (upload, `whatif` preflight, workflow schedule), then failed the
+ * render job silently with a full refund. A test that only calls
+ * `referencePreparationTarget` directly would not catch this wrapper reverting
+ * to a hardcoded target; these exercise `renderWithModel` itself with a
+ * Civitai-slugged model and a real image buffer.
+ */
+describe("renderWithModel and Civitai's required reference format", () => {
+  it("converts a clean webp reference to jpeg for a Civitai model, instead of shipping it unchanged", async () => {
+    const webp = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 10, g: 20, b: 30 } } })
+      .webp()
+      .toBuffer();
+    await renderWithModel({
+      model: civitaiModel(),
+      prompt: "a portrait",
+      references: [webp],
+      referenceRoles: ["identity"],
+    });
+    const sent = runModel.mock.calls.at(-1)?.[1]?.references;
+    // Before #626 this would be the SAME webp object, passed straight through —
+    // exactly the byte-identical reference Civitai accepted and then silently
+    // failed on. It must now be re-encoded to jpeg.
+    expect(sent?.[0]?.mediaType).toBe("image/jpeg");
+    expect(sent?.[0]?.bytes).not.toBe(webp);
+  });
+
+  it("fails the render rather than shipping an unreadable reference to Civitai", async () => {
+    await expect(
+      renderWithModel({
+        model: civitaiModel(),
+        prompt: "a portrait",
+        references: [Buffer.from("not an image")],
+        referenceRoles: ["identity"],
+      }),
+    ).rejects.toThrow(/could not be encoded to jpeg/);
+    // The transport must never see the request: for this provider, a paid
+    // render lost to an unreadable reference is worse than refusing it before
+    // submission (docs/resilience.md's degrade trade reverses here).
+    expect(runModel).not.toHaveBeenCalled();
   });
 });
 

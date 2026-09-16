@@ -32,6 +32,15 @@ byte-identical after one metadata sniff, and a reference whose preparation fails
 original bytes with a diagnostic rather than failing the render. Prepared bytes carry their real
 media type and extension to the wire.
 
+The target format is webp for every provider but **Civitai, which requires jpeg**. Its
+orchestration accepts a webp data URI at every checkpoint that could refuse one — the upload
+ingests, the `whatif` preflight passes, the workflow schedules — and then the render job ends
+`failed` carrying no error, no reason and a full Buzz refund. Two concurrent workflows differing
+only in the encoding of one identical reference settled `succeeded` (jpeg) and `failed` (webp) on
+2026-09-16. Because an unreadable reference costs that provider the whole render rather than some
+fidelity, a required-format target does **not** degrade: preparation that cannot produce the
+format throws unless the original bytes already carry it.
+
 Edit references are uploaded as **private Replicate files** — Vesper's images are not publicly
 addressable and exceed the data-URL guidance — trimmed to the model's capacity by `fitReferences`
 *before* the upload cost is paid, uploaded with **bounded concurrency of three**

@@ -39,6 +39,16 @@ request policy for that variant.
   `operation: "editImage"` with the `images` list.
 - Prepared references retain their media type and are sent as data URLs. Image
   bytes and authenticated locators do not belong in request previews or errors.
+- **References must be JPEG.** This endpoint accepts a webp data URI everywhere
+  it could refuse one — the upload ingests to a blob, the what-if preflight
+  passes and echoes the reference count, the workflow schedules — and then the
+  render job ends `failed` with `errors: []`, no jobs, no blocked flag and a full
+  refund, indistinguishable from any other silent terminal failure. Measured
+  2026-09-16: two concurrent workflows differing only in the encoding of one
+  identical reference settled `succeeded` (jpeg) and `failed` (webp) under the
+  same prompt, sampling and LoRA. Vesper's stored assets are webp, so
+  preparation converts for this provider and refuses to fall back to unconverted
+  bytes ([../../images/providers/transport.md](../../images/providers/transport.md)).
 - More than two references or dedicated structural-control inputs are refused
   before a paid workflow is submitted.
 - A compatible curated LoRA reaches the provider's `loras` map as an AIR resource
