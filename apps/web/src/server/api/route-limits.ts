@@ -77,9 +77,43 @@ export function tooManyRequests(
   );
 }
 
+/**
+ * Better Auth operations where the abuse shape is **guessing** — a password, a
+ * reset token, a magic link. Mirrors the library's own tighter-rule matcher so
+ * the two limiters agree on what counts as credential traffic.
+ *
+ * Deliberately not the whole `/api/auth` namespace. `get-session` lives there
+ * too, and the auth client refetches it on every window focus, so a namespace-wide
+ * credential window would spend a shared office or CGNAT address's budget on
+ * people merely switching tabs. Those paths keep `ip_default`, which still
+ * bounds them — far below Better Auth's own 100-per-10s default for them.
+ *
+ * OAuth `callback/*` is excluded on purpose: the secret in it is a
+ * provider-issued code guarded by the `state` check, and throttling a redirect
+ * arriving from the provider would break sign-in rather than protect it.
+ */
+const CREDENTIAL_AUTH_PREFIXES = [
+  "sign-in",
+  "sign-up",
+  "forget-password",
+  "request-password-reset",
+  "reset-password",
+  "change-password",
+  "change-email",
+  "magic-link",
+  "verify-email",
+  "send-verification-email",
+] as const;
+
+const AUTH_BASE_PATH = "/api/auth";
+
 /** Credential endpoints get the tighter window: the abuse shape is guessing, not spending. */
 function ipPolicyFor(pathname: string): IpLimitName {
-  return pathname === "/api/auth" || pathname.startsWith("/api/auth/") ? "ip_auth" : "ip_default";
+  if (pathname !== AUTH_BASE_PATH && !pathname.startsWith(`${AUTH_BASE_PATH}/`)) return "ip_default";
+  const operation = pathname.slice(AUTH_BASE_PATH.length + 1).toLowerCase();
+  return CREDENTIAL_AUTH_PREFIXES.some((prefix) => operation === prefix || operation.startsWith(`${prefix}/`))
+    ? "ip_auth"
+    : "ip_default";
 }
 
 /**

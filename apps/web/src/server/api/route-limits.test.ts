@@ -32,6 +32,40 @@ describe("clientIp", () => {
     expect(clientIp(request("/api/chats"))).toBe(UNKNOWN_CLIENT_IP);
   });
 
+  it("collapses an IPv6 caller onto its /64", () => {
+    // A subscriber is handed the whole /64 and SLAAC privacy extensions rotate
+    // the low half on a timer. Keying on the full address would let any IPv6
+    // caller mint an unlimited supply of buckets — the bypass this ranking exists
+    // to prevent, reappearing one address family over.
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    expect(bucket("2001:db8::1")).toBe(bucket("2001:db8::dead:beef:1234:5678"));
+    expect(bucket("2001:DB8:0:0:0:0:0:1")).toBe(bucket("2001:db8::1"));
+    expect(bucket("2001:db8:1::1")).not.toBe(bucket("2001:db8::1"));
+  });
+
+  it("folds an IPv4-mapped address onto the plain IPv4 bucket", () => {
+    // `::ffff:203.0.113.7` and `203.0.113.7` are one caller; two buckets would
+    // be two allowances.
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    expect(bucket("::ffff:203.0.113.7")).toBe("203.0.113.7");
+    expect(bucket("::ffff:203.0.113.7")).toBe(bucket("203.0.113.7"));
+  });
+
+  it("keeps a NAT64 prefix distinct from the address embedded in it", () => {
+    // The embedded dotted tail is part of a v6 prefix here, not an IPv4 client.
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    expect(bucket("64:ff9b::203.0.113.7")).not.toBe("203.0.113.7");
+    expect(bucket("64:ff9b::203.0.113.7")).toBe(bucket("64:ff9b::198.51.100.9"));
+  });
+
+  it("gives an unparseable header its own bucket rather than a shared one", () => {
+    // Junk cannot be normalized, but it must still isolate: routing it to the
+    // shared unknown bucket would let one bad caller throttle every other.
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    expect(bucket("not-an-address")).toBe("not-an-address");
+    expect(bucket("not-an-address")).not.toBe(UNKNOWN_CLIENT_IP);
+  });
+
   it("hashes addresses irreversibly and stably", () => {
     const hash = hashClientIp("203.0.113.7");
     expect(hash).not.toContain("203.0.113.7");
@@ -83,6 +117,65 @@ describe("ipRateLimitRejection", () => {
     expect(IP_RATE_LIMITS.ip_auth.limit).toBeLessThan(IP_RATE_LIMITS.ip_default.limit);
     // A different namespace from the same address keeps its own, looser window.
     expect(ipRateLimitRejection(request("/api/chats", { "fly-client-ip": "3.3.3.3" }))).toBeNull();
+  });
+
+  it("covers every credential operation, not just password sign-in", () => {
+    // Each of these accepts a guess — a password, a reset token, a magic link —
+    // so each has to share the tight window rather than fall to the app default.
+    const paths = [
+      "/api/auth/sign-in/email",
+      "/api/auth/sign-up/email",
+      "/api/auth/forget-password",
+      "/api/auth/reset-password",
+      "/api/auth/change-password",
+      "/api/auth/change-email",
+      "/api/auth/magic-link/verify",
+      "/api/auth/verify-email",
+    ];
+    for (const [index, path] of paths.entries()) {
+      const ip = `10.1.0.${index}`;
+      for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
+        expect(ipRateLimitRejection(request(path, { "fly-client-ip": ip }))).toBeNull();
+      }
+      expect(ipRateLimitRejection(request(path, { "fly-client-ip": ip }))).not.toBeNull();
+    }
+  });
+
+  it("leaves session and OAuth-callback traffic on the app-wide window", () => {
+    // `get-session` is refetched on every window focus and `callback/*` is a
+    // redirect arriving from the provider. Spending the credential budget on
+    // either would throttle honest users — a shared office or CGNAT address
+    // most of all — without costing an attacker anything.
+    const paths = ["/api/auth/get-session", "/api/auth/callback/google", "/api/auth/sign-out"];
+    for (const [index, path] of paths.entries()) {
+      const ip = `10.2.0.${index}`;
+      for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit + 1; i++) {
+        expect(ipRateLimitRejection(request(path, { "fly-client-ip": ip }, "GET"))).toBeNull();
+      }
+    }
+  });
+
+  it("grants a rotating forwarded header no extra credential attempts", () => {
+    // The bypass this policy exists to close: on Fly the edge header decides the
+    // bucket, so a caller rewriting `x-forwarded-for` on every request is still
+    // spending one allowance, not minting a new one.
+    const attempt = (forwarded: string) =>
+      ipRateLimitRejection(
+        request("/api/auth/sign-in/email", { "fly-client-ip": "5.5.5.5", "x-forwarded-for": forwarded }),
+      );
+    for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
+      expect(attempt(`198.51.100.${i}`)).toBeNull();
+    }
+    expect(attempt("198.51.100.200")).not.toBeNull();
+  });
+
+  it("grants a rotating IPv6 suffix no extra credential attempts", () => {
+    const attempt = (suffix: string) =>
+      ipRateLimitRejection(request("/api/auth/sign-in/email", { "fly-client-ip": `2001:db8:5::${suffix}` }));
+    for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
+      expect(attempt(i.toString(16))).toBeNull();
+    }
+    expect(attempt("ffff")).not.toBeNull();
   });
 
   it("does not treat a path merely prefixed with 'auth' as the auth namespace", () => {

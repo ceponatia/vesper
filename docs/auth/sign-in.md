@@ -17,15 +17,54 @@ The posture is safe **because** sign-up is off and the app runs a single instanc
 accounts are seeded or approved ones. Opening self-service sign-up changes who can reach these
 surfaces, so it is a reviewed operation rather than a flag flip.
 
-Two hardening decisions already stand:
+Three hardening decisions already stand:
 
 - **Rate limiting is deliberately process-local.** `apps/web/src/server/api/rate-limit.ts` is
   per-process while Vesper runs a single instance. A second instance is what re-opens shared
   rate limiting, not sign-up.
+- **The sign-in throttle keys on the trusted address** (below).
 - **Session lifetimes are explicit, not inherited**
   ([README.md](README.md) §Session lifetime), and **security events are logged without tokens** —
   `auth.magic_link` never carries a url or token in production, and any new auth event re-checks
   the same rule.
+
+## Throttling the credential surface
+
+Two independent windows bound guessing, and both key on the client address Fly's edge proxy
+reports:
+
+| Limiter                                | Bucket                              | Window               |
+| -------------------------------------- | ----------------------------------- | -------------------- |
+| Better Auth's built-in rule            | One address per auth path           | 3 per 10s on sign-in |
+| `ip_auth` (`server/api/rate-limit.ts`) | One address across credential paths | 10 per minute        |
+
+**`fly-client-ip` is the only header either limiter trusts.** Fly's proxy overwrites it on every
+inbound request, so it is the one value a caller cannot choose. Better Auth's own default is
+`x-forwarded-for` — which any client can set to anything — so `auth.ts` names the edge header
+explicitly through `advanced.ipAddress.ipAddressHeaders`. Without that, a throttle counts attempts
+into a bucket the attacker picks, and rotating the header buys an unlimited allowance. The same
+resolution stamps `auth_sessions.ip_address`, so the recorded origin of a session is trustworthy
+for the same reason.
+
+The header is listed **alone**, with no forwarded-header fallback. A fallback would restore the
+bypass exactly when the edge header went missing, which is when nobody would notice; with no usable
+header Better Auth instead drops every caller into one shared bucket, which fails closed.
+
+**IPv6 callers are bucketed by their /64.** A subscriber holds the whole block and rotates inside it
+freely, so keying on the full address would hand any IPv6 client the same unlimited allowance one
+address family over. `clientIp()` collapses to the /64 and folds `::ffff:a.b.c.d` onto the IPv4
+bucket it denotes.
+
+**Only credential operations get the tight window.** `route-limits.ts` names them — sign-in, sign-up,
+password reset and change, email change, magic link, email verification. The rest of `/api/auth/*`
+keeps the app-wide `ip_default` window, because `get-session` is refetched on every window focus and
+`callback/*` is a redirect arriving from the provider; spending the credential budget on either
+would throttle a shared office or CGNAT address without costing an attacker anything.
+
+`/api/auth/*` is owned by Better Auth and does not run through `withRoute`. The route applies the
+per-IP window by hand and leaves CSRF to the library, which already guards this surface and admits
+flows `csrf.ts` does not model. A denial is re-stated in the library's own error shape so the
+sign-in form renders the reason rather than a generic failure.
 
 ## Sign-in methods
 
