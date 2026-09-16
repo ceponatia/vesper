@@ -2294,6 +2294,16 @@ async function reapplyCivitaiSamplingControls(): Promise<void> {
 }
 
 describe.skipIf(!ready)("migration 0148 — Civitai Klein sampling controls", () => {
+  // The 0146 block rebuilds this row from the 0145 and 0146 statements alone to
+  // exercise its provenance predicate, which rolls the row back behind whatever
+  // the migrator left. Re-apply 0148 here so this block describes its own
+  // migration rather than whichever block happened to run before it. Safe to run
+  // unconditionally: the predicate is the absence of the controls it adds.
+  beforeAll(async () => {
+    if (!ready) return;
+    await reapplyCivitaiSamplingControls();
+  });
+
   it("binds guidance, steps and the camelCase negative prompt without dropping 0146's controls", async () => {
     const sink = new DiagnosticCollector();
     const model = (await loadImageModels(sink)).find((candidate) => candidate.id === CIVITAI_V2_MODEL_ID);

@@ -48,16 +48,48 @@ request policy for that variant.
 - The prompt is limited to 1,000 characters. The adapter does not import
   Replicate-specific controls merely because the two endpoints share a family.
 
-## Fixed generation settings
+## Generation settings
 
 - The curated output aspects are `1:1`, `2:3`, and `3:2`; the transport sends
   explicit width and height rather than relying on a provider aspect default.
 - One image is requested per invocation, encoded as JPEG. Prompt expansion is
-  disabled. Sampling uses `cfgScale: 5`, `steps: 20`, `sampleMethod: "euler"`,
-  and `schedule: "simple"`.
-- The exposed controls are seed and the curated LoRA/strength pair. Other raw
-  controls are refused rather than silently accepted or discarded. The fixed
-  sampling values state the selected wire contract, not a measured quality claim.
+  disabled. `sampleMethod: "euler"` and `schedule: "simple"` remain fixed.
+- The exposed controls are seed, the curated LoRA/strength pair, and the three
+  sampling controls below. Other raw controls are refused rather than silently
+  accepted or discarded.
+
+### Sampling controls
+
+Klein 4B is a DISTILLED checkpoint: Black Forest Labs' reference usage for
+`Flux2KleinPipeline` is `guidance_scale=1.0, num_inference_steps=4`. Those are
+the defaults, and an operator overrides them per render.
+
+| Control | Provider field | Default | Band |
+| --- | --- | --- | --- |
+| `guidance` | `cfgScale` | 1 | 1–8 |
+| `steps` | `steps` | 4 | 1–40 |
+| `negativePrompt` | `negativePrompt` | unset | ≤ 2,000 characters |
+
+A value outside a band is refused rather than clamped. The bands are cost rails
+as well: the provider prices off both knobs, and guidance above 1 runs a second
+unconditional pass that doubles the bill. Measured at 832x1248 — 4 steps at
+guidance 1 cost 2 Buzz, 8 steps 3, 20 steps 6, and 20 steps at guidance 5 cost 12.
+
+Two rules that are not obvious from the wire format:
+
+- **`negativePrompt` is the camelCase spelling.** The endpoint discards
+  `negative_prompt` as silently as it discards an invented field name, so a
+  snake_case binding renders without the operator's negative prompt while
+  reporting success.
+- **A negative prompt is refused at `cfgScale` 1.** With no unconditional branch
+  there is nothing to steer away from: the same seed with and without one
+  produced pixel-identical output while the provider echoed the field back both
+  times. The adapter refuses the pair and names the fix rather than billing for
+  a setting that does nothing.
+
+The 2,000-character negative-prompt ceiling is Vesper's shared control contract
+(`imageRenderControlsSchema`), not a provider bound — the endpoint accepted 4,000
+characters unchanged.
 
 ## Mature-content and payment policy
 
@@ -92,6 +124,18 @@ request policy for that variant.
   that a checkpoint and LoRA are incompatible.
 - A submitted workflow is polled by its id. A successful status alone does not
   prove usable output: an image must be available and unblocked before download.
+- **The prediction budget is spent mostly on QUEUE time, and abandoning the poll
+  neither cancels nor refunds the workflow.** Buzz is debited at submit, and
+  Vesper does not pay to leave the shared `low` priority pool, so a budget
+  shorter than the queue discards an image the account was already charged for.
+  Measured 2026-09-16: waits of 3-348 s for identical requests against renders of
+  36-43 s, with one workflow succeeding at 390 s. The Image Generator therefore
+  plans this lane at the profile ceiling (`MAX_TRIAL_PREDICTION_MS`, 900 s)
+  rather than the five-minute default that suits compute-billed providers.
+- A failed workflow is auto-refunded by the provider (a debit followed by a
+  matching credit, `cost.total: 0`) and carries no diagnostic detail —
+  `errors: []`, no jobs, no reason — so `civitai_async_unknown_terminal` is often
+  as specific as the provider permits.
 - Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, and `civitai_output_*` codes,
   plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
   backed off with jitter, and apply only to idempotent metadata or workflow-status reads; a paid submission and what-if

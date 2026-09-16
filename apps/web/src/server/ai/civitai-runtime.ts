@@ -47,7 +47,20 @@ const ALLOWED_CONTROLS = new Set([
  */
 const CIVITAI_CFG_SCALE_RANGE = { minimum: 1, maximum: 8 } as const;
 const CIVITAI_STEPS_RANGE = { minimum: 1, maximum: 40 } as const;
-const CIVITAI_MAX_NEGATIVE_PROMPT_CHARS = 1000;
+/**
+ * The shared control contract's ceiling, restated rather than re-invented.
+ *
+ * `imageRenderControlsSchema.negativePrompt` is `z.string().max(2000)` and the
+ * Generator's textarea sets `maxLength={2000}`, so a stricter transport bound
+ * would refuse a value the UI and the shared request contract both call valid —
+ * a pre-provider failure on input the operator was invited to type.
+ *
+ * This is NOT a provider limit. A 2026-09-16 probe sent 1000, 2000 and 4000
+ * characters and the endpoint echoed each back unchanged and untruncated, so the
+ * binding constraint is Vesper's own contract. An earlier 1000 here was copied
+ * from the positive-prompt cap without provider evidence.
+ */
+const CIVITAI_MAX_NEGATIVE_PROMPT_CHARS = 2000;
 
 /**
  * The sampling recipe the DISTILLED Klein 4B checkpoint was trained to expect.

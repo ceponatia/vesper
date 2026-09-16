@@ -19,6 +19,7 @@ import {
   providerDefaultDimensions,
   referenceCapacity,
   reviewedImageProfilePinnedFields,
+  MAX_TRIAL_PREDICTION_MS,
   TRIAL_FALLBACK_PREDICTION_MS,
   withReviewedProfileDefaults,
 } from "@vesper/image-core";
@@ -34,6 +35,7 @@ import {
   imageGeneratorRunInputsSchema,
   type ImageGeneratorRunInputs,
 } from "@/contracts/images/image-generator";
+import { imageModelProvider } from "@vesper/image-models";
 import { providerInputViolations } from "@vesper/image-replicate";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
@@ -735,6 +737,29 @@ function plannedShapeInput(
  *   `allowedTasks` curation is skipped rather than judged against a task this
  *   bench invented for itself.
  */
+/**
+ * The prediction budget this bench run is planned under.
+ *
+ * Five minutes suits a provider that bills for compute it actually performs: a
+ * caller who stops waiting stops paying, so a short budget is a saving.
+ *
+ * Civitai is not that provider. It debits Buzz at submit, schedules from a
+ * shared queue Vesper does not pay to leave, and neither cancels nor refunds
+ * when the client stops polling — so on that lane the budget is spent largely on
+ * QUEUE time, and giving up early buys nothing while discarding an image the
+ * account has already been charged for. Measured 2026-09-16: waits of 3-348 s
+ * for identical requests against renders of 36-43 s, and one workflow that
+ * succeeded at 390 s, ninety seconds after a 300 s budget had already reported
+ * `civitai_async_timeout`.
+ *
+ * So this lane is planned at the profile ceiling rather than the default. It
+ * stays an explicit number on the compiled plan, which is the property the
+ * budget contract cares about — not an env-resolved value the plan cannot state.
+ */
+export function benchPredictionBudgetMs(model: ImageModel): number {
+  return imageModelProvider(model.slug) === "civitai" ? MAX_TRIAL_PREDICTION_MS : TRIAL_FALLBACK_PREDICTION_MS;
+}
+
 function imageGeneratorProfile(
   model: ImageModel,
   operation: "generate" | "edit",
@@ -751,7 +776,7 @@ function imageGeneratorProfile(
     referencePolicy: { allowedRoles: [], requiredRoles: [], roleOrder: [], identityStrategy: "canonical_only" },
     controlDefaults: { seedPolicy: "caller" },
     providerOverrides: providerInputs,
-    timeoutMs: TRIAL_FALLBACK_PREDICTION_MS,
+    timeoutMs: benchPredictionBudgetMs(model),
     enabled: true,
     isDefault: false,
     builtin: false,

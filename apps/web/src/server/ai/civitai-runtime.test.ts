@@ -161,6 +161,24 @@ describe("Civitai Klein v2 payload", () => {
     expect(blank.steps[0].input.negativePrompt).toBeUndefined();
   });
 
+  it("accepts the whole length the shared control contract offers the operator", () => {
+    // `imageRenderControlsSchema.negativePrompt` is `z.string().max(2000)` and
+    // the Generator textarea sets `maxLength={2000}`. A stricter transport bound
+    // would fail, pre-provider, on a value the UI invited the operator to type.
+    // The provider is not the constraint here: it echoed 1000, 2000 and 4000
+    // characters back unchanged.
+    const atLimit = civitaiKleinWorkflow(MODEL, {
+      ...request,
+      controlInput: { cfgScale: 2.5, negativePrompt: "d".repeat(2000) },
+    });
+    expect(atLimit.steps[0].input.negativePrompt).toHaveLength(2000);
+
+    expect(() => civitaiKleinWorkflow(MODEL, {
+      ...request,
+      controlInput: { cfgScale: 2.5, negativePrompt: "d".repeat(2001) },
+    })).toThrow(/2000 characters/i);
+  });
+
   it("refuses a preflight that silently dropped the requested negative prompt", () => {
     const expected = civitaiKleinWorkflow(MODEL, {
       ...request,
