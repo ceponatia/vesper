@@ -85,11 +85,14 @@ deploy. `credential_failures` holds one row per account under attack.
 - **The schedule.** Five consecutive failures cost nothing. After that the wait doubles — 5s, 10s,
   20s, 40s, 80s, 160s — and stops at **five minutes**. A correct password deletes the row. An account
   left alone for an hour starts over.
-- **A delay, never a lockout.** The ceiling is the anti-abuse property and the anti-denial-of-service
-  property at once: a sustained attack is held to ~12 guesses an hour from every source combined,
-  and an attacker who fails deliberately against a known address can impose that wait and nothing
-  worse, paying a request each time to keep imposing it. Nobody is ever locked out pending
-  intervention.
+- **The ceiling bounds one wait, not the number of waits.** A sustained attack is held to ~12 guesses
+  an hour from every source combined, which is the anti-abuse property. It is **not** a
+  denial-of-service property: because every admitted attempt re-arms the full wait before the
+  password is checked, an account at the ceiling has one admitted attempt per window, globally,
+  first-come-first-served — and the `Retry-After` header names the moment it opens. An attacker
+  polling that boundary at ~12 requests an hour can take every slot and keep the owner out, and
+  this deployment has no second door (magic-link has no transport, no OAuth provider is configured,
+  and there is no password-reset sender). Recovery today is deleting the row by hand.
 - **What it counts.** Only the endpoints that verify a password — `sign-in/email`, `verify-password`
   and `change-password`. Token paths (`reset-password`, `magic-link/verify`) are excluded: a 32-byte
   random is not guessable, and charging them would let anyone holding a stale link delay the
@@ -115,8 +118,11 @@ had. The case that is not free is the one that matters: if reads still worked wh
 not, failing open would switch the account defense off exactly while passwords were still being
 verified.
 
-`server/retention/credentials.ts` reaps rows past the decay window on the maintenance tick; the
-per-address window above is what bounds how fast rows can be created in the first place.
+`server/retention/credentials.ts` reaps rows past the decay window on the maintenance tick. That is
+cleanup and not a bound: the tick runs every six hours and takes one batch, ~167 rows an hour, while
+a single address admitted by the per-IP window can create 600. A shape check on the submitted
+address keeps a row from being free to mint, and the per-IP window prices them, but an attacker
+rotating addresses outruns the pass.
 
 ## Sign-in methods
 

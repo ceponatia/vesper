@@ -107,8 +107,15 @@ describe.skipIf(!ready)("durable credential backoff", () => {
     );
     const admitted = burst.filter((decision) => decision.allowed).length;
     expect(admitted).toBeLessThanOrEqual(FREE_ATTEMPTS + 1);
+    // Every admission is one increment and nothing else is: no charge is lost,
+    // and none lands twice.
     expect(await readCredentialFailures(SUBJECT)).toMatchObject({ failures: admitted });
-    expect((await chargeCredentialAttempt(SUBJECT, now)).allowed).toBe(false);
+    // Deliberately not asserting the next charge is refused. Losers of a swap
+    // retry a bounded number of times, so a contended burst can admit fewer than
+    // the free allowance — and below it the schedule owes no wait, so that
+    // assertion would fail on contention rather than on a defect.
+    const refusals = burst.filter((decision) => !decision.allowed);
+    expect(refusals.every((decision) => decision.reason === "backoff" || decision.reason === "contended")).toBe(true);
   });
 
   it("isolates accounts", async () => {

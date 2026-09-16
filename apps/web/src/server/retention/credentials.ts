@@ -12,10 +12,13 @@ import { RETENTION_BATCH_SIZE, type RetentionPass } from "./pass";
  * Deletes up to {@link RETENTION_BATCH_SIZE} `credential_failures` rows whose
  * last failure predates the decay window.
  *
- * This is also the bound on the table. The guard writes a row for whatever
- * address a caller submits, existing or not, so a flood of invented addresses
- * would otherwise accumulate; the per-IP credential window caps how fast rows
- * can be created, and this pass removes them once they stop meaning anything.
+ * This is cleanup, **not** a bound on the table. The maintenance tick it rides
+ * runs every six hours, so one batch is ~167 rows an hour, while a single
+ * address admitted by the per-IP credential window can create 600. The guard's
+ * address shape-check is what keeps a row from being free to mint, and the
+ * per-IP window is what prices them; neither caps the total, and a determined
+ * attacker rotating addresses outruns this pass. Sizing that properly is open
+ * work — do not read this comment as saying the table is bounded.
  */
 export const credentialFailuresDecayed: RetentionPass = {
   name: "credentialFailuresDecayed",

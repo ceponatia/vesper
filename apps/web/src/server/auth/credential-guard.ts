@@ -18,12 +18,18 @@ import { log } from "@/server/log";
  *
  * ## Shape of the defense
  *
- * Delay, not lockout. A hard lock is a gift to an attacker who knows an address:
- * a handful of deliberate failures and the owner is out until someone
- * intervenes. Here the penalty is a wait that grows with consecutive failures
- * and **stops growing** at {@link MAX_BACKOFF_MS}, so the worst an attacker can
- * impose is that ceiling, and it costs them a request every time they want to
- * keep imposing it. A correct password clears the record outright.
+ * A wait that grows with consecutive failures and **stops growing** at
+ * {@link MAX_BACKOFF_MS}. A correct password clears the record outright.
+ *
+ * The ceiling bounds the length of one wait. It does **not** bound how many
+ * waits an attacker can chain, because every admitted attempt re-arms the full
+ * wait before the password is checked: an account at the ceiling has one
+ * admitted attempt per window, globally, first-come-first-served. An attacker
+ * who polls that boundary — which `Retry-After` names exactly — takes the slot
+ * ahead of the owner, so a known address can be held closed for the cost of a
+ * request every {@link MAX_BACKOFF_MS}. Bounding one account's total guess rate
+ * and guaranteeing its owner a slot are in tension, and resolving it needs a
+ * signal that separates the two; this module does not have one yet.
  *
  * ## What it does not reveal
  *
@@ -65,17 +71,26 @@ export const FAILURE_CAP = 16;
 /** Compare-and-swap rounds before giving up. Contention on one subject means an attack. */
 const MAX_SWAP_ATTEMPTS = 3;
 
+/** Floor between "guard unavailable" error lines, so an outage logs a signal rather than a flood. */
+const UNAVAILABLE_LOG_INTERVAL_MS = 60_000;
+let lastUnavailableLogAt = 0;
+
 export interface CredentialDecision {
   readonly allowed: boolean;
   /** Whole seconds the caller must wait; 0 when allowed. */
   readonly retryAfterSeconds: number;
-  /** Why a refusal happened — `backoff` is the policy, `unavailable` is a broken guard. */
-  readonly reason: "allowed" | "backoff" | "unavailable";
+  /**
+   * Why a refusal happened. `backoff` is the policy deciding; `contended` is a
+   * lost race under load, where the count does not yet reflect this attempt;
+   * `unavailable` is the guard itself being broken. Distinct because they mean
+   * different things to whoever is reading the logs.
+   */
+  readonly reason: "allowed" | "backoff" | "contended" | "unavailable";
 }
 
 const ALLOWED: CredentialDecision = { allowed: true, retryAfterSeconds: 0, reason: "allowed" };
 
-function refused(reason: "backoff" | "unavailable", retryAfterMs: number): CredentialDecision {
+function refused(reason: "backoff" | "contended" | "unavailable", retryAfterMs: number): CredentialDecision {
   return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)), reason };
 }
 
@@ -215,7 +230,7 @@ export async function chargeCredentialAttempt(subject: string, now: number = Dat
       code: "auth.credential_guard.contended",
       subject,
     });
-    return refused("backoff", BASE_BACKOFF_MS);
+    return refused("contended", BASE_BACKOFF_MS);
   } catch (err) {
     /**
      * Fail **closed**, deliberately, and unlike the cost guards in
@@ -234,11 +249,16 @@ export async function chargeCredentialAttempt(subject: string, now: number = Dat
      * Refusing is recoverable in a minute; unbounded guessing against a known
      * admin address is not.
      */
-    log.error("auth.credential_guard", "credential backoff unavailable; refusing", {
-      code: "auth.credential_guard.unavailable",
-      subject,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    // Rate-limited: an outage means every sign-in takes this branch, and a line
+    // per request buries the first one — which is the only useful one.
+    const now_ = Date.now();
+    if (now_ - lastUnavailableLogAt >= UNAVAILABLE_LOG_INTERVAL_MS) {
+      lastUnavailableLogAt = now_;
+      log.error("auth.credential_guard", "credential backoff unavailable; refusing", {
+        code: "auth.credential_guard.unavailable",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
     return refused("unavailable", BASE_BACKOFF_MS);
   }
 }

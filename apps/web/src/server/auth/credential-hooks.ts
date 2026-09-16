@@ -41,10 +41,25 @@ export function credentialSubjectSource(path: string): "body" | "session" | null
   return GUARDED_PATHS[path] ?? null;
 }
 
+/**
+ * Shape check on the submitted address before anything durable is written.
+ *
+ * `sign-in/email` validates the address itself, but only inside the handler —
+ * which runs *after* this hook. Without a check here, `{"email":"a1"}` minted a
+ * row per request, so an unauthenticated caller could fill the table with
+ * strings that could never name an account, without even paying the password
+ * hash the endpoint burns on a real miss. Deliberately a cheap shape test and
+ * not a lookup: asking whether the address exists is what would leak that it
+ * does.
+ */
+const ADDRESS_SHAPE = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
+
 function submittedAddress(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const email: unknown = (body as { email?: unknown }).email;
-  return typeof email === "string" && email.trim().length > 0 ? email : null;
+  if (typeof email !== "string") return null;
+  const trimmed = email.trim();
+  return trimmed.length > 0 && trimmed.length <= 320 && ADDRESS_SHAPE.test(trimmed) ? trimmed : null;
 }
 
 /** The refusal. One shape for every reason, so it says nothing about the account. */
@@ -80,9 +95,13 @@ export const beforeCredentialAttempt = createAuthMiddleware(async (ctx) => {
   if (source === "body") {
     address = submittedAddress(ctx.body);
   } else {
-    // Resolved once per request: this memoizes onto `ctx.context.session`, which
-    // the endpoint's own session middleware then reuses.
-    const session = await getSessionFromCtx(ctx);
+    // `disableCookieCache` is not an optimization choice here. This memoizes
+    // onto `ctx.context.session`, and both guarded session paths run behind
+    // `sensitiveSessionMiddleware`, which reads with the same flag precisely so
+    // a revoked session cannot be used from a still-valid cookie. Resolving
+    // without it would satisfy that middleware from the cache it is trying to
+    // bypass.
+    const session = await getSessionFromCtx(ctx, { disableCookieCache: true });
     address = session?.user.email ?? null;
   }
   if (address === null) return;
@@ -106,7 +125,9 @@ export const afterCredentialAttempt = createAuthMiddleware(async (ctx) => {
   if (isAPIError(ctx.context.returned)) return;
 
   const address =
-    source === "body" ? submittedAddress(ctx.body) : ((await getSessionFromCtx(ctx))?.user.email ?? null);
+    source === "body"
+      ? submittedAddress(ctx.body)
+      : ((await getSessionFromCtx(ctx, { disableCookieCache: true }))?.user.email ?? null);
   if (address === null) return;
 
   await clearCredentialFailures(credentialSubject(address));
