@@ -17,8 +17,7 @@
   ## Subagent model policy (Codex Only)
 
 Use subagents aggressively when work can be investigated or executed
-independently. Project defaults route uncustomized subagents to GPT-5.6 Terra
-at medium reasoning. Custom Codex roles pin their own model and effort:
+independently. Custom Codex roles pin their own model and effort:
 
 | Role | Model / effort | Use |
 | --- | --- | --- |
@@ -30,8 +29,11 @@ at medium reasoning. Custom Codex roles pin their own model and effort:
 | `vesper-scenario-reviewer` | Sol / medium | Adversarial state-transition, authorization, and recovery analysis. |
 | `vesper-escalation` | Sol / high | An exhausted Terra correction round or a documented consequential trigger that needs a new model of the problem. |
 
-Use the built-in/default roles at Terra / medium unless a user explicitly
-requests another supported model. Task size alone does not justify Sol.
+For ad-hoc/default Codex roles, target Terra / medium through the spawn
+interface when it supports an explicit override; this is repository policy,
+not a project-wide `.codex/config.toml` default. Built-in roles that accept no
+model override use the host-selected model. A user may explicitly request
+another supported model. Task size alone does not justify Sol.
 
 Do not escalate merely because a task is large. Terra is appropriate for:
 

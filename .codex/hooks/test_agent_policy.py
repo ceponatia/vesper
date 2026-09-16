@@ -1566,9 +1566,8 @@ class PinnedRoleTableTests(unittest.TestCase):
 
 
 class CodexModelPolicyTests(unittest.TestCase):
-    """Prevent a routine Codex role, or the uncustomized fallback, from silently
-    moving off the owner-approved Terra tier; Sol is reserved for the two
-    deeper-reasoning routes."""
+    """Keep Codex custom-role pins aligned with policy without encoding unsupported
+    project-wide agent defaults; Sol is reserved for the two deeper-reasoning routes."""
 
     EXPECTED_ROLES = {
         "vesper-builder": ("gpt-5.6-terra", "medium"),
@@ -1590,15 +1589,9 @@ class CodexModelPolicyTests(unittest.TestCase):
             )
         self.assertEqual(found, self.EXPECTED_ROLES)
 
-    def test_uncustomized_codex_subagents_default_to_terra_medium(self):
+    def test_codex_config_does_not_define_unsupported_agent_defaults(self):
         config = tomllib.loads(CODEX_CONFIG.read_text(encoding="utf-8"))
-        self.assertEqual(
-            config.get("agents"),
-            {
-                "default_subagent_model": "gpt-5.6-terra",
-                "default_subagent_reasoning_effort": "medium",
-            },
-        )
+        self.assertNotIn("agents", config)
 
 
 if __name__ == "__main__":

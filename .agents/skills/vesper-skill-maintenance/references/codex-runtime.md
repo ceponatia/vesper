@@ -45,9 +45,10 @@ They are task artifacts, not memories or another source of GitHub work state.
 Consult the current [hook documentation](https://learn.chatgpt.com/docs/hooks)
 and [custom-agent documentation](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 for the active host's schema. The Codex project roles pin their model and
-`model_reasoning_effort`; the project `[agents]` defaults cover uncustomized
-subagents. `AGENTS.md` owns the role table and escalation criteria. Claude
-roles under `.claude/agents/` use host-native pins, and
+`model_reasoning_effort`; `.codex/config.toml` defines no project-wide agent
+model or effort fallback. `AGENTS.md` owns the role table, the policy target
+for roles without a project profile, and the escalation criteria. Claude roles
+under `.claude/agents/` use host-native pins, and
 `.claude/hooks/agent_policy.py` (a symlink to `.codex/hooks/agent_policy.py`,
 loaded by Claude Code only) enforces their use. The project does not raise
 concurrency, change global approval policy, or use model-driven review hooks

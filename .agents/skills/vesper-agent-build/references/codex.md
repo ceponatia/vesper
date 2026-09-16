@@ -14,10 +14,13 @@ Choose a focused project role when it materially helps the task:
 
 Codex project profiles pin their model and reasoning effort. Routine roles use
 Terra; scenario review and escalation are the only Sol routes, at medium and
-high respectively. Project defaults keep uncustomized roles on Terra / medium.
-The root Codex policy owns the full table and escalation criteria. Claude-side
-roles use host-native pins instead, and `AGENTS.md` §Subagent model policy
-(Claude) owns that table. Do not run every role for every change.
+high respectively. For roles without a project profile, Terra / medium is a
+repository policy target applied through the spawn interface when it supports
+an explicit override, not a project-configured fallback; roles that accept no
+override use the host default. The root Codex policy owns the full table and
+escalation criteria. Claude-side roles use host-native pins instead, and
+`AGENTS.md` §Subagent model policy (Claude) owns that table. Do not run every
+role for every change.
 Context, UX, and scenario roles inspect without editing; the UI role may record
 evaluation artifacts; the test keeper edits tests only. They do not implement
 fixes or spawn further agents. Run the test keeper after an implementation slice
