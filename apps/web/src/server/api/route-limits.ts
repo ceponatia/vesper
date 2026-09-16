@@ -79,8 +79,20 @@ export function tooManyRequests(
 
 /**
  * Better Auth operations where the abuse shape is **guessing** — a password, a
- * reset token, a magic link. Mirrors the library's own tighter-rule matcher so
- * the two limiters agree on what counts as credential traffic.
+ * reset token, a magic link.
+ *
+ * Enumerated from the endpoints this deployment actually registers (core plus
+ * the `magicLink` and `admin` plugins), not copied from the library's own
+ * tighter-rule matcher: this list is a superset, because Better Auth leaves
+ * token-guessing paths like `reset-password/:token` and `magic-link/verify` on
+ * its loose default. **Installing a plugin means re-reading its endpoints against
+ * this list** — anything that accepts a secret and reports whether it was right
+ * belongs here.
+ *
+ * `verify-password` is on the list for that reason despite requiring a session:
+ * it exists solely to answer "is this the password?", so a caller holding any
+ * session — a stolen cookie, a shared machine — would otherwise get an oracle an
+ * order of magnitude faster than the sign-in form allows.
  *
  * Deliberately not the whole `/api/auth` namespace. `get-session` lives there
  * too, and the auth client refetches it on every window focus, so a namespace-wide
@@ -95,11 +107,11 @@ export function tooManyRequests(
 const CREDENTIAL_AUTH_PREFIXES = [
   "sign-in",
   "sign-up",
-  "forget-password",
   "request-password-reset",
   "reset-password",
   "change-password",
   "change-email",
+  "verify-password",
   "magic-link",
   "verify-email",
   "send-verification-email",

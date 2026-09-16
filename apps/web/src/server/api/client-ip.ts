@@ -90,6 +90,12 @@ function mappedIpv4(groups: string[]): string | null {
  * garbage header cannot mint buckets any faster than a real one would — it
  * still produces one key per distinct value, and the limiter's LRU ceiling
  * (`rate-limit.ts`) bounds how many of those survive.
+ *
+ * Passing junk through verbatim does mean a caller who spells a value as the
+ * literal `2001:0db8:0000:0000::/64` lands in that network's bucket. That is
+ * only reachable where no trusted header is set at all — off Fly — and there
+ * every bucket is already the caller's to choose, so the collision costs nothing
+ * that was not already given away.
  */
 export function normalizeClientIp(value: string): string {
   const trimmed = value.trim();
@@ -97,7 +103,12 @@ export function normalizeClientIp(value: string): string {
   if (family === 4) return trimmed;
   if (family !== 6) return trimmed.toLowerCase();
 
-  const groups = ipv6Groups(trimmed.toLowerCase());
+  // `isIP` admits a zone index (`fe80::1%eth0`). It names a local interface
+  // rather than a different caller, and left attached it would ride into the
+  // dotted tail of a mapped address and corrupt the octet fold. Dropped here so
+  // everything below parses a canonical literal.
+  const [address = ""] = trimmed.toLowerCase().split("%");
+  const groups = ipv6Groups(address);
   const ipv4 = mappedIpv4(groups);
   if (ipv4 !== null) return ipv4;
   return `${groups.slice(0, IPV6_BUCKET_PREFIX_GROUPS).join(":")}::/64`;

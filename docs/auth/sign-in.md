@@ -33,10 +33,13 @@ Three hardening decisions already stand:
 Two independent windows bound guessing, and both key on the client address Fly's edge proxy
 reports:
 
-| Limiter                                | Bucket                              | Window               |
-| -------------------------------------- | ----------------------------------- | -------------------- |
-| Better Auth's built-in rule            | One address per auth path           | 3 per 10s on sign-in |
-| `ip_auth` (`server/api/rate-limit.ts`) | One address across credential paths | 10 per minute        |
+- **Better Auth's built-in rules**, one bucket per address per auth path, and **production only**
+  (`rateLimit.enabled` defaults to `isProduction`, so in dev and test only the window below runs):
+  3 per 10s on sign-in, sign-up, change-password and change-email; 3 per minute on password-reset
+  and verification-email requests.
+- **`ip_auth`** (`server/api/rate-limit.ts`), one bucket per address across every credential path:
+  10 per minute. Tighter than the library's sign-in rule on purpose — it is the window that records
+  an abuse signal, so it is the one that should decide.
 
 **`fly-client-ip` is the only header either limiter trusts.** Fly's proxy overwrites it on every
 inbound request, so it is the one value a caller cannot choose. Better Auth's own default is
