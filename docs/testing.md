@@ -118,7 +118,7 @@ The aggregate `verify` job requires every applicable job to succeed and requires
 
 The changed-route authorization guard receives the actual PR base SHA from CI rather than assuming `origin/main`, which keeps promotion PR comparisons correct. Manual full-verification runs and `prod`-bound promotion PRs also execute `scripts/check-route-authz-all.ts`, which scans every resource-ID route recognized by the guard and fails if any route lacks recognized authorization evidence.
 
-The full inventory is intentionally release-gated because it checks repository-wide state rather than only the current diff. Its console output reports how many resource-ID routes were examined so a green release check cannot represent an accidental zero-file scan.
+The full inventory is intentionally release-gated because it checks repository-wide state rather than only the current diff. It reports how many resource-ID routes it examined and fails when that count is zero: an API tree or `RESOURCE_ROUTE` change that empties the inventory is a broken gate, so it turns the release check red instead of passing a vacuous scan as evidence.
 
 ### What a green integration job proves
 
