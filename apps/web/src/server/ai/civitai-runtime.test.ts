@@ -691,3 +691,93 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
   });
 });
+
+/**
+ * PROTECTS: the output download follows the provider's own redirect (#628).
+ *
+ * The blob URL Civitai puts in a succeeded workflow answers `301` with a
+ * RELATIVE `Location` to a signed content path on the same host. `downloadOutput`
+ * refused it outright, so a workflow that had rendered and been billed delivered
+ * nothing. Following it cannot mean trusting the runtime to land anywhere: each
+ * hop is revalidated, so these cover the refusals as well as the success.
+ *
+ * The stub answers whatever these cases say, so it pins Vesper's follow-and-
+ * revalidate logic, not the runtime's own `manual` semantics — that half is a
+ * live measurement, recorded on the model's page.
+ */
+describe("Civitai Klein v2 output redirects", () => {
+  const OUTPUT_URL = "https://orchestration-new.civitai.com/v2/consumer/blobs/abc.jpg";
+
+  /** A full render whose workflow succeeds; `output` answers the blob fetches. */
+  function stubRender(output: (href: string, hop: number) => Response): string[] {
+    const fetched: string[] = [];
+    let hop = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(
+          body,
+          whatif === "true" ? "estimate-1" : "submit-1",
+          whatif === "true" ? "unassigned" : "succeeded",
+          [{ url: OUTPUT_URL, available: true }],
+        ));
+      }
+      fetched.push(href);
+      const response = output(href, hop);
+      hop += 1;
+      return response;
+    });
+    return fetched;
+  }
+
+  it("follows a relative redirect to the signed content path and stores those bytes", async () => {
+    const fetched = stubRender((_href, hop) => hop === 0
+      ? new Response(null, { status: 301, headers: { location: "/v2/consumer/blobs/content/signed.jpg" } })
+      : new Response("image-bytes", { status: 200 }));
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-1" });
+    expect(result.ok && result.image.toString()).toBe("image-bytes");
+    // Resolved against the URL that sent it, not against the workflow endpoint.
+    expect(fetched).toEqual([
+      OUTPUT_URL,
+      "https://orchestration-new.civitai.com/v2/consumer/blobs/content/signed.jpg",
+    ]);
+  });
+
+  it("refuses a redirect off the Civitai hosts without fetching it", async () => {
+    const fetched = stubRender(() =>
+      new Response(null, { status: 302, headers: { location: "https://elsewhere.invalid/output.jpg" } }));
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_output_invalid") });
+    // The refused location is never requested: a paid render is worth less than
+    // a download Vesper cannot account for.
+    expect(fetched).toEqual([OUTPUT_URL]);
+  });
+
+  it("refuses a redirect to a credentialed URL, Civitai host or not", async () => {
+    const fetched = stubRender(() =>
+      new Response(null, { status: 302, headers: { location: "https://user:pass@image.civitai.com/output.jpg" } }));
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_output_invalid") });
+    expect(fetched).toEqual([OUTPUT_URL]);
+  });
+
+  it("refuses a chain longer than the bound instead of chasing it", async () => {
+    const fetched = stubRender((_href, hop) =>
+      new Response(null, { status: 302, headers: { location: `/v2/consumer/blobs/hop-${String(hop)}.jpg` } }));
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_output_invalid") });
+    // The original request plus MAX_OUTPUT_REDIRECTS hops, and no more.
+    expect(fetched).toHaveLength(4);
+  });
+});

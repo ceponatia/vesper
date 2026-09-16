@@ -157,9 +157,17 @@ characters unchanged.
 - Diagnostics retain actionable provider facts without credentials, signed URLs,
   prompts, reference bytes, arbitrary provider prose, or RFC7807 values.
   RFC7807 diagnostics retain only sanitized validation field paths.
-- Download policy requires credential-free HTTPS on Civitai hosts and refuses
-  redirects. A different provider storage host requires explicit review; the
-  OpenAPI's generic URI field is not an unrestricted network-download permission.
+- Download policy requires credential-free HTTPS on Civitai hosts. The workflow's
+  blob URL answers `301` with a relative `Location` to a signed content path on
+  the same host, so the download follows up to three redirects and revalidates
+  each hop under that same policy — a hop off the Civitai hosts, a credentialed
+  one, or a longer chain is refused as `civitai_output_invalid` and never
+  requested. Redirects are followed by hand rather than by the runtime: a
+  followed redirect would fetch whatever host the provider names, and refusing
+  them outright rejected the provider's own content path and lost images the
+  account had already been billed for. A different provider storage host
+  requires explicit review; the OpenAPI's generic URI field is not an
+  unrestricted network-download permission.
 
 ## Evidence boundary
 

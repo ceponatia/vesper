@@ -477,22 +477,78 @@ async function sendWorkflow(body: CivitaiKleinWorkflow, token: string, whatif: b
   }, token, whatif ? "preflight" : "submit");
 }
 
-async function downloadOutput(url: string): Promise<Buffer> {
+/**
+ * One output location this download is allowed to visit, or a refusal.
+ *
+ * Applied to the provider's own URL and again to every redirect target, because
+ * a hop is a fetch of a new address and inherits no trust from the one that
+ * named it. `base` resolves a relative `Location` against the URL that sent it.
+ */
+function civitaiOutputLocation(value: string, base?: URL): URL {
   let parsed: URL;
   try {
-    parsed = new URL(url);
+    parsed = new URL(value, base);
   } catch {
     throw civitaiOutputFailure("civitai_output_invalid", "never");
   }
   if (parsed.protocol !== "https:" || parsed.username || parsed.password || !isCivitaiHost(parsed.hostname)) {
     throw civitaiOutputFailure("civitai_output_invalid", "never");
   }
-  let response: Response;
-  try {
-    response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  } catch {
-    throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+  return parsed;
+}
+
+/**
+ * How many redirects one output download may follow.
+ *
+ * The provider needs exactly one: its blob URL answers `301` with a relative
+ * `Location` to a signed content path on the same host (measured 2026-09-16 —
+ * `redirect: "error"` throws `unexpected redirect` there, which failed every
+ * download of a workflow the account had already paid for). Two more are
+ * headroom for a storage-host change, not an invitation to chase a chain.
+ */
+const MAX_OUTPUT_REDIRECTS = 3;
+
+/**
+ * The response carrying the output bytes, after following the provider's own
+ * redirects by hand.
+ *
+ * `manual` rather than either runtime default: `follow` would fetch whatever
+ * host the provider names, and `error` — what this did before — refuses the
+ * provider's own signed content path and failed every download of a workflow
+ * the account had already paid for. Each hop is revalidated against the same
+ * policy, so the stance is enforced by checking the destination rather than by
+ * refusing to move. One budget is shared across hops: a chain must not multiply
+ * the timeout.
+ */
+async function fetchOutput(url: string): Promise<Response> {
+  let target = civitaiOutputLocation(url);
+  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
+  for (let hop = 0; ; hop += 1) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+    let response: Response;
+    try {
+      response = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(remaining) });
+    } catch {
+      throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+    }
+    if (response.status < 300 || response.status > 399) return response;
+    const location = response.headers.get("location");
+    // The redirect's own body is never read; releasing it frees the socket
+    // instead of leaving it open for the request timeout to reap.
+    if (response.body) await response.body.cancel().catch(() => undefined);
+    // A redirect Vesper cannot follow is a location it was never allowed to
+    // reach, not a transport hiccup: refusing under the same code as a
+    // malformed URL keeps a repeat of the identical request from being retried.
+    if (location === null || hop >= MAX_OUTPUT_REDIRECTS) {
+      throw civitaiOutputFailure("civitai_output_invalid", "never");
+    }
+    target = civitaiOutputLocation(location, target);
   }
+}
+
+async function downloadOutput(url: string): Promise<Buffer> {
+  const response = await fetchOutput(url);
   if (!response.ok) {
     const code = `civitai_output_http_${String(response.status)}` as `civitai_output_http_${number}`;
     throw civitaiOutputFailure(code, "deliberate");
