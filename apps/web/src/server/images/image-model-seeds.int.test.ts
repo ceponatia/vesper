@@ -2095,6 +2095,10 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
       forVariant: false,
       forScene: false,
     });
+    // This reads the LIVE row, so it reflects every migration that has touched
+    // it, not 0146 alone. 0148 merges the sampling controls in on top; the
+    // assertions 0146 owns are the ones it wrote, and the 0148 block below owns
+    // proving the merge preserved them.
     expect(model?.advancedCapabilities).toMatchObject({
       prompt: { field: "prompt", maxChars: 1000 },
       controls: {
@@ -2103,9 +2107,10 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
         loraScale: { field: "civitai_lora_strength", type: "number" },
       },
       additionalImageInputs: [],
-      knownInputFields: ["prompt", "aspect_ratio", "seed", "civitai_lora_version", "civitai_lora_strength"],
     });
-    expect(model?.advancedCapabilities.controls.negativePrompt).toBeUndefined();
+    expect(model?.advancedCapabilities.knownInputFields).toEqual(
+      expect.arrayContaining(["prompt", "aspect_ratio", "seed", "civitai_lora_version", "civitai_lora_strength"]),
+    );
     expect(model?.operatorWarning).toMatch(/admin Image Generator bench.*combined paid.*unverified/i);
     expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
 
@@ -2277,6 +2282,52 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
       () => true,
     );
     expect(missing).toBe(true);
+  });
+});
+
+const CIVITAI_SAMPLING_MIGRATION_FILE = "drizzle/0148_civitai-klein-sampling-controls.sql";
+
+async function reapplyCivitaiSamplingControls(): Promise<void> {
+  const statements = await migrationStatements(CIVITAI_SAMPLING_MIGRATION_FILE, 'UPDATE "image_models"');
+  expect(statements, `${CIVITAI_SAMPLING_MIGRATION_FILE} must carry one update`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+describe.skipIf(!ready)("migration 0148 — Civitai Klein sampling controls", () => {
+  it("binds guidance, steps and the camelCase negative prompt without dropping 0146's controls", async () => {
+    const sink = new DiagnosticCollector();
+    const model = (await loadImageModels(sink)).find((candidate) => candidate.id === CIVITAI_V2_MODEL_ID);
+
+    expect(model?.advancedCapabilities.controls).toMatchObject({
+      // Added here.
+      guidance: { field: "cfgScale", type: "number", minimum: 1, maximum: 8 },
+      steps: { field: "steps", type: "integer", minimum: 1, maximum: 40 },
+      negativePrompt: { field: "negativePrompt", type: "string" },
+      // Merged onto, not replaced.
+      seed: { field: "seed", type: "integer" },
+      loraWeights: { field: "civitai_lora_version", type: "string" },
+      loraScale: { field: "civitai_lora_strength", type: "number" },
+    });
+
+    // snake_case is the failure this migration exists to prevent: the endpoint
+    // discards `negative_prompt` silently, so binding it would render without
+    // the operator's negative prompt while reporting success.
+    expect(model?.advancedCapabilities.controls.negativePrompt?.field).toBe("negativePrompt");
+    expect(model?.advancedCapabilities.knownInputFields).toEqual(
+      expect.arrayContaining(["prompt", "civitai_lora_version", "cfgScale", "steps", "negativePrompt"]),
+    );
+    expect(model?.advancedCapabilities.knownInputFields).not.toContain("negative_prompt");
+    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
+  });
+
+  it("changes nothing on replay and leaves an operator's own curation alone", async () => {
+    const before = await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+
+    // The predicate is the absence of the new controls, so a second application
+    // must be a no-op rather than appending the field lists a second time.
+    await reapplyCivitaiSamplingControls();
+
+    expect(await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID))).toEqual(before);
   });
 });
 

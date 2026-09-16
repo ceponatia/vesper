@@ -17,6 +17,7 @@ import {
   previewCivitaiKleinRequest,
   runCivitaiKleinImageModel,
   validateCivitaiKleinRequest,
+  validateCivitaiPreflightEcho,
 } from "./civitai-runtime";
 
 const MODEL: ImageModel = imageModelSchema.parse({
@@ -96,6 +97,85 @@ describe("Civitai Klein v2 payload", () => {
         steps: [{ $type: "imageGen", input: { engine: "flux2", model: "klein", modelVersion: "4b", operation } }],
       });
     }
+  });
+
+  it("sends the distilled checkpoint's own sampling recipe rather than a non-distilled one", () => {
+    // Klein 4B is distilled: BFL's reference usage is guidance_scale 1.0 at 4
+    // steps, and a controlled create/edit comparison showed a conventional CFG
+    // 5 / 20-step recipe over-driving it into a stippled skin texture — present
+    // with and without a LoRA — while also costing six times the Buzz. These two
+    // values are the fix, so pin them rather than let a plausible-looking
+    // "normal" sampling default creep back in.
+    const expected = civitaiKleinWorkflow(MODEL, request);
+    expect(expected.steps[0].input).toMatchObject({ cfgScale: 1, steps: 4 });
+
+    // The preflight refuses a provider substitution by comparing the echo field
+    // by field, so an echo carrying the old recipe must be REFUSED, not merely
+    // differ from the request.
+    // Round-trip as the transport does, so the echo is built from what actually
+    // crosses the wire rather than from the in-process object.
+    const sent = JSON.parse(JSON.stringify(expected)) as Record<string, unknown>;
+    const faithful = parseCivitaiWorkflow(workflowFrom(sent, "estimate", "unassigned"));
+    expect(validateCivitaiPreflightEcho(faithful, expected)).toBeNull();
+
+    const drifted = workflowFrom(sent, "estimate", "unassigned");
+    const driftedInput = (drifted.steps as [{ input: Record<string, unknown> }])[0].input;
+    driftedInput.cfgScale = 5;
+    driftedInput.steps = 20;
+    expect(validateCivitaiPreflightEcho(parseCivitaiWorkflow(drifted), expected)).toContain("cfgScale");
+  });
+
+  it("carries operator sampling controls and refuses values outside the curated band", () => {
+    const withControls = civitaiKleinWorkflow(MODEL, {
+      ...request,
+      controlInput: { seed: 1234, cfgScale: 2.5, steps: 8, negativePrompt: "deformed, clothing" },
+    });
+    expect(withControls.steps[0].input).toMatchObject({
+      cfgScale: 2.5, steps: 8, negativePrompt: "deformed, clothing",
+    });
+
+    // Refusal, never clamping: a render nobody configured, billed under a record
+    // claiming otherwise, is worse than a render that did not happen.
+    for (const controlInput of [
+      { cfgScale: 0.5 }, { cfgScale: 12 }, { cfgScale: "high" },
+      { steps: 0 }, { steps: 200 }, { steps: 8.5 },
+      { negativePrompt: 42 },
+    ]) {
+      expect(() => civitaiKleinWorkflow(MODEL, { ...request, controlInput }),
+        `${JSON.stringify(controlInput)} must be refused`).toThrow();
+    }
+  });
+
+  it("refuses a negative prompt at guidance 1, where the provider echoes it but ignores it", () => {
+    // Measured: the same seed with and without a negative prompt at cfgScale 1
+    // produced pixel-identical output while the preflight echoed the field back.
+    // Accepting it would bill for a setting that demonstrably does nothing.
+    expect(() => civitaiKleinWorkflow(MODEL, {
+      ...request,
+      controlInput: { negativePrompt: "deformed" },
+    })).toThrow(/negative prompt at cfgScale 1/i);
+
+    // Blank is not a request for negative guidance, so it stays legal and is
+    // simply not sent.
+    const blank = civitaiKleinWorkflow(MODEL, { ...request, controlInput: { negativePrompt: "   " } });
+    expect(blank.steps[0].input.negativePrompt).toBeUndefined();
+  });
+
+  it("refuses a preflight that silently dropped the requested negative prompt", () => {
+    const expected = civitaiKleinWorkflow(MODEL, {
+      ...request,
+      controlInput: { cfgScale: 2.5, steps: 8, negativePrompt: "deformed, clothing" },
+    });
+    const sent = JSON.parse(JSON.stringify(expected)) as Record<string, unknown>;
+
+    const faithful = parseCivitaiWorkflow(workflowFrom(sent, "estimate", "unassigned"));
+    expect(validateCivitaiPreflightEcho(faithful, expected)).toBeNull();
+
+    // The provider discards an unrecognized negative-prompt spelling instead of
+    // rejecting it, so an ABSENT field is the failure mode, not a changed one.
+    const dropped = workflowFrom(sent, "estimate", "unassigned");
+    delete (dropped.steps as [{ input: Record<string, unknown> }])[0].input.negativePrompt;
+    expect(validateCivitaiPreflightEcho(parseCivitaiWorkflow(dropped), expected)).toContain("negative prompt");
   });
 
   it("rejects stale pins, unsupported controls, and more than two references before transport", () => {

@@ -9,12 +9,89 @@ import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFai
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
 export const CIVITAI_LORA_VERSION_FIELD = "civitai_lora_version";
 export const CIVITAI_LORA_STRENGTH_FIELD = "civitai_lora_strength";
+export const CIVITAI_CFG_SCALE_FIELD = "cfgScale";
+export const CIVITAI_STEPS_FIELD = "steps";
+
+/**
+ * The provider spells its negative prompt in camelCase, and DROPS any other
+ * spelling without complaint.
+ *
+ * Migration 0145 declared `negative_prompt` for the retired website graph. A
+ * 2026-09-16 probe sent both spellings to the v2 workflow endpoint: only
+ * `negativePrompt` came back in the preflight echo, while `negative_prompt` was
+ * discarded exactly as an invented field name was. A snake_case binding here
+ * would therefore not error — it would render without the negative prompt the
+ * operator configured, and the echo would look correct because the field simply
+ * would not appear on either side.
+ */
+export const CIVITAI_NEGATIVE_PROMPT_FIELD = "negativePrompt";
 const WORKFLOWS_URL = "https://orchestration.civitai.com/v2/consumer/workflows";
 const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REFERENCES = 2;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-const ALLOWED_CONTROLS = new Set(["seed", CIVITAI_LORA_VERSION_FIELD, CIVITAI_LORA_STRENGTH_FIELD]);
+const ALLOWED_CONTROLS = new Set([
+  "seed", CIVITAI_LORA_VERSION_FIELD, CIVITAI_LORA_STRENGTH_FIELD,
+  CIVITAI_CFG_SCALE_FIELD, CIVITAI_STEPS_FIELD, CIVITAI_NEGATIVE_PROMPT_FIELD,
+]);
+
+/**
+ * The band each sampling control may be set to, refused rather than clamped.
+ *
+ * The ceilings are cost rails as much as quality rails: Civitai prices this
+ * workflow off both knobs, and a 2026-09-16 measurement put an 832x1248 create
+ * at 2 Buzz for 4 steps, 3 for 8, 6 for 20, and 12 for 20 steps at CFG 5 —
+ * guidance above 1 runs a second unconditional pass and doubles the bill. A
+ * typo'd 200 steps is a configuration mistake, and spending forty times the
+ * intended Buzz on it is worse than refusing the render.
+ */
+const CIVITAI_CFG_SCALE_RANGE = { minimum: 1, maximum: 8 } as const;
+const CIVITAI_STEPS_RANGE = { minimum: 1, maximum: 40 } as const;
+const CIVITAI_MAX_NEGATIVE_PROMPT_CHARS = 1000;
+
+/**
+ * The sampling recipe the DISTILLED Klein 4B checkpoint was trained to expect.
+ *
+ * Klein 4B is a distilled model: it carries no `guidance_embeds` and reaches its
+ * target distribution in a handful of steps. Black Forest Labs' own reference
+ * usage for `Flux2KleinPipeline` is `guidance_scale=1.0, num_inference_steps=4`.
+ *
+ * Vesper originally sent a conventional non-distilled recipe (CFG 5 / 20 steps).
+ * That over-drives a distilled model, and a 2026-09-16 controlled comparison —
+ * identical seed, prompt, aspect and LoRA, varying only these two values —
+ * produced visibly over-cooked output with a stippled, beaded skin texture that
+ * was present with AND without the LoRA. The values below removed it.
+ *
+ * They are also what the provider prices against: Civitai billed the 20-step
+ * render at 12 Buzz and the 4-step render at 2.
+ *
+ * DEFAULTS, not fixed policy. The same comparison found no single recipe that
+ * suits every render — 8 steps resolves multi-subject anatomy that 4 mangles,
+ * and a negative prompt does nothing below guidance 2 — so an operator overrides
+ * these through the `guidance` and `steps` controls migration 0148 binds. What
+ * stays fixed is that {@link validateCivitaiPreflightEcho} demands back exactly
+ * what {@link resolveCivitaiKleinSampling} resolved, default or override, so the
+ * preflight still refuses a silent provider substitution.
+ */
+const CIVITAI_KLEIN_CFG_SCALE = 1;
+const CIVITAI_KLEIN_STEPS = 4;
+
+/**
+ * How long a submitted workflow is waited on before Vesper gives up.
+ *
+ * This budget is spent on QUEUE time, not just render time. Civitai schedules
+ * submits from the shared `low` priority pool Vesper does not pay to leave, and
+ * measured waits on 2026-09-16 ranged from 3 s to 348 s for identical requests —
+ * the render itself was 36-43 s. Abandoning the poll does not cancel or refund
+ * the workflow, so a deadline shorter than the queue throws away an image the
+ * account has already been billed for; one observed run succeeded at 390 s,
+ * ninety seconds after the previous 300 s default had already reported a
+ * `civitai_async_timeout`.
+ *
+ * Raised to outlast the provider's own lifecycle rather than race it. A caller
+ * with a tighter budget still passes `timeoutMs` explicitly.
+ */
+const CIVITAI_DEFAULT_TIMEOUT_MS = 900_000;
 const PENDING_STATUSES = new Set(["unassigned", "preparing", "scheduled", "processing"]);
 const FAILED_STATUSES = new Set(["failed", "expired", "canceled"]);
 
@@ -96,6 +173,56 @@ function selectedLora(controls: KleinRequest["controlInput"]): { version: string
   return { version, strength };
 }
 
+/**
+ * The sampling settings this render will actually use: the operator's controls
+ * where present, the distilled defaults where absent.
+ *
+ * Resolved in ONE place because three callers must agree on the answer — the
+ * workflow builder, the preview, and {@link validateCivitaiPreflightEcho}, which
+ * refuses a provider substitution by comparing the echo field by field. A
+ * builder that defaulted independently of the echo check could send one recipe
+ * and demand another.
+ */
+export interface CivitaiKleinSampling {
+  cfgScale: number;
+  steps: number;
+  negativePrompt: string | null;
+}
+
+export function resolveCivitaiKleinSampling(controls: KleinRequest["controlInput"]): CivitaiKleinSampling {
+  const cfgScale = controls?.[CIVITAI_CFG_SCALE_FIELD] ?? CIVITAI_KLEIN_CFG_SCALE;
+  const steps = controls?.[CIVITAI_STEPS_FIELD] ?? CIVITAI_KLEIN_STEPS;
+  const negativePrompt = controls?.[CIVITAI_NEGATIVE_PROMPT_FIELD];
+
+  if (typeof cfgScale !== "number" || !Number.isFinite(cfgScale) ||
+      cfgScale < CIVITAI_CFG_SCALE_RANGE.minimum || cfgScale > CIVITAI_CFG_SCALE_RANGE.maximum) {
+    throw new Error(`Civitai Klein cfgScale must be a number between ${String(CIVITAI_CFG_SCALE_RANGE.minimum)} and ${String(CIVITAI_CFG_SCALE_RANGE.maximum)}`);
+  }
+  if (typeof steps !== "number" || !Number.isSafeInteger(steps) ||
+      steps < CIVITAI_STEPS_RANGE.minimum || steps > CIVITAI_STEPS_RANGE.maximum) {
+    throw new Error(`Civitai Klein steps must be an integer between ${String(CIVITAI_STEPS_RANGE.minimum)} and ${String(CIVITAI_STEPS_RANGE.maximum)}`);
+  }
+  if (negativePrompt !== undefined) {
+    if (typeof negativePrompt !== "string") throw new Error("Civitai Klein negative prompt must be a string");
+    if (negativePrompt.length > CIVITAI_MAX_NEGATIVE_PROMPT_CHARS) {
+      throw new Error(`Civitai Klein negative prompts are limited to ${String(CIVITAI_MAX_NEGATIVE_PROMPT_CHARS)} characters`);
+    }
+  }
+
+  // A negative prompt is INERT at guidance 1: with no unconditional branch there
+  // is nothing to steer away from. Measured on 2026-09-16 — the same seed with
+  // and without a negative prompt at cfgScale 1 produced pixel-identical output
+  // while the provider echoed the field back both times. Accepting it here would
+  // bill for a setting that demonstrably does nothing and report success, so the
+  // combination is refused and names the fix.
+  const trimmedNegative = typeof negativePrompt === "string" && negativePrompt.trim() !== "" ? negativePrompt : null;
+  if (trimmedNegative !== null && cfgScale <= 1) {
+    throw new Error("Civitai Klein ignores a negative prompt at cfgScale 1; raise cfgScale above 1 or clear the negative prompt");
+  }
+
+  return { cfgScale, steps, negativePrompt: trimmedNegative };
+}
+
 export function validateCivitaiKleinRequest(model: Pick<ImageModel, "slug">, request: KleinRequest): void {
   if (model.slug !== CIVITAI_FLUX2_KLEIN4B_SLUG) throw new Error("Unsupported Civitai image model");
   if (request.versionId !== undefined && request.versionId !== CIVITAI_KLEIN_4B_VERSION_ID) {
@@ -110,6 +237,7 @@ export function validateCivitaiKleinRequest(model: Pick<ImageModel, "slug">, req
     throw new Error("Civitai Klein seed must be a safe integer");
   }
   selectedLora(request.controlInput);
+  resolveCivitaiKleinSampling(request.controlInput);
   civitaiKleinDimensions(request.aspect);
 }
 
@@ -122,6 +250,7 @@ export function civitaiKleinWorkflow(
   validateCivitaiKleinRequest(model, request);
   if (references.length > MAX_REFERENCES) throw new Error("Civitai Klein accepts at most 2 reference images");
   const seed = request.controlInput?.seed;
+  const sampling = resolveCivitaiKleinSampling(request.controlInput);
   return {
     externalId: randomUUID(),
     allowMatureContent: true,
@@ -138,13 +267,14 @@ export function civitaiKleinWorkflow(
         prompt: request.prompt,
         ...civitaiKleinDimensions(request.aspect),
         quantity: 1,
-        cfgScale: 5,
-        steps: 20,
+        cfgScale: sampling.cfgScale,
+        steps: sampling.steps,
         sampleMethod: "euler",
         schedule: "simple",
         outputFormat: "jpeg",
         enablePromptExpansion: false,
         loras: loras ?? {},
+        ...(sampling.negativePrompt === null ? {} : { [CIVITAI_NEGATIVE_PROMPT_FIELD]: sampling.negativePrompt }),
         ...(seed === undefined ? {} : { seed }),
         ...(references.length === 0 ? {} : { images: references }),
       },
@@ -297,6 +427,12 @@ export function validateCivitaiPreflightEcho(actual: CivitaiWorkflowResult, expe
     if (echoed[key] !== wanted[key]) return `Civitai preflight changed or omitted requested field ${key}`;
   }
   if (wanted.seed !== undefined && echoed.seed !== wanted.seed) return "Civitai preflight changed the requested seed";
+  // Checked by presence as well as value: the provider discards a negative
+  // prompt it does not recognize instead of rejecting it, so an omission here is
+  // the failure mode this guard exists for.
+  if (echoed[CIVITAI_NEGATIVE_PROMPT_FIELD] !== wanted[CIVITAI_NEGATIVE_PROMPT_FIELD]) {
+    return "Civitai preflight dropped or changed the requested negative prompt";
+  }
   if (asArray(echoed.images).length !== asArray(wanted.images).length) return "Civitai preflight did not preserve the reference-image count";
   const expectedLoras = asRecord(wanted.loras) ?? {};
   const actualLoras = asRecord(echoed.loras);
@@ -402,7 +538,7 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
     predictionId = asString(asRecord(submitted)?.id) ?? undefined;
     let result = parseCivitaiWorkflow(submitted, "Civitai generation submit");
     predictionId = result.id;
-    const deadline = Date.now() + Math.max(30_000, request.timeoutMs ?? 300_000);
+    const deadline = Date.now() + Math.max(30_000, request.timeoutMs ?? CIVITAI_DEFAULT_TIMEOUT_MS);
     while (PENDING_STATUSES.has(result.status)) {
       if (result.insufficient === true) throw civitaiInsufficientBuzzFailure();
       if (result.errors.length > 0) throw civitaiAsyncFailure(result.status, result.errors, result.blocked);
