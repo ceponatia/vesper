@@ -107,10 +107,11 @@ describe("adapterForImageModel: FLUX.2 klein (#567)", () => {
     expect(adapterForImageModel("black-forest-labs/flux-2-klein-9b-base-lora")).toBe(fluxKleinBaseLora);
   });
 
-  it("resolves Civitai distilled 4B to its own LoRA-capable adapter", () => {
+  it("resolves Civitai v2 Klein 4B to its own edit-and-LoRA-capable adapter", () => {
     expect(adapterForImageModel(CIVITAI_FLUX2_KLEIN4B_SLUG)).toBe(fluxKleinCivitaiDistilledLora);
     expect(fluxKleinCivitaiDistilledLora.capabilities).toContain("lora");
-    expect(fluxKleinCivitaiDistilledLora.capabilities).toContain("negativePrompt");
+    expect(fluxKleinCivitaiDistilledLora.capabilities).toContain("multiReference");
+    expect(fluxKleinCivitaiDistilledLora.capabilities).not.toContain("negativePrompt");
     expect(fluxKleinCivitaiDistilledLora.capabilities).not.toContain("fastMode");
   });
 

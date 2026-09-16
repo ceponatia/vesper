@@ -137,6 +137,20 @@ Subagents never run on the session's own model when that model is Fable.
 - In JSX prose, preserve whitespace at line-wrapped expression/element boundaries with `{" "}` or explicit
   string-expression children.
 
+## Image-model requirements
+
+- Do not recommend, onboard, or use fal.ai-hosted image models for Vesper.
+- Every image model must support all three mandatory capabilities: runtime LoRAs, NSFW generation,
+  and reference-image inputs. LoRAs and reference images must work together in the same request.
+- Verify these capabilities on the exact provider endpoint and model version, including the provider's
+  content policy and account restrictions. A model-family claim or a safety-toggle field alone is not proof.
+- Treat missing or unverified requirements as blockers to model suitability. Distinguish provider
+  limitations from unfinished Vesper integration; do not silently relax these requirements.
+- An explicitly unverified model may remain selectable only in the admin Image Generator bench
+  to collect the missing live evidence. Keep production profiles disabled and label the account,
+  combined LoRA/reference behavior, and output quality as unverified until tested on the exact
+  endpoint and variant. This bench access does not establish model suitability.
+
 ## Database changes
 
 - Follow schema -> `pnpm db:generate` -> review generated SQL -> migrate. Never use `drizzle-kit push`.

@@ -37,7 +37,7 @@ import {
 import { providerInputViolations } from "@vesper/image-replicate";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOrNull } from "@/lib/parse";
-import { previewImageModelRequest } from "../ai";
+import { previewImageModelRequest, providerInputRequest } from "../ai";
 import { db, imageGeneratorRuns } from "../db";
 import { imageMeta } from "./asset-storage";
 import {
@@ -514,7 +514,7 @@ export async function prepareGeneratorRequest(
   // wrong. It catches what the raw-bag gate structurally cannot: a REQUIRED
   // field that is reserved to a normalized control and has no provider default,
   // which the bag may not fill and the render path did not.
-  const violations = providerInputViolations(sentModel, sentRequest, [
+  const violations = providerInputViolations(sentModel, providerInputRequest(sentModel, sentRequest), [
     ...plan.controlReferences.map((control) => control.field),
     // Typed semantic-control fields share the dedicated fields' trust: a
     // curated LoRA's probed weights field may carry its URI here, while the
