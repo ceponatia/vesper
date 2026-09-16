@@ -1030,6 +1030,13 @@
       "when": 1789776000000,
       "tag": "0146_civitai-flux2-klein-4b-v2",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1789779600000,
+      "tag": "0147_credential-failure-backoff",
+      "breakpoints": true
     }
   ]
 }
