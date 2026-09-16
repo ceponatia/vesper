@@ -1,41 +1,5 @@
 name: CI
 
-# Milestone-gated CI on GitHub-hosted `ubuntu-latest` runners. The repository is
-# public, so runner minutes are free and a run costs nothing to start. There is
-# no local pre-push gate; this workflow is the repository verification gate,
-# shared record, and promotion gate.
-#
-# Draft PRs run nothing: every job is draft-guarded, so pushes to a draft run
-# zero jobs — a draft neither waits on a suite nor adds check noise while the
-# work is still moving. Marking a PR ready for review (`gh pr ready`) runs the
-# full applicable suite and produces the aggregate `verify` result; `gh pr ready
-# --undo` returns to free iteration. Manual dispatch (`gh workflow run CI --ref
-# main`) is the deliberate pre-deploy verification and runs every gate.
-# Documentation-only changes run only the `docs` job — the zero-install
-# `pnpm lint:docs` checks — and skip every code gate; database and
-# engine-specific work only runs when affected. A documentation follow-up to
-# a revision that already passed `verify` takes the same docs-only path for
-# that run: `scripts/ci-safe-followup.mjs` confirms the update is a plain
-# ancestor-preserving push touching documentation paths only, that the
-# previous head's CI run for this PR succeeded with its `verify` check green,
-# and that the base did not move — then the new head runs the docs checks and
-# earns its own fresh `verify`. Anything the detector cannot prove (force push,
-# rebase, workflow or other code path, missing or non-green previous result,
-# API error) falls back to the ordinary whole-PR classification. `verify`
-# requires every APPLICABLE gate to have succeeded, so a gate that is skipped
-# or cancelled while its classifier output says it should have run fails the
-# aggregate.
-#
-# Job shape: every job repeats its own fixed setup (checkout + install), which
-# on the short gates takes as long as the work itself. Two consequences follow
-# here. The Gate 1 benchmark is a step of the engine job rather than a job
-# of its own — it needs no database, and 25s of eval would otherwise sit behind
-# a second checkout + install. And the production build, the slowest gate, runs
-# on PRs only when the build surface itself moves; every other code PR is
-# covered by the `gh workflow run CI --ref main` dispatch that precedes each
-# deploy, which always builds. That is current policy, and it is what keeps a
-# PR run short. Lint, static checks, and the pure suite stay unconditional on
-# every ready code PR.
 on:
   pull_request:
     branches: [main, prod]
@@ -48,10 +12,6 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Every job only reads. `actions` and `checks` are what the safe-follow-up
-# detector needs to look up the previous head's workflow run and its `verify`
-# check run; `contents` is checkout; `pull-requests` covers the run lookup's
-# pull-request association.
 permissions:
   actions: read
   checks: read
@@ -61,10 +21,9 @@ permissions:
 jobs:
   changes:
     name: classify changes
-    # Draft gate for the whole workflow: every other job `needs` this one, so
-    # skipping it here skips the entire suite for draft PRs.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       docs_only: ${{ steps.classify.outputs.docs_only }}
       docs: ${{ steps.classify.outputs.docs }}
@@ -72,21 +31,17 @@ jobs:
       integration: ${{ steps.classify.outputs.integration }}
       engine: ${{ steps.classify.outputs.engine }}
       build: ${{ steps.classify.outputs.build }}
+      docker: ${{ steps.classify.outputs.docker }}
       safe_followup: ${{ steps.classify.outputs.safe_followup }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      # Zero-install, like the docs job: the script is plain ESM on Node
-      # built-ins and the global fetch. It always exits 0 — a `false` verdict
-      # is the ordinary path, never a failure — and its reason is printed.
-      - name: Detect safe follow-up
+      - name: Detect safe documentation follow-up
         id: followup
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -101,263 +56,68 @@ jobs:
           GITHUB_API_URL: ${{ github.api_url }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci-safe-followup.mjs
-
-      - name: Classify changed paths
-        id: classify
+      - name: Collect changed paths
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_REF: ${{ github.base_ref }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          SAFE_FOLLOWUP: ${{ steps.followup.outputs.safe_followup }}
-          SAFE_FOLLOWUP_REASON: ${{ steps.followup.outputs.reason }}
         run: |
           set -euo pipefail
-
-          # Manual runs are deliberate full verification runs.
+          : > changed-files.txt
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            {
-              echo "docs_only=false"
-              echo "docs=true"
-              echo "code=true"
-              echo "integration=true"
-              echo "engine=true"
-              echo "build=true"
-              echo "safe_followup=false"
-            } >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
-          # A documentation follow-up to an already-green revision: the code
-          # the previous run proved is unchanged, so only the docs job runs
-          # and `verify` is produced fresh from it. The detector has already
-          # excluded prod-bound, force-pushed, rebased and non-documentation
-          # updates, so this is the docs-only verdict for this run.
-          if [[ "$SAFE_FOLLOWUP" == "true" ]]; then
-            echo "Safe documentation follow-up: $SAFE_FOLLOWUP_REASON"
-            {
-              echo "docs_only=true"
-              echo "docs=true"
-              echo "code=false"
-              echo "integration=false"
-              echo "engine=false"
-              echo "build=false"
-              echo "safe_followup=true"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # `--no-renames`: with rename detection a file moved from a code
-          # path into a documentation path is listed only at its destination,
-          # which would classify a code removal as documentation-only. Both
-          # sides of every rename must face the path rules below.
           zero_sha="0000000000000000000000000000000000000000"
           if [[ -z "$BASE_SHA" || "$BASE_SHA" == "$zero_sha" ]]; then
             git diff-tree --no-commit-id --name-only --no-renames -r "$HEAD_SHA" > changed-files.txt
           else
             git diff --name-only --no-renames "$BASE_SHA" "$HEAD_SHA" > changed-files.txt
           fi
-
           echo "Changed files:"
           sed 's/^/  /' changed-files.txt
-
-          docs_only=true
-          docs=false
-          code=false
-          integration=false
-          engine=false
-          build=false
-
-          # A promotion to prod is intentionally a full release-candidate run.
-          if [[ "$EVENT_NAME" == "pull_request" && "$BASE_REF" == "prod" ]]; then
-            docs_only=false
-            docs=true
-            code=true
-            integration=true
-            engine=true
-            build=true
-          fi
-
-          while IFS= read -r path; do
-            [[ -z "$path" ]] && continue
-
-            # `docs` starts the documentation checks whenever a documentation
-            # path moved; `docs_only` is the whole-PR verdict that lets the
-            # code gates stand down. A mixed PR sets both `docs` and `code`.
-            case "$path" in
-              docs/*|*.md|.github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE*)
-                docs=true
-                ;;
-              *)
-                docs_only=false
-                code=true
-                ;;
-            esac
-
-            # ---- `engine integration` -----------------------------------
-            # The one job that needs a database: it brings up Docker Compose
-            # for Postgres/pgvector, which makes it the slowest gate. It runs
-            # exactly `pnpm test:engine` — the successor-engine simulation
-            # stores, the successor chat/admin routes, and the DB-backed
-            # image/identity-pack lifecycle suites — plus the Gate 1 benchmark
-            # step.
-            #
-            # Shape: a short list of VALIDATED EXCLUSIONS, then BROAD
-            # FALLBACKS. That direction is deliberate. A stale glob here fails
-            # OPEN — the job simply skips and aggregate `verify` stays green —
-            # so a new server subsystem or route family must start the
-            # integration job by default and stop only when someone has checked
-            # that no `test:engine` suite executes it. The dead
-            # `apps/web/src/contracts/simulation/*` glob that sat in the engine
-            # list below from PR #106 until #166 is what that failure looks
-            # like. Adding a file should never require knowing the shape of the
-            # application tree.
-            #
-            # Each exclusion below was checked against what the suite actually
-            # EXECUTES, not what it imports. The import closure is useless as a
-            # criterion: 327 of the 334 modules under apps/web/src/contracts
-            # are reachable from the suite's module graph, as is every module
-            # of the legacy chat lane. What earns an integration run is
-            # narrower — a defect only a real database can catch: persistence and
-            # transaction semantics, migration compatibility, concurrency and
-            # keyed locking, DB-stored idempotency, branch/fork/replay
-            # persistence, the projection stores, successor route→engine
-            # wiring, the DB-backed identity-pack lifecycle, and the
-            # Docker/Postgres setup itself.
-            #
-            # ORDER MATTERS: a bash `case` takes the first matching arm and
-            # `*` matches `/`, so every exclusion must precede its fallback.
-            case "$path" in
-              # EXCLUSION 1a — the shared chat-lane modules that are NOT
-              # excluded. `runSimChatExchange`, the successor turn core that
-              # `chats/sim-routes.int.test.ts` drives end to end, persists
-              # through `persistAssistantReply`/`pushReplyTake`
-              # (chat-reply-store), `enqueueChatSummary`/`loadChatSummary`
-              # (chat-summary) and `readChatEngineAuthority` (chat-authority),
-              # while chat-pipeline orchestrates those shared calls, so the
-              # integration suite owns the three leaves' writes and their
-              # coordinator wiring. The extracted reply-stream owner retains its
-              # coordinator's selection; its lifecycle assertions run in the
-              # unit job.
-              apps/web/src/server/engine/chat-pipeline*|apps/web/src/server/engine/chat-reply-stream*|apps/web/src/server/engine/chat-reply-store*|apps/web/src/server/engine/chat-summary*|apps/web/src/server/engine/chat-authority*)
-                integration=true
-                ;;
-              # EXCLUSION 1 — the rest of the legacy character-chat lane.
-              # `pnpm test:engine` runs NONE of its 18 integration suites:
-              # those are the manual `pnpm test:int` surface. An integration
-              # run proves nothing about them, and their pure tests, typecheck
-              # and lint all run in the other jobs.
-              apps/web/src/server/engine/chat-*|apps/web/src/server/engine/prompts/chat-*|apps/web/src/server/engine/prompts/character-chat*)
-                ;;
-              # EXCLUSION 2 — server subsystems no `test:engine` suite
-              # executes. Every route suite replaces `@/server/auth` with the
-              # harness's `routeAuthModule`, so the real module never runs;
-              # authoring, memory and reference-extraction are reached only
-              # through the excluded chat lane.
-              apps/web/src/server/auth/*|apps/web/src/server/authoring/*|apps/web/src/server/memory/*|apps/web/src/server/reference-extraction/*)
-                ;;
-              # FALLBACK — all remaining server code and every API route.
-              # Deliberately broad. The stateful engine, the schema, the
-              # integration harness and the DB-backed image/identity-pack
-              # surface all live under server/, and the suite drives four route
-              # families plus the identity-pack, portrait and gallery routes.
-              # Narrowing the route side to the covered families was measured
-              # over 100 merged PRs and saved zero integration runs, so the broad
-              # pattern costs nothing and keeps a new route or subsystem
-              # covered by default.
-              apps/web/src/server/*|apps/web/src/app/api/*)
-                integration=true
-                ;;
-              # EXCLUSION 3 — app contracts other than the image family.
-              # apps/web/src/contracts is ESLint-enforced pure (no @/server
-              # imports), carries 159 co-located pure test files, and owns no
-              # database behaviour: the simulation stores import zero app
-              # contracts, and every persisted payload shape comes from
-              # @vesper/simulation-core/contracts or @vesper/image-core, which
-              # still trigger below. The image family is the exception — its
-              # payloads are what the covered stores write into jsonb columns,
-              # where a tightened schema breaks a store write at runtime in a
-              # way typecheck cannot see.
-              apps/web/src/contracts/images/*)
-                integration=true
-                ;;
-              apps/web/src/contracts/*)
-                ;;
-              # FALLBACK — everything outside apps/web/src the run depends on:
-              # story-time helpers, the Vitest setup file the integration run
-              # loads, the workspace packages (simulation-core is the kernel
-              # under test, image-core types the image columns, contracts
-              # supplies the determinism primitives stored hashes depend on),
-              # migrations and their runner, the Compose/Postgres image, and
-              # the install inputs — a dependency change can break the suite's
-              # ability to run at all even when no engine source moved.
-              #
-              # `scripts/eval/engine-gate1/*` is here as well as in the engine
-              # block so that `engine` stays a strict subset of `integration`:
-              # the Gate 1 benchmark runs as a step of this job, and a step
-              # cannot run in a job that was skipped.
-              #
-              # Three former entries are deliberately absent. `Dockerfile` is
-              # the application image, which this job never builds — Compose
-              # builds docker/postgres/Dockerfile, matched by `docker/*`.
-              # `drizzle.config.*` is drizzle-kit's config, and
-              # `scripts/db-migrate.ts` hardcodes its own migrations folder.
-              # `tsconfig*.json` shapes typecheck, not this run: Vitest takes
-              # its `@/` alias from vitest.config.ts.
-              apps/web/src/lib/simulation/*|apps/web/src/test/*|packages/*|drizzle/*|scripts/db-*.ts|scripts/eval/engine-gate1/*|docker/*|docker-compose*.yml|package.json|apps/web/package.json|pnpm-lock.yaml|pnpm-workspace.yaml|vitest.config.*)
-                integration=true
-                ;;
-            esac
-
-            # `engine` gates the Gate 1 benchmark STEP inside the integration
-            # job, so every pattern here must also set `integration` above.
-            # The chat-lane exclusion is repeated for exactly that reason: it
-            # is what keeps the benchmark from being stranded in a skipped job.
-            case "$path" in
-              apps/web/src/server/engine/chat-*|apps/web/src/server/engine/prompts/chat-*|apps/web/src/server/engine/prompts/character-chat*)
-                ;;
-              apps/web/src/server/engine/*|apps/web/src/lib/simulation/*|packages/simulation-core/*|scripts/eval/engine-gate1/*)
-                engine=true
-                ;;
-            esac
-
-            # Editing this workflow used to force integration + engine, so a
-            # one-line CI change cost a full suite to validate. It is code, so
-            # lint/static/unit still cover it; the pre-deploy dispatch is what
-            # exercises every job end to end.
-            case "$path" in
-              package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig*.json|apps/web/package.json|apps/web/tsconfig.json|packages/*/package.json|packages/*/tsconfig.json|apps/web/next.config.*|Dockerfile|scripts/web.mjs|apps/web/src/proxy.ts|apps/web/src/instrumentation.ts)
-                build=true
-                ;;
-            esac
-          done < changed-files.txt
-
+      - name: Classify changed paths
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          SAFE_FOLLOWUP: ${{ steps.followup.outputs.safe_followup }}
+          CHANGED_FILES_FILE: changed-files.txt
+        run: node scripts/ci-classify.mjs
+      - name: Summarize selection
+        env:
+          DOCS: ${{ steps.classify.outputs.docs }}
+          CODE: ${{ steps.classify.outputs.code }}
+          INTEGRATION: ${{ steps.classify.outputs.integration }}
+          ENGINE: ${{ steps.classify.outputs.engine }}
+          BUILD: ${{ steps.classify.outputs.build }}
+          DOCKER: ${{ steps.classify.outputs.docker }}
+          SAFE_FOLLOWUP: ${{ steps.classify.outputs.safe_followup }}
+        run: |
           {
-            echo "docs_only=$docs_only"
-            echo "docs=$docs"
-            echo "code=$code"
-            echo "integration=$integration"
-            echo "engine=$engine"
-            echo "build=$build"
-            echo "safe_followup=false"
-          } >> "$GITHUB_OUTPUT"
+            echo '### CI selection'
+            echo '| Gate | Selected |'
+            echo '| --- | --- |'
+            echo "| docs | $DOCS |"
+            echo "| code | $CODE |"
+            echo "| integration | $INTEGRATION |"
+            echo "| engine benchmark | $ENGINE |"
+            echo "| production build | $BUILD |"
+            echo "| Docker build | $DOCKER |"
+            echo "| safe documentation follow-up | $SAFE_FOLLOWUP |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   docs:
     name: documentation checks
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # No pnpm and no install: `scripts/check-docs.mjs` is plain ESM on Node
-      # built-ins alone, so this job is a checkout, a Node setup and a few
-      # seconds of script. Keeping that script dependency-free is what keeps a
-      # docs-only PR fast — adding a dependency to it would silently put a full
-      # install in front of every documentation PR.
       - name: Links, section citations, retired-document references
         run: node scripts/check-docs.mjs
 
@@ -366,6 +126,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -384,10 +145,10 @@ jobs:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          # lint:authz diffs the PR against origin/main.
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -399,10 +160,13 @@ jobs:
         run: pnpm lint:cycles
       - name: Route-authorization guard
         run: pnpm lint:authz
+        env:
+          ROUTE_AUTHZ_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - name: Full route-authorization inventory
+        if: github.event_name == 'workflow_dispatch' || github.base_ref == 'prod'
+        run: pnpm exec tsx scripts/check-route-authz-all.ts
       - name: Workspace import integrity
         run: pnpm lint:package-boundaries
-      # Imports every workspace package by its public name through the installed
-      # workspace, so a broken exports map or link cannot hide behind a tool alias.
       - name: Workspace package resolution
         run: pnpm lint:package-resolution
       - name: Typecheck
@@ -412,11 +176,16 @@ jobs:
       - name: Copy-paste threshold
         run: pnpm jscpd
 
-  unit:
-    name: unit tests
+  unit-app:
+    name: app unit tests (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/2, 2/2]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -425,14 +194,36 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Pure test suite
-        run: pnpm test
+      - name: Application pure-test shard
+        run: pnpm exec vitest run --project=app --shard=${{ matrix.shard }}
+
+  unit-packages:
+    name: workspace package tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Package-owned pure suites
+        run: pnpm -r --workspace-concurrency=2 run test
 
   integration:
-    name: engine integration
+    name: engine integration (${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/2, 2/2]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -445,33 +236,26 @@ jobs:
         run: docker compose up -d --wait
       - name: Apply migrations from zero
         run: pnpm db:migrate
-      - name: Engine and rollout integration suite
-        run: pnpm test:engine
+      - name: Curated integration shard
+        run: pnpm test:engine -- --project=app-int --shard=${{ matrix.shard }}
         env:
           VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER: 1
-      - name: Stop successor-engine database
+      - name: Gate 1 deterministic-path benchmark
+        if: needs.changes.outputs.engine == 'true' && matrix.shard == '1/2'
+        run: pnpm eval:engine-gate1
+      - name: Print database logs on failure
+        if: failure()
+        run: docker compose logs --no-color || true
+      - name: Stop integration database
         if: always()
         run: docker compose down -v
-
-      # Folded in from the former `engine benchmark` job: the eval needs no
-      # database, and 25s of work was waiting on a second checkout + install. It
-      # runs after teardown so a benchmark failure cannot leak the container,
-      # and stays gated on `engine` — the classifier keeps that a subset of
-      # `integration`, so this step is never stranded in a skipped job.
-      - name: Gate 1 deterministic-path benchmark
-        if: needs.changes.outputs.engine == 'true'
-        run: pnpm eval:engine-gate1
 
   production-build:
     name: production build
     needs: changes
-    # The slowest gate, and the one the pre-deploy dispatch always repeats, so
-    # PRs run it only when the build surface moves (manifests, module
-    # resolution, the Next or Docker build config). `build` is forced true for
-    # workflow_dispatch and for prod-bound PRs, so the release-candidate run
-    # and every promotion still build.
     if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -480,27 +264,45 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Restore Next build cache
+        uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('pnpm-lock.yaml') }}-
+            ${{ runner.os }}-next-
       - name: Next.js production build
         run: pnpm build
         env:
-          # Same heap ceiling as the Dockerfile build stage — a build that
-          # would OOM on the Fly builder must fail here, on the PR, first.
           NODE_OPTIONS: --max-old-space-size=4096
+
+  docker-build:
+    name: Docker packaging build
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --pull=false -t vesper-ci:${{ github.sha }} .
 
   verify:
     name: verify
-    # always() so one failed gate can't hide behind a skipped dependent, but
-    # never on drafts — a draft must show no `verify` at all, not a green one.
     if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     needs:
       - changes
       - docs
       - lint
       - static
-      - unit
+      - unit-app
+      - unit-packages
       - integration
       - production-build
+      - docker-build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Require every applicable gate
         env:
@@ -508,25 +310,21 @@ jobs:
           DOCS_RESULT: ${{ needs.docs.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           STATIC_RESULT: ${{ needs.static.result }}
-          UNIT_RESULT: ${{ needs.unit.result }}
+          UNIT_APP_RESULT: ${{ needs.unit-app.result }}
+          UNIT_PACKAGES_RESULT: ${{ needs.unit-packages.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           BUILD_RESULT: ${{ needs.production-build.result }}
-          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
-          SAFE_FOLLOWUP: ${{ needs.changes.outputs.safe_followup }}
+          DOCKER_RESULT: ${{ needs.docker-build.result }}
           DOCS: ${{ needs.changes.outputs.docs }}
           CODE: ${{ needs.changes.outputs.code }}
           INTEGRATION: ${{ needs.changes.outputs.integration }}
           BUILD: ${{ needs.changes.outputs.build }}
+          DOCKER: ${{ needs.changes.outputs.docker }}
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          SAFE_FOLLOWUP: ${{ needs.changes.outputs.safe_followup }}
         run: |
           set -euo pipefail
           failed=0
-
-          # A gate the classifier enabled must have SUCCEEDED — `skipped` or
-          # `cancelled` there means the check never ran, and a check that never
-          # ran is not a pass. A gate the classifier did not enable is allowed
-          # to be skipped and nothing else. The classifier itself must succeed:
-          # when it fails, every output is empty and every gate skips, which
-          # this rule turns into a red `verify` instead of a green one.
           gate() {
             local name="$1" applicable="$2" result="$3"
             if [[ "$applicable" == "true" ]]; then
@@ -539,23 +337,22 @@ jobs:
               failed=1
             fi
           }
-
           gate "classify changes" true "$CHANGES_RESULT"
           gate "documentation checks" "$DOCS" "$DOCS_RESULT"
           gate "lint" "$CODE" "$LINT_RESULT"
           gate "static checks" "$CODE" "$STATIC_RESULT"
-          gate "unit tests" "$CODE" "$UNIT_RESULT"
+          gate "app unit tests" "$CODE" "$UNIT_APP_RESULT"
+          gate "workspace package tests" "$CODE" "$UNIT_PACKAGES_RESULT"
           gate "engine integration" "$INTEGRATION" "$INTEGRATION_RESULT"
           gate "production build" "$BUILD" "$BUILD_RESULT"
-
+          gate "Docker packaging build" "$DOCKER" "$DOCKER_RESULT"
           if [[ "$failed" != "0" ]]; then
             exit 1
           fi
-
           if [[ "$SAFE_FOLLOWUP" == "true" ]]; then
-            echo "Safe documentation follow-up: documentation checks passed; previous revision's code gates stand."
+            echo "Safe documentation follow-up passed."
           elif [[ "$DOCS_ONLY" == "true" ]]; then
-            echo "Documentation-only change: documentation checks passed; code gates intentionally skipped."
+            echo "Documentation-only change passed."
           else
             echo "All applicable CI gates passed."
           fi

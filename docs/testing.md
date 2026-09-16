@@ -12,7 +12,7 @@ Do not run application tests or gates on the development machine. The prohibitio
 
 Code changes are validated by the applicable jobs in `.github/workflows/ci.yml`. A documentation-only change may run `pnpm lint:docs` locally because `scripts/check-docs.mjs` uses Node built-ins and starts no application service. A skill-owned shell or Python helper may use dependency-free offline fixture tests when those fixtures start neither Vesper nor a database nor an external service.
 
-Command definitions in `package.json` describe CI composition and suite ownership. Their presence does not authorize local execution.
+Command definitions in `package.json` describe suite ownership. CI may invoke a narrower command directly when it needs to shard work across independent GitHub-hosted runners. Their presence does not authorize local execution.
 
 ## Test projects
 
@@ -23,7 +23,7 @@ The root `vitest.config.ts` declares two application projects:
 | `app`     | `apps/web/src/**` and `scripts/**`, excluding integration   | `apps/web/src/test/setup.ts` |
 | `app-int` | `apps/web/src/**` and `scripts/**` `*.int.test.ts` files    | `apps/web/src/test/setup.ts` |
 
-The root `pnpm test` script, used by CI's `unit tests` job, runs the `app` project and then invokes each workspace package's own `test` script serially. Every package owns its `vitest.config.ts`; adding a package does not add a root Vitest project or a root script entry.
+The root `pnpm test` script remains the developer-facing composition of the `app` project followed by every workspace package's own `test` script. CI does not execute that compound command as one serial job: it runs the `app` project in two Vitest shards and runs package-owned suites in a separate job. Every package owns its `vitest.config.ts`; adding a package does not add a root Vitest project or a root script entry.
 
 `apps/web` has no `test` script. Its tests already belong to the root `app` and `app-int` projects, and a recursive app script would collect them twice or run them from the wrong directory. The root directory matters because repository tripwires locate source through `process.cwd()`, and `scripts/**` tests share the application alias and setup.
 
@@ -38,7 +38,7 @@ The root integration scripts have different selections:
 | `pnpm test:engine`     | Explicit curated integration paths listed in `package.json`               |
 | `pnpm test:engine-e*`  | Focused engine proof paths used for targeted gate work                    |
 
-No current CI job selects `pnpm test:int` or `pnpm test:int:strict`. The workflow's database job selects `pnpm test:engine`; the CI section below states the resulting coverage boundary.
+CI selects the curated `pnpm test:engine` surface, but appends `--project=app-int` so a directory argument cannot accidentally collect pure tests that already ran in the unit shards. It also shards that curated integration surface across two independent runners. No current CI job selects the entire `pnpm test:int` or `pnpm test:int:strict` project; the coverage boundary is documented below.
 
 ## Test layers
 
@@ -87,31 +87,45 @@ Search these homes and the nearest existing suite before creating setup. Extend 
 
 Every application integration suite uses `probeIntegrationDb` from `@/server/test-support`, directly or through `simulationSuiteHarness`. In ordinary non-CI execution the probe can self-skip when the database is absent. Strict signals (`REQUIRE_INTEGRATION_DB=true`, `VESPER_REQUIRE_TEST_DB=1`, or `CI=true`) make absence or migration failure fatal.
 
-Suites that submit the legacy synthetic `player` principal against directly seeded simulation branches call `requireLegacyUnanchoredEngineTestMode`. CI's engine job exports `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1` for the curated engine run. Authorization-denial suites leave that capability disabled.
+Suites that submit the legacy synthetic `player` principal against directly seeded simulation branches call `requireLegacyUnanchoredEngineTestMode`. CI's curated engine shards export `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1`. Authorization-denial suites that are outside that curated command remain separate and must leave that capability disabled.
 
-Integration files run without file parallelism because they share a database. Image-row fixtures normally use `canonicalImageRow`, which derives a path satisfying the `images_path_canonical` database constraint. Tests of the constraint itself may deliberately construct invalid rows.
+Integration files still run without file parallelism because tests within one shard share one database. CI parallelism happens one level higher: each integration shard has its own runner, Postgres instance, migrations, and teardown. That preserves isolation while reducing wall-clock time. Image-row fixtures normally use `canonicalImageRow`, which derives a path satisfying the `images_path_canonical` database constraint. Tests of the constraint itself may deliberately construct invalid rows.
 
 ## The verification gate
 
-GitHub Actions runs `.github/workflows/ci.yml` on GitHub-hosted `ubuntu-latest` runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch on `main` and every pull request into `prod` force the integration and production-build gates.
+GitHub Actions runs `.github/workflows/ci.yml` on GitHub-hosted `ubuntu-latest` runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch and every pull request into `prod` force all release-candidate gates. Workflow-file changes also force the integration, production-build, and Docker packaging gates so CI changes exercise the jobs they modify.
 
-| Job                  | Current command and claim                                                           |
-| -------------------- | ----------------------------------------------------------------------------------- |
-| Documentation checks | `node scripts/check-docs.mjs`; links, section citations, retired references         |
-| Lint                 | `pnpm lint`; type-aware ESLint                                                      |
-| Static checks        | Cycles, route auth, package boundaries/resolution, typecheck, jscpd                 |
-| Unit tests           | `pnpm test`; root `app` plus every package-owned pure suite                         |
-| Engine integration   | Postgres, migrations, curated `pnpm test:engine`; Gate 1 only when `engine == true` |
-| Production build     | Next production build with the Fly builder's heap ceiling                           |
+| Job                      | Current command and claim                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------- |
+| Documentation checks     | `node scripts/check-docs.mjs`; links, section citations, retired references                  |
+| Lint                     | `pnpm lint`; type-aware ESLint                                                               |
+| Static checks            | Cycles, route auth, package boundaries/resolution, typecheck, jscpd                          |
+| App unit tests           | Two `vitest --project=app --shard=…` jobs                                                    |
+| Workspace package tests  | Package-owned pure suites with bounded workspace concurrency                                 |
+| Engine integration       | Two isolated Postgres-backed shards of curated `pnpm test:engine -- --project=app-int`       |
+| Production build         | Next production build with the Fly builder's heap ceiling and persisted `.next/cache`        |
+| Docker packaging build   | Production Docker image build when packaging inputs move and for release-candidate runs      |
 
-Documentation-only changes run the documentation job. Ready code changes run lint, static checks, and unit tests; changed-path rules decide whether the engine integration and production build jobs apply. A documentation-only follow-up may reuse the preceding revision's green code-gate basis only when `scripts/ci-safe-followup.mjs` proves the update is ancestor-preserving, documentation-only, against the same base, and follows a successful `verify` result. The new revision still earns its own documentation result and aggregate check.
+Documentation-only changes run the documentation job. Ready code changes run lint, static checks, both application-unit shards, and package tests. Changed-path rules decide whether integration, production build, and Docker packaging apply. `scripts/ci-classify.mjs` owns those path rules and has table-driven tests so an exclusion cannot drift silently from the suites CI actually runs.
 
-The aggregate `verify` job requires every applicable job to succeed and requires inapplicable jobs to be skipped or successful. It prevents an applicable cancelled or skipped job from appearing green. It does not claim that inapplicable jobs or unselected test files ran.
+Ordinary application and workspace-source changes now select the production build. This is intentional: the build has been cheaper than the slowest test gates in recent Actions runs, so running it concurrently broadens verification without normally extending the critical path. Docker validation remains narrower because it is intended to prove packaging inputs, not every application edit.
+
+A documentation-only follow-up may reuse the preceding revision's green code-gate basis only when `scripts/ci-safe-followup.mjs` proves the update is ancestor-preserving, documentation-only, against the same base, and follows a successful `verify` result. The new revision still earns its own documentation result and aggregate check.
+
+The aggregate `verify` job requires every applicable job to succeed and requires inapplicable jobs to be skipped or successful. A matrix job is successful only when every shard is successful, so one failed/cancelled unit or integration shard cannot hide behind another green shard.
+
+### Authorization verification
+
+The changed-route authorization guard receives the actual PR base SHA from CI rather than assuming `origin/main`, which keeps promotion PR comparisons correct. Manual full-verification runs and `prod`-bound promotion PRs also execute `scripts/check-route-authz-all.ts`, which scans every resource-ID route recognized by the guard and fails if any route lacks recognized authorization evidence.
+
+The full inventory is intentionally release-gated because it checks repository-wide state rather than only the current diff. It reports how many resource-ID routes it examined and fails when that count is zero: an API tree or `RESOURCE_ROUTE` change that empties the inventory is a broken gate, so it turns the release check red instead of passing a vacuous scan as evidence.
 
 ### What a green integration job proves
 
-The `engine integration` job starts Postgres, migrates from zero, and runs the exact `pnpm test:engine` path list in `package.json`. That list includes the successor simulation-store directory and named successor narrator, admin, image, identity-pack, and route suites. `CI=true` makes their database probes strict.
+The `engine integration` matrix starts two independent Postgres instances, migrates each from zero, and divides the exact `pnpm test:engine` path list in `package.json` across Vitest shards. That list includes the successor simulation-store directory and named successor narrator, admin, image, identity-pack, authoring, and route suites. `CI=true` makes their database probes strict.
 
-The job does not run the entire `app-int` project. In particular, `apps/web/src/app/api/gallery.int.test.ts` and `apps/web/src/server/api/authz-matrix.int.test.ts` are not selected. Many legacy-chat, route, memory, retention, quota, and other integration suites are also outside the curated command. A green `engine integration` job leaves every unselected suite unverified.
+The classifier treats `apps/web/src/server/authoring/**` as integration-relevant because the curated engine command includes DB-backed authoring suites. This closes the previous mismatch where authoring-only changes could skip the integration job that owned their database assertions.
 
-Completion reports map each target test file to the script and CI job that selected it. When a relevant integration suite is outside `test:engine`, the report states that it did not run, even if aggregate `verify` is green. `package.json` is the exact source of the curated selection; inferred family names are not evidence that a file ran.
+The curated job still does not run the entire `app-int` project. In particular, `apps/web/src/app/api/gallery.int.test.ts` and `apps/web/src/server/api/authz-matrix.int.test.ts` are not automatically selected merely because integration ran. Many legacy-chat, route, memory, retention, quota, and other integration suites also remain outside the curated command. A green integration matrix leaves every unselected suite unverified.
+
+Completion reports must therefore continue to map each target integration test file to the script and CI job that selected it. When a relevant suite is outside `test:engine`, the report states that it did not run, even if aggregate `verify` is green. `package.json` remains the exact source of the curated integration selection; inferred family names are not evidence that a file ran.
