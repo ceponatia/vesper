@@ -97,6 +97,10 @@ function asUnknownArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function isCivitaiHost(hostname: string): boolean {
+  return hostname === "civitai.com" || hostname.endsWith(".civitai.com");
+}
+
 function parseJsonText(text: string, context: string): unknown {
   try {
     return JSON.parse(text) as unknown;
@@ -144,6 +148,7 @@ function numericVersionId(value: unknown): number | null {
   if (/^\d+$/.test(trimmed)) return Number(trimmed);
   try {
     const url = new URL(trimmed);
+    if (!isCivitaiHost(url.hostname)) return null;
     const match = url.pathname.match(/\/api\/download\/models\/(\d+)(?:\/|$)/);
     return match?.[1] ? Number(match[1]) : null;
   } catch {
@@ -223,11 +228,10 @@ async function whatIf(graph: CivitaiGenerationGraph, token: string): Promise<Wha
   if (!payload || typeof payload.ready !== "boolean") {
     throw new Error("Civitai generation preflight returned no readiness result");
   }
+  const allowMatureContent = asBoolean(payload.allowMatureContent);
   return {
     ready: payload.ready,
-    ...(asBoolean(payload.allowMatureContent) === null
-      ? {}
-      : { allowMatureContent: asBoolean(payload.allowMatureContent) ?? undefined }),
+    ...(allowMatureContent === null ? {} : { allowMatureContent }),
     modelSubstitutions: asUnknownArray(payload.modelSubstitutions),
   };
 }
@@ -271,6 +275,21 @@ function blobsFromOutput(output: Record<string, unknown> | null): unknown[] {
   return output.blob === undefined || output.blob === null ? [] : [output.blob];
 }
 
+/**
+ * Civitai's RAW `getWorkflow` response stores the hidden flag in step metadata,
+ * keyed by blob id. It is not a blob field. The legacy key was `images`; the
+ * current key is `output`, with the current value winning when both exist.
+ */
+function hiddenForBlob(step: Record<string, unknown> | null, blobId: string): boolean {
+  if (!step || !blobId) return false;
+  const metadata = asRecord(step.metadata);
+  const current = asRecord(metadata?.output);
+  const legacy = asRecord(metadata?.images);
+  const currentMeta = asRecord(current?.[blobId]);
+  const legacyMeta = asRecord(legacy?.[blobId]);
+  return asBoolean(currentMeta?.hidden) ?? asBoolean(legacyMeta?.hidden) ?? false;
+}
+
 function parseWorkflow(value: unknown, requestedId: string): WorkflowResult {
   const payload = asRecord(unwrapTrpc(value, "Civitai workflow status"));
   if (!payload) throw new Error("Civitai workflow status returned an invalid workflow");
@@ -286,11 +305,12 @@ function parseWorkflow(value: unknown, requestedId: string): WorkflowResult {
       const blob = asRecord(blobValue);
       const url = asString(blob?.url);
       if (!url) continue;
+      const blobId = asString(blob?.id) ?? "";
       blobs.push({
         url,
         available: asBoolean(blob?.available) ?? false,
         blockedReason: asString(blob?.blockedReason),
-        hidden: asBoolean(blob?.hidden) ?? false,
+        hidden: hiddenForBlob(step, blobId),
       });
     }
     collectStrings(step?.errors, errors);
@@ -337,7 +357,7 @@ function civitaiOutputUrl(url: string): URL {
     throw new Error("Civitai returned an invalid output URL");
   }
   if (parsed.protocol !== "https:") throw new Error("Civitai output URL was not HTTPS");
-  if (parsed.hostname !== "civitai.com" && !parsed.hostname.endsWith(".civitai.com")) {
+  if (!isCivitaiHost(parsed.hostname)) {
     throw new Error(`Civitai returned output on an unexpected host: ${parsed.hostname}`);
   }
   return parsed;
@@ -346,6 +366,10 @@ function civitaiOutputUrl(url: string): URL {
 async function downloadOutput(url: string): Promise<Buffer> {
   const response = await fetch(civitaiOutputUrl(url), { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
   if (!response.ok) throw new Error(`Civitai output download failed (${String(response.status)})`);
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) {
+    throw new Error("Civitai image exceeded the 32 MiB download limit");
+  }
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.length === 0) throw new Error("Civitai returned an empty image");
   if (bytes.length > MAX_OUTPUT_BYTES) throw new Error("Civitai image exceeded the 32 MiB download limit");
