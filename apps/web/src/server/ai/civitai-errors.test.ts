@@ -41,7 +41,7 @@ describe("Civitai error contract", () => {
     });
     const insufficient = civitaiInsufficientBuzzFailure();
     expect(insufficient).toMatchObject({ code: "civitai_async_insufficient_buzz", retry: "never" });
-    expect(insufficient.message).toContain("insufficient yellow Buzz");
+    expect(insufficient.message).toContain("Insufficient yellow Buzz");
     expect(civitaiAsyncFailure("failed", ["expired"])).toMatchObject({
       code: "civitai_async_timeout", retry: "deliberate",
     });
