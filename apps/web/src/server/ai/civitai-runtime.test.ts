@@ -348,6 +348,66 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
   });
 
+  it.each(["fetch", "response text"] as const)("redacts a thrown preflight %s failure without retrying its POST", async (sentinel) => {
+    let workflowPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      workflowPosts += 1;
+      if (sentinel === "fetch") throw new Error("provider token=secret prompt=private");
+      const response = Response.json({ id: "unused" });
+      vi.spyOn(response, "text").mockRejectedValue(new Error("provider token=secret prompt=private"));
+      return response;
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(workflowPosts).toBe(1);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_transport_failure; retry=deliberate") });
+    if (result.ok) throw new Error("expected the preflight transport failure to fail");
+    expect(result.error).not.toContain("secret");
+    expect(result.error).not.toContain("private");
+  });
+
+  it.each(["fetch", "response text"] as const)("retries a thrown workflow-status %s failure as a bounded read", async (sentinel) => {
+    vi.useFakeTimers();
+    let statusReads = 0;
+    let workflowPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowPosts += 1;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-transport" : "submit-transport", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-transport")) {
+        statusReads += 1;
+        if (statusReads === 1) {
+          if (sentinel === "fetch") throw new Error("provider token=secret prompt=private");
+          const response = Response.json({ id: "unused" });
+          vi.spyOn(response, "text").mockRejectedValue(new Error("provider token=secret prompt=private"));
+          return response;
+        }
+        return Response.json({
+          id: "submit-transport", status: "succeeded", allowMatureContent: true,
+          currencies: ["yellow"], transactions: { insufficientBuzz: false },
+          steps: [{ $type: "imageGen", input: {}, output: { images: [{ url: "https://image.civitai.com/output.jpg", available: true }] } }],
+        });
+      }
+      if (href === "https://image.civitai.com/output.jpg") return new Response("image", { status: 200 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-transport" });
+    expect(statusReads).toBe(2);
+    expect(workflowPosts).toBe(2);
+  });
+
   it("redacts output-download transport sentinels without retrying the download", async () => {
     let outputReads = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
@@ -371,6 +431,61 @@ describe("Civitai Klein v2 transport", () => {
     expect(outputReads).toBe(1);
     expect(result).toMatchObject({ ok: false, predictionId: "submit-output", error: expect.stringContaining("civitai_output_transport_failure; retry=deliberate") });
     if (result.ok) throw new Error("expected the output download to fail");
+    expect(result.error).not.toContain("secret");
+    expect(result.error).not.toContain("private");
+  });
+
+  it.each([
+    ["an invalid output URL", "not a URL", "civitai_output_invalid; retry=never", 0, undefined],
+    ["an untrusted output URL", "https://example.test/output.jpg", "civitai_output_invalid; retry=never", 0, undefined],
+    ["an output HTTP failure", "https://image.civitai.com/output.jpg", "civitai_output_http_503; retry=deliberate", 1, () => new Response("token=secret", { status: 503 })],
+    ["an oversized declared output", "https://image.civitai.com/output.jpg", "civitai_output_too_large; retry=never", 1, () => new Response("unused", { headers: { "content-length": "33554433" } })],
+    ["an oversized output stream", "https://image.civitai.com/output.jpg", "civitai_output_too_large; retry=never", 1, () => ({
+      ok: true,
+      headers: new Headers(),
+      body: {
+        getReader: () => ({
+          read: async () => ({ done: false, value: { byteLength: 32 * 1024 * 1024 + 1 } }),
+          cancel: async () => undefined,
+        }),
+      },
+    }) as unknown as Response],
+    ["an absent output body", "https://image.civitai.com/output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response(null)],
+    ["an empty output stream", "https://image.civitai.com/output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response("")],
+    ["a thrown output stream read", "https://image.civitai.com/output.jpg", "civitai_output_transport_failure; retry=deliberate", 1, () => ({
+      ok: true,
+      headers: new Headers(),
+      body: {
+        getReader: () => ({
+          read: async () => { throw new Error("provider token=secret prompt=private"); },
+          cancel: async () => undefined,
+        }),
+      },
+    }) as unknown as Response],
+  ] as const)("redacts %s", async (_description, outputUrl, expectedError, expectedOutputReads, outputResponse) => {
+    let outputReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output-boundary" : "submit-output-boundary", whatif === "true" ? "unassigned" : "succeeded", [{
+          url: outputUrl, available: true,
+        }]));
+      }
+      if (href === outputUrl) {
+        outputReads += 1;
+        if (!outputResponse) throw new Error(`Unexpected output fetch ${href}`);
+        return outputResponse();
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(outputReads).toBe(expectedOutputReads);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-output-boundary", error: expect.stringContaining(expectedError) });
+    if (result.ok) throw new Error("expected the output boundary to fail");
     expect(result.error).not.toContain("secret");
     expect(result.error).not.toContain("private");
   });
