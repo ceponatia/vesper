@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { classifyImageFailureMessage } from "@vesper/image-core";
 import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths } from "./civitai-errors";
 
 describe("Civitai error contract", () => {
@@ -22,6 +23,7 @@ describe("Civitai error contract", () => {
     expect(civitaiTransportFailure("workflow_status", true, true)).toMatchObject({
       code: "civitai_transport_failure", retry: "automatic", automaticRetriesExhausted: true,
     });
+    expect(classifyImageFailureMessage(civitaiHttpFailure(503, "workflow_status", true, [], true).message)).toBe("transient");
     expect(civitaiTransportFailure("submit", false)).toMatchObject({
       code: "civitai_transport_failure", retry: "deliberate",
     });
@@ -37,9 +39,9 @@ describe("Civitai error contract", () => {
     expect(civitaiAsyncFailure("failed", ["blocked"])).toMatchObject({
       code: "civitai_async_blocked", retry: "never",
     });
-    expect(civitaiInsufficientBuzzFailure()).toMatchObject({
-      code: "civitai_async_insufficient_buzz", retry: "never",
-    });
+    const insufficient = civitaiInsufficientBuzzFailure();
+    expect(insufficient).toMatchObject({ code: "civitai_async_insufficient_buzz", retry: "never" });
+    expect(insufficient.message).toContain("insufficient yellow Buzz");
     expect(civitaiAsyncFailure("failed", ["expired"])).toMatchObject({
       code: "civitai_async_timeout", retry: "deliberate",
     });

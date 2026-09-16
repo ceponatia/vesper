@@ -38,7 +38,7 @@ const DOCUMENTED_ASYNC_REASONS = new Set([
 function messageFor(failure: CivitaiFailure): string {
   const paths = failure.validationPaths?.length ? ` paths=${failure.validationPaths.join(",")}.` : "";
   const retry = failure.retry === "automatic"
-    ? failure.automaticRetriesExhausted ? " Automatic read retries are exhausted." : " Vesper retries this read automatically."
+    ? failure.automaticRetriesExhausted ? " Automatic read retries are exhausted; the provider is temporarily unavailable." : " The provider is temporarily unavailable; Vesper retries this read automatically."
     : failure.retry === "deliberate"
       ? " Start one deliberate replacement only after reviewing the request."
       : failure.retry === "reconcile"
@@ -106,7 +106,9 @@ export function civitaiOutputFailure(
 
 /** Accept only documented async reason tokens; provider prose is never surfaced. */
 export function civitaiInsufficientBuzzFailure(): CivitaiError {
-  return new CivitaiError({ code: "civitai_async_insufficient_buzz", retry: "never", stage: "workflow_terminal" });
+  const failure = new CivitaiError({ code: "civitai_async_insufficient_buzz", retry: "never", stage: "workflow_terminal" });
+  failure.message += " Insufficient yellow Buzz prevents this workflow.";
+  return failure;
 }
 
 export function civitaiAsyncFailure(
