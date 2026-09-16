@@ -20,10 +20,9 @@
 -- resource id sent in Civitai's generation graph and is also the exact value the
 -- LoRA compatibility gate below names.
 --
--- Civitai's public Flux2-Klein graph uses its SDXL/Flux 1024-ish aspect buckets.
--- Vesper advertises the five core shapes it has direct evidence for here rather
--- than copying Replicate's broader eleven-shape enum onto a different provider.
--- Additional shapes can be widened after the bench confirms them.
+-- Civitai's current Flux2-Klein graph imports `sdxlAspectRatioBuckets`, whose
+-- exact values are 2:3 (832x1216), 1:1 (1024x1024), and 3:2 (1216x832). Do not
+-- copy the wider Flux aspect list here: 9:16/16:9 are not options on this graph.
 --
 -- `civitai_lora_version` and `civitai_lora_strength` are Vesper transport fields,
 -- not literal Civitai JSON keys. The ordinary normalized LoRA mapper writes the
@@ -50,7 +49,7 @@ SELECT
   'file',
   0,
   'aspect_ratio',
-  '["1:1","2:3","3:2","9:16","16:9"]'::jsonb,
+  '["1:1","2:3","3:2"]'::jsonb,
   NULL,
   '{}'::jsonb,
   '2612557',
@@ -72,7 +71,7 @@ SELECT
       {"field":"prompt","type":"string","required":true,"description":"Civitai Flux2 Klein positive prompt","reserved":true},
       {"field":"negative_prompt","type":"string","required":false,"default":"","description":"Civitai generation negative prompt","reserved":true},
       {"field":"seed","type":"integer","required":false,"minimum":0,"maximum":4294967295,"reserved":true},
-      {"field":"aspect_ratio","type":"enum","required":false,"default":"1:1","enumValues":["1:1","2:3","3:2","9:16","16:9"],"reserved":true},
+      {"field":"aspect_ratio","type":"enum","required":false,"default":"1:1","enumValues":["1:1","2:3","3:2"],"reserved":true},
       {"field":"civitai_lora_version","type":"string","required":false,"description":"Curated Civitai LoRA model-version locator; converted to a graph resource by the Civitai transport","reserved":true},
       {"field":"civitai_lora_strength","type":"number","required":false,"minimum":0,"maximum":4,"description":"LoRA resource strength","reserved":true}
     ]
