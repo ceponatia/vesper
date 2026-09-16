@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiReasonCodes, civitaiValidationPaths } from "./civitai-errors";
+import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths } from "./civitai-errors";
 
 describe("Civitai error contract", () => {
   it("classifies HTTP failures without provider response text", () => {
@@ -15,6 +15,18 @@ describe("Civitai error contract", () => {
     }
     expect(civitaiHttpFailure(503, "submit", false)).toMatchObject({
       code: "civitai_http_503", retry: "deliberate", stage: "submit",
+    });
+  });
+
+  it("classifies transport and output boundaries without response text", () => {
+    expect(civitaiTransportFailure("workflow_status", true, true)).toMatchObject({
+      code: "civitai_transport_failure", retry: "automatic", automaticRetriesExhausted: true,
+    });
+    expect(civitaiTransportFailure("submit", false)).toMatchObject({
+      code: "civitai_transport_failure", retry: "deliberate",
+    });
+    expect(civitaiOutputFailure("civitai_output_http_503", "deliberate")).toMatchObject({
+      code: "civitai_output_http_503", retry: "deliberate", stage: "output_download",
     });
   });
 

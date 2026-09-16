@@ -3,7 +3,7 @@ import type { ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { civitaiApiToken } from "../images/lora-credentials";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiReasonCodes, civitaiValidationPaths } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiTransportFailure, civitaiValidationPaths } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -193,13 +193,24 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("Content-Type", "application/json");
-    const response = await fetch(url, {
-      ...init,
-      headers,
-      redirect: "error",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
-    const text = await response.text();
+    let response: Response;
+    let text: string;
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers,
+        redirect: "error",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      text = await response.text();
+    } catch {
+      const failure = civitaiTransportFailure(stage, method === "GET", attempt >= MAX_GET_RETRIES);
+      if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
+        await waitForCivitaiGetRetry(attempt);
+        continue;
+      }
+      throw failure;
+    }
     let value: unknown;
     try {
       value = JSON.parse(text) as unknown;
@@ -315,31 +326,50 @@ async function sendWorkflow(body: CivitaiKleinWorkflow, token: string, whatif: b
 
 async function downloadOutput(url: string): Promise<Buffer> {
   let parsed: URL;
-  try { parsed = new URL(url); } catch { throw new Error("Civitai returned an invalid output URL"); }
-  if (parsed.protocol !== "https:" || parsed.username || parsed.password || !isCivitaiHost(parsed.hostname)) {
-    throw new Error("Civitai returned an output URL outside Vesper's trusted Civitai hosts");
-  }
-  const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`Civitai output download failed (HTTP ${String(response.status)})`);
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) throw new Error("Civitai output exceeds 32 MiB");
-  if (!response.body) throw new Error("Civitai returned an empty output body");
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let size = 0;
   try {
-    for (;;) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      size += chunk.value.byteLength;
-      if (size > MAX_OUTPUT_BYTES) throw new Error("Civitai output exceeds 32 MiB");
-      chunks.push(Buffer.from(chunk.value));
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
+    parsed = new URL(url);
+  } catch {
+    throw civitaiOutputFailure("civitai_output_invalid", "never");
   }
-  if (size === 0) throw new Error("Civitai returned an empty image");
-  return Buffer.concat(chunks, size);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || !isCivitaiHost(parsed.hostname)) {
+    throw civitaiOutputFailure("civitai_output_invalid", "never");
+  }
+  let response: Response;
+  try {
+    response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  } catch {
+    throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+  }
+  if (!response.ok) {
+    const code = `civitai_output_http_${String(response.status)}` as `civitai_output_http_${number}`;
+    throw civitaiOutputFailure(code, "deliberate");
+  }
+  try {
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) {
+      throw civitaiOutputFailure("civitai_output_too_large", "never");
+    }
+    if (!response.body) throw civitaiOutputFailure("civitai_output_empty", "deliberate");
+    const reader = response.body.getReader();
+    const chunks: Buffer[] = [];
+    let size = 0;
+    try {
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        size += chunk.value.byteLength;
+        if (size > MAX_OUTPUT_BYTES) throw civitaiOutputFailure("civitai_output_too_large", "never");
+        chunks.push(Buffer.from(chunk.value));
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    if (size === 0) throw civitaiOutputFailure("civitai_output_empty", "deliberate");
+    return Buffer.concat(chunks, size);
+  } catch (error) {
+    if (error instanceof CivitaiError) throw error;
+    throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
+  }
 }
 
 export async function runCivitaiKleinImageModel(model: ImageModel, request: RegistryModelRequest): Promise<ReplicateImageResult> {

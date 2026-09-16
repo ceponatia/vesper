@@ -1,4 +1,4 @@
-export type CivitaiStage = "lora_metadata" | "preflight" | "submit" | "workflow_status" | "workflow_terminal";
+export type CivitaiStage = "lora_metadata" | "preflight" | "submit" | "workflow_status" | "workflow_terminal" | "output_download";
 export type CivitaiRetryDisposition = "automatic" | "deliberate" | "never" | "reconcile";
 
 export type CivitaiCode = `civitai_http_${number}`
@@ -9,7 +9,13 @@ export type CivitaiCode = `civitai_http_${number}`
   | "civitai_async_unknown_terminal"
   | "civitai_async_insufficient_buzz"
   | "civitai_malformed_response"
-  | "civitai_output_unavailable";
+  | "civitai_output_unavailable"
+  | "civitai_transport_failure"
+  | `civitai_output_http_${number}`
+  | "civitai_output_invalid"
+  | "civitai_output_too_large"
+  | "civitai_output_empty"
+  | "civitai_output_transport_failure";
 
 export interface CivitaiFailure {
   code: CivitaiCode;
@@ -76,6 +82,26 @@ export function civitaiHttpFailure(
       : "never";
   const code = `civitai_http_${String(status)}` as `civitai_http_${number}`;
   return new CivitaiError({ code, retry, stage, httpStatus: status, validationPaths, automaticRetriesExhausted });
+}
+
+export function civitaiTransportFailure(
+  stage: Exclude<CivitaiStage, "output_download">,
+  readOnly: boolean,
+  automaticRetriesExhausted = false,
+): CivitaiError {
+  return new CivitaiError({
+    code: "civitai_transport_failure",
+    retry: readOnly ? "automatic" : "deliberate",
+    stage,
+    automaticRetriesExhausted,
+  });
+}
+
+export function civitaiOutputFailure(
+  code: Extract<CivitaiCode, `civitai_output_${string}`>,
+  retry: CivitaiRetryDisposition,
+): CivitaiError {
+  return new CivitaiError({ code, retry, stage: "output_download" });
 }
 
 /** Accept only documented async reason tokens; provider prose is never surfaced. */

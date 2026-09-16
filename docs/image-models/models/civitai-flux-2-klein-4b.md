@@ -92,7 +92,7 @@ request policy for that variant.
   that a checkpoint and LoRA are incompatible.
 - A submitted workflow is polled by its id. A successful status alone does not
   prove usable output: an image must be available and unblocked before download.
-- Diagnostics expose only stable `civitai_http_*` and `civitai_async_*` codes,
+- Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, and `civitai_output_*` codes,
   plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
   backed off with jitter, and apply only to idempotent metadata or workflow-status reads; a paid submission and what-if
   POST are never repeated automatically.

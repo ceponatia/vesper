@@ -348,6 +348,33 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
   });
 
+  it("redacts output-download transport sentinels without retrying the download", async () => {
+    let outputReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output" : "submit-output", whatif === "true" ? "unassigned" : "succeeded", [{
+          url: "https://image.civitai.com/output-secret.jpg", available: true,
+        }]));
+      }
+      if (href === "https://image.civitai.com/output-secret.jpg") {
+        outputReads += 1;
+        throw new Error("provider token=secret signed-url=private");
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(outputReads).toBe(1);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-output", error: expect.stringContaining("civitai_output_transport_failure; retry=deliberate") });
+    if (result.ok) throw new Error("expected the output download to fail");
+    expect(result.error).not.toContain("secret");
+    expect(result.error).not.toContain("private");
+  });
+
   it("does not make a paid submission after an insufficient-Buzz preflight", async () => {
     const workflowUrls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
