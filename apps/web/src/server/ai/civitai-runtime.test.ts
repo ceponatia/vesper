@@ -300,6 +300,7 @@ describe("Civitai Klein v2 transport", () => {
   it("ends a near-deadline workflow-status retry at the minimum 30-second budget without repeating the paid POST", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    vi.spyOn(Math, "random").mockReturnValue(1);
     const startedAt = Date.now();
     let workflowPosts = 0;
     let statusReads = 0;
