@@ -6,7 +6,7 @@ import {
   type IpLimitName,
   type RateLimitDecision,
 } from "./rate-limit";
-import { clientIp, hashClientIp } from "./client-ip";
+import { clientIp, hashClientIp, trustedClientIp } from "./client-ip";
 import { recordAbuseSignal } from "./abuse-log";
 
 /**
@@ -119,13 +119,27 @@ const CREDENTIAL_AUTH_PREFIXES = [
 
 const AUTH_BASE_PATH = "/api/auth";
 
-/** Credential endpoints get the tighter window: the abuse shape is guessing, not spending. */
-function ipPolicyFor(pathname: string): IpLimitName {
-  if (pathname !== AUTH_BASE_PATH && !pathname.startsWith(`${AUTH_BASE_PATH}/`)) return "ip_default";
+/** Whether a path is one of the credential operations above. */
+export function isCredentialAuthPath(pathname: string): boolean {
+  if (pathname !== AUTH_BASE_PATH && !pathname.startsWith(`${AUTH_BASE_PATH}/`)) return false;
   const operation = pathname.slice(AUTH_BASE_PATH.length + 1).toLowerCase();
-  return CREDENTIAL_AUTH_PREFIXES.some((prefix) => operation === prefix || operation.startsWith(`${prefix}/`))
-    ? "ip_auth"
-    : "ip_default";
+  return CREDENTIAL_AUTH_PREFIXES.some((prefix) => operation === prefix || operation.startsWith(`${prefix}/`));
+}
+
+/**
+ * Credential endpoints get the tighter window: the abuse shape is guessing, not
+ * spending.
+ *
+ * **POST only.** Every credential operation is a POST, so a GET to one of these
+ * paths cannot carry a guess — Better Auth has no route for it and answers 404.
+ * Charging it anyway made the credential budget spendable from any third-party
+ * page: ten `<img src="…/sign-in/email">` tags on a page the account's owner
+ * visits, and their own sign-in is refused for the rest of the window. A GET
+ * still costs `ip_default`, so nothing here is unbounded; it simply cannot reach
+ * the budget reserved for guessing.
+ */
+function ipPolicyFor(pathname: string, method: string): IpLimitName {
+  return method.toUpperCase() === "POST" && isCredentialAuthPath(pathname) ? "ip_auth" : "ip_default";
 }
 
 /**
@@ -133,8 +147,13 @@ function ipPolicyFor(pathname: string): IpLimitName {
  */
 export function ipRateLimitRejection(req: NextRequest): LimitedResponse | null {
   const pathname = req.nextUrl.pathname;
-  const policy = ipPolicyFor(pathname);
-  const ip = clientIp(req);
+  const policy = ipPolicyFor(pathname, req.method);
+  // The credential window resolves the address strictly: `clientIp`'s ranking
+  // falls back to headers a caller sets freely, and where the edge header is
+  // absent a caller who ROTATES one of those gets a fresh bucket per request and
+  // no limit at all — the defect of issue #612, one layer down. `trustedClientIp`
+  // sends anything but the edge header to the shared bucket instead.
+  const ip = policy === "ip_auth" ? trustedClientIp(req) : clientIp(req);
   const decision: RateLimitDecision = checkIpRateLimit(policy, ip);
   if (decision.allowed) return null;
 

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { clientIp, hashClientIp, UNKNOWN_CLIENT_IP } from "./client-ip";
+import { clientIp, hashClientIp, trustedClientIp, UNKNOWN_CLIENT_IP } from "./client-ip";
 import { IP_RATE_LIMITS, resetRateLimits } from "./rate-limit";
 import { ipRateLimitRejection, rateLimitHeaders, userRateLimitRejection } from "./route-limits";
 
@@ -103,6 +103,21 @@ describe("clientIp", () => {
     // And junk isolates from junk: collapsing unparseable values together would
     // hand one bad caller the whole malformed-header budget for everyone else.
     expect(bucket("[2001:db8::1]:41234")).not.toBe(bucket("not-an-address"));
+  });
+
+  it("recognizes only the edge header for the credential surface", () => {
+    // No fallback, for the reason `auth.ts` gives for its own single-entry list:
+    // a fallback restores the bypass exactly when the edge header goes missing,
+    // which is when nobody is watching for it.
+    expect(trustedClientIp(request("/api/auth/sign-in/email", { "fly-client-ip": "203.0.113.7" }))).toBe("203.0.113.7");
+    for (const headers of [{ "x-real-ip": "10.0.0.1" }, { "x-forwarded-for": "198.51.100.9" }, {}]) {
+      expect(trustedClientIp(request("/api/auth/sign-in/email", headers))).toBe(UNKNOWN_CLIENT_IP);
+    }
+    // And it normalizes the same way, so v6 callers cannot rotate a suffix here
+    // either.
+    expect(trustedClientIp(request("/api/auth/sign-in/email", { "fly-client-ip": "2001:db8::1" }))).toBe(
+      trustedClientIp(request("/api/auth/sign-in/email", { "fly-client-ip": "2001:db8::dead:beef" })),
+    );
   });
 
   it("hashes addresses irreversibly and stably", () => {
@@ -241,6 +256,45 @@ describe("ipRateLimitRejection", () => {
       expect(ipRateLimitRejection(req())).toBeNull();
     }
     expect(ipRateLimitRejection(req())).not.toBeNull();
+  });
+
+  it("gives a rotating x-real-ip no extra credential attempts when the edge header is absent", () => {
+    // The #612 defect one layer down. `clientIp`'s ranking falls back to headers
+    // a caller sets freely, so off Fly — local dev, another host, a proxy
+    // misconfiguration — rotating one of them minted a bucket per request and the
+    // credential surface was not limited at all. The credential window resolves
+    // strictly instead, so every one of these lands in the shared bucket.
+    const attempt = (realIp: string) =>
+      ipRateLimitRejection(request("/api/auth/sign-in/email", { "x-real-ip": realIp }));
+    for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
+      expect(attempt(`10.9.0.${i}`)).toBeNull();
+    }
+    expect(attempt("10.9.0.200")).not.toBeNull();
+    // Rotating the other fallback is the same story.
+    expect(ipRateLimitRejection(request("/api/auth/sign-in/email", { "x-forwarded-for": "198.51.100.77" })))
+      .not.toBeNull();
+  });
+
+  it("still isolates credential callers the edge does report", () => {
+    // Strictness must not collapse production into one bucket: a real address
+    // still gets its own window, or honest traffic would throttle together.
+    for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
+      ipRateLimitRejection(request("/api/auth/sign-in/email", { "fly-client-ip": "6.6.6.6" }));
+    }
+    expect(ipRateLimitRejection(request("/api/auth/sign-in/email", { "fly-client-ip": "6.6.6.6" }))).not.toBeNull();
+    expect(ipRateLimitRejection(request("/api/auth/sign-in/email", { "fly-client-ip": "7.7.7.7" }))).toBeNull();
+  });
+
+  it("keeps a GET off the credential budget so a third party cannot spend it", () => {
+    // Ten `<img src="…/sign-in/email">` on any page the owner visits would
+    // otherwise exhaust their allowance and refuse their own sign-in. No
+    // credential operation is a GET, so one cannot carry a guess either.
+    const get = () => request("/api/auth/sign-in/email", { "fly-client-ip": "8.8.8.8" }, "GET");
+    for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit + 1; i++) {
+      expect(ipRateLimitRejection(get())).toBeNull();
+    }
+    // The budget it could not touch is still there for the real thing.
+    expect(ipRateLimitRejection(request("/api/auth/sign-in/email", { "fly-client-ip": "8.8.8.8" }))).toBeNull();
   });
 
   it("does not treat a path merely prefixed with 'auth' as the auth namespace", () => {

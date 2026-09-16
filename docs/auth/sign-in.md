@@ -55,20 +55,41 @@ into a bucket the attacker picks, and rotating the header buys an unlimited allo
 resolution stamps `auth_sessions.ip_address`, so the recorded origin of a session is trustworthy
 for the same reason.
 
-The header is listed **alone**, with no forwarded-header fallback. A fallback would restore the
-bypass exactly when the edge header went missing, which is when nobody would notice; with no usable
-header Better Auth instead drops every caller into one shared bucket, which fails closed.
+The header is listed **alone** on both sides, with no forwarded-header fallback. A fallback would
+restore the bypass exactly when the edge header went missing, which is when nobody would notice.
+`client-ip.ts` exposes two resolvers for that reason: ordinary routes use `clientIp()`, whose
+ranking falls back to `x-real-ip` and `x-forwarded-for` so local development and any future reverse
+proxy still isolate callers, and the credential window uses `trustedClientIp()`, which recognizes
+only the edge header and sends everything else to the shared bucket. Off Fly that means every
+credential caller shares one throttled bucket — the deliberate fail-closed direction, and the signal
+that a deployment needs its own trusted header configured. With `clientIp()`'s ranking there, a
+caller who **rotated** a fallback header would get a fresh bucket per request and no limit at all.
 
 **IPv6 callers are bucketed by their /64.** A subscriber holds the whole block and rotates inside it
 freely, so keying on the full address would hand any IPv6 client the same unlimited allowance one
 address family over. `clientIp()` collapses to the /64 and folds `::ffff:a.b.c.d` onto the IPv4
 bucket it denotes.
 
-**Only credential operations get the tight window.** `route-limits.ts` names them — sign-in, sign-up,
-password reset and change, email change, magic link, email verification. The rest of `/api/auth/*`
-keeps the app-wide `ip_default` window, because `get-session` is refetched on every window focus and
-`callback/*` is a redirect arriving from the provider; spending the credential budget on either
-would throttle a shared office or CGNAT address without costing an attacker anything.
+**Only credential operations get the tight window, and only their POSTs.** `route-limits.ts` names
+them — sign-in, sign-up, password reset and change, email change, magic link, email verification.
+The rest of `/api/auth/*` keeps the app-wide `ip_default` window, because `get-session` is refetched
+on every window focus and `callback/*` is a redirect arriving from the provider; spending the
+credential budget on either would throttle a shared office or CGNAT address without costing an
+attacker anything.
+
+The method half matters as much as the path half. No credential operation is a GET, so a GET cannot
+carry a password guess — but it *can* be issued by any third-party page the account's owner visits.
+Ten `<img src="…/sign-in/email">` tags would otherwise exhaust that visitor's credential allowance
+and refuse their own next sign-in. GETs cost `ip_default` instead, which still bounds them; the
+narrowing is safe because the secret on the GET-reachable credential paths (`magic-link/verify`,
+`verify-email`, `reset-password/:token`) is a 32-byte random rather than a password.
+
+A credential **POST** carrying `Sec-Fetch-Site: cross-site` is refused outright, before the window is
+charged. Better Auth refuses it too, but only after the wrapper has already spent the victim's
+budget. The refusal is a refusal rather than an exemption on purpose: a non-browser caller can set
+that header, and skipping the charge for it would hand an attacker a way out of the limiter. The
+check is scoped to POSTs so that following a magic link, a verification link or a reset link — all
+cross-site top-level GETs from a mail client — keeps working.
 
 `/api/auth/*` is owned by Better Auth and does not run through `withRoute`. The route applies the
 per-IP window by hand and leaves CSRF to the library, which already guards this surface and admits

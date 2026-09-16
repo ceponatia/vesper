@@ -11,17 +11,34 @@ import type { NextRequest } from "next/server";
  * cannot be forged from outside. The rest are accepted so local dev and any
  * future reverse proxy still isolate callers.
  *
- * The security property does **not** depend on that ranking holding, though.
- * A spoofed header only changes *which* bucket a caller lands in — it never
- * grants an unlimited one — and a request with no usable header at all falls
- * into the single shared {@link UNKNOWN_CLIENT_IP} bucket. Stripping headers to
- * evade therefore costs the attacker their own isolation and buys nothing.
+ * Stripping headers buys nothing: a request with no usable header at all falls
+ * into the single shared {@link UNKNOWN_CLIENT_IP} bucket, which costs the
+ * caller their own isolation.
+ *
+ * **Rotating** one is different, and this ranking does not defend against it.
+ * Where `fly-client-ip` is absent — local development, any non-Fly host, a
+ * proxy misconfiguration — a caller who varies `x-real-ip` or `x-forwarded-for`
+ * per request lands in a fresh bucket every time and is not limited at all. That
+ * is the same defect issue #612 was filed for, one layer down. The credential
+ * surface therefore does not use this function: see {@link trustedClientIp},
+ * which recognizes only the header the edge overwrites and sends everything else
+ * to the shared bucket, so a missing edge header degrades to one throttled
+ * bucket rather than to none.
  *
  * Better Auth's own limiter reads the same edge header — `advanced.ipAddress`
  * in `server/auth/auth.ts` names it explicitly, because its default is
  * `x-forwarded-for` and a limiter keyed on a forgeable header is not a limiter.
  */
-const TRUSTED_IP_HEADERS = ["fly-client-ip", "x-real-ip"] as const;
+/**
+ * The one header a caller cannot forge: Fly's edge proxy overwrites it on every
+ * inbound request. `server/auth/auth.ts` states the same name again as its own
+ * literal — a server module reaches another only through its barrel, and
+ * `server/api`'s barrel imports that module, so sharing the constant would close
+ * a cycle. Tests on both sides pin them together.
+ */
+export const EDGE_CLIENT_IP_HEADER = "fly-client-ip";
+
+const TRUSTED_IP_HEADERS = [EDGE_CLIENT_IP_HEADER, "x-real-ip"] as const;
 
 /** The shared bucket for requests whose origin cannot be established. */
 export const UNKNOWN_CLIENT_IP = "unknown";
@@ -114,6 +131,28 @@ export function normalizeClientIp(value: string): string {
   return `${groups.slice(0, IPV6_BUCKET_PREFIX_GROUPS).join(":")}::/64`;
 }
 
+/**
+ * The client address for surfaces where being wrong is a security failure rather
+ * than a bookkeeping one — the credential endpoints.
+ *
+ * Accepts only the edge-set header and sends everything else to the shared
+ * bucket. No fallback, for the reason `auth.ts` gives for its own single-entry
+ * list: a fallback restores the bypass exactly when the edge header goes
+ * missing, which is when nobody is watching for it. The cost of that strictness
+ * is that off Fly every caller shares one credential bucket, which throttles
+ * honest traffic together — the deliberate fail-closed direction, and the signal
+ * that a deployment needs its own trusted header configured.
+ */
+export function trustedClientIp(req: NextRequest): string {
+  const value = req.headers.get(EDGE_CLIENT_IP_HEADER)?.trim();
+  return value === undefined || value.length === 0 ? UNKNOWN_CLIENT_IP : normalizeClientIp(value);
+}
+
+/**
+ * The client address for ordinary routes, where the ranking's convenience
+ * fallbacks keep local development and any future reverse proxy isolating
+ * callers. Not for the credential surface — {@link trustedClientIp} owns that.
+ */
 export function clientIp(req: NextRequest): string {
   for (const header of TRUSTED_IP_HEADERS) {
     const value = req.headers.get(header)?.trim();

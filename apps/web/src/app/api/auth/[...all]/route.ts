@@ -1,7 +1,7 @@
 import { toNextJsHandler } from "better-auth/next-js";
 import type { NextRequest } from "next/server";
 import { auth } from "@/server/auth";
-import { ipRateLimitRejection, type LimitedResponse } from "@/server/api";
+import { ipRateLimitRejection, isCredentialAuthPath, type LimitedResponse } from "@/server/api";
 
 /**
  * Better Auth's full HTTP surface (sign-in/up/out, OAuth callbacks, magic-link,
@@ -38,8 +38,43 @@ function authRateLimitResponse(limited: LimitedResponse): Response {
   return Response.json({ code: "too_many_requests", message }, { status: 429, headers: limited.headers });
 }
 
+/**
+ * Refuse a browser's cross-site request to a credential endpoint **before** the
+ * window is charged.
+ *
+ * Better Auth already refuses these — `originCheckMiddleware` runs ahead of its
+ * dispatch — but it refuses them after this file has already spent the caller's
+ * credential budget, and the caller here is the victim. A third-party page that
+ * auto-submits a form at `/api/auth/sign-in/email` spends the visitor's own
+ * allowance, so the account owner's next real sign-in is the one refused.
+ *
+ * `Sec-Fetch-Site` is the right signal because a browser sets it and script
+ * cannot override it. A non-browser caller can of course send it — which is why
+ * this REFUSES rather than skipping the charge. Skipping would hand an attacker
+ * a header that exempts them from the limiter entirely; refusing costs them the
+ * request either way.
+ *
+ * Scoped to credential **POSTs** on purpose, and the method half is the load-
+ * bearing half. Following a magic link, a verification link or a reset link is a
+ * cross-site top-level GET arriving from someone's mail client, and several of
+ * those paths are credential paths — refusing by path alone would break every
+ * one of them. Those GETs cost `ip_default` instead, which is what bounds the
+ * drive-by shape without touching the guessing budget.
+ */
+function crossSiteCredentialRejection(req: NextRequest): Response | null {
+  if (req.method.toUpperCase() !== "POST") return null;
+  if (req.headers.get("sec-fetch-site") !== "cross-site") return null;
+  if (!isCredentialAuthPath(req.nextUrl.pathname)) return null;
+  return Response.json(
+    { code: "CROSS_SITE_REQUEST", message: "Cross-site requests are not accepted on this endpoint." },
+    { status: 403 },
+  );
+}
+
 function throttled(handler: (req: Request) => Promise<Response>): (req: NextRequest) => Promise<Response> {
   return async (req) => {
+    const crossSite = crossSiteCredentialRejection(req);
+    if (crossSite !== null) return crossSite;
     const limited = ipRateLimitRejection(req);
     return limited === null ? handler(req) : authRateLimitResponse(limited);
   };

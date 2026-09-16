@@ -110,10 +110,17 @@ describe("credential throttle on /api/auth", () => {
     expect(body.message).toContain(String(retryAfter));
   });
 
-  it("applies the window to the GET surface as well", async () => {
-    // `magic-link/verify` arrives as a GET carrying a guessable token, so a
-    // wrapper on POST alone would leave the one credential endpoint that is not
-    // a POST exactly as open as before the fix.
+  it("still applies a window to the GET surface, the app-wide one", async () => {
+    // `magic-link/verify` is a credential path reached by GET, and it is
+    // deliberately NOT on the credential budget: that budget exists for password
+    // guessing, and a GET cannot carry a password. Leaving it there let any
+    // third-party page spend the visitor's allowance with ten `<img>` tags, so
+    // the owner's own sign-in was the request that got refused.
+    //
+    // What it costs instead is `ip_default`. The narrowing is real and bounded:
+    // the secret on these paths is a 32-byte random rather than a password, so
+    // the difference between ten and three hundred attempts a minute is not a
+    // difference an attacker can use.
     const verify = (): Promise<Response> =>
       GET(
         apiRequest("/api/auth/magic-link/verify", {
@@ -122,9 +129,50 @@ describe("credential throttle on /api/auth", () => {
         }),
       );
 
-    for (let index = 0; index < IP_RATE_LIMITS.ip_auth.limit; index++) {
+    for (let index = 0; index < IP_RATE_LIMITS.ip_auth.limit + 1; index++) {
       expect((await verify()).status).toBe(200);
     }
-    expect((await verify()).status).toBe(429);
+    // And spending that budget leaves the credential one untouched.
+    expect((await signIn("198.51.100.1")).status).toBe(200);
+  });
+
+  it("refuses a cross-site credential POST without spending the window", async () => {
+    // The drive-by: a third-party page auto-submits a form at the sign-in
+    // endpoint, and the browser sends it with the victim's cookies and the
+    // victim's address. Better Auth refuses these too, but only after this file
+    // has already charged the victim for them.
+    const driveBy = (): Promise<Response> =>
+      POST(
+        apiRequest(CREDENTIAL_PATH, {
+          body: { email: "admin@vesper.test", password: "guess" },
+          headers: { "fly-client-ip": EDGE_IP, "sec-fetch-site": "cross-site" },
+        }),
+      );
+
+    for (let index = 0; index < IP_RATE_LIMITS.ip_auth.limit * 2; index++) {
+      expect((await driveBy()).status).toBe(403);
+    }
+    // Nothing reached the library, and nothing was charged: the victim's own
+    // sign-in still has its full allowance.
+    expect(library.seen).toHaveLength(0);
+    for (let index = 0; index < IP_RATE_LIMITS.ip_auth.limit; index++) {
+      expect((await signIn(`198.51.100.${index}`)).status).toBe(200);
+    }
+
+    // Refusing rather than exempting is the point: a non-browser caller can send
+    // the header too, and must not be able to buy their way out of the limiter
+    // with it.
+    expect((await driveBy()).status).toBe(403);
+  });
+
+  it("lets a same-origin sign-in through untouched", async () => {
+    const response = await POST(
+      apiRequest(CREDENTIAL_PATH, {
+        body: { email: "admin@vesper.test", password: "guess" },
+        headers: { "fly-client-ip": EDGE_IP, "sec-fetch-site": "same-origin" },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(library.seen).toStrictEqual([CREDENTIAL_PATH]);
   });
 });
