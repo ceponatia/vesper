@@ -2120,19 +2120,32 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
     expect(await db().select().from(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID))).toEqual(loraBefore);
   });
 
-  it("preserves a model curated through the admin surface and leaves its LoRA on the legacy selector", async () => {
+  it("preserves a timestamp-only admin curation and leaves its LoRA on the legacy selector", async () => {
     await restoreCivitai0145State();
     try {
-      // A supported admin write always advances updated_at. This direct field
-      // change also proves the complete baseline does not overwrite any curation.
-      await db().execute(sql`UPDATE "image_models" SET "can_edit" = true, "updated_at" = now() WHERE "id" = ${CIVITAI_V2_MODEL_ID}`);
+      const before = await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(before).toHaveLength(1);
+      const baseline = before[0];
+      if (baseline === undefined) return;
+
+      // Supported admin writes advance updated_at. Keep every 0145 catalog value
+      // exact: this makes the provenance guard load-bearing rather than relying
+      // on a changed data column to make the migration skip the row.
+      await db().execute(sql`UPDATE "image_models" SET "updated_at" = now() WHERE "id" = ${CIVITAI_V2_MODEL_ID}`);
+      const curated = await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(curated).toHaveLength(1);
+      const timestampOnly = curated[0];
+      if (timestampOnly === undefined) return;
+      expect({ ...timestampOnly, updatedAt: baseline.updatedAt }).toEqual(baseline);
+      expect(timestampOnly.updatedAt).not.toEqual(baseline.updatedAt);
+
       await reapplyCivitaiV2();
 
-      const [model] = await db()
-        .select({ version: imageModels.probedVersionId, canEdit: imageModels.canEdit })
-        .from(imageModels)
-        .where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
-      expect(model).toEqual({ version: "2612557", canEdit: true });
+      expect(await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID))).toEqual(curated);
+      expect({ version: timestampOnly.probedVersionId, canEdit: timestampOnly.canEdit }).toEqual({
+        version: "2612557",
+        canEdit: false,
+      });
       expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["2612557"]);
     } finally {
       await restoreCivitaiV2State();
@@ -2165,6 +2178,20 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
       const [model] = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
       expect(model).toBeUndefined();
       expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["2612557"]);
+    } finally {
+      await restoreCivitaiV2State();
+    }
+  });
+
+  it("does not resurrect a deleted pilot LoRA when the exact model baseline migrates", async () => {
+    await restoreCivitai0145State();
+    try {
+      await db().delete(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
+      await reapplyCivitaiV2();
+
+      const [model] = await db().select({ version: imageModels.probedVersionId }).from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(model?.version).toBe("4b");
+      expect(await loadImageLora(CIVITAI_V2_LORA_ID)).toBeNull();
     } finally {
       await restoreCivitaiV2State();
     }
