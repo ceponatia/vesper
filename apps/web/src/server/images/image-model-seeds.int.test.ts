@@ -2039,6 +2039,17 @@ async function restoreCivitai0145State(): Promise<void> {
   for (const statement of [...loraSeed, ...locatorFix, ...civitaiSeed, ...civitaiLora]) {
     await db().execute(sql.raw(statement));
   }
+  // The migrator applies 0145 transactionally, so Postgres evaluates each
+  // `now()` in its model seed and LoRA retune at one transaction timestamp.
+  // These helpers replay individual statements, so restore that linked fresh
+  // state explicitly before exercising 0146's timestamp-provenance predicate.
+  await db().execute(sql`
+    UPDATE "image_loras" AS "lora"
+    SET "updated_at" = "model"."created_at"
+    FROM "image_models" AS "model"
+    WHERE "lora"."id" = ${CIVITAI_V2_LORA_ID}
+      AND "model"."id" = ${CIVITAI_V2_MODEL_ID}
+  `);
 }
 
 async function restoreCivitaiV2State(): Promise<void> {
@@ -2178,6 +2189,39 @@ describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
       const [model] = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
       expect(model).toBeUndefined();
       expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["2612557"]);
+    } finally {
+      await restoreCivitaiV2State();
+    }
+  });
+
+  it("preserves a timestamp-only LoRA curation while its exact model baseline migrates", async () => {
+    await restoreCivitai0145State();
+    try {
+      const [baseline] = await db()
+        .select({ updatedAt: imageLoras.updatedAt })
+        .from(imageLoras)
+        .where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
+      expect(baseline).toBeDefined();
+      if (baseline === undefined) return;
+
+      await db().execute(sql`UPDATE "image_loras" SET "updated_at" = now() WHERE "id" = ${CIVITAI_V2_LORA_ID}`);
+      const [curated] = await db()
+        .select({ updatedAt: imageLoras.updatedAt })
+        .from(imageLoras)
+        .where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
+      expect(curated).toBeDefined();
+      if (curated === undefined) return;
+      expect(curated.updatedAt).not.toEqual(baseline.updatedAt);
+
+      await reapplyCivitaiV2();
+
+      const [model] = await db().select({ version: imageModels.probedVersionId }).from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(model?.version).toBe("4b");
+      const [lora] = await db()
+        .select({ versionIds: imageLoras.compatibleVersionIds, updatedAt: imageLoras.updatedAt })
+        .from(imageLoras)
+        .where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
+      expect(lora).toEqual({ versionIds: ["2612557"], updatedAt: curated.updatedAt });
     } finally {
       await restoreCivitaiV2State();
     }

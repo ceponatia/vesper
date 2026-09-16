@@ -11,7 +11,8 @@
 -- baseline, and `created_at = updated_at` proves no admin write has curated the
 -- row since it was inserted. A deleted, disabled, or independently edited row is
 -- left unchanged. `migrated_model` is the dependency boundary: the LoRA cannot
--- advance unless this exact model UPDATE returned a row in this same statement.
+-- advance unless this exact model UPDATE returned a row in this same statement,
+-- and its last 0145 timestamp still equals the model row's original timestamp.
 WITH migrated_model AS (
   UPDATE "image_models"
   SET
@@ -95,25 +96,26 @@ WITH migrated_model AS (
     AND "builtin" = true
     AND "sort" = 0
     AND "created_at" = "updated_at"
-  RETURNING "id"
+  RETURNING "id", "created_at"
 )
-UPDATE "image_loras"
+UPDATE "image_loras" AS "lora"
 SET
   "compatible_version_ids" = '["4b"]'::jsonb,
   "updated_at" = now()
-WHERE "id" = 'imglorklein4bnsfwfemale'
-  AND "label" = 'NippleDiffusion General [4B] v2 (female NSFW test)'
-  AND "locator_type" = 'civitai_model_version'
-  AND "locator" = '2633618'
-  AND "compatible_model_slugs" = '["civitai/flux-2-klein-4b"]'::jsonb
-  AND "compatible_version_ids" = '["2612557"]'::jsonb
-  AND "default_scale" = 1.0
-  AND "minimum_scale" = 0.5
-  AND "maximum_scale" = 1.5
-  AND "trigger_words" = '[]'::jsonb
-  AND "prompt_prefix" IS NULL
-  AND "prompt_suffix" IS NULL
-  AND "allowed_tasks" = '[]'::jsonb
-  AND "enabled" = true
-  AND "builtin" = true
-  AND EXISTS (SELECT 1 FROM migrated_model);
+FROM migrated_model
+WHERE "lora"."id" = 'imglorklein4bnsfwfemale'
+  AND "lora"."label" = 'NippleDiffusion General [4B] v2 (female NSFW test)'
+  AND "lora"."locator_type" = 'civitai_model_version'
+  AND "lora"."locator" = '2633618'
+  AND "lora"."compatible_model_slugs" = '["civitai/flux-2-klein-4b"]'::jsonb
+  AND "lora"."compatible_version_ids" = '["2612557"]'::jsonb
+  AND "lora"."default_scale" = 1.0
+  AND "lora"."minimum_scale" = 0.5
+  AND "lora"."maximum_scale" = 1.5
+  AND "lora"."trigger_words" = '[]'::jsonb
+  AND "lora"."prompt_prefix" IS NULL
+  AND "lora"."prompt_suffix" IS NULL
+  AND "lora"."allowed_tasks" = '[]'::jsonb
+  AND "lora"."enabled" = true
+  AND "lora"."builtin" = true
+  AND "lora"."updated_at" = migrated_model."created_at";
