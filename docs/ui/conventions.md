@@ -141,3 +141,11 @@ Curated model dropdowns (narrator, agent, chat) render through `ModelSelect`
 `lib/narrative-models.ts` and `lib/agent-models.ts`, and a value **outside** the list still
 renders as its own option — the id as-is — so a legacy or env-override id is never silently
 swapped.
+
+The Image Generator Model select uses the shared pure `lib/image-model-option-label.ts`
+formatter for its display text. The canonical `Name (Type) - Provider` rule and its type
+priority are in
+[../images/providers/registry.md](../images/providers/registry.md) §Model picker labels.
+The other image-model dropdowns can use the same formatter. The Generator's separate LoRA library
+select uses a display shortening of the curated library-row label
+([../image-generator/form.md](../image-generator/form.md) §Model and LoRA names in the pickers).

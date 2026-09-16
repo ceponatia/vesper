@@ -13,6 +13,22 @@ changes this form through its capability record alone, with no code edit.
 
 Everything starts unset: the provider's own defaults rule until the admin explicitly sets a value.
 
+## Model and LoRA names in the pickers
+
+The Model select displays each registered row through `imageModelOptionLabel` and the shared
+image-model option format `Name (LoRA|Edit|TTS) - Provider`
+([../images/providers/registry.md](../images/providers/registry.md) §Model picker labels).
+The name is the curated model label, not its provider path;
+the model id stays the option value, and the full slug and version pin remain available in the
+run's provenance. The select still disables a row without a runnable pinned version.
+
+The separate LoRA select lists enabled **library rows** through `imageLoraOptionLabel`. It uses
+each row's independently curated `image_loras.label` as its source and removes a repeated
+compatible model or Base-family name prefix when present. That shortening is presentation only: the curated
+label, library id, locator, and compatibility rules remain unchanged. Its options name weights,
+not image-model endpoints, so the model type and provider suffix do not apply to them
+([../images/providers/loras.md](../images/providers/loras.md)).
+
 ## What the capability record decides
 
 - **Primary references** appear only on a model that can edit. They enter the planner in caller

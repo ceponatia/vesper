@@ -14,7 +14,7 @@ and what came back or why nothing did.
 | Doc                              | What it covers                                                                 |
 | -------------------------------- | ------------------------------------------------------------------------------ |
 | [runs.md](runs.md)               | The immutable run row, the multi-image fan-out, outputs, provenance, duplicate |
-| [form.md](form.md)               | The capability-driven create form, output shape, and the owned-image picker    |
+| [form.md](form.md)               | Form capabilities, model/LoRA labels, output shape, and image picker           |
 | [refusals.md](refusals.md)       | All-or-nothing inputs and the fail-closed-before-spend refusal codes           |
 | [api.md](api.md)                 | Routes, the job seam, and the code map                                         |
 | [face-repair.md](face-repair.md) | The flagged owner-admin face-repair action over this run path                  |

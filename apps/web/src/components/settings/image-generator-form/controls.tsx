@@ -10,6 +10,7 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { imageLoraOptionLabel } from "@/lib/image-model-option-label";
 import { Textarea } from "@/components/ui/textarea";
 import { NumberField } from "../image-admin-shared";
 import type { GeneratorModelView } from "./model";
@@ -140,6 +141,7 @@ export function GeneratorControls({
   editStrengthError,
   loraScaleError,
   enabledLoras,
+  registeredModels,
   loraPrefilled,
   selectedLora,
   loraModelMismatch,
@@ -179,6 +181,7 @@ export function GeneratorControls({
   editStrengthError: string | null;
   loraScaleError: string | null;
   enabledLoras: ImageLora[];
+  registeredModels: ImageModel[];
   loraPrefilled: boolean;
   selectedLora: ImageLora | null;
   loraModelMismatch: boolean;
@@ -408,7 +411,7 @@ export function GeneratorControls({
                         <option value="">— None —</option>
                         {enabledLoras.map((lora) => (
                           <option key={lora.id} value={lora.id}>
-                            {lora.label}
+                            {imageLoraOptionLabel(lora, registeredModels)}
                           </option>
                         ))}
                       </Select>
