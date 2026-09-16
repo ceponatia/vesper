@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, magicLink } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import { accounts, authSessions, db, users, verifications } from "../db";
+import { afterCredentialAttempt, beforeCredentialAttempt } from "./credential-hooks";
 import { magicLinkPluginEnabled, sendMagicLink } from "./magic-link";
 
 /**
@@ -161,6 +162,14 @@ export const auth = betterAuth({
   socialProviders: configuredSocialProviders(),
   /** Keys the built-in throttle and session records on the un-forgeable address — see {@link EDGE_CLIENT_IP_HEADER}. */
   advanced: { ipAddress: { ipAddressHeaders: [EDGE_CLIENT_IP_HEADER] } },
+  /**
+   * The durable per-account backoff (`credential-guard.ts`). The limiters above
+   * and in `server/api/rate-limit.ts` bound how fast one ADDRESS may guess and
+   * live in memory; this bounds how fast one ACCOUNT may be guessed at from
+   * everywhere, and survives a restart. `credential-hooks.ts` owns which paths
+   * it touches — it must stay off `get-session`.
+   */
+  hooks: { before: beforeCredentialAttempt, after: afterCredentialAttempt },
   /**
    * Session lifetime is stated rather than inherited: an explicit, documented
    * lifetime is a standing sign-up hardening decision

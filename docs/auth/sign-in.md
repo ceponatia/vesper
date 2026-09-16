@@ -22,7 +22,7 @@ Three hardening decisions already stand:
 - **Rate limiting is deliberately process-local.** `apps/web/src/server/api/rate-limit.ts` is
   per-process while Vesper runs a single instance. A second instance is what re-opens shared
   rate limiting, not sign-up.
-- **The sign-in throttle keys on the trusted address** (below).
+- **The sign-in throttle keys on the trusted address, and the per-account backoff is durable** (below).
 - **Session lifetimes are explicit, not inherited**
   ([README.md](README.md) §Session lifetime), and **security events are logged without tokens** —
   `auth.magic_link` never carries a url or token in production, and any new auth event re-checks
@@ -30,8 +30,14 @@ Three hardening decisions already stand:
 
 ## Throttling the credential surface
 
-Two independent windows bound guessing, and both key on the client address Fly's edge proxy
-reports:
+Guessing is bounded on two axes, because neither alone is enough. The per-address windows bound how
+fast one source may attempt anything; they are defeated by an attacker who spreads guesses across
+proxies. The per-account backoff bounds how fast one account may be guessed at from everywhere, and
+is the only layer that survives a restart.
+
+### Per address, in memory
+
+Two windows, both keyed on the client address Fly's edge proxy reports:
 
 - **Better Auth's built-in rules**, one bucket per address per auth path, and **production only**
   (`rateLimit.enabled` defaults to `isProduction`, so in dev and test only the window below runs):
@@ -68,6 +74,49 @@ would throttle a shared office or CGNAT address without costing an attacker anyt
 per-IP window by hand and leaves CSRF to the library, which already guards this surface and admits
 flows `csrf.ts` does not model. A denial is re-stated in the library's own error shape so the
 sign-in form renders the reason rather than a generic failure.
+
+### Per account, in Postgres
+
+`server/auth/credential-guard.ts` counts **failed password checks** against one account and makes the
+next attempt wait. It is durable because the thing it bounds is not a burst: an attacker rotating
+source addresses walks past every window above, and an in-memory count is cleared by any crash or
+deploy. `credential_failures` holds one row per account under attack.
+
+- **The schedule.** Five consecutive failures cost nothing. After that the wait doubles — 5s, 10s,
+  20s, 40s, 80s, 160s — and stops at **five minutes**. A correct password deletes the row. An account
+  left alone for an hour starts over.
+- **A delay, never a lockout.** The ceiling is the anti-abuse property and the anti-denial-of-service
+  property at once: a sustained attack is held to ~12 guesses an hour from every source combined,
+  and an attacker who fails deliberately against a known address can impose that wait and nothing
+  worse, paying a request each time to keep imposing it. Nobody is ever locked out pending
+  intervention.
+- **What it counts.** Only the endpoints that verify a password — `sign-in/email`, `verify-password`
+  and `change-password`. Token paths (`reset-password`, `magic-link/verify`) are excluded: a 32-byte
+  random is not guessable, and charging them would let anyone holding a stale link delay the
+  account's real sign-in. `get-session` writes nothing; the hook runs on every auth endpoint, so that
+  exclusion is load-bearing.
+- **Charged before the password is checked.** That is what makes simultaneous guesses count
+  separately instead of all reading one "under the threshold". The write is a compare-and-swap
+  pinning the row the decision was read from, so a concurrent charge retries against the winner's
+  state. A refused attempt writes nothing, so hammering a closed window cannot extend it.
+- **Keyed on a digest, not the address.** Rows are written for whatever address is submitted, whether
+  or not an account exists, so the address is salted and hashed — the table is a counter, not a log
+  of attempted emails. Normalization matches Better Auth's own (`findUserByEmail` lowercases); if it
+  did not, varying the case would buy a fresh allowance per spelling.
+- **Says nothing about who exists.** The refusal is identical for a real and an invented address, and
+  is reached by the same work, so it adds no signal to the equal-time path Better Auth already keeps
+  by hashing a password even when no user matches.
+
+**This guard fails closed.** If its table is unreachable the attempt is refused, unlike the cost
+guards in `server/api/quota.ts`, which allow the call when their counter is unreachable. The trade is
+different here. A sign-in cannot succeed without this database anyway — the user lookup, the
+credential row and the session insert all need it — so refusing costs an honest caller nothing they
+had. The case that is not free is the one that matters: if reads still worked while this write did
+not, failing open would switch the account defense off exactly while passwords were still being
+verified.
+
+`server/retention/credentials.ts` reaps rows past the decay window on the maintenance tick; the
+per-address window above is what bounds how fast rows can be created in the first place.
 
 ## Sign-in methods
 
