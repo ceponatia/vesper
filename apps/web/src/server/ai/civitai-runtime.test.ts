@@ -268,6 +268,86 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=false")]);
   });
 
+  it("stops transient workflow-status retries after the bounded third read", async () => {
+    vi.useFakeTimers();
+    let statusReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-exhausted" : "submit-exhausted", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-exhausted")) {
+        statusReads += 1;
+        return Response.json({ detail: "prompt=private", errors: { "steps[0].input.resolution": ["token=secret"] } }, { status: 503 });
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(statusReads).toBe(3);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-exhausted", error: expect.stringContaining("civitai_http_503; retry=automatic") });
+    if (result.ok) throw new Error("expected the exhausted workflow-status read to fail");
+    expect(result.error).toContain("paths=steps[0].input.resolution");
+    expect(result.error).not.toContain("private");
+    expect(result.error).not.toContain("secret");
+  });
+
+  it("never retries a transient preflight or paid-submission POST", async () => {
+    const workflowUrls: string[] = [];
+    let phase: "preflight" | "submit" = "preflight";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      workflowUrls.push(href);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (phase === "preflight") return Response.json({ detail: "prompt=private" }, { status: 503 });
+      return Response.json(workflowFrom(body, whatif === "true" ? "estimate-post" : "submit-post", whatif === "true" ? "unassigned" : "processing"));
+    });
+
+    const preflightFailure = await runCivitaiKleinImageModel(MODEL, request);
+    expect(preflightFailure).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_503; retry=deliberate") });
+    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
+
+    phase = "submit";
+    workflowUrls.length = 0;
+    vi.mocked(globalThis.fetch).mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      workflowUrls.push(href);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (whatif === "true") return Response.json(workflowFrom(body, "estimate-post", "unassigned"));
+      return Response.json({ detail: "prompt=private" }, { status: 503 });
+    });
+
+    const submitFailure = await runCivitaiKleinImageModel(MODEL, request);
+    expect(submitFailure).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_503; retry=deliberate") });
+    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=false")]);
+  });
+
+  it("returns a stable non-retryable code for a malformed successful Civitai response", async () => {
+    const workflowUrls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      workflowUrls.push(href);
+      return new Response("prompt=private", { status: 200 });
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_malformed_response; retry=never") });
+    if (result.ok) throw new Error("expected malformed Civitai JSON to fail");
+    expect(result.error).not.toContain("private");
+    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
+  });
+
   it("does not make a paid submission after an insufficient-Buzz preflight", async () => {
     const workflowUrls: string[] = [];
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
