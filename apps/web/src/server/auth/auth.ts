@@ -4,6 +4,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, magicLink } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import { accounts, authSessions, db, users, verifications } from "../db";
+import { afterCredentialAttempt, beforeCredentialAttempt } from "./credential-hooks";
 import { magicLinkPluginEnabled, sendMagicLink } from "./magic-link";
 
 /**
@@ -128,6 +129,27 @@ function configuredBaseURL(): string | undefined {
   return isNextBuildPhase() ? "https://build.invalid" : undefined;
 }
 
+/**
+ * The one inbound header a caller cannot forge: Fly's edge proxy overwrites it
+ * on every request. Stated here as a literal rather than imported from
+ * `server/api/client-ip.ts`, which ranks the same header first — a server module
+ * reaches another only through its barrel, and `server/api`'s barrel imports
+ * this module, so the import would close a cycle. The two agree by the tests
+ * that pin each side, not by coincidence.
+ *
+ * Better Auth's default is `x-forwarded-for`, which any client can set to
+ * anything. That made its built-in sign-in throttle (3 per 10s) keyed on a value
+ * the attacker chooses: rotate the header, get a fresh bucket, guess forever.
+ * The same resolution also stamps `auth_sessions.ip_address`, so the recorded
+ * origin of a session was equally attacker-supplied.
+ *
+ * Listed alone, with no fallback. A forwarded-header fallback would reopen the
+ * bypass the moment the edge header went missing, which is exactly when it would
+ * not be noticed; with no usable header Better Auth instead drops every caller
+ * into one shared bucket, which fails closed.
+ */
+const EDGE_CLIENT_IP_HEADER = "fly-client-ip";
+
 export const auth = betterAuth({
   database: drizzleAdapter(db(), {
     provider: "pg",
@@ -138,6 +160,16 @@ export const auth = betterAuth({
   trustedOrigins: configuredTrustedOrigins(),
   emailAndPassword: { enabled: true, disableSignUp: signupDisabled },
   socialProviders: configuredSocialProviders(),
+  /** Keys the built-in throttle and session records on the un-forgeable address — see {@link EDGE_CLIENT_IP_HEADER}. */
+  advanced: { ipAddress: { ipAddressHeaders: [EDGE_CLIENT_IP_HEADER] } },
+  /**
+   * The durable per-account backoff (`credential-guard.ts`). The limiters above
+   * and in `server/api/rate-limit.ts` bound how fast one ADDRESS may guess and
+   * live in memory; this bounds how fast one ACCOUNT may be guessed at from
+   * everywhere, and survives a restart. `credential-hooks.ts` owns which paths
+   * it touches — it must stay off `get-session`.
+   */
+  hooks: { before: beforeCredentialAttempt, after: afterCredentialAttempt },
   /**
    * Session lifetime is stated rather than inherited: an explicit, documented
    * lifetime is a standing sign-up hardening decision

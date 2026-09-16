@@ -1,0 +1,362 @@
+import { createHmac } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { credentialFailures, db } from "../db";
+import { log } from "@/server/log";
+
+/**
+ * Durable per-account backoff on failed credential checks.
+ *
+ * This is the second of two layers, and they bound different things. The per-IP
+ * window (`server/api/rate-limit.ts`) bounds how fast ONE ADDRESS may attempt
+ * anything; it lives in memory because losing a seconds-scale burst count to a
+ * restart is harmless. It cannot bound guessing against one account, because an
+ * attacker with a list of proxies simply spreads the attempts. This layer bounds
+ * how fast ONE ACCOUNT may be guessed at, from everywhere at once, and is
+ * accounted in Postgres because an attacker who could clear it by crash-looping
+ * the process — or just by waiting for the next deploy — would not be bounded
+ * at all.
+ *
+ * ## Shape of the defense
+ *
+ * A wait that grows with consecutive failures and **stops growing** at
+ * {@link MAX_BACKOFF_MS}. A correct password clears the record outright.
+ *
+ * The ceiling bounds the length of one wait. It does **not** bound how many
+ * waits an attacker can chain, because every admitted attempt re-arms the full
+ * wait before the password is checked: an account at the ceiling has one
+ * admitted attempt per window, globally, first-come-first-served, and
+ * `Retry-After` names when it opens. Bounding one account's total guess rate and
+ * guaranteeing its owner a slot are in genuine tension — nothing here can tell
+ * the owner's request from the attacker's — so the tension is resolved by
+ * making the lost race cheap rather than by pretending it cannot happen: the
+ * ceiling is a minute rather than five, and {@link grantCredentialBypass} lets
+ * an operator open the account for a short window when even that is not enough.
+ *
+ * ## What it does not reveal
+ *
+ * The record is keyed on whatever address was submitted, whether or not an
+ * account exists for it, and the refusal is byte-identical either way. Better
+ * Auth already burns a password hash on the unknown-user path so the timings
+ * match; charging before the endpoint runs keeps that property, because the work
+ * this module does is the same for both.
+ */
+
+/** Consecutive failures that cost nothing — a person mistyping a password. */
+export const FREE_ATTEMPTS = 5;
+
+/** The first penalty, doubling per failure after {@link FREE_ATTEMPTS}. */
+export const BASE_BACKOFF_MS = 5_000;
+
+/**
+ * The ceiling, and the number that trades the two risks against each other.
+ *
+ * A longer wait bounds guessing harder — but because an admitted attempt
+ * re-arms the wait before the password is checked, the wait is ALSO how long an
+ * attacker owns the account's only slot. At a minute a sustained attack is held
+ * to ~60 guesses an hour from every source combined, which still ends
+ * offline-scale guessing against a known address, while leaving an owner who is
+ * being hammered a realistic chance of taking a slot themselves rather than a
+ * five-minute race they lose every time.
+ *
+ * {@link grantCredentialBypass} is the backstop for when they lose it anyway.
+ */
+export const MAX_BACKOFF_MS = 60_000;
+
+/**
+ * Idle time after which the count restarts. Long enough that yesterday's typos
+ * are not still being charged; short enough to be useless as an evasion, since
+ * reaching it means attempting fewer than one guess an hour — slower than the
+ * ceiling above already forces.
+ */
+export const DECAY_MS = 3_600_000;
+
+/** Bound on the stored count. The delay saturates at 12, so this is headroom, not policy. */
+export const FAILURE_CAP = 16;
+
+/** Compare-and-swap rounds before giving up. Contention on one subject means an attack. */
+const MAX_SWAP_ATTEMPTS = 3;
+
+/** Floor between "guard unavailable" error lines, so an outage logs a signal rather than a flood. */
+const UNAVAILABLE_LOG_INTERVAL_MS = 60_000;
+let lastUnavailableLogAt = 0;
+
+export interface CredentialDecision {
+  readonly allowed: boolean;
+  /** Whole seconds the caller must wait; 0 when allowed. */
+  readonly retryAfterSeconds: number;
+  /**
+   * Why a refusal happened. `backoff` is the policy deciding; `contended` is a
+   * lost race under load, where the count does not yet reflect this attempt;
+   * `unavailable` is the guard itself being broken. Distinct because they mean
+   * different things to whoever is reading the logs.
+   */
+  readonly reason: "allowed" | "backoff" | "contended" | "unavailable";
+}
+
+const ALLOWED: CredentialDecision = { allowed: true, retryAfterSeconds: 0, reason: "allowed" };
+
+function refused(reason: "backoff" | "contended" | "unavailable", retryAfterMs: number): CredentialDecision {
+  return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)), reason };
+}
+
+/**
+ * The delay owed after `failures` consecutive misses.
+ *
+ * Exponential between the free allowance and the ceiling: 5s, 10s, 20s, 40s,
+ * 80s, 160s, then flat at {@link MAX_BACKOFF_MS}. Doubling is what makes a long
+ * run expensive without making the first slip annoying.
+ */
+export function backoffMs(failures: number): number {
+  if (failures <= FREE_ATTEMPTS) return 0;
+  const step = failures - FREE_ATTEMPTS - 1;
+  return Math.min(MAX_BACKOFF_MS, BASE_BACKOFF_MS * 2 ** step);
+}
+
+export interface FailureRecord {
+  readonly failures: number;
+  readonly lastFailureAt: number;
+}
+
+export interface NextFailureState {
+  readonly failures: number;
+  readonly retryAt: number;
+}
+
+/**
+ * The state a fresh failure produces. Pure, so the schedule is one readable
+ * function rather than arithmetic spread across a SQL statement — the database
+ * only stores what this decides.
+ */
+export function nextFailureState(prior: FailureRecord | null, now: number): NextFailureState {
+  const decayed = prior === null || now - prior.lastFailureAt >= DECAY_MS;
+  const failures = decayed ? 1 : Math.min(prior.failures + 1, FAILURE_CAP);
+  return { failures, retryAt: now + backoffMs(failures) };
+}
+
+/**
+ * The bucket key for an address: normalized the way Better Auth normalizes it
+ * before looking a user up (`findUserByEmail` lowercases), then salted and
+ * digested.
+ *
+ * Matching that normalization is load-bearing, not tidiness — if `A@b.com` and
+ * `a@b.com` were different keys here while naming one account there, varying the
+ * case would multiply the allowance by however many spellings the attacker cared
+ * to type.
+ */
+export function credentialSubject(address: string): string {
+  const normalized = address.trim().toLowerCase();
+  const salt = process.env.BETTER_AUTH_SECRET ?? "vesper-credential-salt";
+  return createHmac("sha256", salt).update(normalized).digest("hex").slice(0, 32);
+}
+
+async function readRecord(
+  subject: string,
+): Promise<{ failures: number; lastFailureAt: Date; retryAt: Date; bypassUntil: Date | null } | null> {
+  const [row] = await db()
+    .select({
+      failures: credentialFailures.failures,
+      lastFailureAt: credentialFailures.lastFailureAt,
+      retryAt: credentialFailures.retryAt,
+      bypassUntil: credentialFailures.bypassUntil,
+    })
+    .from(credentialFailures)
+    .where(eq(credentialFailures.subject, subject))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Charge one credential attempt against `subject` and report whether it may
+ * proceed.
+ *
+ * Called **before** the password is checked, so the count cannot be outrun: an
+ * attempt that never reaches the verifier — a dropped connection, a crash
+ * mid-request — has already been counted, and a burst of simultaneous guesses
+ * cannot all read "under the threshold" and all proceed.
+ *
+ * Atomicity is a compare-and-swap rather than a single upsert: the update pins
+ * the exact row the decision was computed from, so a concurrent charge either
+ * loses and retries against the state the winner wrote, or wins and makes the
+ * other retry. The alternative — computing the schedule inside the SQL so one
+ * statement could do it — would put the policy in two places, which is how a
+ * backoff quietly stops matching the schedule it documents.
+ *
+ * A refused attempt writes nothing. Hammering a closed window therefore cannot
+ * push its own reset further out, the same property `checkRateLimit` keeps, and
+ * an impatient owner cannot lengthen their own wait.
+ */
+export async function chargeCredentialAttempt(subject: string, now: number = Date.now()): Promise<CredentialDecision> {
+  try {
+    for (let round = 0; round < MAX_SWAP_ATTEMPTS; round += 1) {
+      const prior = await readRecord(subject);
+
+      // An operator grant suspends the refusal but not the accounting: failures
+      // keep accumulating underneath, so the moment the window closes the
+      // backoff resumes from where the attack actually left it. The owner's own
+      // success deletes the row, grant and all.
+      const bypassUntil = prior?.bypassUntil ?? null;
+      const bypassed = bypassUntil !== null && bypassUntil.getTime() > now;
+
+      if (!bypassed && prior !== null && prior.retryAt.getTime() > now) {
+        return refused("backoff", prior.retryAt.getTime() - now);
+      }
+
+      const next = nextFailureState(
+        prior === null ? null : { failures: prior.failures, lastFailureAt: prior.lastFailureAt.getTime() },
+        now,
+      );
+      const values = {
+        failures: next.failures,
+        lastFailureAt: new Date(now),
+        retryAt: new Date(next.retryAt),
+        updatedAt: new Date(now),
+      };
+
+      if (prior === null) {
+        const inserted = await db()
+          .insert(credentialFailures)
+          .values({ subject, ...values })
+          .onConflictDoNothing({ target: credentialFailures.subject })
+          .returning({ id: credentialFailures.id });
+        if (inserted.length > 0) return ALLOWED;
+        continue; // Another attempt created the row first; re-read and charge against it.
+      }
+
+      // `values` deliberately omits `bypass_until`: the swap pins `failures` and
+      // `lastFailureAt` only, so writing the grant column back would clobber a
+      // grant issued between this read and this write — the one moment it
+      // matters most. Leaving it out of the SET means the column is untouched.
+      const swapped = await db()
+        .update(credentialFailures)
+        .set(values)
+        .where(
+          and(
+            eq(credentialFailures.subject, subject),
+            // Pinning both fields is what makes this a compare-and-swap: a
+            // concurrent charge changes them together, so a stale decision
+            // cannot land.
+            eq(credentialFailures.failures, prior.failures),
+            eq(credentialFailures.lastFailureAt, prior.lastFailureAt),
+          ),
+        )
+        .returning({ id: credentialFailures.id });
+      if (swapped.length > 0) return ALLOWED;
+    }
+
+    // Losing every round means many attempts are landing on one account at once,
+    // which is the attack this exists to bound, not ordinary traffic.
+    log.warn("auth.credential_guard", "credential backoff contended; refusing", {
+      code: "auth.credential_guard.contended",
+      subject,
+    });
+    return refused("contended", BASE_BACKOFF_MS);
+  } catch (err) {
+    /**
+     * Fail **closed**, deliberately, and unlike the cost guards in
+     * `server/api/quota.ts`, which allow the call when their counter is
+     * unreachable. That trade is right for a spend ceiling layered behind other
+     * limits and wrong here, for two reasons.
+     *
+     * It costs almost nothing. A sign-in cannot succeed without this database:
+     * the user lookup, the credential row and the session insert all need it. So
+     * in the case people picture — Postgres is down — refusing changes nothing an
+     * honest caller could have done anyway.
+     *
+     * And the case where it is not nothing is the one that matters. If reads
+     * still work while this write does not, failing open would leave the account
+     * defense off precisely while the sign-in path kept verifying passwords.
+     * Refusing is recoverable in a minute; unbounded guessing against a known
+     * admin address is not.
+     */
+    // Rate-limited: an outage means every sign-in takes this branch, and a line
+    // per request buries the first one — which is the only useful one.
+    const loggedAt = Date.now();
+    if (loggedAt - lastUnavailableLogAt >= UNAVAILABLE_LOG_INTERVAL_MS) {
+      lastUnavailableLogAt = loggedAt;
+      log.error("auth.credential_guard", "credential backoff unavailable; refusing", {
+        code: "auth.credential_guard.unavailable",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return refused("unavailable", BASE_BACKOFF_MS);
+  }
+}
+
+/**
+ * Forget a subject's failures. Called when a credential check actually passed,
+ * so an owner who fumbles a password four times and then gets it right starts
+ * clean rather than carrying the count into next week.
+ *
+ * Never throws: the sign-in already succeeded by the time this runs, and failing
+ * it over a bookkeeping delete would turn a working password into an error. The
+ * stale row's only effect is a delay the owner's next success clears anyway, and
+ * the retention pass removes it regardless.
+ */
+export async function clearCredentialFailures(subject: string): Promise<void> {
+  try {
+    await db().delete(credentialFailures).where(eq(credentialFailures.subject, subject));
+  } catch (err) {
+    log.warn("auth.credential_guard", "could not clear credential failures", {
+      code: "auth.credential_guard.clear_failed",
+      subject,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/** Default length of an operator grant — long enough to sign in, short enough to be spent. */
+export const BYPASS_GRANT_MS = 600_000;
+
+/**
+ * Open an account's backoff for a short window, so an owner can sign in while an
+ * attack is still running.
+ *
+ * This exists because the ceiling cannot be both a bound on guessing and a
+ * guarantee of owner access: at the ceiling the account has one admitted attempt
+ * per window, and whoever asks first takes it. Deleting the failure row instead
+ * would be weaker — the attacker only needs {@link FREE_ATTEMPTS} + 1 requests,
+ * a handful of seconds at the per-IP window, to rebuild a wait before the owner
+ * types their password.
+ *
+ * It suspends the refusal, not the accounting. Failures keep accruing
+ * underneath, so a grant that goes unused leaves the account exactly as
+ * protected as it was; a grant that IS used ends when the successful sign-in
+ * deletes the row. The cost is real and bounded: for the length of the window
+ * the attacker is not throttled either, so keep it short — at the per-IP
+ * credential window that is on the order of a hundred guesses, against an
+ * account whose owner is standing at the keyboard.
+ */
+export async function grantCredentialBypass(
+  subject: string,
+  durationMs: number = BYPASS_GRANT_MS,
+  now: number = Date.now(),
+): Promise<Date> {
+  const until = new Date(now + durationMs);
+  await db()
+    .insert(credentialFailures)
+    .values({
+      subject,
+      failures: 0,
+      lastFailureAt: new Date(now),
+      retryAt: new Date(now),
+      bypassUntil: until,
+    })
+    .onConflictDoUpdate({
+      target: credentialFailures.subject,
+      // Only the grant: the count and the schedule stay exactly as the attack
+      // left them, so nothing here is a covert reset.
+      set: { bypassUntil: until, updatedAt: new Date(now) },
+    });
+  return until;
+}
+
+/** Test-only: the raw record behind a subject. */
+export async function readCredentialFailures(subject: string): Promise<FailureRecord | null> {
+  const row = await readRecord(subject);
+  return row === null ? null : { failures: row.failures, lastFailureAt: row.lastFailureAt.getTime() };
+}
+
+/** Rows whose last failure is older than this are spent and may be reaped. */
+export function decayCutoff(now: Date): Date {
+  return new Date(now.getTime() - DECAY_MS);
+}

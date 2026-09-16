@@ -214,6 +214,12 @@ versus the dropped Tailscale plan, where the app wasn't publicly reachable at
 all. If you later want that posture back, Fly supports private networking /
 a Tailscale sidecar.) Set strong, unique `BETTER_AUTH_SECRET` and `DEV_PASSWORD`.
 
+Because that access control is reachable from anywhere, the credential surface is throttled against
+the address Fly's edge reports rather than a forwarded header — see
+[auth/sign-in.md](auth/sign-in.md) §Throttling the credential surface, which owns the rule. Anything
+that changes how requests reach the app (a second machine, a CDN or proxy in front of Fly) changes
+which header is trustworthy, and both limiters named there have to be re-checked against it.
+
 ## Troubleshooting
 
 - **`archive/tar: unknown file mode ?rwxr-xr-x` while transferring build

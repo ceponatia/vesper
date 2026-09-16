@@ -30,6 +30,7 @@
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/db-seed.ts",
+    "auth:unlock": "tsx scripts/auth-unlock.ts",
     "db:backfill-image-refs": "tsx scripts/backfill-image-references.ts",
     "db:backfill-registry-defaults": "tsx scripts/backfill-registry-defaults.ts",
     "db:sweep-chest-size": "tsx scripts/sweep-chest-size-anatomy.ts",

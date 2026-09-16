@@ -73,6 +73,12 @@ names (`emailVerified`, `userId`, `expiresAt`, …) exactly while SQL column nam
 `banReason` / `banExpires`; text PKs and every `ownerId` FK are untouched, so seeded users keep
 their ids ([../database/library.md](../database/library.md)).
 
+`credential_failures` is ours rather than Better Auth's: one row per account currently being guessed
+at, holding the consecutive-failure count that drives the durable sign-in backoff
+([sign-in.md](sign-in.md) §Per account, in Postgres). It is keyed by a salted digest of the address
+and carries no foreign key, because a row is written for whatever address a caller submits —
+including ones no account exists for.
+
 ## Dev and QA ergonomics
 
 The signed-session cookie replaced the raw-id `vesper_user` cookie, so dev and QA need a real

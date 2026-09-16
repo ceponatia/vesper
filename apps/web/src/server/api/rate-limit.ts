@@ -80,13 +80,21 @@ export const EXPENSIVE_LIMIT_NAMES = [
 ] as const satisfies readonly ApiLimitName[];
 
 /**
- * Pre-authentication per-IP policies. `ip_auth` covers the credential surface
- * (`/api/auth/*`), where the abuse shape is guessing rather than spending, so it
- * is far tighter than the app-wide default.
+ * Pre-authentication per-IP policies. `ip_auth` covers the credential
+ * operations named in `route-limits.ts` — sign-in, sign-up, password reset,
+ * magic link — where the abuse shape is guessing rather than spending, so it is
+ * far tighter than the app-wide default.
+ *
+ * The number is chosen to **bind**, not merely to exist. Better Auth's own
+ * sign-in rule (3 per 10s ≈ 18/min) sat just under the previous 20/min, so this
+ * policy never actually decided anything on the endpoint that matters most —
+ * and it is this one that records an abuse signal. Ten attempts a minute is an
+ * order of magnitude more than a person mistyping a password needs, and leaves
+ * room for several people sharing one office or CGNAT address.
  */
 export const IP_RATE_LIMITS = {
   ip_default: { limit: 300, windowMs: MINUTE },
-  ip_auth: { limit: 20, windowMs: MINUTE },
+  ip_auth: { limit: 10, windowMs: MINUTE },
 } as const satisfies Record<string, RateLimitPolicy>;
 
 export type IpLimitName = keyof typeof IP_RATE_LIMITS;

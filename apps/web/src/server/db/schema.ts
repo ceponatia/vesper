@@ -195,6 +195,52 @@ export const verifications = pgTable(
   (t) => [index("verifications_identifier_idx").on(t.identifier)],
 );
 
+/**
+ * Durable per-account credential backoff — the half of the sign-in defense that
+ * must survive a restart.
+ *
+ * The per-IP window in `server/api/rate-limit.ts` is in memory on purpose: a
+ * seconds-scale burst bound is harmless to lose. This is not that. An attacker
+ * guessing a known address rotates source addresses to defeat any IP-keyed
+ * limit and crash-loops or simply waits out a deploy to clear an in-memory one,
+ * so the count that actually bounds guessing against ONE account is accounted in
+ * Postgres — the same reasoning that puts `usage_counters` here, applied to a
+ * security budget rather than a cost one.
+ *
+ * `subject` is a salted digest of the normalized address, never the address:
+ * the row is created for whatever a caller submits, so storing it verbatim
+ * would make this table a log of attempted emails and a place to park arbitrary
+ * attacker text. One row per attacked account; `server/retention/credentials.ts`
+ * reaps the decayed ones.
+ */
+export const credentialFailures = pgTable(
+  "credential_failures",
+  {
+    id: id(),
+    /** `credentialSubject()` digest (server/auth/credential-guard.ts). */
+    subject: text("subject").notNull(),
+    /** Consecutive failed credential checks; capped, since the delay saturates first. */
+    failures: integer("failures").notNull().default(0),
+    lastFailureAt: timestamp("last_failure_at", { withTimezone: true }).notNull(),
+    /** When the next attempt is admitted. In the past ⇒ no delay is owed. */
+    retryAt: timestamp("retry_at", { withTimezone: true }).notNull(),
+    /**
+     * An operator-granted window during which the backoff does not refuse, so an
+     * owner locked out by a sustained attack can get in. Null except while a
+     * grant is live; cleared with the row on a successful sign-in.
+     */
+    bypassUntil: timestamp("bypass_until", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    /** The compare-and-swap target — `ON CONFLICT` needs this unique, not merely indexed. */
+    uniqueIndex("credential_failures_subject_idx").on(t.subject),
+    /** The retention pass scans by age. */
+    index("credential_failures_last_failure_idx").on(t.lastFailureAt),
+  ],
+);
+
 export const characters = pgTable(
   "characters",
   {
