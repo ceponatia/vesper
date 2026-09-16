@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """PreToolUse hook for the Agent tool: the Vesper subagent model policy.
 
-The owner's ruling: delegated Vesper roles pin their own model so the
-choice survives a missed `AGENTS.md` read — Sonnet for a bounded
-implementation slice (`vesper-builder`), Opus for escalation, semantic
-review, and test-keeping (`vesper-escalation`, `vesper-reviewer`,
-`vesper-test-keeper`). This hook keeps a spawn from working around that:
+The owner's ruling: delegated Claude-side Vesper roles pin their own model so
+the choice survives a missed `AGENTS.md` read — Sonnet for bounded
+implementation and test-keeping (`vesper-builder`, `vesper-test-keeper`), and
+Opus for escalation and semantic review (`vesper-escalation`,
+`vesper-reviewer`). This hook keeps a spawn from working around that:
 an explicit `model` on a pinned role, an implementation brief handed to
 anything else, or an escalation spawn whose record does not actually say
 what it is escalating from — either every handoff field filled with this
@@ -48,7 +48,7 @@ PINNED_MODEL = {
     "vesper-builder": "sonnet",
     "vesper-escalation": "opus",
     "vesper-reviewer": "opus",
-    "vesper-test-keeper": "opus",
+    "vesper-test-keeper": "sonnet",
 }
 BRIEF_MARKERS = ("## Checkout and ownership", "Owned writable paths", "# Brief:")
 # The built-in agent types that hold no edit or commit tools. A brief-shaped

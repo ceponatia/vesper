@@ -4,15 +4,23 @@ Choose a focused project role when it materially helps the task:
 
 | Role | Bounded responsibility |
 | --- | --- |
+| `vesper-builder` | Implement one well-specified slice and stop with an escalation record instead of retrying past its cap. |
 | `vesper-context-scout` | Gather the minimum verified context for a fresh worker or handoff. |
 | `vesper-ux-reviewer` | Assess substantial flows, defaults, unnecessary steps, and simpler alternatives. |
 | `vesper-ui-reviewer` | Inspect the deployed desktop/mobile UI and record rendered evidence. |
 | `vesper-scenario-reviewer` | Trace meaningful state transitions, failure recovery, and access boundaries. |
 | `vesper-test-keeper` | Bring every test that owns a finished change up to date and report the CI evidence. |
+| `vesper-escalation` | Reconsider a slice after its Terra correction cap or a documented consequential trigger, using its escalation record or named risk area. |
 
-These profiles inherit the selected model. Claude-side roles under
-`.claude/agents/` pin their model instead, and `AGENTS.md` §Subagent model
-policy (Claude) owns that table. Do not run every role for every change.
+Codex project profiles pin their model and reasoning effort. Routine roles use
+Terra; scenario review and escalation are the only Sol routes, at medium and
+high respectively. For roles without a project profile, Terra / medium is a
+repository policy target applied through the spawn interface when it supports
+an explicit override, not a project-configured fallback; roles that accept no
+override use the host default. The root Codex policy owns the full table and
+escalation criteria. Claude-side roles use host-native pins instead, and
+`AGENTS.md` §Subagent model policy (Claude) owns that table. Do not run every
+role for every change.
 Context, UX, and scenario roles inspect without editing; the UI role may record
 evaluation artifacts; the test keeper edits tests only. They do not implement
 fixes or spawn further agents. Run the test keeper after an implementation slice
@@ -32,8 +40,10 @@ can take precedence; do not describe role instructions as a complete security bo
   does not change its working directory. Use the brief template so a worker with
   limited inherited context still receives the issue, decisions, restrictions,
   paths, and required report.
-- Inherit the configured model. Override it only when the user requests a
-  supported model, and follow `spawn_agent`'s context-fork restrictions.
+- Use the project role's configured model. If the user explicitly requests a
+  different supported model, use an appropriate ad-hoc role and follow
+  `spawn_agent`'s context-fork restrictions rather than mislabeling a pinned
+  project role.
 - Use `send_message` to steer a running agent. Use `followup_task` to trigger a
   correction turn for an idle agent. Send findings back to the original worker
   when possible so it retains its implementation context.

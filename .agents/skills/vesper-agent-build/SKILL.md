@@ -7,7 +7,9 @@ description: Implement Vesper issues using delegated agents and isolated worktre
 
 This skill owns implementation and integration. `vesper-board` owns issue,
 branch, PR, and board operations; `vesper-pr-review` owns CI and review after
-delivery. Use the user's existing scope, model choice, and authorization.
+delivery. Use the user's existing scope and authorization. The root agent policy
+owns default model selection; an explicit user model choice overrides that
+default through a compatible role or ad-hoc spawn.
 An explicit instruction to work directly in a shared checkout overrides the
 default worktree procedure; assign disjoint paths and one integrator there.
 
@@ -64,6 +66,8 @@ unless the recorded evidence proves it occurred before those edits.
 
 - Read [Codex collaboration](references/codex.md) before delegating. Use the
   collaboration tools and parameter schemas available in the current session.
+- On Codex, use the model-pinned project roles in that reference: routine work
+  stays on Terra, while only the named deeper-reasoning routes use Sol.
 - On Claude, spawn `vesper-builder` for a bounded slice, `vesper-escalation`
   (with the escalation record or a `Risk area:` line) for risk-area slices or
   after a failed attempt, and `vesper-reviewer` for the semantic pass before

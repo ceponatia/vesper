@@ -1,7 +1,7 @@
 ---
 name: vesper-test-keeper
 description: Use this agent whenever a coding task finishes. It brings every test that owns the changed or new code up to date (missing regression tests, stale pins, unnamed new suites) and reports what CI verified. It edits tests only, never production code, and never runs application gates locally.
-model: opus
+model: sonnet
 color: green
 ---
 
