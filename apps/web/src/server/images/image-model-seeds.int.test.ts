@@ -1972,12 +1972,12 @@ describe.skipIf(!ready)("migration 0141 — history", () => {
 });
 
 /**
- * 0145 is the current journal head. Keep the global maximum here rather than
- * in an older migration's history test, so a new migration moves one assertion
- * while 0141 and 0142 keep protecting their own historical entries.
+ * 0145 remains an ordered historical entry. The current journal-head assertion
+ * belongs to the newest data migration below, so adding another migration does
+ * not rewrite this migration's own history.
  */
 describe.skipIf(!ready)("migration 0145 — history", () => {
-  it("is the unique journal head, timestamped after every earlier entry, with no schema snapshot", async () => {
+  it("is a unique ordered data migration with no schema snapshot", async () => {
     const journal = JSON.parse(
       await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
     ) as { entries: { idx: number; tag: string; when: number }[] };
@@ -1986,13 +1986,220 @@ describe.skipIf(!ready)("migration 0145 — history", () => {
     expect(entry).toBeDefined();
     expect(entry?.idx).toBe(145);
     expect(journal.entries.filter((candidate) => candidate.idx === 145)).toHaveLength(1);
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(145);
 
     const earlier = journal.entries.filter((candidate) => candidate.idx < 145).map((candidate) => candidate.when);
     expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
 
     // 0145 seeds registry rows only; a snapshot would claim a schema change.
     const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0145_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0146 — Civitai FLUX.2 Klein 4B native v2 contract
+// ---------------------------------------------------------------------------
+
+const CIVITAI_V2_MIGRATION_TAG = "0146_civitai-flux2-klein-4b-v2";
+const CIVITAI_V2_MIGRATION_FILE = `drizzle/${CIVITAI_V2_MIGRATION_TAG}.sql`;
+const CIVITAI_V2_MODEL_ID = "imgmdlcivklein4baaaaaaa";
+const CIVITAI_V2_LORA_ID = "imglorklein4bnsfwfemale";
+const CIVITAI_V2_SLUG = "civitai/flux-2-klein-4b";
+const CIVITAI_LORA_SEED_FILE = "drizzle/0143_klein-4b-female-nsfw-lora.sql";
+const CIVITAI_LORA_LOCATOR_FIX_FILE = "drizzle/0144_klein-4b-female-nsfw-lora-hf-url.sql";
+
+/** The one CTE statement is the atomic model-to-LoRA dependency under test. */
+function civitaiV2Statements(): Promise<string[]> {
+  return migrationStatements(CIVITAI_V2_MIGRATION_FILE, "WITH migrated_model");
+}
+
+async function reapplyCivitaiV2(): Promise<void> {
+  const statements = await civitaiV2Statements();
+  expect(statements, `${CIVITAI_V2_MIGRATION_FILE} must carry one dependent CTE statement`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/** Rebuild the exact 0145 state through shipped migration statements. */
+async function restoreCivitai0145State(): Promise<void> {
+  const loraSeed = await insertStatements(CIVITAI_LORA_SEED_FILE);
+  const locatorFix = await migrationStatements(CIVITAI_LORA_LOCATOR_FIX_FILE, 'UPDATE "image_loras"');
+  const civitaiSeed = await insertStatements(`drizzle/${CIVITAI_MIGRATION_TAG}.sql`);
+  const civitaiLora = await migrationStatements(`drizzle/${CIVITAI_MIGRATION_TAG}.sql`, 'UPDATE "image_loras"');
+
+  expect(loraSeed, `${CIVITAI_LORA_SEED_FILE} must carry one seed`).toHaveLength(1);
+  expect(locatorFix, `${CIVITAI_LORA_LOCATOR_FIX_FILE} must carry one update`).toHaveLength(1);
+  expect(civitaiSeed, `${CIVITAI_MIGRATION_TAG} must carry one model seed`).toHaveLength(1);
+  expect(civitaiLora, `${CIVITAI_MIGRATION_TAG} must carry one LoRA update`).toHaveLength(1);
+
+  await db().delete(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+  await db().delete(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
+  for (const statement of [...loraSeed, ...locatorFix, ...civitaiSeed, ...civitaiLora]) {
+    await db().execute(sql.raw(statement));
+  }
+}
+
+async function restoreCivitaiV2State(): Promise<void> {
+  await restoreCivitai0145State();
+  await reapplyCivitaiV2();
+}
+
+async function civitaiV2Intact(): Promise<boolean> {
+  const [model] = await db()
+    .select({ version: imageModels.probedVersionId })
+    .from(imageModels)
+    .where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+  const lora = await loadImageLora(CIVITAI_V2_LORA_ID);
+  if (model?.version !== "4b" || lora === null) return false;
+  return lora.compatibleVersionIds.length === 1 && lora.compatibleVersionIds[0] === "4b";
+}
+
+describe.skipIf(!ready)("migration 0146 — Civitai Klein native v2", () => {
+  afterAll(async () => {
+    if (!ready) return;
+    if (!(await civitaiV2Intact())) await restoreCivitaiV2State();
+  });
+
+  it("places the fresh migrated bench row on the reviewed native v2 contract without a profile", async () => {
+    const sink = new DiagnosticCollector();
+    const model = (await loadImageModels(sink)).find((candidate) => candidate.id === CIVITAI_V2_MODEL_ID);
+
+    expect(model).toMatchObject({
+      slug: CIVITAI_V2_SLUG,
+      label: "FLUX.2 Klein 4B (Civitai v2)",
+      canGenerate: true,
+      canEdit: true,
+      referenceField: "images",
+      referenceArity: "array",
+      referenceTransport: "data_url",
+      maxReferences: 2,
+      supportedAspects: ["1:1", "2:3", "3:2"],
+      outputFormat: null,
+      probedVersionId: "4b",
+      editKind: "unknown",
+      identityPreservation: "unknown",
+      forPortrait: false,
+      forVariant: false,
+      forScene: false,
+    });
+    expect(model?.advancedCapabilities).toMatchObject({
+      prompt: { field: "prompt", maxChars: 1000 },
+      controls: {
+        seed: { field: "seed", type: "integer" },
+        loraWeights: { field: "civitai_lora_version", type: "string" },
+        loraScale: { field: "civitai_lora_strength", type: "number" },
+      },
+      additionalImageInputs: [],
+      knownInputFields: ["prompt", "aspect_ratio", "seed", "civitai_lora_version", "civitai_lora_strength"],
+    });
+    expect(model?.advancedCapabilities.controls.negativePrompt).toBeUndefined();
+    expect(model?.operatorWarning).toMatch(/admin Image Generator bench.*combined paid.*unverified/i);
+    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
+
+    const profiles = await db()
+      .select({ id: imageModelProfiles.id })
+      .from(imageModelProfiles)
+      .where(eq(imageModelProfiles.imageModelId, CIVITAI_V2_MODEL_ID));
+    expect(profiles).toEqual([]);
+
+    expect(await loadImageLora(CIVITAI_V2_LORA_ID)).toMatchObject({
+      compatibleModelSlugs: [CIVITAI_V2_SLUG],
+      compatibleVersionIds: ["4b"],
+    });
+  });
+
+  it("does not rewrite the migrated model or LoRA on replay, timestamps included", async () => {
+    const modelBefore = await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+    const loraBefore = await db().select().from(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
+
+    await reapplyCivitaiV2();
+
+    expect(await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID))).toEqual(modelBefore);
+    expect(await db().select().from(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID))).toEqual(loraBefore);
+  });
+
+  it("preserves a model curated through the admin surface and leaves its LoRA on the legacy selector", async () => {
+    await restoreCivitai0145State();
+    try {
+      // A supported admin write always advances updated_at. This direct field
+      // change also proves the complete baseline does not overwrite any curation.
+      await db().execute(sql`UPDATE "image_models" SET "can_edit" = true, "updated_at" = now() WHERE "id" = ${CIVITAI_V2_MODEL_ID}`);
+      await reapplyCivitaiV2();
+
+      const [model] = await db()
+        .select({ version: imageModels.probedVersionId, canEdit: imageModels.canEdit })
+        .from(imageModels)
+        .where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(model).toEqual({ version: "2612557", canEdit: true });
+      expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["2612557"]);
+    } finally {
+      await restoreCivitaiV2State();
+    }
+  });
+
+  it("preserves an explicitly disabled generator row and its pilot LoRA", async () => {
+    await restoreCivitai0145State();
+    try {
+      await db().execute(sql`UPDATE "image_models" SET "can_generate" = false WHERE "id" = ${CIVITAI_V2_MODEL_ID}`);
+      await reapplyCivitaiV2();
+
+      const [model] = await db()
+        .select({ version: imageModels.probedVersionId, canGenerate: imageModels.canGenerate })
+        .from(imageModels)
+        .where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(model).toEqual({ version: "2612557", canGenerate: false });
+      expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["2612557"]);
+    } finally {
+      await restoreCivitaiV2State();
+    }
+  });
+
+  it("resurrects neither a deleted model nor its LoRA migration dependency", async () => {
+    await restoreCivitai0145State();
+    try {
+      await db().delete(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      await reapplyCivitaiV2();
+
+      const [model] = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(model).toBeUndefined();
+      expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["2612557"]);
+    } finally {
+      await restoreCivitaiV2State();
+    }
+  });
+
+  it("preserves an edited LoRA even when the exact model baseline migrates", async () => {
+    await restoreCivitai0145State();
+    try {
+      await db().execute(
+        sql`UPDATE "image_loras" SET "compatible_version_ids" = '["operator-version"]'::jsonb WHERE "id" = ${CIVITAI_V2_LORA_ID}`,
+      );
+      await reapplyCivitaiV2();
+
+      const [model] = await db().select({ version: imageModels.probedVersionId }).from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
+      expect(model?.version).toBe("4b");
+      expect((await loadImageLora(CIVITAI_V2_LORA_ID))?.compatibleVersionIds).toEqual(["operator-version"]);
+    } finally {
+      await restoreCivitaiV2State();
+    }
+  });
+
+  it("is the unique journal head after 0145 and carries no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+    const entry = journal.entries.find((candidate) => candidate.tag === CIVITAI_V2_MIGRATION_TAG);
+    const previous = journal.entries.find((candidate) => candidate.idx === 145);
+
+    expect(entry?.idx).toBe(146);
+    expect(previous?.tag).toBe(CIVITAI_MIGRATION_TAG);
+    expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
+    expect(journal.entries.filter((candidate) => candidate.idx === 146)).toHaveLength(1);
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(146);
+
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0146_snapshot.json"), "utf8").then(
       () => false,
       () => true,
     );
