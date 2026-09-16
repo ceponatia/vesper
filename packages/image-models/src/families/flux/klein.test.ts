@@ -6,7 +6,7 @@ import {
   type ImageModelControlBindings,
 } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
-import { fluxKleinBase, fluxKleinBaseLora, fluxKleinDistilled } from "./klein";
+import { fluxKleinBase, fluxKleinBaseLora, fluxKleinCivitaiDistilledLora, fluxKleinDistilled } from "./klein";
 
 /**
  * The three klein variant compositions.
@@ -44,6 +44,19 @@ function kleinRow(overrides: Partial<ImageModel> = {}): ImageModel {
     canGenerate: true,
     canEdit: true,
     referenceArity: "array",
+    ...overrides,
+  });
+}
+
+function civitaiKleinRow(overrides: Partial<ImageModel> = {}): ImageModel {
+  return kleinRow({
+    slug: "civitai/flux-2-klein-4b",
+    label: "FLUX.2 Klein 4B (Civitai v2)",
+    maxReferences: 2,
+    advancedCapabilities: withControls({
+      loraWeights: { field: "civitai_lora_version", type: "string" },
+      loraScale: { field: "civitai_lora_strength", type: "number" },
+    }),
     ...overrides,
   });
 }
@@ -105,6 +118,21 @@ describe("klein variant composition", () => {
 });
 
 describe("klein reference-capacity validation reads the selected row, not a number written into the adapter", () => {
+  it("keeps Civitai v2's two-reference edit cap and permits its LoRA map binding", () => {
+    const row = civitaiKleinRow();
+    expect(fluxKleinCivitaiDistilledLora.capabilities).toEqual([
+      "prompt",
+      "multiReference",
+      "aspectRatio",
+      "seed",
+      "lora",
+    ]);
+    expect(fluxKleinCivitaiDistilledLora.validateRequest?.(row, { referenceCount: 2, usesLora: true })).toEqual([]);
+    expect(fluxKleinCivitaiDistilledLora.validateRequest?.(row, { referenceCount: 3, usesLora: true })).toEqual([
+      "FLUX.2 Klein 4B (Civitai v2) accepts at most 2 reference image(s), but this render carries 3.",
+    ]);
+  });
+
   it("refuses a 3-reference request and passes a 2-reference request against a curated cap of 2", () => {
     const row = kleinRow({ maxReferences: 2 });
     expect(fluxKleinDistilled.validateRequest?.(row, { referenceCount: 3, usesLora: false })).toEqual([

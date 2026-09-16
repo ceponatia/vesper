@@ -4,6 +4,9 @@ The selectable image-model catalog is **DATA in `image_models`**, while the row'
 
 - **Replicate** remains the default backend for the existing catalog, including Qwen Image 2, Qwen 2511/2512, Seedream, Wan, SDXL and the LoRA/preprocessor paths.
 - **fal.ai** currently owns the two Qwen Image 3 rows: `alibaba/qwen-image-3/text-to-image` and `alibaba/qwen-image-3/edit`.
+- **Civitai** owns the admin-only `civitai/flux-2-klein-4b` lane; its
+  [model contract](../../image-models/models/civitai-flux-2-klein-4b.md) defines
+  reference-plus-LoRA inputs and explicit mature-content/payment settings.
 - Venice remains removed — no `VENICE_*` env, `server/ai/venice.ts`, or `venice_*` provider ids.
 
 The model list is managed from the admin-only `/settings/image-models` page. Provider routing is below the render-intent seam, so Character Studio, scene rendering and the Admin Image Generator resolve profiles/models the same way regardless of which transport ultimately runs them.
@@ -17,8 +20,9 @@ The model list is managed from the admin-only `/settings/image-models` page. Pro
 
 - `REPLICATE_API_TOKEN` configures Replicate-backed image rows.
 - `FAL_API_KEY` configures fal-backed Qwen Image 3 rows.
+- `CIVITAI_API_TOKEN` authenticates Civitai workflow calls and protected LoRA retrieval.
 
-A deployment may have both, which is the normal production configuration after the Qwen Image 3 migration.
+Each selected provider requires its own configured credential.
 
 ## Reading order
 

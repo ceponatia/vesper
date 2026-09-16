@@ -4,85 +4,46 @@ import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { civitaiApiToken } from "../images/lora-credentials";
 
-/**
- * Native Civitai generation for the one reviewed open-weight lane Vesper uses
- * today: FLUX.2 Klein 4B distilled + an optional Civitai LoRA resource.
- *
- * Civitai's current generation graph (civitai/civitai,
- * `flux2-klein-graph.ts`) pins distilled 4B to model-version 2612557 and its
- * orchestrator handler explicitly turns every selected LoRA resource into the
- * `loras` map sent to the Flux2 Klein engine. We use that graph directly rather
- * than handing a download URL to another provider.
- *
- * Every paid submit is preceded by the provider's `whatIfFromGraph` query. That
- * path spends no Buzz and tells us whether the resources are READY, whether the
- * account permits mature generation, and whether Civitai intends to substitute
- * the checkpoint. A failed preflight therefore costs nothing; a substitution is
- * refused rather than grading a different model under this row's name.
- */
-
-export const CIVITAI_KLEIN_4B_VERSION_ID = "2612557";
-export const CIVITAI_KLEIN_4B_ECOSYSTEM = "Flux2Klein_4B";
+/** A documented variant selector, not an immutable numeric checkpoint revision. */
+export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
 export const CIVITAI_LORA_VERSION_FIELD = "civitai_lora_version";
 export const CIVITAI_LORA_STRENGTH_FIELD = "civitai_lora_strength";
-
-const CIVITAI_KLEIN_ASPECTS = new Set(["1:1", "2:3", "3:2"]);
-const CIVITAI_BASE_URL = "https://civitai.com";
-const WHAT_IF_PATH = "/api/trpc/orchestrator.whatIfFromGraph";
-const GENERATE_PATH = "/api/trpc/orchestrator.generateFromGraph";
-const GET_WORKFLOW_PATH = "/api/trpc/orchestrator.getWorkflow";
+const WORKFLOWS_URL = "https://orchestration.civitai.com/v2/consumer/workflows";
+const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_GENERATION_TIMEOUT_MS = 5 * 60_000;
-const POLL_INTERVAL_MS = 2_000;
+const MAX_REFERENCES = 2;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+const ALLOWED_CONTROLS = new Set(["seed", CIVITAI_LORA_VERSION_FIELD, CIVITAI_LORA_STRENGTH_FIELD]);
+const PENDING_STATUSES = new Set(["unassigned", "preparing", "scheduled", "processing"]);
+const FAILED_STATUSES = new Set(["failed", "expired", "canceled"]);
 
-interface CivitaiResource {
-  id: number;
-  model?: { type: "LORA" };
-  strength?: number;
+type JsonRecord = Record<string, unknown>;
+type KleinRequest = Pick<RegistryModelRequest, "prompt" | "aspect" | "controlInput" | "versionId">;
+
+export interface CivitaiKleinWorkflow {
+  externalId: string;
+  allowMatureContent: true;
+  currencies: readonly ["yellow"];
+  upgradeMode: "manual";
+  tags: readonly ["vesper", "image-generator"];
+  steps: readonly [{ $type: "imageGen"; input: JsonRecord }];
 }
 
-export interface CivitaiGenerationGraph {
-  workflow: "txt2img";
-  ecosystem: typeof CIVITAI_KLEIN_4B_ECOSYSTEM;
-  prompt: string;
-  negativePrompt?: string;
-  quantity: 1;
-  aspectRatio: string;
-  model: { id: number };
-  resources?: CivitaiResource[];
-  seed?: number;
-}
-
-interface WhatIfResult {
-  ready: boolean;
-  allowMatureContent?: boolean;
-  modelSubstitutions: unknown[];
-}
-
-interface SubmitResult {
+export interface CivitaiWorkflowResult {
   id: string;
   status: string;
-  modelSubstitutions: unknown[];
-}
-
-interface WorkflowBlob {
-  url: string;
-  available: boolean;
-  blockedReason: string | null;
-  hidden: boolean;
-}
-
-interface WorkflowResult {
-  id: string;
-  status: string;
-  blobs: WorkflowBlob[];
   errors: string[];
+  insufficient: boolean | null;
+  mature: boolean | null;
+  currencies: string[] | null;
+  upgradeMode: string | null;
+  input: JsonRecord | null;
+  images: { url: string | null; available: boolean; hidden: boolean; blocked: string | null }[];
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
+function asRecord(value: unknown): JsonRecord | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? value as JsonRecord
     : null;
 }
 
@@ -90,363 +51,339 @@ function asString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function asBoolean(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
-}
-
-function asUnknownArray(value: unknown): unknown[] {
+function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function isCivitaiHost(hostname: string): boolean {
-  return hostname === "civitai.com" || hostname.endsWith(".civitai.com");
+function isCivitaiHost(host: string): boolean {
+  return host === "civitai.com" || host.endsWith(".civitai.com");
 }
 
-function parseJsonText(text: string, context: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    throw new Error(`${context} returned invalid JSON`);
+export function civitaiKleinDimensions(aspect: string | null | undefined): { width: number; height: number } {
+  switch (aspect ?? "1:1") {
+    case "1:1": return { width: 1024, height: 1024 };
+    case "2:3": return { width: 832, height: 1248 };
+    case "3:2": return { width: 1248, height: 832 };
+    default: throw new Error("Civitai Klein supports only aspect ratios 1:1, 2:3, and 3:2");
   }
 }
 
-function unwrapTrpc(value: unknown, context: string): unknown {
-  const root = asRecord(value);
-  const result = asRecord(root?.result);
-  const data = asRecord(result?.data);
-  if (!data || !("json" in data) || data.json === null) {
-    throw new Error(`${context} returned an unexpected tRPC envelope`);
-  }
-  return data.json;
-}
-
-function responseError(context: string, status: number, text: string): Error {
-  const compact = text.trim().replace(/\s+/g, " ").slice(0, 800);
-  return new Error(`${context} failed (${String(status)})${compact ? `: ${compact}` : ""}`);
-}
-
-async function civitaiRequest(
-  url: string,
-  init: RequestInit,
-  token: string,
-  context: string,
-): Promise<unknown> {
-  const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${token}`);
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  const text = await response.text();
-  if (!response.ok) throw responseError(context, response.status, text);
-  return parseJsonText(text, context);
-}
-
-function numericVersionId(value: unknown): number | null {
+function loraVersionId(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  if (/^[1-9]\d*$/.test(trimmed) && Number.isSafeInteger(Number(trimmed))) return trimmed;
   try {
     const url = new URL(trimmed);
-    if (!isCivitaiHost(url.hostname)) return null;
-    const match = url.pathname.match(/\/api\/download\/models\/(\d+)(?:\/|$)/);
-    return match?.[1] ? Number(match[1]) : null;
+    if (url.protocol !== "https:" || !isCivitaiHost(url.hostname) || url.username || url.password) return null;
+    const version = url.pathname.match(/^\/api\/download\/models\/([1-9]\d*)\/?$/)?.[1];
+    return version && Number.isSafeInteger(Number(version)) ? version : null;
   } catch {
     return null;
   }
 }
 
-function numericControl(input: Readonly<Record<string, unknown>> | undefined, field: string): number | null {
-  const value = input?.[field];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+function selectedLora(controls: KleinRequest["controlInput"]): { version: string; strength: number } | null {
+  const locator = controls?.[CIVITAI_LORA_VERSION_FIELD];
+  const strength = controls?.[CIVITAI_LORA_STRENGTH_FIELD];
+  if (locator === undefined && strength === undefined) return null;
+  const version = loraVersionId(locator);
+  if (!version) throw new Error("Civitai LoRA selection did not resolve to a model-version id");
+  if (typeof strength !== "number" || !Number.isFinite(strength)) {
+    throw new Error("Civitai LoRA selection requires a finite numeric strength");
+  }
+  return { version, strength };
 }
 
-/** Pure graph builder used by both preview and the real provider send. */
-export function civitaiKleinGraph(
+export function validateCivitaiKleinRequest(model: Pick<ImageModel, "slug">, request: KleinRequest): void {
+  if (model.slug !== CIVITAI_FLUX2_KLEIN4B_SLUG) throw new Error("Unsupported Civitai image model");
+  if (request.versionId !== undefined && request.versionId !== CIVITAI_KLEIN_4B_VERSION_ID) {
+    throw new Error("Civitai Klein uses the documented 4b variant; the requested version does not match");
+  }
+  if (request.prompt.length > 1000) throw new Error("Civitai Klein prompts are limited to 1000 characters");
+  for (const key of Object.keys(request.controlInput ?? {})) {
+    if (!ALLOWED_CONTROLS.has(key)) throw new Error("Civitai Klein received an unsupported control");
+  }
+  const seed = request.controlInput?.seed;
+  if (seed !== undefined && (typeof seed !== "number" || !Number.isSafeInteger(seed))) {
+    throw new Error("Civitai Klein seed must be a safe integer");
+  }
+  selectedLora(request.controlInput);
+  civitaiKleinDimensions(request.aspect);
+}
+
+export function civitaiKleinWorkflow(
   model: Pick<ImageModel, "slug">,
-  request: Pick<RegistryModelRequest, "prompt" | "aspect" | "controlInput" | "versionId">,
-): CivitaiGenerationGraph {
-  if (model.slug !== CIVITAI_FLUX2_KLEIN4B_SLUG) {
-    throw new Error(`Unsupported Civitai image model: ${model.slug}`);
-  }
-  if (request.versionId && request.versionId !== CIVITAI_KLEIN_4B_VERSION_ID) {
-    throw new Error(
-      `${model.slug} is pinned to Civitai version ${CIVITAI_KLEIN_4B_VERSION_ID}; requested ${request.versionId}`,
-    );
-  }
-
-  const aspectRatio = request.aspect ?? "1:1";
-  if (!CIVITAI_KLEIN_ASPECTS.has(aspectRatio)) {
-    throw new Error(`Civitai FLUX.2 Klein 4B does not support aspect ratio ${aspectRatio}`);
-  }
-
-  const controls = request.controlInput;
-  const loraVersion = numericVersionId(controls?.[CIVITAI_LORA_VERSION_FIELD]);
-  const loraStrength = numericControl(controls, CIVITAI_LORA_STRENGTH_FIELD);
-  const negativePrompt = asString(controls?.negative_prompt)?.trim() ?? "";
-  const seed = numericControl(controls, "seed");
-
-  if (controls?.[CIVITAI_LORA_VERSION_FIELD] !== undefined && loraVersion === null) {
-    throw new Error("Civitai LoRA selection did not resolve to a model-version id");
-  }
-  if (loraVersion !== null && loraStrength === null) {
-    throw new Error("Civitai LoRA selection is missing its strength");
-  }
-
+  request: KleinRequest,
+  references: readonly string[] = [],
+  loras?: Readonly<Record<string, number>>,
+): CivitaiKleinWorkflow {
+  validateCivitaiKleinRequest(model, request);
+  if (references.length > MAX_REFERENCES) throw new Error("Civitai Klein accepts at most 2 reference images");
+  const seed = request.controlInput?.seed;
   return {
-    workflow: "txt2img",
-    ecosystem: CIVITAI_KLEIN_4B_ECOSYSTEM,
-    prompt: request.prompt,
-    ...(negativePrompt ? { negativePrompt } : {}),
-    quantity: 1,
-    aspectRatio,
-    model: { id: Number(CIVITAI_KLEIN_4B_VERSION_ID) },
-    ...(loraVersion === null
-      ? {}
-      : { resources: [{ id: loraVersion, model: { type: "LORA" as const }, strength: loraStrength ?? 1 }] }),
-    ...(seed === null ? {} : { seed: Math.trunc(seed) }),
+    externalId: randomUUID(),
+    allowMatureContent: true,
+    currencies: ["yellow"],
+    upgradeMode: "manual",
+    tags: ["vesper", "image-generator"],
+    steps: [{
+      $type: "imageGen",
+      input: {
+        engine: "flux2",
+        model: "klein",
+        modelVersion: CIVITAI_KLEIN_4B_VERSION_ID,
+        operation: references.length > 0 ? "editImage" : "createImage",
+        prompt: request.prompt,
+        ...civitaiKleinDimensions(request.aspect),
+        quantity: 1,
+        cfgScale: 5,
+        steps: 20,
+        sampleMethod: "euler",
+        schedule: "simple",
+        outputFormat: "jpeg",
+        enablePromptExpansion: false,
+        loras: loras ?? {},
+        ...(seed === undefined ? {} : { seed }),
+        ...(references.length === 0 ? {} : { images: references }),
+      },
+    }],
   };
 }
 
-/** Preview contains only numeric Civitai resource ids — never a download token. */
+/** Metadata lookup happens only at send; previews identify that unresolved AIR dependency. */
 export function previewCivitaiKleinRequest(
   model: Pick<ImageModel, "slug">,
-  request: Pick<RegistryModelRequest, "prompt" | "aspect" | "controlInput" | "versionId">,
-): Record<string, unknown> {
-  return { ...civitaiKleinGraph(model, request) };
+  request: KleinRequest,
+  referenceCount = 0,
+): JsonRecord {
+  validateCivitaiKleinRequest(model, request);
+  if (!Number.isInteger(referenceCount) || referenceCount < 0 || referenceCount > MAX_REFERENCES) {
+    throw new Error("Civitai Klein accepts zero, one, or two reference images");
+  }
+  const selected = selectedLora(request.controlInput);
+  const references = Array.from({ length: referenceCount }, (_unused, index) =>
+    `https://placeholder.invalid/reference-${String(index + 1)}`);
+  return {
+    ...civitaiKleinWorkflow(model, request, references),
+    externalId: "generated-for-each-request",
+    ...(selected ? { loraAirResolution: { modelVersionId: selected.version, strength: selected.strength } } : {}),
+  };
 }
 
 export function hasCivitai(): boolean {
   return civitaiApiToken() !== null;
 }
 
-function withoutPrompts(graph: CivitaiGenerationGraph): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(graph).filter(([key]) => key !== "prompt" && key !== "negativePrompt"),
-  );
-}
-
-async function whatIf(graph: CivitaiGenerationGraph, token: string): Promise<WhatIfResult> {
-  const input = JSON.stringify({ json: withoutPrompts(graph) });
-  const url = `${CIVITAI_BASE_URL}${WHAT_IF_PATH}?${new URLSearchParams({ input }).toString()}`;
-  const raw = await civitaiRequest(url, { method: "GET" }, token, "Civitai generation preflight");
-  const payload = asRecord(unwrapTrpc(raw, "Civitai generation preflight"));
-  if (!payload || typeof payload.ready !== "boolean") {
-    throw new Error("Civitai generation preflight returned no readiness result");
-  }
-  const allowMatureContent = asBoolean(payload.allowMatureContent);
-  return {
-    ready: payload.ready,
-    ...(allowMatureContent === null ? {} : { allowMatureContent }),
-    modelSubstitutions: asUnknownArray(payload.modelSubstitutions),
-  };
-}
-
-async function submit(graph: CivitaiGenerationGraph, token: string): Promise<SubmitResult> {
-  const body = JSON.stringify({
-    json: {
-      input: graph,
-      externalId: randomUUID(),
-      tags: ["vesper", "image-generator"],
-    },
-  });
-  const raw = await civitaiRequest(
-    `${CIVITAI_BASE_URL}${GENERATE_PATH}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body },
-    token,
-    "Civitai generation submit",
-  );
-  const payload = asRecord(unwrapTrpc(raw, "Civitai generation submit"));
-  const id = asString(payload?.id);
-  const status = asString(payload?.status);
-  if (!id || !status) throw new Error("Civitai generation submit returned no workflow id/status");
-  return { id, status, modelSubstitutions: asUnknownArray(payload?.modelSubstitutions) };
-}
-
-function collectStrings(value: unknown, output: string[]): void {
+/** Retain provider error codes, not arbitrary echoed prompts or signed URLs. */
+function errorCodes(value: unknown): string[] {
   if (typeof value === "string") {
-    const text = value.trim();
-    if (text && text.length <= 500) output.push(text);
-    return;
+    return /^[a-z][a-z0-9_]{0,79}$/.test(value) ? [value] : ["provider_error"];
   }
-  if (Array.isArray(value)) {
-    for (const item of value) collectStrings(item, output);
-  }
+  if (Array.isArray(value)) return value.flatMap(errorCodes).slice(0, 5);
+  const record = asRecord(value);
+  if (!record) return [];
+  const code = record.code ?? record.reason ?? record.type;
+  if (code !== undefined) return errorCodes(code);
+  return Object.keys(record).length > 0 ? ["provider_validation_error"] : [];
 }
 
-function blobsFromOutput(output: Record<string, unknown> | null): unknown[] {
-  if (!output) return [];
-  if (Array.isArray(output.images)) return output.images;
-  if (Array.isArray(output.blobs)) return output.blobs;
-  return output.blob === undefined || output.blob === null ? [] : [output.blob];
-}
-
-/**
- * Civitai's RAW `getWorkflow` response stores the hidden flag in step metadata,
- * keyed by blob id. It is not a blob field. The legacy key was `images`; the
- * current key is `output`, with the current value winning when both exist.
- */
-function hiddenForBlob(step: Record<string, unknown> | null, blobId: string): boolean {
-  if (!step || !blobId) return false;
-  const metadata = asRecord(step.metadata);
-  const current = asRecord(metadata?.output);
-  const legacy = asRecord(metadata?.images);
-  const currentMeta = asRecord(current?.[blobId]);
-  const legacyMeta = asRecord(legacy?.[blobId]);
-  return asBoolean(currentMeta?.hidden) ?? asBoolean(legacyMeta?.hidden) ?? false;
-}
-
-function parseWorkflow(value: unknown, requestedId: string): WorkflowResult {
-  const payload = asRecord(unwrapTrpc(value, "Civitai workflow status"));
-  if (!payload) throw new Error("Civitai workflow status returned an invalid workflow");
-  const status = asString(payload.status);
-  if (!status) throw new Error("Civitai workflow status returned no status");
-
-  const blobs: WorkflowBlob[] = [];
-  const errors: string[] = [];
-  for (const stepValue of asUnknownArray(payload.steps)) {
-    const step = asRecord(stepValue);
-    const output = asRecord(step?.output);
-    for (const blobValue of blobsFromOutput(output)) {
-      const blob = asRecord(blobValue);
-      const url = asString(blob?.url);
-      if (!url) continue;
-      const blobId = asString(blob?.id) ?? "";
-      blobs.push({
-        url,
-        available: asBoolean(blob?.available) ?? false,
-        blockedReason: asString(blob?.blockedReason),
-        hidden: hiddenForBlob(step, blobId),
-      });
-    }
-    collectStrings(step?.errors, errors);
-    collectStrings(step?.error, errors);
-    collectStrings(output?.errors, errors);
-    collectStrings(output?.error, errors);
+async function requestJson(url: string, init: RequestInit, token: string, context: string): Promise<unknown> {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Content-Type", "application/json");
+  const response = await fetch(url, {
+    ...init,
+    headers,
+    redirect: "error",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  const text = await response.text();
+  let value: unknown;
+  try {
+    value = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`${context} returned malformed JSON (HTTP ${String(response.status)})`);
   }
+  if (!response.ok) {
+    if (response.status === 401) throw new Error(`${context}: invalid Civitai API token (401)`);
+    if (response.status === 403) throw new Error(`${context}: token lacks recipe, resource, or mature-content permission (403)`);
+    if (response.status === 402) throw new Error(`${context}: billing refused, insufficient yellow Buzz or payment required (402)`);
+    const record = asRecord(value);
+    const details = errorCodes(record?.errors ?? record?.error ?? record?.code);
+    throw new Error(`${context} failed (HTTP ${String(response.status)})${details.length ? `: ${details.join(", ")}` : ""}`);
+  }
+  return value;
+}
 
+export function parseCivitaiWorkflow(value: unknown, context = "Civitai workflow"): CivitaiWorkflowResult {
+  const body = asRecord(value);
+  const status = asString(body?.status);
+  const id = asString(body?.id);
+  if (!body || !id || !status || (!PENDING_STATUSES.has(status) && !FAILED_STATUSES.has(status) && status !== "succeeded")) {
+    throw new Error(`${context} returned an invalid workflow identity or status`);
+  }
+  const steps = asArray(body.steps);
+  const step = asRecord(steps[0]);
+  if (!step || steps.length !== 1 || step.$type !== "imageGen") throw new Error(`${context} returned an unexpected workflow step`);
+  const output = asRecord(step.output);
+  const transactions = asRecord(body.transactions);
+  const currencies = body.currencies;
   return {
-    id: asString(payload.id) ?? requestedId,
+    id,
     status,
-    blobs,
-    errors: [...new Set(errors)].slice(0, 5),
+    errors: [...new Set([
+      ...errorCodes(body.errors), ...errorCodes(step.errors), ...errorCodes(step.error),
+      ...errorCodes(step.reason), ...errorCodes(output?.errors),
+    ])],
+    insufficient: typeof transactions?.insufficientBuzz === "boolean" ? transactions.insufficientBuzz : null,
+    mature: typeof body.allowMatureContent === "boolean" ? body.allowMatureContent : null,
+    currencies: Array.isArray(currencies) && currencies.every((currency): currency is string => typeof currency === "string")
+      ? currencies : null,
+    upgradeMode: asString(body.upgradeMode),
+    input: asRecord(step.input),
+    images: asArray(output?.images).map((value) => {
+      const image = asRecord(value);
+      return {
+        url: asString(image?.url),
+        available: image?.available === true,
+        hidden: image?.hidden === true,
+        blocked: typeof image?.blockedReason === "string" ? errorCodes(image.blockedReason).join(", ") : null,
+      };
+    }),
   };
 }
 
-async function getWorkflow(id: string, token: string): Promise<WorkflowResult> {
-  const input = JSON.stringify({ json: { workflowId: id } });
-  const url = `${CIVITAI_BASE_URL}${GET_WORKFLOW_PATH}?${new URLSearchParams({ input }).toString()}`;
-  const raw = await civitaiRequest(url, { method: "GET" }, token, "Civitai workflow status");
-  return parseWorkflow(raw, id);
+export function validateCivitaiPreflightEcho(actual: CivitaiWorkflowResult, expected: CivitaiKleinWorkflow): string | null {
+  if (actual.insufficient === true) return "Civitai billing: insufficient yellow Buzz; generation was not submitted";
+  if (actual.insufficient === null) return "Civitai preflight did not confirm sufficient yellow Buzz; generation was not submitted";
+  if (FAILED_STATUSES.has(actual.status) || actual.errors.length > 0) {
+    return `Civitai preflight refused the workflow: ${actual.errors.join(", ") || actual.status}`;
+  }
+  if (actual.mature !== true || actual.currencies?.length !== 1 || actual.currencies[0] !== "yellow" || actual.upgradeMode !== "manual") {
+    return "Civitai preflight did not confirm explicit mature-content permission, yellow-only payment, and manual upgrade policy";
+  }
+  const wanted = expected.steps[0].input;
+  const echoed = actual.input;
+  if (!echoed || (echoed.modelVariant ?? echoed.model) !== "klein") {
+    return "Civitai preflight did not echo the requested Klein variant";
+  }
+  for (const key of ["engine", "modelVersion", "operation", "width", "height", "quantity", "cfgScale", "steps", "sampleMethod", "schedule", "outputFormat", "enablePromptExpansion"] as const) {
+    if (echoed[key] !== wanted[key]) return `Civitai preflight changed or omitted requested field ${key}`;
+  }
+  if (wanted.seed !== undefined && echoed.seed !== wanted.seed) return "Civitai preflight changed the requested seed";
+  if (asArray(echoed.images).length !== asArray(wanted.images).length) return "Civitai preflight did not preserve the reference-image count";
+  const expectedLoras = asRecord(wanted.loras) ?? {};
+  const actualLoras = asRecord(echoed.loras);
+  if (!actualLoras || Object.keys(actualLoras).length !== Object.keys(expectedLoras).length ||
+      Object.entries(expectedLoras).some(([key, strength]) => actualLoras[key] !== strength)) {
+    return "Civitai preflight did not echo the requested LoRA AIR map";
+  }
+  return null;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+async function resolveLoras(request: KleinRequest, token: string): Promise<Record<string, number> | undefined> {
+  const selected = selectedLora(request.controlInput);
+  if (!selected) return undefined;
+  const value = await requestJson(`${MODEL_VERSIONS_URL}/${selected.version}`, { method: "GET" }, token, "Civitai LoRA metadata lookup");
+  const metadata = asRecord(value);
+  const model = asRecord(metadata?.model);
+  const modelId = metadata?.modelId;
+  if (!metadata || metadata.id !== Number(selected.version) || metadata.baseModel !== "Flux.2 Klein 4B" ||
+      model?.type !== "LORA" || typeof modelId !== "number" || !Number.isSafeInteger(modelId) || modelId < 1) {
+    throw new Error("Civitai LoRA metadata is not the requested Flux.2 Klein 4B LoRA; refusing before spend");
+  }
+  return { [`urn:air:flux2:lora:civitai:${String(modelId)}@${selected.version}`]: selected.strength };
 }
 
-async function waitForWorkflow(id: string, token: string, timeoutMs: number): Promise<WorkflowResult> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const workflow = await getWorkflow(id, token);
-    const status = workflow.status.toLowerCase();
-    if (!["unassigned", "preparing", "scheduled", "processing"].includes(status)) return workflow;
-    if (Date.now() >= deadline) throw new Error(`Civitai workflow ${id} timed out`);
-    await sleep(Math.min(POLL_INTERVAL_MS, Math.max(50, deadline - Date.now())));
-  }
-}
-
-function civitaiOutputUrl(url: string): URL {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new Error("Civitai returned an invalid output URL");
-  }
-  if (parsed.protocol !== "https:") throw new Error("Civitai output URL was not HTTPS");
-  if (!isCivitaiHost(parsed.hostname)) {
-    throw new Error(`Civitai returned output on an unexpected host: ${parsed.hostname}`);
-  }
-  return parsed;
+async function sendWorkflow(body: CivitaiKleinWorkflow, token: string, whatif: boolean): Promise<unknown> {
+  const context = whatif ? "Civitai generation preflight" : "Civitai generation submit";
+  return requestJson(`${WORKFLOWS_URL}?whatif=${String(whatif)}&wait=0`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }, token, context);
 }
 
 async function downloadOutput(url: string): Promise<Buffer> {
-  const response = await fetch(civitaiOutputUrl(url), { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`Civitai output download failed (${String(response.status)})`);
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) {
-    throw new Error("Civitai image exceeded the 32 MiB download limit");
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw new Error("Civitai returned an invalid output URL"); }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || !isCivitaiHost(parsed.hostname)) {
+    throw new Error("Civitai returned an output URL outside Vesper's trusted Civitai hosts");
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0) throw new Error("Civitai returned an empty image");
-  if (bytes.length > MAX_OUTPUT_BYTES) throw new Error("Civitai image exceeded the 32 MiB download limit");
-  return bytes;
+  const response = await fetch(parsed, { redirect: "error", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  if (!response.ok) throw new Error(`Civitai output download failed (HTTP ${String(response.status)})`);
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_OUTPUT_BYTES) throw new Error("Civitai output exceeds 32 MiB");
+  if (!response.body) throw new Error("Civitai returned an empty output body");
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > MAX_OUTPUT_BYTES) throw new Error("Civitai output exceeds 32 MiB");
+      chunks.push(Buffer.from(chunk.value));
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  if (size === 0) throw new Error("Civitai returned an empty image");
+  return Buffer.concat(chunks, size);
 }
 
-export async function runCivitaiKleinImageModel(
-  model: ImageModel,
-  request: RegistryModelRequest,
-): Promise<ReplicateImageResult> {
+export async function runCivitaiKleinImageModel(model: ImageModel, request: RegistryModelRequest): Promise<ReplicateImageResult> {
   const token = civitaiApiToken();
   if (!token) return { ok: false, error: "Civitai API token is not configured" };
-  if ((request.references?.length ?? 0) > 0 || (request.controlReferences?.length ?? 0) > 0) {
-    return { ok: false, error: `${model.slug} is currently registered for text-to-image generation only` };
-  }
-
+  let predictionId: string | undefined;
   try {
-    const graph = civitaiKleinGraph(model, request);
-    const estimate = await whatIf(graph, token);
-    if (!estimate.ready) {
-      return { ok: false, error: "Civitai reports this checkpoint/LoRA combination is not currently generatable" };
-    }
-    if (estimate.modelSubstitutions.length > 0) {
-      return { ok: false, error: "Civitai would substitute a different checkpoint; generation was refused before spend" };
-    }
-    if ((graph.resources?.length ?? 0) > 0 && estimate.allowMatureContent === false) {
-      return { ok: false, error: "Civitai account does not currently permit mature-content generation" };
-    }
+    validateCivitaiKleinRequest(model, request);
+    if ((request.controlReferences?.length ?? 0) > 0) throw new Error("Civitai Klein does not expose dedicated structural image inputs");
+    if ((request.references?.length ?? 0) > MAX_REFERENCES) throw new Error("Civitai Klein accepts at most 2 reference images");
+    const references = (request.references ?? []).map((reference) =>
+      `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`);
+    const loras = await resolveLoras(request, token);
+    const preflightRequest = civitaiKleinWorkflow(model, request, references, loras);
+    const preflight = parseCivitaiWorkflow(await sendWorkflow(preflightRequest, token, true), "Civitai generation preflight");
+    const refusal = validateCivitaiPreflightEcho(preflight, preflightRequest);
+    if (refusal) return { ok: false, error: refusal };
 
-    const submitted = await submit(graph, token);
-    if (submitted.modelSubstitutions.length > 0) {
-      return {
-        ok: false,
-        predictionId: submitted.id,
-        error: "Civitai substituted a different checkpoint after submit; refusing the result",
-      };
+    // Reusing a what-if externalId can retrieve the unexecuted estimate. Only
+    // this id changes: generation inputs and the payment policy stay identical.
+    const submitted = await sendWorkflow({ ...preflightRequest, externalId: randomUUID() }, token, false);
+    predictionId = asString(asRecord(submitted)?.id) ?? undefined;
+    let result = parseCivitaiWorkflow(submitted, "Civitai generation submit");
+    predictionId = result.id;
+    const deadline = Date.now() + Math.max(30_000, request.timeoutMs ?? 300_000);
+    while (PENDING_STATUSES.has(result.status)) {
+      if (result.insufficient === true) throw new Error("Civitai billing could not settle the workflow with yellow Buzz");
+      if (result.errors.length > 0) throw new Error(`Civitai workflow failed: ${result.errors.join(", ")}`);
+      if (Date.now() >= deadline) throw new Error("Civitai workflow timed out; no replacement was submitted");
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2000, Math.max(1, deadline - Date.now()))));
+      result = parseCivitaiWorkflow(await requestJson(`${WORKFLOWS_URL}/${encodeURIComponent(predictionId)}`,
+        { method: "GET" }, token, "Civitai workflow status"));
+      if (result.id !== predictionId) throw new Error("Civitai returned a different workflow while polling");
     }
-
-    const workflow = await waitForWorkflow(
-      submitted.id,
-      token,
-      Math.max(30_000, request.timeoutMs ?? DEFAULT_GENERATION_TIMEOUT_MS),
-    );
-    if (workflow.status.toLowerCase() !== "succeeded") {
-      const detail = workflow.errors.length > 0 ? `: ${workflow.errors.join("; ")}` : "";
-      return { ok: false, predictionId: workflow.id, error: `Civitai workflow ${workflow.status}${detail}` };
+    if (result.insufficient === true) throw new Error("Civitai billing could not settle the workflow with yellow Buzz");
+    if (result.mature !== true || result.currencies?.length !== 1 || result.currencies[0] !== "yellow") {
+      throw new Error("Civitai workflow did not retain mature-content permission and yellow-only payment");
     }
-
-    const deliverable = workflow.blobs.find(
-      (blob) => blob.available && !blob.hidden && (blob.blockedReason === null || blob.blockedReason.trim() === ""),
-    );
-    if (!deliverable) {
-      const blocked = workflow.blobs.find((blob) => blob.blockedReason && blob.blockedReason.trim() !== "");
-      return {
-        ok: false,
-        predictionId: workflow.id,
-        error: blocked?.blockedReason
-          ? `Civitai blocked the generated output: ${blocked.blockedReason}`
-          : "Civitai workflow succeeded without a deliverable image",
-      };
+    if (result.status !== "succeeded" || result.errors.length > 0) {
+      throw new Error(`Civitai workflow ${result.status}${result.errors.length ? `: ${result.errors.join(", ")}` : ""}`);
     }
-
+    const image = result.images.find((candidate) => candidate.available && !candidate.hidden && !candidate.blocked && candidate.url);
+    if (!image?.url) {
+      const blocked = result.images.find((candidate) => candidate.blocked)?.blocked;
+      throw new Error(blocked ? `Civitai blocked the generated output: ${blocked}` : "Civitai workflow succeeded without an available, unblocked image");
+    }
     return {
       ok: true,
-      image: await downloadOutput(deliverable.url),
-      predictionId: workflow.id,
+      image: await downloadOutput(image.url),
+      predictionId,
       executedVersionId: CIVITAI_KLEIN_4B_VERSION_ID,
-      sentReferenceCount: 0,
+      sentReferenceCount: references.length,
     };
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Civitai generation failed" };
+  } catch (error) {
+    return { ok: false, ...(predictionId ? { predictionId } : {}), error: error instanceof Error ? error.message : "Civitai generation failed" };
   }
 }

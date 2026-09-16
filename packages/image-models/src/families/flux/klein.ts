@@ -4,7 +4,7 @@ import {
   fastModeFeature,
   guidanceFeature,
   loraFeature,
-  negativePromptFeature,
+  multiReferenceFeature,
   promptFeature,
   seedFeature,
 } from "../../features";
@@ -30,22 +30,22 @@ export const fluxKleinDistilled: ImageModelAdapter = defineImageModel({
 /**
  * Civitai's native DISTILLED Klein 4B generation lane.
  *
- * Civitai's current Flux2 Klein generation graph pins its 4B distilled
- * checkpoint independently of Replicate and accepts additional LoRA resources
+ * Civitai v2 selects the distilled 4B variant with `modelVersion: "4b"`, rather
+ * than an immutable checkpoint revision, and accepts additional LoRA resources
  * on that same distilled lane. The Civitai transport therefore has its own
  * adapter rather than inheriting the Replicate distilled endpoint's `go_fast`
- * knob (which does not exist in Civitai's graph) or the Replicate Base-LoRA
+ * knob (which does not exist in Civitai's v2 input) or the Replicate Base-LoRA
  * endpoint's output/safety fields.
  *
- * Initial scope is deliberately text-to-image only: prompt, aspect, reproducible
- * seed, negative prompt, and one curated LoRA. Civitai also supports editing on
- * Klein, but Vesper has not yet implemented its image upload/presigned-blob
- * transport, so advertising references here would create a control the runtime
- * cannot carry.
+ * Civitai v2's native `createImage` and `editImage` operations use the same 4B
+ * variant and accept a LoRA map alongside zero, one, or two reference images.
+ * The transport selects the operation from the reference count and carries the
+ * images as data URLs. The provider documents that surface, but no account
+ * entitlement or output-quality claim follows from that documentation.
  */
 export const fluxKleinCivitaiDistilledLora: ImageModelAdapter = defineImageModel({
   family: FLUX2_KLEIN_FAMILY,
-  features: [promptFeature(), aspectRatioFeature(), seedFeature(), negativePromptFeature(), loraFeature()],
+  features: [promptFeature(), multiReferenceFeature(), aspectRatioFeature(), seedFeature(), loraFeature()],
 });
 
 /**

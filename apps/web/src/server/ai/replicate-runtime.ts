@@ -10,6 +10,7 @@ import {
 import { imageAspectInputField, type ImageModel, type ImageRenderPolicy } from "@vesper/image-core";
 import { imageModelProvider } from "@vesper/image-models";
 import {
+  civitaiKleinDimensions,
   hasCivitai,
   previewCivitaiKleinRequest,
   runCivitaiKleinImageModel,
@@ -178,7 +179,8 @@ export function imageModelSentShape(input: {
 }): ImageModelSentShape {
   const provider = imageModelProvider(input.model.slug);
   if (provider === "civitai") {
-    return { field: "aspectRatio", value: input.aspect ?? "1:1" };
+    const { width, height } = civitaiKleinDimensions(input.aspect);
+    return { field: "width,height", value: `${String(width)}x${String(height)}` };
   }
   if (provider === "fal") {
     const tier = input.controlInput?.["image_size"] === "2K" ? "2K" : "1K";
@@ -193,16 +195,20 @@ export function imageModelSentShape(input: {
 export function previewImageModelRequest(input: PreviewImageModelRequest): PreviewedImageModelRequest {
   const provider = imageModelProvider(input.model.slug);
   if (provider === "civitai") {
-    if (input.referenceCount > 0 || (input.controlReferences?.length ?? 0) > 0) {
-      throw new Error(`${input.model.slug} is currently registered for text-to-image generation only`);
+    if ((input.controlReferences?.length ?? 0) > 0) {
+      throw new Error(`${input.model.slug} does not expose dedicated structural image inputs`);
     }
     return {
-      request: previewCivitaiKleinRequest(input.model, {
-        prompt: input.prompt,
-        aspect: input.aspect,
-        controlInput: input.controlInput,
-        versionId: input.model.probedVersionId ?? undefined,
-      }),
+      request: previewCivitaiKleinRequest(
+        input.model,
+        {
+          prompt: input.prompt,
+          aspect: input.aspect,
+          controlInput: input.controlInput,
+          versionId: input.model.probedVersionId ?? undefined,
+        },
+        input.referenceCount,
+      ),
       sentShape: imageModelSentShape(input),
     };
   }

@@ -133,8 +133,8 @@ describe("provider-aware image routing", () => {
     slug: CIVITAI_FLUX2_KLEIN4B_SLUG,
     label: "Civitai Klein",
     canGenerate: true,
-    canEdit: false,
-    probedVersionId: "2612557",
+    canEdit: true,
+    probedVersionId: "4b",
   });
 
   it("checks the credential for the selected model and qualifies its persisted identity", () => {
@@ -172,11 +172,11 @@ describe("provider-aware image routing", () => {
     expect(preview.sentShape).toEqual({ field: "image_size", value: { width: 1536, height: 2048 } });
   });
 
-  it("previews Civitai's distilled Klein graph rather than a Replicate payload", () => {
+  it("previews Civitai's v2 Klein workflow rather than a Replicate payload", () => {
     const preview = previewImageModelRequest({
       model: civitaiModel,
       prompt: "studio portrait",
-      referenceCount: 0,
+      referenceCount: 2,
       aspect: "2:3",
       controlInput: {
         seed: 7,
@@ -185,15 +185,29 @@ describe("provider-aware image routing", () => {
       },
     });
     expect(preview.request).toMatchObject({
-      workflow: "txt2img",
-      ecosystem: "Flux2Klein_4B",
-      prompt: "studio portrait",
-      aspectRatio: "2:3",
-      model: { id: 2612557 },
-      resources: [{ id: 2633618, model: { type: "LORA" }, strength: 0.8 }],
-      seed: 7,
+      allowMatureContent: true,
+      currencies: ["yellow"],
+      upgradeMode: "manual",
+      loraAirResolution: { modelVersionId: "2633618", strength: 0.8 },
+      steps: [{
+        $type: "imageGen",
+        input: {
+          engine: "flux2",
+          model: "klein",
+          modelVersion: "4b",
+          operation: "editImage",
+          prompt: "studio portrait",
+          width: 832,
+          height: 1248,
+          seed: 7,
+          images: [
+            "https://placeholder.invalid/reference-1",
+            "https://placeholder.invalid/reference-2",
+          ],
+        },
+      }],
     });
     expect(JSON.stringify(preview.request)).not.toContain("secret");
-    expect(preview.sentShape).toEqual({ field: "aspectRatio", value: "2:3" });
+    expect(preview.sentShape).toEqual({ field: "width,height", value: "832x1248" });
   });
 });

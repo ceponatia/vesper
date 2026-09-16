@@ -138,6 +138,10 @@ list, is the runtime source of truth for which rows exist.
   runtime LoRA weights, as a PAIR OF LISTS (`lora_weights`/`lora_scales`) rather
   than the two scalar fields every other LoRA-bound row declares. On no player
   surface.
+- [Civitai FLUX.2 Klein 4B](civitai-flux-2-klein-4b.md) — `civitai/flux-2-klein-4b`.
+  Civitai's `4b` variant supports generation, editing with up to two references,
+  and a curated LoRA together. Mature permission and yellow payment are explicit.
+  The variant selector is not an immutable checkpoint revision. Admin bench only.
 - [FLUX.1 Kontext Dev](flux-kontext-dev.md) — `black-forest-labs/flux-kontext-dev`.
   Generate **no**, edit yes, 1 reference. `unknown` · `unknown`, plus an operator
   warning — untried, edit-only, and published under a non-commercial weights
