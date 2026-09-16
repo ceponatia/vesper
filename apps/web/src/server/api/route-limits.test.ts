@@ -75,6 +75,18 @@ describe("clientIp", () => {
     expect(bucket("::ffff:0:203.0.113.7")).not.toBe("203.0.113.7");
   });
 
+  it("ignores an IPv6 zone index rather than folding it into the address", () => {
+    // `isIP` admits `%eth0`, which names a local interface and not a caller.
+    // Left attached it rode into the dotted tail of a mapped address, where
+    // `Number("7%eth0")` is NaN and the octet fold quietly produced
+    // `203.0.113.0` — landing every `.7%…` caller in an innocent neighbour's
+    // bucket. A zone must change nothing about which bucket an address gets.
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    expect(bucket("::ffff:203.0.113.7%eth0")).toBe("203.0.113.7");
+    expect(bucket("fe80::1%eth0")).toBe(bucket("fe80::1"));
+    expect(bucket("2001:db8::1%eth0")).toBe(bucket("2001:db8::1%wlan0"));
+  });
+
   it("keeps a NAT64 prefix distinct from the address embedded in it", () => {
     // The embedded dotted tail is part of a v6 prefix here, not an IPv4 client.
     const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
@@ -147,17 +159,29 @@ describe("ipRateLimitRejection", () => {
   });
 
   it("covers every credential operation, not just password sign-in", () => {
-    // Each of these accepts a guess — a password, a reset token, a magic link —
-    // so each has to share the tight window rather than fall to the app default.
+    // One row per prefix the policy carries, spelled as an endpoint this
+    // deployment actually registers. The rule they share: each accepts a secret
+    // — a password, a reset token, a magic link — and reports whether it was
+    // right, so each has to share the tight window rather than fall to the app
+    // default. `verify-password` is the sharpest of them: it does nothing BUT
+    // answer that question, and a session is its only other guard, so a stolen
+    // cookie on the app default would be a 300-per-minute password oracle.
+    //
+    // No `forget-password` row: this install does not register that path at all
+    // (only the uninstalled `email-otp` plugin owns a path with that stem), and
+    // a row for a 404 would prove nothing. Installing a plugin means re-reading
+    // its endpoints against the rule above and adding the rows it earns.
     const paths = [
       "/api/auth/sign-in/email",
       "/api/auth/sign-up/email",
-      "/api/auth/forget-password",
+      "/api/auth/request-password-reset",
       "/api/auth/reset-password",
       "/api/auth/change-password",
       "/api/auth/change-email",
+      "/api/auth/verify-password",
       "/api/auth/magic-link/verify",
       "/api/auth/verify-email",
+      "/api/auth/send-verification-email",
     ];
     for (const [index, path] of paths.entries()) {
       const ip = `10.1.0.${index}`;
@@ -206,9 +230,12 @@ describe("ipRateLimitRejection", () => {
   });
 
   it("does not let a case-varied credential path escape the tight window", () => {
-    // The operation is matched case-insensitively on purpose: a router that
-    // accepted `/Sign-In/` while the policy only recognised `/sign-in/` would
-    // hand an attacker the loose app-wide budget on the guessing surface.
+    // The operation is lowercased before matching so the classification never
+    // depends on the router's casing rules. Today they save us: rou3 matches
+    // static segments case-sensitively, so this path 404s before any handler
+    // runs. That is exactly why the POLICY must not be the layer relying on it —
+    // a router change, or a plugin that routes its own paths, must not be able
+    // to move an endpoint off the tight window by respelling it.
     const req = () => request("/api/auth/Sign-In/Email", { "fly-client-ip": "6.6.6.6" });
     for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
       expect(ipRateLimitRejection(req())).toBeNull();
