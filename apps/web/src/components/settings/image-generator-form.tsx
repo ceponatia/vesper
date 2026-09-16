@@ -19,6 +19,7 @@ import {
   resolveImageLoraBindingPair,
   type ImageResolutionTier,
 } from "@vesper/image-core";
+import { imageModelOptionLabel } from "@/lib/image-model-option-label";
 import {
   IMAGE_GENERATOR_MAX_IMAGE_COUNT,
   IMAGE_GENERATOR_PROMPT_MAX,
@@ -493,7 +494,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
                     const runnable = pinnedImageModelVersion(model) !== null;
                     return (
                       <option key={model.id} value={model.id} disabled={!runnable}>
-                        {`${model.label} — ${baseImageModelSlug(model.slug)}${runnable ? "" : " · no pinned version"}`}
+                        {imageModelOptionLabel(model)}
                       </option>
                     );
                   })}
@@ -596,6 +597,7 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
           editStrengthError={editStrengthError}
           loraScaleError={loraScaleError}
           enabledLoras={enabledLoras}
+          registeredModels={registeredModels}
           loraPrefilled={loraPrefilled}
           selectedLora={selectedLora}
           loraModelMismatch={loraModelMismatch}

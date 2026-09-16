@@ -23,6 +23,30 @@ selected row's active probe.
 so adding a timestamp forces a date-serialization decision no consumer needs until the admin
 version card shows "capabilities changed at".
 
+## Model picker labels
+
+The Image Generator's Model options use `Name (Type) - Provider`. `Name` comes from the row's curated
+`label`, with terminal presentation-only `Text to Image`, `Edit`, or `LoRA` wording removed when
+it repeats the type badge; a redundant provider-and-LoRA parenthetical is also removed. The
+row's label remains the editable source; the provider path is never used as the display name.
+The Generator option keeps the model id as its value, while the full slug and version pin remain
+in the model record and run provenance.
+
+`Type` is one acronym, chosen from the active version's capabilities in this order:
+
+- `LoRA` when the version binds a usable LoRA weights-and-scale pair;
+- `Edit` when the model can edit and has no usable LoRA pair; or
+- `TTS` (text-to-image) when the model can generate from a prompt and neither earlier type applies.
+
+An anomalous row with none of those capabilities reads `Unknown`.
+
+A model that can both generate and edit reads `Edit`, never both types. The provider name comes
+from the endpoint classifier for the row's slug: `Fal.ai`, `Civitai`, or `Replicate`. This is a
+display choice, not a change to provider routing, model eligibility, or request assembly. The
+shared pure `lib/image-model-option-label.ts` formatter applies the rule to image-model options;
+a new image-model picker uses `imageModelOptionLabel` rather than building a label from its own
+slug or task wording.
+
 ## Capabilities are probed, not typed by hand
 
 `probeReplicateModel` (`packages/image-replicate/src/probe.ts`, reached through the configured
