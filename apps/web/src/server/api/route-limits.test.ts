@@ -43,12 +43,36 @@ describe("clientIp", () => {
     expect(bucket("2001:db8:1::1")).not.toBe(bucket("2001:db8::1"));
   });
 
+  it("reads the /64 from the expanded groups, not the written ones", () => {
+    // `::` stands for a run whose LENGTH depends on how many groups follow it,
+    // so a prefix read off the written text lands on the wrong four groups the
+    // moment the run sits inside the first half of the address. Both spellings
+    // below are the same network; the third is a different one that a
+    // left-to-right reading would fold into it.
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    expect(bucket("2001::1:2:3:4:5:6")).toBe(bucket("2001:0:1:2::6"));
+    expect(bucket("2001::1:2:3:4:5:6")).not.toBe(bucket("2001::2:3:4:5:6:7"));
+  });
+
   it("folds an IPv4-mapped address onto the plain IPv4 bucket", () => {
     // `::ffff:203.0.113.7` and `203.0.113.7` are one caller; two buckets would
     // be two allowances.
     const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
     expect(bucket("::ffff:203.0.113.7")).toBe("203.0.113.7");
     expect(bucket("::ffff:203.0.113.7")).toBe(bucket("203.0.113.7"));
+  });
+
+  it("folds only a genuine ::ffff: mapping across the address-family boundary", () => {
+    const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
+    // The uncompressed spelling of a mapped address is the same caller, and its
+    // hex groups are shorter than four digits — a fold that skipped the padding
+    // would read the octets out of the wrong halves.
+    expect(bucket("0:0:0:0:0:ffff:192.0.2.1")).toBe("192.0.2.1");
+    expect(bucket("0:0:0:0:0:ffff:203.0.113.7")).toBe(bucket("::ffff:203.0.113.7"));
+    // `::ffff:0:a.b.c.d` is IPv4-TRANSLATED, not IPv4-mapped: the `ffff` sits a
+    // group early. Folding it would drop a v6 caller straight into a v4
+    // caller's bucket — the address families must not leak into each other.
+    expect(bucket("::ffff:0:203.0.113.7")).not.toBe("203.0.113.7");
   });
 
   it("keeps a NAT64 prefix distinct from the address embedded in it", () => {
@@ -64,6 +88,9 @@ describe("clientIp", () => {
     const bucket = (ip: string) => clientIp(request("/api/chats", { "fly-client-ip": ip }));
     expect(bucket("not-an-address")).toBe("not-an-address");
     expect(bucket("not-an-address")).not.toBe(UNKNOWN_CLIENT_IP);
+    // And junk isolates from junk: collapsing unparseable values together would
+    // hand one bad caller the whole malformed-header budget for everyone else.
+    expect(bucket("[2001:db8::1]:41234")).not.toBe(bucket("not-an-address"));
   });
 
   it("hashes addresses irreversibly and stably", () => {
@@ -176,6 +203,17 @@ describe("ipRateLimitRejection", () => {
       expect(attempt(i.toString(16))).toBeNull();
     }
     expect(attempt("ffff")).not.toBeNull();
+  });
+
+  it("does not let a case-varied credential path escape the tight window", () => {
+    // The operation is matched case-insensitively on purpose: a router that
+    // accepted `/Sign-In/` while the policy only recognised `/sign-in/` would
+    // hand an attacker the loose app-wide budget on the guessing surface.
+    const req = () => request("/api/auth/Sign-In/Email", { "fly-client-ip": "6.6.6.6" });
+    for (let i = 0; i < IP_RATE_LIMITS.ip_auth.limit; i++) {
+      expect(ipRateLimitRejection(req())).toBeNull();
+    }
+    expect(ipRateLimitRejection(req())).not.toBeNull();
   });
 
   it("does not treat a path merely prefixed with 'auth' as the auth namespace", () => {
