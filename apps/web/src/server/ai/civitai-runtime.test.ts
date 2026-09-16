@@ -63,6 +63,15 @@ describe("civitaiKleinGraph", () => {
     ).toThrow(/model-version id/i);
   });
 
+  it("refuses aspect ratios outside Civitai's current Klein bucket list", () => {
+    expect(() =>
+      civitaiKleinGraph(MODEL, {
+        prompt: "test",
+        aspect: "9:16",
+      }),
+    ).toThrow(/does not support aspect ratio 9:16/i);
+  });
+
   it("refuses a version pin other than Civitai's reviewed 4B checkpoint", () => {
     expect(() =>
       civitaiKleinGraph(MODEL, {
