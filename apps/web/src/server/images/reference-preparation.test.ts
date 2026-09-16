@@ -178,12 +178,12 @@ describe("prepareRenderReferences", () => {
     const clean = await sharp({ create: { width: 8, height: 12, channels: 3, background: { r: 40, g: 90, b: 200 } } })
       .webp()
       .toBuffer();
-    const shrunk = await prepareOne(clean, { format: "webp", maxEdgePx: 6 });
+    const shrunk = await prepareOne(clean, { format: "webp", maxEdgePx: 6, formatRequired: false });
     expect(shrunk.bytes).not.toBe(clean);
     expect(shrunk.width).toBeLessThanOrEqual(6);
     expect(shrunk.height).toBeLessThanOrEqual(6);
     // A ceiling the image already fits under demands nothing: passthrough.
-    const roomy = await prepareOne(clean, { format: "webp", maxEdgePx: 100 });
+    const roomy = await prepareOne(clean, { format: "webp", maxEdgePx: 100, formatRequired: false });
     expect(roomy.bytes).toBe(clean);
   });
 
