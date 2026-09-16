@@ -532,11 +532,22 @@ async function fetchOutput(url: string): Promise<Response> {
     } catch {
       throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
     }
-    if (response.status < 300 || response.status > 399) return response;
+    // A redirect is followed only on POSITIVE evidence of one. Phrased the other
+    // way round — "not clearly a normal response" — anything that fails to state
+    // a comparable status falls into redirect chasing instead of the ordinary
+    // path, where an unusable status already has an answer (`civitai_output_http_*`).
+    const redirected = response.status >= 300 && response.status < 400;
+    if (!redirected) return response;
     const location = response.headers.get("location");
-    // The redirect's own body is never read; releasing it frees the socket
-    // instead of leaving it open for the request timeout to reap.
-    if (response.body) await response.body.cancel().catch(() => undefined);
+    try {
+      // The redirect's own body is never read; releasing it frees the socket
+      // instead of leaving it open for the request timeout to reap.
+      await response.body?.cancel();
+    } catch {
+      // Best effort, and deliberately silent: a body that cannot be released is
+      // not this render's failure, and its message — which may be the runtime's
+      // or the provider's — must not escape the codes this module promises.
+    }
     // A redirect Vesper cannot follow is a location it was never allowed to
     // reach, not a transport hiccup: refusing under the same code as a
     // malformed URL keeps a repeat of the identical request from being retried.

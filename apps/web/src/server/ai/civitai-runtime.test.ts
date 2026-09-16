@@ -740,7 +740,7 @@ describe("Civitai Klein v2 output redirects", () => {
     const result = await runCivitaiKleinImageModel(MODEL, request);
 
     expect(result).toMatchObject({ ok: true, predictionId: "submit-1" });
-    expect(result.ok && result.image.toString()).toBe("image-bytes");
+    expect(result.image?.toString()).toBe("image-bytes");
     // Resolved against the URL that sent it, not against the workflow endpoint.
     expect(fetched).toEqual([
       OUTPUT_URL,
