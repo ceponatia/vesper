@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { imageModelSchema } from "@vesper/image-core";
-import { FAL_QWEN3_EDIT_SLUG } from "@vesper/image-models";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG } from "@vesper/image-models";
 import { DEFAULT_PREDICTION_TIMEOUT_MS, MAX_PREDICTION_TIMEOUT_MS } from "@vesper/image-replicate";
 import {
   disableSafetyChecker,
@@ -27,6 +27,7 @@ const ENV_KEYS = [
   "REPLICATE_SAFE_MODE",
   "REPLICATE_PREDICTION_TIMEOUT_MS",
   "FAL_API_KEY",
+  "CIVITAI_API_TOKEN",
 ] as const;
 const original = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -112,7 +113,7 @@ describe("the process runtime", () => {
     expect(replicateClient().safetyCheckerDisabled).toBe(true);
   });
 
-  it("reports an unconfigured deployment without a token", () => {
+  it("reports an unconfigured deployment without any image-provider token", () => {
     withEnv({});
     expect(hasReplicate()).toBe(false);
     expect(replicateClient().configured).toBe(false);
@@ -127,12 +128,26 @@ describe("provider-aware image routing", () => {
     canGenerate: false,
     canEdit: true,
   });
+  const civitaiModel = imageModelSchema.parse({
+    id: "civitai-klein",
+    slug: CIVITAI_FLUX2_KLEIN4B_SLUG,
+    label: "Civitai Klein",
+    canGenerate: true,
+    canEdit: false,
+    probedVersionId: "2612557",
+  });
 
   it("checks the credential for the selected model and qualifies its persisted identity", () => {
     withEnv({ FAL_API_KEY: "fal_live" });
     expect(hasImageProviderForModel(falModel)).toBe(true);
+    expect(hasImageProviderForModel(civitaiModel)).toBe(false);
     expect(hasImageProviderForModel("owner/replicate-model")).toBe(false);
     expect(qualifiedImageModelIdentity(falModel)).toBe(`fal/${FAL_QWEN3_EDIT_SLUG}`);
+
+    withEnv({ CIVITAI_API_TOKEN: "civitai_live" });
+    expect(hasImageProviderForModel(civitaiModel)).toBe(true);
+    expect(hasImageProviderForModel(falModel)).toBe(false);
+    expect(qualifiedImageModelIdentity(civitaiModel)).toBe(`civitai/${CIVITAI_FLUX2_KLEIN4B_SLUG}`);
     expect(qualifiedImageModelIdentity(null)).toBe("replicate/none");
   });
 
@@ -155,5 +170,30 @@ describe("provider-aware image routing", () => {
     });
     expect(preview.request).not.toHaveProperty("aspect_ratio");
     expect(preview.sentShape).toEqual({ field: "image_size", value: { width: 1536, height: 2048 } });
+  });
+
+  it("previews Civitai's distilled Klein graph rather than a Replicate payload", () => {
+    const preview = previewImageModelRequest({
+      model: civitaiModel,
+      prompt: "studio portrait",
+      referenceCount: 0,
+      aspect: "2:3",
+      controlInput: {
+        seed: 7,
+        civitai_lora_version: "https://civitai.com/api/download/models/2633618?token=secret",
+        civitai_lora_strength: 0.8,
+      },
+    });
+    expect(preview.request).toMatchObject({
+      workflow: "txt2img",
+      ecosystem: "Flux2Klein_4B",
+      prompt: "studio portrait",
+      aspectRatio: "2:3",
+      model: { id: 2612557 },
+      resources: [{ id: 2633618, model: { type: "LORA" }, strength: 0.8 }],
+      seed: 7,
+    });
+    expect(JSON.stringify(preview.request)).not.toContain("secret");
+    expect(preview.sentShape).toEqual({ field: "aspectRatio", value: "2:3" });
   });
 });
