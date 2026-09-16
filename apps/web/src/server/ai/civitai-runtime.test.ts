@@ -297,6 +297,45 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("secret");
   });
 
+  it("ends a near-deadline workflow-status retry at the minimum 30-second budget without repeating the paid POST", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const startedAt = Date.now();
+    let workflowPosts = 0;
+    let statusReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowPosts += 1;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-deadline" : "submit-deadline", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-deadline")) {
+        statusReads += 1;
+        if (statusReads < 14) {
+          return Response.json({ id: "submit-deadline", status: "processing", steps: [{
+            $type: "imageGen", input: {}, output: {},
+          }] });
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 1750));
+        return Response.json({ detail: "provider token=secret" }, { status: 503 });
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, { ...request, timeoutMs: 1 });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(statusReads).toBe(14);
+    expect(workflowPosts).toBe(2);
+    expect(Date.now() - startedAt).toBe(30_000);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-deadline", error: expect.stringContaining("civitai_async_timeout; retry=deliberate") });
+    if (result.ok) throw new Error("expected the expired status retry to time out");
+    expect(result.error).not.toContain("secret");
+  });
+
   it("never retries a transient preflight or paid-submission POST", async () => {
     const workflowUrls: string[] = [];
     let phase: "preflight" | "submit" = "preflight";
