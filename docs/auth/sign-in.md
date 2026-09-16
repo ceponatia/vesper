@@ -83,16 +83,24 @@ source addresses walks past every window above, and an in-memory count is cleare
 deploy. `credential_failures` holds one row per account under attack.
 
 - **The schedule.** Five consecutive failures cost nothing. After that the wait doubles — 5s, 10s,
-  20s, 40s, 80s, 160s — and stops at **five minutes**. A correct password deletes the row. An account
-  left alone for an hour starts over.
-- **The ceiling bounds one wait, not the number of waits.** A sustained attack is held to ~12 guesses
+  20s, 40s — and stops at **one minute**. A correct password deletes the row. An account left alone
+  for an hour starts over.
+- **The ceiling bounds one wait, not the number of waits.** A sustained attack is held to ~60 guesses
   an hour from every source combined, which is the anti-abuse property. It is **not** a
-  denial-of-service property: because every admitted attempt re-arms the full wait before the
-  password is checked, an account at the ceiling has one admitted attempt per window, globally,
-  first-come-first-served — and the `Retry-After` header names the moment it opens. An attacker
-  polling that boundary at ~12 requests an hour can take every slot and keep the owner out, and
-  this deployment has no second door (magic-link has no transport, no OAuth provider is configured,
-  and there is no password-reset sender). Recovery today is deleting the row by hand.
+  denial-of-service property: every admitted attempt re-arms the wait before the password is checked,
+  so an account at the ceiling has one admitted attempt per window, globally, first-come-first-served,
+  and `Retry-After` names when it opens. Nothing here can tell the owner's request from the
+  attacker's, so the ceiling is set at a minute rather than five — short enough that an owner being
+  hammered can realistically take a slot — and the recovery command below is the backstop when they
+  cannot.
+- **Recovery: `pnpm auth:unlock <email> [--minutes N]`.** Grants a short window (10 minutes by
+  default) in which the account is not refused. It suspends the refusal, **not** the accounting:
+  failures keep accruing underneath, so an unused grant expires leaving the account exactly as
+  protected, and a used one ends when the successful sign-in deletes the row. Deleting the row
+  directly would be weaker — an attacker rebuilds a wait in six requests. The cost is real: for the
+  length of the window the attacker is not throttled either, so keep it short. It matters here
+  because this deployment has no second door — magic-link has no transport, no OAuth provider is
+  configured, and there is no password-reset sender.
 - **What it counts.** Only the endpoints that verify a password — `sign-in/email`, `verify-password`
   and `change-password`. Token paths (`reset-password`, `magic-link/verify`) are excluded: a 32-byte
   random is not guessable, and charging them would let anyone holding a stale link delay the

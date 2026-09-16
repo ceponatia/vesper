@@ -17,7 +17,9 @@ export {
   clearCredentialFailures,
   credentialSubject,
   decayCutoff,
+  grantCredentialBypass,
   readCredentialFailures,
+  BYPASS_GRANT_MS,
   type CredentialDecision,
 } from "./credential-guard";
 export { getCurrentUser, Unauthenticated, type CurrentUser } from "./session";

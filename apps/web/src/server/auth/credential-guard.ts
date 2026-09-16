@@ -24,12 +24,13 @@ import { log } from "@/server/log";
  * The ceiling bounds the length of one wait. It does **not** bound how many
  * waits an attacker can chain, because every admitted attempt re-arms the full
  * wait before the password is checked: an account at the ceiling has one
- * admitted attempt per window, globally, first-come-first-served. An attacker
- * who polls that boundary — which `Retry-After` names exactly — takes the slot
- * ahead of the owner, so a known address can be held closed for the cost of a
- * request every {@link MAX_BACKOFF_MS}. Bounding one account's total guess rate
- * and guaranteeing its owner a slot are in tension, and resolving it needs a
- * signal that separates the two; this module does not have one yet.
+ * admitted attempt per window, globally, first-come-first-served, and
+ * `Retry-After` names when it opens. Bounding one account's total guess rate and
+ * guaranteeing its owner a slot are in genuine tension — nothing here can tell
+ * the owner's request from the attacker's — so the tension is resolved by
+ * making the lost race cheap rather than by pretending it cannot happen: the
+ * ceiling is a minute rather than five, and {@link grantCredentialBypass} lets
+ * an operator open the account for a short window when even that is not enough.
  *
  * ## What it does not reveal
  *
@@ -47,15 +48,19 @@ export const FREE_ATTEMPTS = 5;
 export const BASE_BACKOFF_MS = 5_000;
 
 /**
- * The ceiling, and the number that decides what this defense is worth.
+ * The ceiling, and the number that trades the two risks against each other.
  *
- * At five minutes a sustained attack against one account is bounded to ~12
- * guesses an hour from every source combined, which ends offline-scale guessing
- * against a known address. The same number bounds the denial-of-service: an
- * attacker who wants to keep an owner waiting must keep paying a request every
- * five minutes, and the owner is never locked out, only delayed.
+ * A longer wait bounds guessing harder — but because an admitted attempt
+ * re-arms the wait before the password is checked, the wait is ALSO how long an
+ * attacker owns the account's only slot. At a minute a sustained attack is held
+ * to ~60 guesses an hour from every source combined, which still ends
+ * offline-scale guessing against a known address, while leaving an owner who is
+ * being hammered a realistic chance of taking a slot themselves rather than a
+ * five-minute race they lose every time.
+ *
+ * {@link grantCredentialBypass} is the backstop for when they lose it anyway.
  */
-export const MAX_BACKOFF_MS = 300_000;
+export const MAX_BACKOFF_MS = 60_000;
 
 /**
  * Idle time after which the count restarts. Long enough that yesterday's typos
@@ -144,12 +149,15 @@ export function credentialSubject(address: string): string {
   return createHmac("sha256", salt).update(normalized).digest("hex").slice(0, 32);
 }
 
-async function readRecord(subject: string): Promise<{ failures: number; lastFailureAt: Date; retryAt: Date } | null> {
+async function readRecord(
+  subject: string,
+): Promise<{ failures: number; lastFailureAt: Date; retryAt: Date; bypassUntil: Date | null } | null> {
   const [row] = await db()
     .select({
       failures: credentialFailures.failures,
       lastFailureAt: credentialFailures.lastFailureAt,
       retryAt: credentialFailures.retryAt,
+      bypassUntil: credentialFailures.bypassUntil,
     })
     .from(credentialFailures)
     .where(eq(credentialFailures.subject, subject))
@@ -182,7 +190,14 @@ export async function chargeCredentialAttempt(subject: string, now: number = Dat
     for (let round = 0; round < MAX_SWAP_ATTEMPTS; round += 1) {
       const prior = await readRecord(subject);
 
-      if (prior !== null && prior.retryAt.getTime() > now) {
+      // An operator grant suspends the refusal but not the accounting: failures
+      // keep accumulating underneath, so the moment the window closes the
+      // backoff resumes from where the attack actually left it. The owner's own
+      // success deletes the row, grant and all.
+      const bypassUntil = prior?.bypassUntil ?? null;
+      const bypassed = bypassUntil !== null && bypassUntil.getTime() > now;
+
+      if (!bypassed && prior !== null && prior.retryAt.getTime() > now) {
         return refused("backoff", prior.retryAt.getTime() - now);
       }
 
@@ -207,6 +222,10 @@ export async function chargeCredentialAttempt(subject: string, now: number = Dat
         continue; // Another attempt created the row first; re-read and charge against it.
       }
 
+      // `values` deliberately omits `bypass_until`: the swap pins `failures` and
+      // `lastFailureAt` only, so writing the grant column back would clobber a
+      // grant issued between this read and this write — the one moment it
+      // matters most. Leaving it out of the SET means the column is untouched.
       const swapped = await db()
         .update(credentialFailures)
         .set(values)
@@ -283,6 +302,52 @@ export async function clearCredentialFailures(subject: string): Promise<void> {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/** Default length of an operator grant — long enough to sign in, short enough to be spent. */
+export const BYPASS_GRANT_MS = 600_000;
+
+/**
+ * Open an account's backoff for a short window, so an owner can sign in while an
+ * attack is still running.
+ *
+ * This exists because the ceiling cannot be both a bound on guessing and a
+ * guarantee of owner access: at the ceiling the account has one admitted attempt
+ * per window, and whoever asks first takes it. Deleting the failure row instead
+ * would be weaker — the attacker only needs {@link FREE_ATTEMPTS} + 1 requests,
+ * a handful of seconds at the per-IP window, to rebuild a wait before the owner
+ * types their password.
+ *
+ * It suspends the refusal, not the accounting. Failures keep accruing
+ * underneath, so a grant that goes unused leaves the account exactly as
+ * protected as it was; a grant that IS used ends when the successful sign-in
+ * deletes the row. The cost is real and bounded: for the length of the window
+ * the attacker is not throttled either, so keep it short — at the per-IP
+ * credential window that is on the order of a hundred guesses, against an
+ * account whose owner is standing at the keyboard.
+ */
+export async function grantCredentialBypass(
+  subject: string,
+  durationMs: number = BYPASS_GRANT_MS,
+  now: number = Date.now(),
+): Promise<Date> {
+  const until = new Date(now + durationMs);
+  await db()
+    .insert(credentialFailures)
+    .values({
+      subject,
+      failures: 0,
+      lastFailureAt: new Date(now),
+      retryAt: new Date(now),
+      bypassUntil: until,
+    })
+    .onConflictDoUpdate({
+      target: credentialFailures.subject,
+      // Only the grant: the count and the schedule stay exactly as the attack
+      // left them, so nothing here is a covert reset.
+      set: { bypassUntil: until, updatedAt: new Date(now) },
+    });
+  return until;
 }
 
 /** Test-only: the raw record behind a subject. */

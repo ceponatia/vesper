@@ -1,5 +1,5 @@
 {
-  "id": "b8a9b948-3c3f-48e2-bec1-42e0388f1052",
+  "id": "13c15702-015b-44ae-926e-da9091379a6b",
   "prevId": "f4f98efd-de07-48ea-abd6-15ad898f77e3",
   "version": "7",
   "dialect": "postgresql",
@@ -2613,6 +2613,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "bypass_until": {
+          "name": "bypass_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",

@@ -224,6 +224,12 @@ export const credentialFailures = pgTable(
     lastFailureAt: timestamp("last_failure_at", { withTimezone: true }).notNull(),
     /** When the next attempt is admitted. In the past ⇒ no delay is owed. */
     retryAt: timestamp("retry_at", { withTimezone: true }).notNull(),
+    /**
+     * An operator-granted window during which the backoff does not refuse, so an
+     * owner locked out by a sustained attack can get in. Null except while a
+     * grant is live; cleared with the row on a successful sign-in.
+     */
+    bypassUntil: timestamp("bypass_until", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

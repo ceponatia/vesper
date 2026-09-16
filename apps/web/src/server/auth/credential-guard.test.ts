@@ -40,21 +40,26 @@ describe("backoff schedule", () => {
     expect(backoffMs(FREE_ATTEMPTS + 4)).toBe(BASE_BACKOFF_MS * 8);
   });
 
-  it("stops growing at the ceiling, so the defense is a delay and never a lockout", () => {
-    // The load-bearing property against denial-of-service: an attacker who
-    // deliberately fails against a known address cannot push the owner's wait
-    // past this, however long they keep going.
+  it("stops growing at the ceiling, however long an attack runs", () => {
+    // Bounds the length of ONE wait, which is not the same as bounding how long
+    // an account can be held closed: an admitted attempt re-arms the wait before
+    // the password is checked, so at the ceiling there is one slot per window and
+    // whoever asks first takes it. That is what `grantCredentialBypass` answers;
+    // this assertion only pins that the wait itself cannot be driven upward.
     for (const failures of [12, 20, FAILURE_CAP, 1000]) {
       expect(backoffMs(failures)).toBe(MAX_BACKOFF_MS);
     }
     expect(backoffMs(Number.MAX_SAFE_INTEGER)).toBe(MAX_BACKOFF_MS);
   });
 
-  it("bounds a sustained attack to roughly twelve guesses an hour", () => {
+  it("bounds a sustained attack to roughly sixty guesses an hour", () => {
     // The number that decides whether this defense is worth having. Offline-scale
-    // guessing against a known address ends here.
+    // guessing against a known address ends here — while staying short enough
+    // that an owner being hammered can realistically take a slot themselves,
+    // which a five-minute ceiling did not.
     const perHour = 3_600_000 / backoffMs(FAILURE_CAP);
-    expect(perHour).toBeLessThanOrEqual(12);
+    expect(perHour).toBeLessThanOrEqual(60);
+    expect(MAX_BACKOFF_MS).toBeLessThanOrEqual(60_000);
   });
 });
 

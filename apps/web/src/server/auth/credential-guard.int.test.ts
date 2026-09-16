@@ -4,6 +4,7 @@ import {
   chargeCredentialAttempt,
   clearCredentialFailures,
   credentialSubject,
+  grantCredentialBypass,
   readCredentialFailures,
   BASE_BACKOFF_MS,
   DECAY_MS,
@@ -131,5 +132,35 @@ describe.skipIf(!ready)("durable credential backoff", () => {
     const later = now + DECAY_MS + MAX_BACKOFF_MS;
     expect((await chargeCredentialAttempt(SUBJECT, later)).allowed).toBe(true);
     expect(await readCredentialFailures(SUBJECT)).toMatchObject({ failures: 1 });
+  });
+
+  it("lets an operator grant open a locked account without resetting its count", async () => {
+    // The recovery path. At the ceiling the account has one admitted attempt per
+    // window and whoever asks first takes it, so an owner losing that race needs
+    // a way in that an attacker cannot immediately undo — which deleting the row
+    // would not be, since rebuilding a wait costs only a handful of requests.
+    const now = Date.now();
+    for (let i = 0; i <= FREE_ATTEMPTS; i += 1) await chargeCredentialAttempt(SUBJECT, now);
+    expect((await chargeCredentialAttempt(SUBJECT, now)).allowed).toBe(false);
+
+    const before = await readCredentialFailures(SUBJECT);
+    await grantCredentialBypass(SUBJECT, 600_000, now);
+
+    // Open during the window...
+    expect((await chargeCredentialAttempt(SUBJECT, now)).allowed).toBe(true);
+    // ...and the count underneath kept accruing rather than being wiped, so an
+    // unused grant leaves the account exactly as protected as it was.
+    const after = await readCredentialFailures(SUBJECT);
+    expect(after?.failures).toBeGreaterThan(before?.failures ?? 0);
+
+    // Once it expires the backoff resumes from where the attack left it.
+    expect((await chargeCredentialAttempt(SUBJECT, now + 600_001)).allowed).toBe(false);
+  });
+
+  it("ends a grant when the owner actually signs in", async () => {
+    const now = Date.now();
+    await grantCredentialBypass(SUBJECT, 600_000, now);
+    await clearCredentialFailures(SUBJECT);
+    expect(await readCredentialFailures(SUBJECT)).toBeNull();
   });
 });

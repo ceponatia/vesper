@@ -4,6 +4,7 @@ CREATE TABLE "credential_failures" (
 	"failures" integer DEFAULT 0 NOT NULL,
 	"last_failure_at" timestamp with time zone NOT NULL,
 	"retry_at" timestamp with time zone NOT NULL,
+	"bypass_until" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
