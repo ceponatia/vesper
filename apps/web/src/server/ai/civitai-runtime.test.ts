@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { civitaiAsyncFailure } from "./civitai-errors";
 import { imageModelSchema, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 
@@ -74,6 +75,7 @@ function preflightWith(
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("Civitai Klein v2 payload", () => {
@@ -200,6 +202,70 @@ describe("Civitai Klein v2 transport", () => {
         loras: { "urn:air:flux2:lora:civitai:2169780@2633618": 0.75 },
       } }],
     });
+  });
+
+  it("collects documented job reasons without retaining job prose", () => {
+    const parsed = parseCivitaiWorkflow({
+      id: "workflow-failed", status: "failed", steps: [{
+        $type: "imageGen", input: {}, jobs: [{
+          reason: "no_provider_available",
+          blockedReason: "prompt=private&token=secret",
+        }], output: {},
+      }],
+    });
+
+    expect(parsed.errors).toEqual(["no_provider_available", "provider_error"]);
+    expect(parsed.blocked).toBe(true);
+    expect(JSON.stringify(parsed.errors)).not.toContain("secret");
+  });
+
+  it("does not classify a null job blockedReason as a blocked workflow", () => {
+    const parsed = parseCivitaiWorkflow({
+      id: "workflow-unavailable", status: "failed", steps: [{
+        $type: "imageGen", input: {}, jobs: [{ reason: "no_provider_available", blockedReason: null }], output: {},
+      }],
+    });
+
+    expect(parsed.blocked).toBe(false);
+    expect(civitaiAsyncFailure(parsed.status, parsed.errors, parsed.blocked)).toMatchObject({
+      code: "civitai_async_no_provider_available", retry: "deliberate",
+    });
+  });
+
+  it("retries a transient workflow-status read without repeating the paid submit", async () => {
+    vi.useFakeTimers();
+    let statusReads = 0;
+    const workflowUrls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowUrls.push(href);
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-retry" : "submit-retry", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-retry")) {
+        statusReads += 1;
+        if (statusReads < 3) return Response.json({ code: "provider says prompt=private" }, { status: 503 });
+        return Response.json({
+          id: "submit-retry", status: "succeeded", allowMatureContent: true,
+          currencies: ["yellow"], upgradeMode: "manual", transactions: { insufficientBuzz: false },
+          steps: [{ $type: "imageGen", input: {}, output: { images: [{
+            url: "https://image.civitai.com/output.jpg", available: true,
+          }] } }],
+        });
+      }
+      if (href === "https://image.civitai.com/output.jpg") return new Response("image", { status: 200 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-retry" });
+    expect(statusReads).toBe(3);
+    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=false")]);
   });
 
   it("does not make a paid submission after an insufficient-Buzz preflight", async () => {
