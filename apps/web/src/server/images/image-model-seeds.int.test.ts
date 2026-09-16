@@ -1972,12 +1972,12 @@ describe.skipIf(!ready)("migration 0141 — history", () => {
 });
 
 /**
- * 0145 remains an ordered historical entry. The current journal-head assertion
- * belongs to the newest data migration below, so adding another migration does
- * not rewrite this migration's own history.
+ * 0145 is the current journal head. Keep the global maximum here rather than
+ * in an older migration's history test, so a new migration moves one assertion
+ * while 0141 and 0142 keep protecting their own historical entries.
  */
 describe.skipIf(!ready)("migration 0145 — history", () => {
-  it("is a unique ordered data migration with no schema snapshot", async () => {
+  it("is the unique journal head, timestamped after every earlier entry, with no schema snapshot", async () => {
     const journal = JSON.parse(
       await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
     ) as { entries: { idx: number; tag: string; when: number }[] };
@@ -1986,94 +1986,13 @@ describe.skipIf(!ready)("migration 0145 — history", () => {
     expect(entry).toBeDefined();
     expect(entry?.idx).toBe(145);
     expect(journal.entries.filter((candidate) => candidate.idx === 145)).toHaveLength(1);
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(145);
+
     const earlier = journal.entries.filter((candidate) => candidate.idx < 145).map((candidate) => candidate.when);
     expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
 
     // 0145 seeds registry rows only; a snapshot would claim a schema change.
     const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0145_snapshot.json"), "utf8").then(
-      () => false,
-      () => true,
-    );
-    expect(missing).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Migration 0146 — Civitai FLUX.2 Klein v2 transport contract
-// ---------------------------------------------------------------------------
-
-const CIVITAI_V2_MIGRATION_TAG = "0146_civitai-klein-v2";
-const CIVITAI_V2_MIGRATION_FILE = `drizzle/${CIVITAI_V2_MIGRATION_TAG}.sql`;
-const CIVITAI_V2_MODEL_ID = "imgmdlcivklein4baaaaaaa";
-const CIVITAI_V2_LORA_ID = "imglorklein4bnsfwfemale";
-const CIVITAI_V2_SLUG = "civitai/flux-2-klein-4b";
-
-function civitaiV2Statements(): Promise<string[]> {
-  return migrationStatements(CIVITAI_V2_MIGRATION_FILE, "UPDATE ");
-}
-
-describe.skipIf(!ready)("migration 0146 — Civitai Klein v2", () => {
-  it("moves the bench row to the documented 4b selector with two data-url edit references", async () => {
-    const sink = new DiagnosticCollector();
-    const model = (await loadImageModels(sink)).find((candidate) => candidate.id === CIVITAI_V2_MODEL_ID);
-
-    expect(model).toBeDefined();
-    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
-    expect(model).toMatchObject({
-      slug: CIVITAI_V2_SLUG,
-      label: "FLUX.2 Klein 4B (Civitai v2)",
-      canGenerate: true,
-      canEdit: true,
-      referenceField: "images",
-      referenceArity: "array",
-      referenceTransport: "data_url",
-      maxReferences: 2,
-      probedVersionId: "4b",
-      forPortrait: false,
-      forVariant: false,
-      forScene: false,
-    });
-    expect(model?.advancedCapabilities.controls).toMatchObject({
-      seed: { field: "seed", type: "integer" },
-      loraWeights: { field: "civitai_lora_version", type: "string" },
-      loraScale: { field: "civitai_lora_strength", type: "number" },
-    });
-    expect(model?.advancedCapabilities.controls.negativePrompt).toBeUndefined();
-  });
-
-  it("retunes the curated LoRA to the v2 selector only after the model row moved", async () => {
-    const lora = await loadImageLora(CIVITAI_V2_LORA_ID);
-    expect(lora).toMatchObject({
-      compatibleModelSlugs: [CIVITAI_V2_SLUG],
-      compatibleVersionIds: ["4b"],
-    });
-  });
-
-  it("does not rewrite an already-migrated row or LoRA on replay", async () => {
-    const statements = await civitaiV2Statements();
-    expect(statements, `${CIVITAI_V2_MIGRATION_FILE} must carry the model and LoRA updates`).toHaveLength(2);
-    const modelBefore = await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID));
-    const loraBefore = await db().select().from(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID));
-
-    for (const statement of statements) await db().execute(sql.raw(statement));
-
-    expect(await db().select().from(imageModels).where(eq(imageModels.id, CIVITAI_V2_MODEL_ID))).toEqual(modelBefore);
-    expect(await db().select().from(imageLoras).where(eq(imageLoras.id, CIVITAI_V2_LORA_ID))).toEqual(loraBefore);
-  });
-
-  it("is the unique journal head after 0145 and carries no schema snapshot", async () => {
-    const journal = JSON.parse(
-      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
-    ) as { entries: { idx: number; tag: string; when: number }[] };
-    const entry = journal.entries.find((candidate) => candidate.tag === CIVITAI_V2_MIGRATION_TAG);
-    const previous = journal.entries.find((candidate) => candidate.idx === 145);
-
-    expect(entry?.idx).toBe(146);
-    expect(previous?.tag).toBe(CIVITAI_MIGRATION_TAG);
-    expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
-    expect(journal.entries.filter((candidate) => candidate.idx === 146)).toHaveLength(1);
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(146);
-    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0146_snapshot.json"), "utf8").then(
       () => false,
       () => true,
     );

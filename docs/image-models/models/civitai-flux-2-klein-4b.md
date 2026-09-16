@@ -2,9 +2,10 @@
 
 **Slug:** `civitai/flux-2-klein-4b`
 
-Civitai's hosted distilled Klein 4B lane uses the public v2 workflow API. The
-same lane generates from a prompt or edits reference images with a curated LoRA.
-Mature-content permission and payment currency are explicit request policy.
+Civitai's hosted distilled Klein 4B lane has a native public v2 workflow API.
+The `4b` catalog variant generates from a prompt or edits reference images with
+a curated LoRA. Mature-content permission and payment currency are explicit
+request policy for that variant.
 
 ## Owns / does not own
 
@@ -16,6 +17,12 @@ Mature-content permission and payment currency are explicit request policy.
 
 ## Provider identity
 
+- The stored version marker controls dispatch. `2612557` uses the legacy
+  website graph and its text-to-image-only catalog contract; `4b` uses the
+  native v2 workflow described below. A captured run retains its version and
+  does not substitute one path for the other.
+- The legacy graph does not carry Vesper's explicit mature/yellow payment policy
+  or references, so it is not evidence of the mandatory combined capability.
 - The workflow contains one `imageGen` step with `engine: "flux2"`,
   `model: "klein"`, and `modelVersion: "4b"`.
 - `4b` selects the distilled variant. It is not an immutable checkpoint revision;

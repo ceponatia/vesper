@@ -6,6 +6,7 @@ The selectable image-model catalog is **DATA in `image_models`**, while the row'
 - **fal.ai** currently owns the two Qwen Image 3 rows: `alibaba/qwen-image-3/text-to-image` and `alibaba/qwen-image-3/edit`.
 - **Civitai** owns the admin-only `civitai/flux-2-klein-4b` lane; its
   [model contract](../../image-models/models/civitai-flux-2-klein-4b.md) defines
+  the version-specific legacy and native v2 dispatch, including native
   reference-plus-LoRA inputs and explicit mature-content/payment settings.
 - Venice remains removed — no `VENICE_*` env, `server/ai/venice.ts`, or `venice_*` provider ids.
 
