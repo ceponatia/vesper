@@ -1555,9 +1555,8 @@ describe.skipIf(!ready)("migration 0139 — history and upgrade", () => {
     // predecessor would run this seed against a database 0138 had not reached.
     expect(entry?.when).toBeGreaterThan(previous?.when ?? 0);
     expect(journal.entries.filter((candidate) => candidate.idx === 139)).toHaveLength(1);
-    // The HEAD assertion lives with the NEWEST migration — 0140's suite at the
-    // bottom of this file — so exactly one suite has to move when the next one
-    // lands.
+    // The HEAD assertion lives with the newest migration — 0145's history
+    // suite below — so this historical 0139 check remains valid as rows accrue.
 
     // Data migrations 0132–0138 ship no snapshot either; one here would claim a
     // `schema.ts` change this file does not make.
@@ -1893,6 +1892,7 @@ describe.skipIf(!ready)("migration 0140 — the predicate", () => {
 
 const COMMUNITY_MIGRATION_TAG = "0141_community-model-capability-backfill";
 const COMMUNITY_MIGRATION_FILE = `drizzle/${COMMUNITY_MIGRATION_TAG}.sql`;
+const CIVITAI_MIGRATION_TAG = "0145_civitai-flux2-klein-4b-lora";
 
 /**
  * The three rows 0104 seeds with `advanced_capabilities` at its column default,
@@ -1950,8 +1950,8 @@ describe.skipIf(!ready)("migration 0141 — history", () => {
     expect(entry).toBeDefined();
     expect(entry?.idx).toBe(141);
     expect(journal.entries.filter((candidate) => candidate.idx === 141)).toHaveLength(1);
-    // The HEAD assertion lives with the newest migration — 0142's suite
-    // (`engine/simulation/garment-reads.int.test.ts`) owns it now.
+    // The HEAD assertion lives with the newest migration — 0145's history
+    // suite below owns it now.
 
     // The migrator applies in `when` order, so this file must be timestamped
     // after everything it expects to have run — asserted against the whole
@@ -1964,6 +1964,35 @@ describe.skipIf(!ready)("migration 0141 — history", () => {
     // Data only: a snapshot here would claim a `schema.ts` change this file does
     // not make.
     const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0141_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+/**
+ * 0145 is the current journal head. Keep the global maximum here rather than
+ * in an older migration's history test, so a new migration moves one assertion
+ * while 0141 and 0142 keep protecting their own historical entries.
+ */
+describe.skipIf(!ready)("migration 0145 — history", () => {
+  it("is the unique journal head, timestamped after every earlier entry, with no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === CIVITAI_MIGRATION_TAG);
+    expect(entry).toBeDefined();
+    expect(entry?.idx).toBe(145);
+    expect(journal.entries.filter((candidate) => candidate.idx === 145)).toHaveLength(1);
+    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(145);
+
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 145).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    // 0145 seeds registry rows only; a snapshot would claim a schema change.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0145_snapshot.json"), "utf8").then(
       () => false,
       () => true,
     );
