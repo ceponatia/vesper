@@ -23,7 +23,16 @@ import type { ReplicateClient, ReplicateImageResult } from "@vesper/image-replic
  * `models.test.ts` uses for `renderWithModel`.
  */
 
-vi.mock("../ai", () => ({ replicateClient: vi.fn() }));
+// The factory must name every `../ai` export this module graph binds, not only
+// the ones the direct arm calls: a mocked module throws on access to a name it
+// does not define, so an unnamed one turns a later edit to this arm into a
+// confusing suite failure rather than a behavior failure.
+vi.mock("../ai", () => ({
+  replicateClient: vi.fn(),
+  classifyImageFailure: vi.fn(),
+  imageModelSentShape: vi.fn(),
+  disableSafetyChecker: vi.fn(() => false),
+}));
 
 import { replicateClient } from "../ai";
 import { labRenderer, type ImageLabRenderRequest } from "./image-lab-render";
