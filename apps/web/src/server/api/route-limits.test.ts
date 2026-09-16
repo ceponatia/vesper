@@ -110,7 +110,12 @@ describe("clientIp", () => {
     // a fallback restores the bypass exactly when the edge header goes missing,
     // which is when nobody is watching for it.
     expect(trustedClientIp(request("/api/auth/sign-in/email", { "fly-client-ip": "203.0.113.7" }))).toBe("203.0.113.7");
-    for (const headers of [{ "x-real-ip": "10.0.0.1" }, { "x-forwarded-for": "198.51.100.9" }, {}]) {
+    const untrusted: Record<string, string>[] = [
+      { "x-real-ip": "10.0.0.1" },
+      { "x-forwarded-for": "198.51.100.9" },
+      {},
+    ];
+    for (const headers of untrusted) {
       expect(trustedClientIp(request("/api/auth/sign-in/email", headers))).toBe(UNKNOWN_CLIENT_IP);
     }
     // And it normalizes the same way, so v6 callers cannot rotate a suffix here

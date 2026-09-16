@@ -270,9 +270,9 @@ export async function chargeCredentialAttempt(subject: string, now: number = Dat
      */
     // Rate-limited: an outage means every sign-in takes this branch, and a line
     // per request buries the first one — which is the only useful one.
-    const now_ = Date.now();
-    if (now_ - lastUnavailableLogAt >= UNAVAILABLE_LOG_INTERVAL_MS) {
-      lastUnavailableLogAt = now_;
+    const loggedAt = Date.now();
+    if (loggedAt - lastUnavailableLogAt >= UNAVAILABLE_LOG_INTERVAL_MS) {
+      lastUnavailableLogAt = loggedAt;
       log.error("auth.credential_guard", "credential backoff unavailable; refusing", {
         code: "auth.credential_guard.unavailable",
         error: err instanceof Error ? err.message : String(err),
