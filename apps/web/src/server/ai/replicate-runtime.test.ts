@@ -253,7 +253,7 @@ describe("provider-aware image routing", () => {
     // `steps` is the image generator's sampling count here. The workflow
     // envelope instead owns `steps: [{ input: ... }]`, plus these top-level
     // payment/request fields.
-    expect(providerInput["steps"]).toBe(20);
+    expect(providerInput["steps"]).toBe(4);
     expect(providerInput).not.toHaveProperty("allowMatureContent");
     expect(providerInput).not.toHaveProperty("externalId");
     expect(providerInputViolations(descriptorModel, providerInput)).toEqual([]);
