@@ -32,6 +32,7 @@ describe("image generator bench prediction budget", () => {
       slug,
       label: slug,
       canGenerate: true,
+      canEdit: false,
       probedVersionId: "v1",
     });
   }
