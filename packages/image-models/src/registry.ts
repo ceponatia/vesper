@@ -10,6 +10,8 @@ import {
   qwenImage3Edit,
   qwenImage3TextToImage,
   qwenImageEdit2511,
+  seedream45,
+  seedream5Lite,
 } from "./families";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
 
@@ -32,9 +34,9 @@ import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } 
  * Replicate. The lookup handles those exact routes first.
  *
  * The Qwen family, the FLUX.2 klein bench-onboarding endpoints (#567), and the
- * FLUX.1 Kontext Dev endpoint (#574) are here. Other families (the production
- * Flux checkpoints, Wan, SDXL, Seedream) stay on the legacy path and migrate
- * when their behavior is next touched, which is exactly why the answer below
+ * FLUX.1 Kontext Dev endpoint (#574), and both Seedream endpoints are here.
+ * Other families (the production Flux checkpoints, Wan, SDXL) use the
+ * generic path, which is why the answer below
  * is nullable rather than exhaustive.
  */
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
@@ -55,6 +57,10 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   // FLUX.1 Kontext Dev (#574): the bare and pinned dev slug only — the pro/max
   // and dev-lora siblings, and flux-dev, resolve nothing here.
   "black-forest-labs/flux-kontext-dev": fluxKontextDev,
+  // One Seedream family, two endpoint-specific compositions. Each exact base
+  // slug also resolves when the registry row carries a Replicate version pin.
+  "bytedance/seedream-4.5": seedream45,
+  "bytedance/seedream-5-lite": seedream5Lite,
 };
 
 /**

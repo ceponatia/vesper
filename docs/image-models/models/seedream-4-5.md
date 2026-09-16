@@ -101,6 +101,16 @@ documented default format.
 first entry. With `sequential_image_generation` disabled and `max_images: 1`
 there will be exactly one.
 
+## Family adapter
+
+This endpoint resolves through the shared Seedream family in
+`@vesper/image-models`. It composes `prompt`, `multiReference`, `aspectRatio`,
+and `safetyToggle`; it omits `outputFormat` because the endpoint has no such input.
+The multi-reference validator uses the active row's normalized reference
+capacity. The adapter does not rewrite prompts or change the provider
+request; the prompt dialect, probed field bindings, single-output pins and
+download conversion keep their existing owners.
+
 ## Vesper payload
 
 ```json

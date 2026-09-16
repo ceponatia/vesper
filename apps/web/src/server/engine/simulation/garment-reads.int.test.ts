@@ -407,16 +407,15 @@ describe.runIf(harness.ready)("readActorGarmentInstances — the channel owners"
 });
 
 // --- Migration 0142 — history -------------------------------------------------
-// The HEAD assertion lives with the newest migration, so exactly one suite has
-// to move when the next one lands (0141's block in
-// `images/image-model-seeds.int.test.ts` held it before this one). A duplicate
-// index from a concurrent branch, or a `when` stamped before an earlier entry —
-// which the migrator would silently skip on an already-migrated database — is
-// what it catches.
+// This suite owns 0142's entry, timestamp and schema snapshot. The global HEAD
+// assertion belongs to the newest migration (0145's block in
+// `images/image-model-seeds.int.test.ts`). A duplicate index from a concurrent
+// branch, or a `when` stamped before an earlier entry — which the migrator
+// would silently skip on an already-migrated database — is caught here.
 const GARMENT_STATE_MIGRATION_TAG = "0142_successor-garment-state";
 
 describe.runIf(harness.ready)("migration 0142 — history", () => {
-  it("is the journal head, timestamped after every earlier entry, with a schema snapshot", async () => {
+  it("is a unique ordered journal entry with its garment-state schema snapshot", async () => {
     const journal = JSON.parse(
       await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
     ) as { entries: { idx: number; tag: string; when: number }[] };
@@ -425,7 +424,6 @@ describe.runIf(harness.ready)("migration 0142 — history", () => {
     expect(entry).toBeDefined();
     expect(entry?.idx).toBe(142);
     expect(journal.entries.filter((candidate) => candidate.idx === 142)).toHaveLength(1);
-    expect(Math.max(...journal.entries.map((candidate) => candidate.idx))).toBe(142);
 
     const earlier = journal.entries.filter((candidate) => candidate.idx < 142).map((candidate) => candidate.when);
     expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);

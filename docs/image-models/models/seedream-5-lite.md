@@ -102,6 +102,16 @@ clothed, non-explicit prompt.
 `{"type": "array", "items": {"type": "string", "format": "uri"}}` — take the
 first entry.
 
+## Family adapter
+
+This endpoint resolves through the shared Seedream family in
+`@vesper/image-models`. It composes `prompt`, `multiReference`, `aspectRatio`,
+and `outputFormat`; it omits `safetyToggle` because the endpoint has no such input.
+The multi-reference validator uses the active row's normalized reference
+capacity. The adapter does not rewrite prompts or change the provider
+request; the prompt dialect, probed field bindings, single-output pins and
+download conversion keep their existing owners.
+
 ## Vesper payload
 
 ```json

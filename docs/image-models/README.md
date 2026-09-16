@@ -28,7 +28,7 @@ Source: [`packages/image-models`](../../packages/image-models/README.md).
 
 The package is private (`@vesper/image-models`, version `0.0.0`) and publishes only its root entrypoint plus `package.json`. Callers import from `@vesper/image-models`, not from `src/*` subpaths.
 
-The **Qwen Image family**, the **FLUX.2 klein** bench-onboarding endpoints, and the **FLUX.1 Kontext Dev** endpoint are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan, SDXL, and Seedream families — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
+The **Qwen Image family**, the **FLUX.2 klein** bench-onboarding endpoints, the **FLUX.1 Kontext Dev** endpoint, and both **Seedream** endpoints are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan and SDXL — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
 The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
 
@@ -67,6 +67,19 @@ The **FLUX.1 Kontext Dev** endpoint (`black-forest-labs/flux-kontext-dev`) is re
 `black-forest-labs/flux-kontext-dev-lora`, `black-forest-labs/flux-kontext-pro`, `black-forest-labs/flux-kontext-max`, and the production `flux-dev` checkpoint are different endpoints with their own schemas, and resolve nothing from this adapter.
 
 See [Features → FLUX.1 Kontext composition](features/README.md#flux1-kontext-composition) for the full feature matrix.
+
+### Registered Seedream adapters
+
+The two exact Replicate base slugs resolve through one Seedream family module;
+version-pinned rows retain the matching adapter. Both endpoints compose
+`prompt`, `multiReference` and `aspectRatio`, with reference capacity and
+supported shapes read from the probed model row. [Seedream 4.5](models/seedream-4-5.md)
+adds `safetyToggle` and has no output-format input. [Seedream 5 Lite](models/seedream-5-lite.md)
+adds `outputFormat` and has no safety toggle. Their distinct size tiers, format
+choices, and single-output pins are provider facts in the probed rows, rather
+than feature constants. Neither adapter supplies prompt preparation or an
+execution hint: dialects own wording, and 5 Lite's measured latency fits the
+bench's global budget.
 
 ## Features
 

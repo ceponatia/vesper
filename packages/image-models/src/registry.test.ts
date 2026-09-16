@@ -9,6 +9,8 @@ import {
   qwenImage3Edit,
   qwenImage3TextToImage,
   qwenImageEdit2511,
+  seedream45,
+  seedream5Lite,
 } from "./families";
 import { adapterForImageModel } from "./registry";
 import {
@@ -59,7 +61,6 @@ describe("adapterForImageModel", () => {
   });
 
   it.each([
-    "bytedance/seedream-4.5",
     "qwen/qwen-image-edit-2511-turbo",
     "qwen/qwen-image-2",
     "qwen/qwen-image-2:266e594fa007032292c211586354fe193d7aa4e675a1eeb0aef0c6a424468ddd",
@@ -76,6 +77,24 @@ describe("adapterForImageModel", () => {
   ])("answers null for %s, which is the ordinary no-special-behavior case", (slug) => {
     expect(adapterForImageModel(slug)).toBeNull();
   });
+});
+
+/** #336/#337: exact Seedream endpoint lookup must survive a Replicate pin without matching a sibling by prefix. */
+describe("adapterForImageModel: Seedream family", () => {
+  it("resolves both exact and pinned endpoint slugs to their distinct compositions", () => {
+    const version45 = "9fe3b8282dcb9d9063b05e33210a1432801f7c5a6641db944baefcec4886761a";
+    const version5Lite = "eeb2857d94c49a5bcbc9d6c6057416e1d3b1a2735a16e08e4def9bf7ee22ec71";
+    expect(adapterForImageModel("bytedance/seedream-4.5")).toBe(seedream45);
+    expect(adapterForImageModel(`bytedance/seedream-4.5:${version45}`)).toBe(seedream45);
+    expect(adapterForImageModel("bytedance/seedream-5-lite")).toBe(seedream5Lite);
+    expect(adapterForImageModel(`bytedance/seedream-5-lite:${version5Lite}`)).toBe(seedream5Lite);
+    expect(seedream45).not.toBe(seedream5Lite);
+  });
+
+  it.each(["bytedance/seedream-5", "bytedance/seedream-4.5-turbo", "bytedance/seedream-5-lite-turbo"])(
+    "does not inherit the Seedream adapter for unregistered sibling %s",
+    (slug) => expect(adapterForImageModel(slug)).toBeNull(),
+  );
 });
 
 describe("adapterForImageModel: FLUX.2 klein (#567)", () => {

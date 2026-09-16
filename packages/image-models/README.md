@@ -65,9 +65,19 @@ work rather than the first one somebody happened to list.
 `adapterForImageModel(slug)` resolves through the model's **base** slug, so a
 row pinned to `owner/name:version` for reproducibility keeps its family
 behavior. The Qwen family, the FLUX.2 klein bench-onboarding endpoints and the
-FLUX.1 Kontext Dev endpoint are registered today; the production Flux
-checkpoints, Wan, SDXL and Seedream stay on the legacy path and migrate when
-their behavior is next touched.
+FLUX.1 Kontext Dev endpoint and both Seedream endpoints are registered; the
+production Flux checkpoints, Wan and SDXL use the generic path.
+
+## The Seedream family
+
+`bytedance/seedream-4.5` and `bytedance/seedream-5-lite` share one family
+module and compose prompt, multi-reference and aspect features. The 4.5 endpoint
+also composes `safetyToggle` but has no output-format control; 5 Lite composes
+`outputFormat` but has no safety toggle. The model record supplies each active
+version's reference capacity, size tiers, format binding and single-output
+pins. The adapter contributes reference-capacity validation and leaves prompt
+wording, wire assembly, download conversion and execution budgets at their
+existing owners.
 
 ## The Qwen family
 

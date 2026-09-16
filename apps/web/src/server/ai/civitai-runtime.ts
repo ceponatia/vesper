@@ -222,8 +222,9 @@ export function hasCivitai(): boolean {
 }
 
 function withoutPrompts(graph: CivitaiGenerationGraph): Record<string, unknown> {
-  const { prompt: _prompt, negativePrompt: _negativePrompt, ...rest } = graph;
-  return rest;
+  return Object.fromEntries(
+    Object.entries(graph).filter(([key]) => key !== "prompt" && key !== "negativePrompt"),
+  );
 }
 
 async function whatIf(graph: CivitaiGenerationGraph, token: string): Promise<WhatIfResult> {
