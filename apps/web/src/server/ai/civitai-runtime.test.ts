@@ -632,6 +632,111 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("private");
   });
 
+  /**
+   * PROTECTS: the output-selection predicate (`available && !hidden &&
+   * !blocked && id`, unchanged in shape by #630's id/url rekey) actually
+   * excludes an id-bearing image that is not yet safe to download, rather
+   * than downloading the first id it sees.
+   */
+  it("skips an image that is not yet available in favor of one that is", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-pending" : "submit-pending", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: "pending.jpg", available: false },
+          { id: "output.jpg", available: true },
+        ]));
+      }
+      if (href === blobUrl("output.jpg")) return new Response("image-bytes", { status: 200 });
+      if (href === blobUrl("pending.jpg")) throw new Error("must not fetch an unavailable image");
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-pending" });
+    expect(result.image?.toString()).toBe("image-bytes");
+  });
+
+  it("does not download a hidden image and fails as unavailable when no other image qualifies", async () => {
+    let outputReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-hidden" : "submit-hidden", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: "hidden.jpg", available: true, hidden: true },
+        ]));
+      }
+      if (href === blobUrl("hidden.jpg")) { outputReads += 1; return new Response("image-bytes", { status: 200 }); }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(outputReads).toBe(0);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-hidden", error: expect.stringContaining("civitai_output_unavailable; retry=deliberate") });
+  });
+
+  /**
+   * PROTECTS: a per-image `blockedReason` (distinct from the job-level
+   * `blocked` classification covered above) is excluded from selection and
+   * reported as `civitai_async_blocked`, not the generic `civitai_output_unavailable`
+   * a caller would otherwise get for "no image found" — the two need different
+   * retry handling (never vs. deliberate).
+   */
+  it("reports a per-image blockedReason as civitai_async_blocked rather than a generic unavailable", async () => {
+    let outputReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-image-blocked" : "submit-image-blocked", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: "blocked.jpg", available: true, blockedReason: "blocked" },
+        ]));
+      }
+      if (href === blobUrl("blocked.jpg")) { outputReads += 1; return new Response("image-bytes", { status: 200 }); }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(outputReads).toBe(0);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-image-blocked", error: expect.stringContaining("civitai_async_blocked; retry=never") });
+  });
+
+  /**
+   * PROTECTS: the blob id is percent-encoded into the request path
+   * (`encodeURIComponent`, #630) rather than interpolated raw, so an id
+   * containing reserved URL characters still resolves to exactly the
+   * blob it names instead of a mis-split path, a stray query string, or a
+   * URL that `civitaiOutputLocation` rejects as invalid.
+   */
+  it("URL-encodes a blob id containing reserved characters", async () => {
+    const blobId = "two words/with#hash?query.jpg";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-encoded" : "submit-encoded", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: blobId, available: true },
+        ]));
+      }
+      if (href === blobUrl(blobId)) return new Response("image-bytes", { status: 200 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-encoded" });
+    expect(result.image?.toString()).toBe("image-bytes");
+  });
+
   it("ignores blank job failures on a successful workflow", () => {
     const parsed = parseCivitaiWorkflow({ id: "workflow-blank", status: "succeeded", steps: [{
       $type: "imageGen", input: {}, jobs: [{ reason: " ", blockedReason: "\t" }],
