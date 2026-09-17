@@ -38,6 +38,11 @@ const request = {
   controlInput: { seed: 1234 },
 };
 
+/** The blob-endpoint href the runtime fetches for a given output blob id (#630). */
+function blobUrl(id: string): string {
+  return `https://orchestration.civitai.com/v2/consumer/blobs/${encodeURIComponent(id)}`;
+}
+
 function workflowFrom(body: Record<string, unknown>, id: string, status: string, images: unknown[] = []): Record<string, unknown> {
   const steps = body.steps as [{ $type: "imageGen"; input: Record<string, unknown> }];
   const echoedInput = { ...steps[0].input };
@@ -236,11 +241,11 @@ describe("Civitai Klein v2 workflow responses", () => {
       steps: [{
         $type: "imageGen",
         input: { engine: "flux2" },
-        output: { images: [{ url: "https://image.civitai.com/output.jpg", available: true }] },
+        output: { images: [{ id: "1e9a21c3-4961-459b-8401-b0908289560f-0.jpg", available: true }] },
       }],
     });
 
-    expect(parsed.images).toEqual([{ url: "https://image.civitai.com/output.jpg", available: true, hidden: false, blocked: null }]);
+    expect(parsed.images).toEqual([{ id: "1e9a21c3-4961-459b-8401-b0908289560f-0.jpg", available: true, hidden: false, blocked: null }]);
     expect(parsed.errors).toEqual(["provider_error"]);
   });
 });
@@ -260,10 +265,10 @@ describe("Civitai Klein v2 transport", () => {
         workflowBodies.push(body);
         const whatif = new URL(href).searchParams.get("whatif");
         return Response.json(workflowFrom(body, whatif === "true" ? "estimate-1" : "submit-1", whatif === "true" ? "unassigned" : "succeeded", [{
-          url: "https://image.civitai.com/output.jpg", available: true,
+          id: "output.jpg", available: true,
         }]));
       }
-      if (href === "https://image.civitai.com/output.jpg") return new Response("image", { status: 200 });
+      if (href === blobUrl("output.jpg")) return new Response("image", { status: 200 });
       throw new Error(`Unexpected fetch ${href}`);
     });
 
@@ -349,11 +354,11 @@ describe("Civitai Klein v2 transport", () => {
           id: "submit-retry", status: "succeeded", allowMatureContent: true,
           currencies: ["yellow"], upgradeMode: "manual", transactions: { insufficientBuzz: false },
           steps: [{ $type: "imageGen", input: {}, output: { images: [{
-            url: "https://image.civitai.com/output.jpg", available: true,
+            id: "output.jpg", available: true,
           }] } }],
         });
       }
-      if (href === "https://image.civitai.com/output.jpg") return new Response("image", { status: 200 });
+      if (href === blobUrl("output.jpg")) return new Response("image", { status: 200 });
       throw new Error(`Unexpected fetch ${href}`);
     });
 
@@ -530,10 +535,10 @@ describe("Civitai Klein v2 transport", () => {
         return Response.json({
           id: "submit-transport", status: "succeeded", allowMatureContent: true,
           currencies: ["yellow"], transactions: { insufficientBuzz: false },
-          steps: [{ $type: "imageGen", input: {}, output: { images: [{ url: "https://image.civitai.com/output.jpg", available: true }] } }],
+          steps: [{ $type: "imageGen", input: {}, output: { images: [{ id: "output.jpg", available: true }] } }],
         });
       }
-      if (href === "https://image.civitai.com/output.jpg") return new Response("image", { status: 200 });
+      if (href === blobUrl("output.jpg")) return new Response("image", { status: 200 });
       throw new Error(`Unexpected fetch ${href}`);
     });
 
@@ -554,10 +559,10 @@ describe("Civitai Klein v2 transport", () => {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         const whatif = new URL(href).searchParams.get("whatif");
         return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output" : "submit-output", whatif === "true" ? "unassigned" : "succeeded", [{
-          url: "https://image.civitai.com/output-secret.jpg", available: true,
+          id: "output-secret.jpg", available: true,
         }]));
       }
-      if (href === "https://image.civitai.com/output-secret.jpg") {
+      if (href === blobUrl("output-secret.jpg")) {
         outputReads += 1;
         throw new Error("provider token=secret signed-url=private");
       }
@@ -574,11 +579,10 @@ describe("Civitai Klein v2 transport", () => {
   });
 
   it.each([
-    ["an invalid output URL", "not a URL", "civitai_output_invalid; retry=never", 0, undefined],
-    ["an untrusted output URL", "https://example.test/output.jpg", "civitai_output_invalid; retry=never", 0, undefined],
-    ["an output HTTP failure", "https://image.civitai.com/output.jpg", "civitai_output_http_503; retry=deliberate", 1, () => new Response("token=secret", { status: 503 })],
-    ["an oversized declared output", "https://image.civitai.com/output.jpg", "civitai_output_too_large; retry=never", 1, () => new Response("unused", { headers: { "content-length": "33554433" } })],
-    ["an oversized output stream", "https://image.civitai.com/output.jpg", "civitai_output_too_large; retry=never", 1, () => ({
+    ["a missing output id", null, "civitai_output_unavailable; retry=deliberate", 0, undefined],
+    ["an output HTTP failure", "output.jpg", "civitai_output_http_503; retry=deliberate", 1, () => new Response("token=secret", { status: 503 })],
+    ["an oversized declared output", "output.jpg", "civitai_output_too_large; retry=never", 1, () => new Response("unused", { headers: { "content-length": "33554433" } })],
+    ["an oversized output stream", "output.jpg", "civitai_output_too_large; retry=never", 1, () => ({
       ok: true,
       headers: new Headers(),
       body: {
@@ -588,9 +592,9 @@ describe("Civitai Klein v2 transport", () => {
         }),
       },
     }) as unknown as Response],
-    ["an absent output body", "https://image.civitai.com/output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response(null)],
-    ["an empty output stream", "https://image.civitai.com/output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response("")],
-    ["a thrown output stream read", "https://image.civitai.com/output.jpg", "civitai_output_transport_failure; retry=deliberate", 1, () => ({
+    ["an absent output body", "output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response(null)],
+    ["an empty output stream", "output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response("")],
+    ["a thrown output stream read", "output.jpg", "civitai_output_transport_failure; retry=deliberate", 1, () => ({
       ok: true,
       headers: new Headers(),
       body: {
@@ -600,18 +604,18 @@ describe("Civitai Klein v2 transport", () => {
         }),
       },
     }) as unknown as Response],
-  ] as const)("redacts %s", async (_description, outputUrl, expectedError, expectedOutputReads, outputResponse) => {
+  ] as const)("redacts %s", async (_description, blobId, expectedError, expectedOutputReads, outputResponse) => {
     let outputReads = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
       if (href.includes("/consumer/workflows?")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         const whatif = new URL(href).searchParams.get("whatif");
-        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output-boundary" : "submit-output-boundary", whatif === "true" ? "unassigned" : "succeeded", [{
-          url: outputUrl, available: true,
-        }]));
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output-boundary" : "submit-output-boundary", whatif === "true" ? "unassigned" : "succeeded", [
+          blobId === null ? { available: true } : { id: blobId, available: true },
+        ]));
       }
-      if (href === outputUrl) {
+      if (blobId !== null && href === blobUrl(blobId)) {
         outputReads += 1;
         if (!outputResponse) throw new Error(`Unexpected output fetch ${href}`);
         return outputResponse();
@@ -628,10 +632,115 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("private");
   });
 
+  /**
+   * PROTECTS: the output-selection predicate (`available && !hidden &&
+   * !blocked && id`, unchanged in shape by #630's id/url rekey) actually
+   * excludes an id-bearing image that is not yet safe to download, rather
+   * than downloading the first id it sees.
+   */
+  it("skips an image that is not yet available in favor of one that is", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-pending" : "submit-pending", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: "pending.jpg", available: false },
+          { id: "output.jpg", available: true },
+        ]));
+      }
+      if (href === blobUrl("output.jpg")) return new Response("image-bytes", { status: 200 });
+      if (href === blobUrl("pending.jpg")) throw new Error("must not fetch an unavailable image");
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-pending" });
+    expect(result.image?.toString()).toBe("image-bytes");
+  });
+
+  it("does not download a hidden image and fails as unavailable when no other image qualifies", async () => {
+    let outputReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-hidden" : "submit-hidden", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: "hidden.jpg", available: true, hidden: true },
+        ]));
+      }
+      if (href === blobUrl("hidden.jpg")) { outputReads += 1; return new Response("image-bytes", { status: 200 }); }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(outputReads).toBe(0);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-hidden", error: expect.stringContaining("civitai_output_unavailable; retry=deliberate") });
+  });
+
+  /**
+   * PROTECTS: a per-image `blockedReason` (distinct from the job-level
+   * `blocked` classification covered above) is excluded from selection and
+   * reported as `civitai_async_blocked`, not the generic `civitai_output_unavailable`
+   * a caller would otherwise get for "no image found" — the two need different
+   * retry handling (never vs. deliberate).
+   */
+  it("reports a per-image blockedReason as civitai_async_blocked rather than a generic unavailable", async () => {
+    let outputReads = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-image-blocked" : "submit-image-blocked", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: "blocked.jpg", available: true, blockedReason: "blocked" },
+        ]));
+      }
+      if (href === blobUrl("blocked.jpg")) { outputReads += 1; return new Response("image-bytes", { status: 200 }); }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(outputReads).toBe(0);
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-image-blocked", error: expect.stringContaining("civitai_async_blocked; retry=never") });
+  });
+
+  /**
+   * PROTECTS: the blob id is percent-encoded into the request path
+   * (`encodeURIComponent`, #630) rather than interpolated raw, so an id
+   * containing reserved URL characters still resolves to exactly the
+   * blob it names instead of a mis-split path, a stray query string, or a
+   * URL that `civitaiOutputLocation` rejects as invalid.
+   */
+  it("URL-encodes a blob id containing reserved characters", async () => {
+    const blobId = "two words/with#hash?query.jpg";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-encoded" : "submit-encoded", whatif === "true" ? "unassigned" : "succeeded", [
+          { id: blobId, available: true },
+        ]));
+      }
+      if (href === blobUrl(blobId)) return new Response("image-bytes", { status: 200 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-encoded" });
+    expect(result.image?.toString()).toBe("image-bytes");
+  });
+
   it("ignores blank job failures on a successful workflow", () => {
     const parsed = parseCivitaiWorkflow({ id: "workflow-blank", status: "succeeded", steps: [{
       $type: "imageGen", input: {}, jobs: [{ reason: " ", blockedReason: "\t" }],
-      output: { images: [{ url: "https://image.civitai.com/output.jpg", available: true }] },
+      output: { images: [{ id: "output.jpg", available: true }] },
     }] });
     expect(parsed.errors).toEqual([]);
     expect(parsed.blocked).toBe(false);
@@ -693,24 +802,32 @@ describe("Civitai Klein v2 transport", () => {
 });
 
 /**
- * PROTECTS: the output download follows the provider's own redirect (#628).
+ * PROTECTS: the output download uses the authenticated blob endpoint instead
+ * of the workflow's signed `url` (#630), and still follows the provider's own
+ * redirect by hand rather than trusting either runtime redirect mode (#628).
  *
- * The blob URL Civitai puts in a succeeded workflow answers `301` with a
- * RELATIVE `Location` to a signed content path on the same host. `downloadOutput`
- * refused it outright, so a workflow that had rendered and been billed delivered
- * nothing. Following it cannot mean trusting the runtime to land anywhere: each
- * hop is revalidated, so these cover the refusals as well as the success.
+ * `GET {BLOBS_URL}/{id}` answers `301` with a RELATIVE `Location` to a signed
+ * content path on the same host. A prior version of this download fetched the
+ * signed `url` directly and, before that, refused any redirect outright;
+ * either one lost a workflow that had rendered and been billed — the signed
+ * `url` redirects some mature outputs to a `blocked` path that 403s with or
+ * without the bearer token. Following the blob endpoint's own redirect cannot
+ * mean trusting the runtime to land anywhere: each hop is revalidated, so
+ * these cover the refusals and the blocked-content case as well as the
+ * success, and prove the bearer travels on the first request only.
  *
  * The stub answers whatever these cases say, so it pins Vesper's follow-and-
  * revalidate logic, not the runtime's own `manual` semantics — that half is a
  * live measurement, recorded on the model's page.
  */
-describe("Civitai Klein v2 output redirects", () => {
-  const OUTPUT_URL = "https://orchestration-new.civitai.com/v2/consumer/blobs/abc.jpg";
+describe("Civitai Klein v2 blob download", () => {
+  const BLOB_ID = "abc.jpg";
+  const SIGNED_URL = "https://orchestration-new.civitai.com/v2/consumer/blobs/content/signed-at-render.jpg";
 
   /** A full render whose workflow succeeds; `output` answers the blob fetches. */
-  function stubRender(output: (href: string, hop: number) => Response): string[] {
+  function stubRender(output: (href: string, hop: number) => Response): { fetched: string[]; authorization: (string | null)[] } {
     const fetched: string[] = [];
+    const authorization: (string | null)[] = [];
     let hop = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
@@ -721,19 +838,22 @@ describe("Civitai Klein v2 output redirects", () => {
           body,
           whatif === "true" ? "estimate-1" : "submit-1",
           whatif === "true" ? "unassigned" : "succeeded",
-          [{ url: OUTPUT_URL, available: true }],
+          // The image carries both an id and a signed url: the runtime must
+          // download through the id and must never fetch the url.
+          [{ id: BLOB_ID, url: SIGNED_URL, available: true }],
         ));
       }
       fetched.push(href);
+      authorization.push(new Headers(init?.headers).get("authorization"));
       const response = output(href, hop);
       hop += 1;
       return response;
     });
-    return fetched;
+    return { fetched, authorization };
   }
 
-  it("follows a relative redirect to the signed content path and stores those bytes", async () => {
-    const fetched = stubRender((_href, hop) => hop === 0
+  it("fetches the blob endpoint with the bearer, follows its redirect with none, and never fetches the signed url", async () => {
+    const { fetched, authorization } = stubRender((_href, hop) => hop === 0
       ? new Response(null, { status: 301, headers: { location: "/v2/consumer/blobs/content/signed.jpg" } })
       : new Response("image-bytes", { status: 200 }));
 
@@ -741,15 +861,38 @@ describe("Civitai Klein v2 output redirects", () => {
 
     expect(result).toMatchObject({ ok: true, predictionId: "submit-1" });
     expect(result.image?.toString()).toBe("image-bytes");
-    // Resolved against the URL that sent it, not against the workflow endpoint.
+    // Resolved against the blob endpoint that sent it, not against the
+    // workflow endpoint or the signed url the workflow also carried.
     expect(fetched).toEqual([
-      OUTPUT_URL,
-      "https://orchestration-new.civitai.com/v2/consumer/blobs/content/signed.jpg",
+      blobUrl(BLOB_ID),
+      "https://orchestration.civitai.com/v2/consumer/blobs/content/signed.jpg",
+    ]);
+    expect(fetched).not.toContain(SIGNED_URL);
+    expect(authorization).toEqual(["Bearer civitai-test-token", null]);
+  });
+
+  it("reports a blocked content path as an ordinary 403 without leaking its body or location", async () => {
+    const { fetched } = stubRender((_href, hop) => hop === 0
+      ? new Response(null, { status: 301, headers: { location: "/v2/consumer/blobs/blocked/opaque-token" } })
+      : new Response("blocked-sentinel-body", { status: 403 }));
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({
+      ok: false, predictionId: "submit-1",
+      error: expect.stringContaining("civitai_output_http_403; retry=deliberate"),
+    });
+    if (result.ok) throw new Error("expected the blocked content path to fail");
+    expect(result.error).not.toContain("blocked-sentinel-body");
+    expect(result.error).not.toContain("opaque-token");
+    expect(fetched).toEqual([
+      blobUrl(BLOB_ID),
+      "https://orchestration.civitai.com/v2/consumer/blobs/blocked/opaque-token",
     ]);
   });
 
   it("refuses a redirect off the Civitai hosts without fetching it", async () => {
-    const fetched = stubRender(() =>
+    const { fetched } = stubRender(() =>
       new Response(null, { status: 302, headers: { location: "https://elsewhere.invalid/output.jpg" } }));
 
     const result = await runCivitaiKleinImageModel(MODEL, request);
@@ -757,21 +900,21 @@ describe("Civitai Klein v2 output redirects", () => {
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_output_invalid") });
     // The refused location is never requested: a paid render is worth less than
     // a download Vesper cannot account for.
-    expect(fetched).toEqual([OUTPUT_URL]);
+    expect(fetched).toEqual([blobUrl(BLOB_ID)]);
   });
 
   it("refuses a redirect to a credentialed URL, Civitai host or not", async () => {
-    const fetched = stubRender(() =>
+    const { fetched } = stubRender(() =>
       new Response(null, { status: 302, headers: { location: "https://user:pass@image.civitai.com/output.jpg" } }));
 
     const result = await runCivitaiKleinImageModel(MODEL, request);
 
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_output_invalid") });
-    expect(fetched).toEqual([OUTPUT_URL]);
+    expect(fetched).toEqual([blobUrl(BLOB_ID)]);
   });
 
   it("refuses a chain longer than the bound instead of chasing it", async () => {
-    const fetched = stubRender((_href, hop) =>
+    const { fetched } = stubRender((_href, hop) =>
       new Response(null, { status: 302, headers: { location: `/v2/consumer/blobs/hop-${String(hop)}.jpg` } }));
 
     const result = await runCivitaiKleinImageModel(MODEL, request);

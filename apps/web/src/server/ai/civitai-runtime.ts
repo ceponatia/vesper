@@ -26,6 +26,7 @@ export const CIVITAI_STEPS_FIELD = "steps";
  */
 export const CIVITAI_NEGATIVE_PROMPT_FIELD = "negativePrompt";
 const WORKFLOWS_URL = "https://orchestration.civitai.com/v2/consumer/workflows";
+const BLOBS_URL = "https://orchestration.civitai.com/v2/consumer/blobs";
 const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_REFERENCES = 2;
@@ -130,7 +131,7 @@ export interface CivitaiWorkflowResult {
   currencies: string[] | null;
   upgradeMode: string | null;
   input: JsonRecord | null;
-  images: { url: string | null; available: boolean; hidden: boolean; blocked: string | null }[];
+  images: { id: string | null; available: boolean; hidden: boolean; blocked: string | null }[];
 }
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -413,7 +414,7 @@ export function parseCivitaiWorkflow(value: unknown, context = "Civitai workflow
     images: asArray(output?.images).map((value) => {
       const image = asRecord(value);
       return {
-        url: asString(image?.url),
+        id: asString(image?.id),
         available: image?.available === true,
         hidden: image?.hidden === true,
         blocked: typeof image?.blockedReason === "string" ? errorCodes(image.blockedReason).join(", ") : null,
@@ -500,35 +501,60 @@ function civitaiOutputLocation(value: string, base?: URL): URL {
 /**
  * How many redirects one output download may follow.
  *
- * The provider needs exactly one: its blob URL answers `301` with a relative
- * `Location` to a signed content path on the same host (measured 2026-09-16 —
- * `redirect: "error"` throws `unexpected redirect` there, which failed every
- * download of a workflow the account had already paid for). Two more are
- * headroom for a storage-host change, not an invitation to chase a chain.
+ * The blob endpoint needs exactly one: `GET {BLOBS_URL}/{id}` answers `301`
+ * with a relative `Location` to a signed content path on the same host
+ * (measured 2026-09-17, #630). The workflow's signed `url` redirected the same
+ * way, and `redirect: "error"` threw `unexpected redirect` there (2026-09-16,
+ * #628), which failed every download of a workflow the account had already
+ * paid for. Two more are headroom for a storage-host change, not an
+ * invitation to chase a chain.
  */
 const MAX_OUTPUT_REDIRECTS = 3;
 
 /**
- * The response carrying the output bytes, after following the provider's own
- * redirects by hand.
+ * The response carrying the output bytes, after requesting the provider's
+ * authenticated blob endpoint and following its own redirect by hand.
+ *
+ * The workflow's own signed `url` is not fetched here or anywhere else: some
+ * mature outputs (measured 2026-09-17, #630 — three reference-image edits
+ * using a mature LoRA) have that url's redirect answer `403` from a `blocked`
+ * path with or without the bearer token, even though the blob is
+ * `available: true` with no `blockedReason` and the workflow carried
+ * `allowMatureContent: true` and `currencies: ["yellow"]`; which blobs get
+ * blocked this way is not simply the reported `nsfwLevel`. The signed `url` is
+ * also not durable — one saved at render time 401ed roughly 45 minutes later
+ * — while the blob id is. `GET {BLOBS_URL}/{id}` served every blob probed, so
+ * the runtime downloads through it and never retains the signed `url`.
+ *
+ * The bearer belongs on that first request alone. The blob endpoint 401s
+ * without it, but the `301` it returns points at a signed content path that
+ * serves the bytes with NO Authorization header at all — sending the token
+ * to a redirected hop would carry a credential to an address the provider
+ * named, not one Vesper requested (measured 2026-09-17, #630).
  *
  * `manual` rather than either runtime default: `follow` would fetch whatever
- * host the provider names, and `error` — what this did before — refuses the
- * provider's own signed content path and failed every download of a workflow
- * the account had already paid for. Each hop is revalidated against the same
- * policy, so the stance is enforced by checking the destination rather than by
- * refusing to move. One budget is shared across hops: a chain must not multiply
- * the timeout.
+ * host the provider names, and `error` — what a prior version of this
+ * function did (#628) — refuses the provider's own signed content path and
+ * failed every download of a workflow the account had already paid for. Each
+ * hop is revalidated against the same policy, so the stance is enforced by
+ * checking the destination rather than by refusing to move. One budget is
+ * shared across hops: a chain must not multiply the timeout.
  */
-async function fetchOutput(url: string): Promise<Response> {
-  let target = civitaiOutputLocation(url);
+async function fetchOutput(blobId: string, token: string): Promise<Response> {
+  let target = civitaiOutputLocation(`${BLOBS_URL}/${encodeURIComponent(blobId)}`);
   const deadline = Date.now() + REQUEST_TIMEOUT_MS;
   for (let hop = 0; ; hop += 1) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
     let response: Response;
     try {
-      response = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(remaining) });
+      response = await fetch(target, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(remaining),
+        // The bearer travels on the first request alone: every later hop is a
+        // location the PROVIDER named, not one Vesper composed (2026-09-17, #630).
+        ...(hop === 0 ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      });
     } catch {
       throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
     }
@@ -558,8 +584,18 @@ async function fetchOutput(url: string): Promise<Response> {
   }
 }
 
-async function downloadOutput(url: string): Promise<Buffer> {
-  const response = await fetchOutput(url);
+/**
+ * Downloads the blob `blobId` names, authenticating only the first request
+ * `fetchOutput` makes for it.
+ *
+ * A hop that answers `403` — what the signed `url`'s `blocked` path does
+ * (measured 2026-09-17, #630) — surfaces here as an ordinary non-2xx status
+ * and is reported as `civitai_output_http_403` like any other refused status,
+ * with no separate "blocked output" code: the failure is the transport answer
+ * the provider actually gave.
+ */
+async function downloadOutput(blobId: string, token: string): Promise<Buffer> {
+  const response = await fetchOutput(blobId, token);
   if (!response.ok) {
     const code = `civitai_output_http_${String(response.status)}` as `civitai_output_http_${number}`;
     throw civitaiOutputFailure(code, "deliberate");
@@ -635,8 +671,8 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
     if (result.status !== "succeeded" || result.errors.length > 0) {
       throw civitaiAsyncFailure(result.status, result.errors, result.blocked);
     }
-    const image = result.images.find((candidate) => candidate.available && !candidate.hidden && !candidate.blocked && candidate.url);
-    if (!image?.url) {
+    const image = result.images.find((candidate) => candidate.available && !candidate.hidden && !candidate.blocked && candidate.id);
+    if (!image?.id) {
       const blocked = result.images.find((candidate) => candidate.blocked)?.blocked;
       throw blocked
         ? civitaiAsyncFailure(result.status, [blocked], true)
@@ -644,7 +680,7 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
     }
     return {
       ok: true,
-      image: await downloadOutput(image.url),
+      image: await downloadOutput(image.id, token),
       predictionId,
       executedVersionId: CIVITAI_KLEIN_4B_VERSION_ID,
       sentReferenceCount: references.length,

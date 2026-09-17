@@ -133,7 +133,8 @@ characters unchanged.
   failures remain distinguishable. A generic readiness failure does not prove
   that a checkpoint and LoRA are incompatible.
 - A submitted workflow is polled by its id. A successful status alone does not
-  prove usable output: an image must be available and unblocked before download.
+  prove usable output: an image must be available, unblocked, and carry a blob
+  id before download.
 - **The prediction budget is spent mostly on QUEUE time, and abandoning the poll
   neither cancels nor refunds the workflow.** Buzz is debited at submit, and
   Vesper does not pay to leave the shared `low` priority pool, so a budget
@@ -157,17 +158,23 @@ characters unchanged.
 - Diagnostics retain actionable provider facts without credentials, signed URLs,
   prompts, reference bytes, arbitrary provider prose, or RFC7807 values.
   RFC7807 diagnostics retain only sanitized validation field paths.
-- Download policy requires credential-free HTTPS on Civitai hosts. The workflow's
-  blob URL answers `301` with a relative `Location` to a signed content path on
-  the same host, so the download follows up to three redirects and revalidates
-  each hop under that same policy — a hop off the Civitai hosts, a credentialed
-  one, or a longer chain is refused as `civitai_output_invalid` and never
-  requested. Redirects are followed by hand rather than by the runtime: a
-  followed redirect would fetch whatever host the provider names, and refusing
-  them outright rejected the provider's own content path and lost images the
-  account had already been billed for. A different provider storage host
-  requires explicit review; the OpenAPI's generic URI field is not an
-  unrestricted network-download permission.
+- The download requests the authenticated blob endpoint,
+  `GET https://orchestration.civitai.com/v2/consumer/blobs/{id}`, with the
+  bearer token — never the workflow's own signed `url`. That signed `url`
+  redirects some mature outputs to a `blocked` path that answers `403` with or
+  without the token, even though the blob itself is `available: true` with no
+  `blockedReason` and the workflow carried explicit mature permission and
+  yellow-only payment, and it stops answering within the hour; which blobs it
+  blocks does not follow the reported `nsfwLevel`, so neither is a content
+  signal, while the blob id stays valid. The blob endpoint answers `301` to a
+  signed content path on the same host, fetched with no credentials — the
+  bearer travels on the first request only, never on a hop the provider named.
+  Each hop is revalidated under that same policy — credential-free HTTPS on a
+  Civitai host — and a hop off the Civitai hosts, a credentialed one, or a
+  chain longer than three redirects is refused as `civitai_output_invalid` and
+  never requested. A different provider storage host requires explicit review;
+  the OpenAPI's generic URI field is not an unrestricted network-download
+  permission.
 
 ## Evidence boundary
 
