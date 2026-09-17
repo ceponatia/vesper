@@ -160,19 +160,16 @@ characters unchanged.
   RFC7807 diagnostics retain only sanitized validation field paths.
 - The download requests the authenticated blob endpoint,
   `GET https://orchestration.civitai.com/v2/consumer/blobs/{id}`, with the
-  bearer token — never the workflow's own signed `url`. Some mature outputs
-  redirect that signed `url` to a `blocked` path that answers `403` with or
+  bearer token — never the workflow's own signed `url`. That signed `url`
+  redirects some mature outputs to a `blocked` path that answers `403` with or
   without the token, even though the blob itself is `available: true` with no
   `blockedReason` and the workflow carried explicit mature permission and
-  yellow-only payment; a signed `url` is also not durable (one saved at render
-  time answered `401` within the hour) while the blob id is. Measured
-  2026-09-17: the qualification suite's
-  three `r`-rated reference-image edits redirected this way while a fresh
-  `x`-rated prompt-only render did not, so which blobs get blocked is not
-  simply the reported `nsfwLevel`. The blob endpoint answers `301` to a signed
-  content path on the same host, fetched with no credentials — the bearer
-  travels on the first request only, never on a hop the provider named. Each
-  hop is revalidated under that same policy — credential-free HTTPS on a
+  yellow-only payment, and it stops answering within the hour; which blobs it
+  blocks does not follow the reported `nsfwLevel`, so neither is a content
+  signal, while the blob id stays valid. The blob endpoint answers `301` to a
+  signed content path on the same host, fetched with no credentials — the
+  bearer travels on the first request only, never on a hop the provider named.
+  Each hop is revalidated under that same policy — credential-free HTTPS on a
   Civitai host — and a hop off the Civitai hosts, a credentialed one, or a
   chain longer than three redirects is refused as `civitai_output_invalid` and
   never requested. A different provider storage host requires explicit review;
