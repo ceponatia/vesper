@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# Garbage-collects linked git worktrees whose branch has a merged GitHub PR
+# with a headRefOid matching the worktree's local HEAD exactly.
+#
+# A worktree is removed only when all of these hold:
+#   1. its branch has a GitHub PR, and that PR's state is MERGED
+#   2. the worktree's local HEAD == the PR's headRefOid (no commits made
+#      locally after the last push GitHub actually merged)
+#   3. the worktree has no uncommitted changes
+# Anything else (PR not merged, HEAD mismatch, dirty tree, no PR, detached
+# HEAD) is left alone and reported. A locked worktree is unlocked before
+# removal, but only once the above already justify deleting it — this never
+# uses `--force` to override dirty-state protection.
+#
+# Self-locating: cd's to the repo containing this script, so the same file
+# can be dropped into scripts/ of any repo unmodified.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+DRY_RUN=0
+QUIET=0
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --quiet) QUIET=1 ;;
+    -h | --help)
+      cat <<EOF
+Usage: $(basename "$0") [--dry-run] [--quiet]
+
+Removes linked worktrees whose branch's GitHub PR is merged and whose local
+HEAD matches the PR's merge commit exactly, then deletes the local branch.
+Locked worktrees are unlocked first. Dirty or unpushed worktrees are kept
+and reported, never force-deleted.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "git-wt-gc: unknown argument: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+log() { [ "$QUIET" -eq 1 ] || printf '%s\n' "$*"; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
+
+for bin in gh jq realpath; do
+  command -v "$bin" >/dev/null 2>&1 || {
+    echo "git-wt-gc: '$bin' not found in PATH" >&2
+    exit 1
+  }
+done
+gh auth status >/dev/null 2>&1 || {
+  echo "git-wt-gc: gh is not authenticated (run: gh auth login)" >&2
+  exit 1
+}
+
+log "==> [$REPO_ROOT] git fetch --prune"
+if [ "$DRY_RUN" -eq 0 ]; then
+  git fetch --prune --quiet
+fi
+
+kept=0
+deleted=0
+warned=0
+
+# Reshapes `git worktree list --porcelain` blocks into one
+# path\thead\tbranch\tlocked line each.
+parse_worktrees() {
+  local path="" head="" branch="" locked=0
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) path="${line#worktree }" ;;
+      "HEAD "*) head="${line#HEAD }" ;;
+      "branch "*) branch="${line#branch refs/heads/}" ;;
+      "locked"*) locked=1 ;;
+      "bare" | "detached") : ;;
+      "")
+        if [ -n "$path" ]; then
+          printf '%s\t%s\t%s\t%s\n' "$path" "$head" "$branch" "$locked"
+        fi
+        path="" head="" branch="" locked=0
+        ;;
+    esac
+  done <<<"$1"
+  if [ -n "$path" ]; then
+    printf '%s\t%s\t%s\t%s\n' "$path" "$head" "$branch" "$locked"
+  fi
+}
+
+WT_LIST="$(git worktree list --porcelain)"
+ROOT_REAL="$(realpath -m "$REPO_ROOT")"
+
+while IFS=$'\t' read -r path head branch locked; do
+  [ -z "$path" ] && continue
+
+  wt_real="$(realpath -m "$path")"
+  if [ "$wt_real" = "$ROOT_REAL" ]; then
+    continue # never touch the primary worktree
+  fi
+
+  if [ -z "$branch" ]; then
+    warn "$path: detached HEAD, no branch — KEEP"
+    warned=$((warned + 1))
+    continue
+  fi
+
+  pr_json="$(gh pr view "$branch" --json state,mergedAt,headRefOid 2>/dev/null)" || {
+    log "KEEP   $path [$branch]: no PR found on GitHub"
+    kept=$((kept + 1))
+    continue
+  }
+
+  state="$(jq -r '.state' <<<"$pr_json")"
+  head_ref_oid="$(jq -r '.headRefOid' <<<"$pr_json")"
+
+  if [ "$state" != "MERGED" ]; then
+    log "KEEP   $path [$branch]: PR state=$state"
+    kept=$((kept + 1))
+    continue
+  fi
+
+  if [ "$head" != "$head_ref_oid" ]; then
+    warn "$path [$branch]: PR merged but local HEAD ($head) != PR headRefOid ($head_ref_oid) — possible unpushed commit, KEEP"
+    warned=$((warned + 1))
+    continue
+  fi
+
+  if [ -n "$(git -C "$path" status --porcelain --ignore-submodules 2>/dev/null)" ]; then
+    warn "$path [$branch]: PR merged, HEAD matches, but worktree is dirty — KEEP"
+    warned=$((warned + 1))
+    continue
+  fi
+
+  log "DELETE $path [$branch]: PR merged, HEAD matches, clean"
+  if [ "$DRY_RUN" -eq 1 ]; then
+    deleted=$((deleted + 1))
+    continue
+  fi
+
+  if [ "$locked" -eq 1 ]; then
+    git worktree unlock "$path"
+  fi
+  if ! git worktree remove "$path"; then
+    warn "$path [$branch]: git worktree remove failed — left in place"
+    warned=$((warned + 1))
+    continue
+  fi
+  if ! git branch -D "$branch" >/dev/null 2>&1; then
+    warn "branch $branch: worktree removed but local branch delete failed"
+  fi
+  deleted=$((deleted + 1))
+done <<<"$(parse_worktrees "$WT_LIST")"
+
+if [ "$DRY_RUN" -eq 0 ]; then
+  git worktree prune
+fi
+
+log "==> [$REPO_ROOT] done: $deleted deleted, $kept kept, $warned warned"
