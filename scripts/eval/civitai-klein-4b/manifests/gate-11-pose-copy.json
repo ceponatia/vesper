@@ -1,0 +1,270 @@
+{
+  "phase": "gate-11-pose-copy",
+  "title": "Gate 11 — pose transfer: Copy Pose LoRA vs no-LoRA control, [R3 body (Image 1), promoted pose reference (Image 2)], seated and floor poses, three seeds",
+  "adult": false,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.311Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "text-only pose failures": "gate-4-reliability G4-*-P4-*, G4-*-P10-*"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G11-seated-noLoRA-424242",
+      "test": "G11.control",
+      "mode": "paid",
+      "prompt": "POSE_COPY_SEATED",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_SEATED"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-seated-noLoRA",
+      "notes": "control: identical prompt and references, no LoRA — does the base edit model copy a pose from Image 2 on its own?"
+    },
+    {
+      "id": "G11-seated-noLoRA-717171",
+      "test": "G11.control",
+      "mode": "paid",
+      "prompt": "POSE_COPY_SEATED",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_SEATED"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-seated-noLoRA",
+      "notes": "control: identical prompt and references, no LoRA — does the base edit model copy a pose from Image 2 on its own?"
+    },
+    {
+      "id": "G11-seated-noLoRA-990099",
+      "test": "G11.control",
+      "mode": "paid",
+      "prompt": "POSE_COPY_SEATED",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_SEATED"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-seated-noLoRA",
+      "notes": "control: identical prompt and references, no LoRA — does the base edit model copy a pose from Image 2 on its own?"
+    },
+    {
+      "id": "G11-seated-L18-424242",
+      "test": "G11.posecopy",
+      "mode": "paid",
+      "prompt": "POSE_COPY_SEATED",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_SEATED"
+      ],
+      "loras": [
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-seated-L18",
+      "notes": "Copy Pose LoRA (trigger sentence leads the prompt)"
+    },
+    {
+      "id": "G11-seated-L18-717171",
+      "test": "G11.posecopy",
+      "mode": "paid",
+      "prompt": "POSE_COPY_SEATED",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_SEATED"
+      ],
+      "loras": [
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-seated-L18",
+      "notes": "Copy Pose LoRA (trigger sentence leads the prompt)"
+    },
+    {
+      "id": "G11-seated-L18-990099",
+      "test": "G11.posecopy",
+      "mode": "paid",
+      "prompt": "POSE_COPY_SEATED",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_SEATED"
+      ],
+      "loras": [
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-seated-L18",
+      "notes": "Copy Pose LoRA (trigger sentence leads the prompt)"
+    },
+    {
+      "id": "G11-floor-noLoRA-424242",
+      "test": "G11.control",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FLOOR",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_FLOOR"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-floor-noLoRA",
+      "notes": "control: identical prompt and references, no LoRA — does the base edit model copy a pose from Image 2 on its own?"
+    },
+    {
+      "id": "G11-floor-noLoRA-717171",
+      "test": "G11.control",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FLOOR",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_FLOOR"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-floor-noLoRA",
+      "notes": "control: identical prompt and references, no LoRA — does the base edit model copy a pose from Image 2 on its own?"
+    },
+    {
+      "id": "G11-floor-noLoRA-990099",
+      "test": "G11.control",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FLOOR",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_FLOOR"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-floor-noLoRA",
+      "notes": "control: identical prompt and references, no LoRA — does the base edit model copy a pose from Image 2 on its own?"
+    },
+    {
+      "id": "G11-floor-L18-424242",
+      "test": "G11.posecopy",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FLOOR",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_FLOOR"
+      ],
+      "loras": [
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-floor-L18",
+      "notes": "Copy Pose LoRA (trigger sentence leads the prompt)"
+    },
+    {
+      "id": "G11-floor-L18-717171",
+      "test": "G11.posecopy",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FLOOR",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_FLOOR"
+      ],
+      "loras": [
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-floor-L18",
+      "notes": "Copy Pose LoRA (trigger sentence leads the prompt)"
+    },
+    {
+      "id": "G11-floor-L18-990099",
+      "test": "G11.posecopy",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FLOOR",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY",
+        "POSE_FLOOR"
+      ],
+      "loras": [
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "posecopy-floor-L18",
+      "notes": "Copy Pose LoRA (trigger sentence leads the prompt)"
+    }
+  ]
+}

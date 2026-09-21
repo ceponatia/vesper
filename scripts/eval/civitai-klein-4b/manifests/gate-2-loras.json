@@ -1,0 +1,593 @@
+{
+  "phase": "gate-2-loras",
+  "title": "Gate 2 — LoRA triage: 8-config interference matrix on P2/P5, map-order reversal, best-config repeats",
+  "adult": false,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.308Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "L0 cells": "gate-1-distilled/T2.3-P2-424242 and T2.3-P5-424242 (same recipe)"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G2-P2-L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1"
+    },
+    {
+      "id": "G2-P2-L2",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2"
+    },
+    {
+      "id": "G2-P2-L3",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L3"
+    },
+    {
+      "id": "G2-P2-L2+L3",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L3"
+    },
+    {
+      "id": "G2-P2-L2+L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L1"
+    },
+    {
+      "id": "G2-P2-L3+L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L3+L1"
+    },
+    {
+      "id": "G2-P2-L2+L3+L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L3+L1"
+    },
+    {
+      "id": "G2-P5-L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1"
+    },
+    {
+      "id": "G2-P5-L2",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2"
+    },
+    {
+      "id": "G2-P5-L3",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L3"
+    },
+    {
+      "id": "G2-P5-L2+L3",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L3"
+    },
+    {
+      "id": "G2-P5-L2+L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L1"
+    },
+    {
+      "id": "G2-P5-L3+L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L3+L1"
+    },
+    {
+      "id": "G2-P5-L2+L3+L1",
+      "test": "G2.matrix",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L3+L1"
+    },
+    {
+      "id": "G2-P5-L2+L3+L1-order-A-repeat",
+      "test": "G2.order",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2+L3+L1",
+      "notes": "exact repeat of G2-P5-L2+L3+L1 (determinism under LoRAs)"
+    },
+    {
+      "id": "G2-P2-L1+L3+L2-order-B",
+      "test": "G2.order",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1+L3+L2",
+      "notes": "reversed serialized key order"
+    },
+    {
+      "id": "G2-P5-L1+L3+L2-order-B",
+      "test": "G2.order",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1+L3+L2",
+      "notes": "reversed serialized key order"
+    },
+    {
+      "id": "G2-targeted-T2.2-P5-424242-L2",
+      "test": "G2.targeted",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2",
+      "notes": "owner-flagged third hand (Gate 1); no-LoRA counterpart is gate-1-distilled/T2.2-P5-424242"
+    },
+    {
+      "id": "G2-targeted-T3.5-P12-verbose-L2",
+      "test": "G2.targeted",
+      "mode": "paid",
+      "prompt": "P12",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "L2",
+      "notes": "owner-flagged third hand (Gate 1); no-LoRA counterpart is gate-1-distilled/T3.5-P12-verbose"
+    },
+    {
+      "id": "G2-targeted-T2.2-P5-424242-L2w3",
+      "test": "G2.anatomy-followup",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 3
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L2@3.0",
+      "notes": "author's upper weight; watch identity"
+    },
+    {
+      "id": "G2-targeted-T3.5-P12-verbose-L2w3",
+      "test": "G2.anatomy-followup",
+      "mode": "paid",
+      "prompt": "P12",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 3
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "L2@3.0",
+      "notes": "author's upper weight; watch identity"
+    },
+    {
+      "id": "G2-targeted-T2.2-P5-717171-L0",
+      "test": "G2.anatomy-followup",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L0",
+      "notes": "is the third hand seed-bound? same config as the failing seed 424242, no LoRA"
+    },
+    {
+      "id": "G2-targeted-T2.2-P5-990099-L0",
+      "test": "G2.anatomy-followup",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L0",
+      "notes": "is the third hand seed-bound? same config as the failing seed 424242, no LoRA"
+    }
+  ]
+}

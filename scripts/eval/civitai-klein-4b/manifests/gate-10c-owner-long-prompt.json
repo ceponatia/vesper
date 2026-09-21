@@ -1,0 +1,118 @@
+{
+  "phase": "gate-10c-owner-long-prompt",
+  "title": "Gate 10c — the owner's structured long prompt (≈2.7k chars; subject/pose/anatomy/style/priority blocks) on the three two-women pose sources as Image 3, L9+L1, no LoRA trigger prefix, one seed — first a free what-if to see whether the API accepts a prompt over 1000 chars",
+  "adult": true,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "hand (owner request 2026-09-18)",
+    "at": "2026-09-18T00:56:11.501Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "role-prompt versions": "gate-10-adult-scenes G10-S2P-*-edit3ref-424242",
+    "meticulous versions": "gate-10-adult-scenes G10-S2Q-*-edit3ref-424242"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G10c-standing-424242",
+      "test": "G10c.ownerlong",
+      "mode": "paid",
+      "prompt": "OWNER_FF_POSE_LONG",
+      "allowLongPrompt": true,
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_STANDING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1:owner-long-prompt",
+      "notes": "owner's long structured prompt, 2858 chars, no L9 trigger prefix"
+    },
+    {
+      "id": "G10c-couchtoy-424242",
+      "test": "G10c.ownerlong",
+      "mode": "paid",
+      "prompt": "OWNER_FF_POSE_LONG",
+      "allowLongPrompt": true,
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_COUCH_TOY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1:owner-long-prompt",
+      "notes": "owner's long structured prompt, 2858 chars, no L9 trigger prefix"
+    },
+    {
+      "id": "G10c-reclining-424242",
+      "test": "G10c.ownerlong",
+      "mode": "paid",
+      "prompt": "OWNER_FF_POSE_LONG",
+      "allowLongPrompt": true,
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_RECLINING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1:owner-long-prompt",
+      "notes": "owner's long structured prompt, 2858 chars, no L9 trigger prefix"
+    }
+  ]
+}

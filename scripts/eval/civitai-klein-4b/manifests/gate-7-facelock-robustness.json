@@ -1,0 +1,133 @@
+{
+  "phase": "gate-7-facelock-robustness",
+  "title": "Gate 7 — face-lock robustness: phrasings A/B on P7 and P8 at a third seed, plus phrasing A with trousers named on P8 at the leaking seed and the third seed",
+  "adult": false,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.310Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "P7/P8 phrasings A/B at 424242 and 717171": "gate-5-facelock/G5-*-FLA-*, G5-*-FLB-*",
+    "P8 plain baselines": "gate-1-distilled/T2.3-P8-424242, gate-4-reliability/G4-distilled-noLoRA-P8-717171 and -990099"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G7-P7-FLA-990099",
+      "test": "G7.facelock-seed3",
+      "mode": "paid",
+      "prompt": "P7_FL_A",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A",
+      "notes": "phrasing A at a third seed (Gate 5 ran 424242/717171)"
+    },
+    {
+      "id": "G7-P7-FLB-990099",
+      "test": "G7.facelock-seed3",
+      "mode": "paid",
+      "prompt": "P7_FL_B",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-B",
+      "notes": "phrasing B at a third seed (Gate 5 ran 424242/717171)"
+    },
+    {
+      "id": "G7-P8-FLA-990099",
+      "test": "G7.facelock-seed3",
+      "mode": "paid",
+      "prompt": "P8_FL_A",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A",
+      "notes": "phrasing A at a third seed (Gate 5 ran 424242/717171)"
+    },
+    {
+      "id": "G7-P8-FLB-990099",
+      "test": "G7.facelock-seed3",
+      "mode": "paid",
+      "prompt": "P8_FL_B",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-B",
+      "notes": "phrasing B at a third seed (Gate 5 ran 424242/717171)"
+    },
+    {
+      "id": "G7-P8-FLA-trousers-717171",
+      "test": "G7.facelock-trousers",
+      "mode": "paid",
+      "prompt": "P8_FL_A_TROUSERS",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A-trousers",
+      "notes": "phrasing A with the trousers and boots named — does naming the wardrobe stop R3's beige trousers leaking under the coat?"
+    },
+    {
+      "id": "G7-P8-FLA-trousers-990099",
+      "test": "G7.facelock-trousers",
+      "mode": "paid",
+      "prompt": "P8_FL_A_TROUSERS",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A-trousers",
+      "notes": "phrasing A with the trousers and boots named — does naming the wardrobe stop R3's beige trousers leaking under the coat?"
+    }
+  ]
+}

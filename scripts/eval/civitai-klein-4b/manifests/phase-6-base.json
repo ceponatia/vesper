@@ -1,0 +1,887 @@
+{
+  "phase": "phase-6-base",
+  "title": "Phase 6 — distilled 4b versus 4b-base (BFL recipe cfg 4 / 50 steps, then decisions.baseBest)",
+  "adult": false,
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.474Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T6.1-P1-424242",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P2-424242",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P4-424242",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P5-424242",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P8-424242",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P1-717171",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 717171,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P2-717171",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P4-717171",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 717171,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P5-717171",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P8-717171",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P1-990099",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 990099,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P2-990099",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P4-990099",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 990099,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P5-990099",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.1-P8-990099",
+      "test": "T6.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "recipe": "4b-base|cfg4|s50|noref|noLoRA"
+    },
+    {
+      "id": "T6.2-P2-s20",
+      "test": "T6.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 20
+      },
+      "notes": "s50 is T6.1-P2-424242",
+      "recipe": "4b-base|cfg4|s20|noref|noLoRA"
+    },
+    {
+      "id": "T6.2-P2-s30",
+      "test": "T6.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "notes": "s50 is T6.1-P2-424242",
+      "recipe": "4b-base|cfg4|s30|noref|noLoRA"
+    },
+    {
+      "id": "T6.2-P2-s40",
+      "test": "T6.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 40
+      },
+      "notes": "s50 is T6.1-P2-424242",
+      "recipe": "4b-base|cfg4|s40|noref|noLoRA"
+    },
+    {
+      "id": "T6.3-P2-cfg3",
+      "test": "T6.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 3,
+        "steps": 30
+      },
+      "notes": "cfg 4 is T6.2-P2-s30",
+      "recipe": "4b-base|cfg3|s30|noref|noLoRA"
+    },
+    {
+      "id": "T6.3-P2-cfg3.5",
+      "test": "T6.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 3.5,
+        "steps": 30
+      },
+      "notes": "cfg 4 is T6.2-P2-s30",
+      "recipe": "4b-base|cfg3.5|s30|noref|noLoRA"
+    },
+    {
+      "id": "T6.3-P2-cfg4.5",
+      "test": "T6.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4.5,
+        "steps": 30
+      },
+      "notes": "cfg 4 is T6.2-P2-s30",
+      "recipe": "4b-base|cfg4.5|s30|noref|noLoRA"
+    },
+    {
+      "id": "T6.4-P2-R1",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T6.4-P5-R1",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T6.4-P8-R1",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T6.4-P2-R3",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T6.4-P5-R3",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T6.4-P8-R3",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T6.4-P2-R1+R3",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T6.4-P5-R1+R3",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T6.4-P8-R1+R3",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T6.4-P2-R3+R1",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T6.4-P5-R3+R1",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T6.4-P8-R3+R1",
+      "test": "T6.4",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T6.5-P2-L2",
+      "test": "T6.5",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T6.5-P4-L2",
+      "test": "T6.5",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T6.5-P5-L2",
+      "test": "T6.5",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T6.6-P5-L3-w0.5",
+      "test": "T6.6",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L3@0.5"
+    },
+    {
+      "id": "T6.6-P8-L3-w0.5",
+      "test": "T6.6",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L3@0.5"
+    },
+    {
+      "id": "T6.6-P5-L3-w0.6",
+      "test": "T6.6",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T6.6-P8-L3-w0.6",
+      "test": "T6.6",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T6.6-P5-L3-w0.75",
+      "test": "T6.6",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L3@0.75"
+    },
+    {
+      "id": "T6.6-P8-L3-w0.75",
+      "test": "T6.6",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L3@0.75"
+    },
+    {
+      "id": "T6.7-P2-L2+L3",
+      "test": "T6.7",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T6.7-P5-L2+L3",
+      "test": "T6.7",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T6.7-P8-L2+L3",
+      "test": "T6.7",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T6.7-P2-L2+L3+L1",
+      "test": "T6.7",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "notes": "cross-pairing: L1 is trained on distilled 4B; acceptance is not compatibility",
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T6.7-P5-L2+L3+L1",
+      "test": "T6.7",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "notes": "cross-pairing: L1 is trained on distilled 4B; acceptance is not compatibility",
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T6.7-A1-L2+L3+L1",
+      "test": "T6.7",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 30
+      },
+      "notes": "cross-pairing: L1 is trained on distilled 4B; acceptance is not compatibility",
+      "recipe": "4b-base|cfg4|s30|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    }
+  ]
+}

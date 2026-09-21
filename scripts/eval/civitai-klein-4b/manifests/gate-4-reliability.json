@@ -1,0 +1,450 @@
+{
+  "phase": "gate-4-reliability",
+  "title": "Gate 4 — three-seed reliability pass on the finalist(s) + winner-only adult validation",
+  "adult": false,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.309Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "clothed scenes with the adult LoRA loaded": "gate-2-loras/G2-P2-L1 and G2-P5-L1 (same recipe, seed 424242) already show L1 loaded on clothed scenes"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G4-distilled-noLoRA-P1-424242",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P2-424242",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P4-424242",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P5-424242",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P8-424242",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P10-424242",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P1-717171",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P2-717171",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P4-717171",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P5-717171",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P8-717171",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P10-717171",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P1-990099",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P2-990099",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P4-990099",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P5-990099",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P8-990099",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-distilled-noLoRA-P10-990099",
+      "test": "G4.reliability",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-noLoRA"
+    },
+    {
+      "id": "G4-adult-distilled-L1-A1-424242",
+      "test": "G4.adult",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-L1"
+    },
+    {
+      "id": "G4-adult-distilled-L1-A1-717171",
+      "test": "G4.adult",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-L1"
+    },
+    {
+      "id": "G4-adult-distilled-L1-A1-990099",
+      "test": "G4.adult",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-L1"
+    },
+    {
+      "id": "G4-adult-distilled-L1-A2-424242",
+      "test": "G4.adult",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-L1"
+    },
+    {
+      "id": "G4-adult-distilled-L1-A2-717171",
+      "test": "G4.adult",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-L1"
+    },
+    {
+      "id": "G4-adult-distilled-L1-A2-990099",
+      "test": "G4.adult",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "distilled-L1"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "plan": "adaptive-2026-09-17",
+  "note": "Execution order of the CURRENT plan. Written by manifests/generate-gates.mjs — do not hand-edit.",
+  "order": [
+    "phase-0-capability",
+    "gate-1-distilled",
+    "gate-2-loras",
+    "gate-3-challenge",
+    "gate-4-reliability",
+    "gate-5-facelock",
+    "gate-6-adult",
+    "gate-7-facelock-robustness",
+    "gate-8-adult-solo",
+    "gate-9-adult-stacks",
+    "gate-10-adult-scenes",
+    "gate-10c-owner-long-prompt",
+    "gate-10d-owner-short-prompt",
+    "gate-10e-couch-fixers",
+    "gate-11-pose-copy",
+    "gate-11-pose-source"
+  ],
+  "titles": {
+    "phase-0-capability": "Phase 0 — zero-spend capability truth table (every arm is whatif=true)",
+    "gate-1-distilled": "Gate 1 — distilled 4b viability: references, order, minimal sampling, prompt length",
+    "gate-2-loras": "Gate 2 — LoRA triage: 8-config interference matrix on P2/P5, map-order reversal, best-config repeats",
+    "gate-3-challenge": "Gate 3 — challenge distilled with 4b-base (first look) and sdcpp createVariant (strength 0.4/0.6/0.8)",
+    "gate-4-reliability": "Gate 4 — three-seed reliability pass on the finalist(s) + winner-only adult validation",
+    "gate-5-facelock": "Gate 5 — owner-proposed face-lock role wording on native editImage: P7 (wardrobe) and P8 (scene) × 3 phrasings × 2 seeds, [R1,R3], cfg 1 / 4",
+    "gate-6-adult": "Gate 6 — adult follow-up on the finalist + L1 NippleDiffusion 0.75: A1 in the LoRA vocabulary (± face-lock A), A2 + face-lock A, A3 floor pose in the vocabulary + face-lock A; 3 seeds each",
+    "gate-7-facelock-robustness": "Gate 7 — face-lock robustness: phrasings A/B on P7 and P8 at a third seed, plus phrasing A with trousers named on P8 at the leaking seed and the third seed",
+    "gate-8-adult-solo": "Gate 8 — each nudity / genitalia LoRA alone (L1 baseline, L7–L12) on the standing full-nude reference edit with face-lock A and genitalia vocabulary, three seeds",
+    "gate-9-adult-stacks": "Gate 9 — stacks: verified LoRAs (NippleDiffusion, anatomy fixer) and skin LoRAs with one or more nudity LoRAs, on the standing full-nude reference edit, three seeds (prune after Gate 8)",
+    "gate-10-adult-scenes": "Gate 10 — sexual scenes with the nudity stack: woman + man (missionary, cowgirl), two women (prompt-only partner; third-reference partner), woman alone; scene LoRAs where Klein 4B has them, the other NSFW LoRAs 'just in case' where it does not",
+    "gate-10c-owner-long-prompt": "Gate 10c — the owner's structured long prompt (≈2.7k chars; subject/pose/anatomy/style/priority blocks) on the three two-women pose sources as Image 3, L9+L1, no LoRA trigger prefix, one seed — first a free what-if to see whether the API accepts a prompt over 1000 chars",
+    "gate-10d-owner-short-prompt": "Gate 10d — the owner's short structured prompt (subject A/B, Image 3 pose-only, anatomy, priority order) + the L9 trigger prefix + one compact pose-in-words line per source, on the three two-women pose sources as Image 3, L9+L1, one seed",
+    "gate-10e-couch-fixers": "Gate 10e — the owner's short prompt on the couch + toy pose source (the best two-women render) with the anatomy fixer, and with the anatomy fixer + Klein Fixes, one seed: can a LoRA repair the second woman's legs and vulva while L9 holds the character's face?",
+    "gate-11-pose-copy": "Gate 11 — pose transfer: Copy Pose LoRA vs no-LoRA control, [R3 body (Image 1), promoted pose reference (Image 2)], seated and floor poses, three seeds",
+    "gate-11-pose-source": "Gate 11 pose source — prompt-only P10 floor pose (the proven 4b cfg 1 / 4 no-reference configuration that produced the clean seated POSE_SEATED) at two new seeds; the clean one is promoted as POSE_FLOOR"
+  },
+  "adult": [
+    "gate-6-adult",
+    "gate-8-adult-solo",
+    "gate-9-adult-stacks",
+    "gate-10-adult-scenes",
+    "gate-10c-owner-long-prompt",
+    "gate-10d-owner-short-prompt",
+    "gate-10e-couch-fixers"
+  ],
+  "notes": {
+    "phase-0-capability": "Free: every arm is whatif=true. Re-run it before any paid gate to confirm the provider still accepts the recipe.",
+    "gate-11-pose-source": "Produces the POSE_FLOOR fixture that gate-11-pose-copy consumes — run it first.",
+    "spend": "Gates are adaptive: grade a gate and update decisions.json before generating and running the next one. Price any gate without spending with `run --manifest <file> --quote-only`."
+  },
+  "archive": {
+    "note": "The original 553-arm library suite (manifests/generate.mjs). SUPERSEDED by the gates above — it is not an execution plan, and continuation.mjs classifies its unrun arms as SUPERSEDED. Its executed arms are reused as evidence through each gate's `reuse` field. The committed files are frozen at the decisions version that produced them; re-running generate.mjs rewrites them against today's decisions.json, which changes the archive rather than restoring it.",
+    "order": [
+      "phase-1-baseline",
+      "phase-2-references",
+      "phase-3-sampling",
+      "phase-4-loras",
+      "phase-5-stacks",
+      "phase-6-base",
+      "phase-7-variant",
+      "phase-8-stress",
+      "phase-9-adult",
+      "phase-10-robustness"
+    ],
+    "gates": {
+      "phase-4-loras": "Gate A: run T4.0 first; if B is not obviously different from A, stop and investigate LoRA application.",
+      "phase-3-sampling": "Gate B: if two-reference identity (Phase 2) is not materially better than prompt-only over seeds, prefer Phase 6/7 over more CFG tuning.",
+      "phase-6-base": "Gate D: if 4b-base wins clearly with acceptable cost/latency, stop optimizing distilled 4b.",
+      "phase-7-variant": "Gate E: if createVariant beats editImage on the identity/edit trade-off, the operation choice is the limitation.",
+      "phase-10-robustness": "Gate F: acceptance thresholds in RESULTS.md (not tracked in git); do not invent new settings once this phase begins."
+    }
+  }
+}

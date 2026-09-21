@@ -1,0 +1,522 @@
+{
+  "phase": "gate-8-adult-solo",
+  "title": "Gate 8 — each nudity / genitalia LoRA alone (L1 baseline, L7–L12) on the standing full-nude reference edit with face-lock A and genitalia vocabulary, three seeds",
+  "adult": true,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.310Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "no-genitalia baseline": "gate-6-adult/G6-A1_VOCAB_FL-* (L1, same recipe, no genitalia vocabulary)"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G8-L1-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-alone",
+      "notes": "baseline: the current adult lane (breasts only)"
+    },
+    {
+      "id": "G8-L1-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-alone",
+      "notes": "baseline: the current adult lane (breasts only)"
+    },
+    {
+      "id": "G8-L1-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-alone",
+      "notes": "baseline: the current adult lane (breasts only)"
+    },
+    {
+      "id": "G8-L7-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L7-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L7-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L7-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L7-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L7-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L8-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L8-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L8-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L9-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9-alone",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L9-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9-alone",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L9-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9-alone",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L10-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L10-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L10-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L10-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L10-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L10-alone",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L11-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L11",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L11-alone",
+      "promptPrefix": "pubis. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L11-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L11",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L11-alone",
+      "promptPrefix": "pubis. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L11-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L11",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L11-alone",
+      "promptPrefix": "pubis. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L12-424242",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12-alone",
+      "promptPrefix": "prall. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L12-717171",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12-alone",
+      "promptPrefix": "prall. ",
+      "notes": "candidate alone at 0.9"
+    },
+    {
+      "id": "G8-L12-990099",
+      "test": "G8.solo",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12-alone",
+      "promptPrefix": "prall. ",
+      "notes": "candidate alone at 0.9"
+    }
+  ]
+}

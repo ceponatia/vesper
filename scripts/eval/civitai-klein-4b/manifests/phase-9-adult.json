@@ -1,0 +1,776 @@
+{
+  "phase": "phase-9-adult",
+  "title": "Phase 9 — adult-content functional suite (kept separate from SFW grading)",
+  "adult": true,
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.476Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T9.A1-none",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T9.A1-L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T9.A1-L2",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T9.A1-L2+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A1-L3+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T9.A1-L2+L3+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T9.A2-none",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T9.A2-L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T9.A2-L2",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T9.A2-L2+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A2-L3+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T9.A2-L2+L3+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T9.A3-none",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T9.A3-L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T9.A3-L2",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T9.A3-L2+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A3-L3+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T9.A3-L2+L3+L1",
+      "test": "T9",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T9.A1-717171-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A2-717171-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A3-717171-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A1-990099-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A2-990099-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A3-990099-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A1-135791-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 135791,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A2-135791-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 135791,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A3-135791-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 135791,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A1-246802-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 246802,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A2-246802-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A2",
+      "seed": 246802,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T9.A3-246802-L2+L1",
+      "test": "T9.seeds",
+      "mode": "paid",
+      "prompt": "A3",
+      "seed": 246802,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning adult stack over the remaining seeds (decisions.bestAdultStack)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    }
+  ]
+}

@@ -1,0 +1,740 @@
+{
+  "phase": "phase-2-references",
+  "title": "Phase 2 — reference conditioning (distilled recipe from Phase 1, no LoRA)",
+  "adult": false,
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.473Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T2.1-P1-424242",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P2-424242",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P5-424242",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P7-424242",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P8-424242",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P9-424242",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P1-717171",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 717171,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P2-717171",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P5-717171",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P7-717171",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 717171,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P8-717171",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P9-717171",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 717171,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P1-990099",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 990099,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P2-990099",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P5-990099",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P7-990099",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 990099,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P8-990099",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P9-990099",
+      "test": "T2.1",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 990099,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.2-P2-424242",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P3-424242",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P4-424242",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P5-424242",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P2-717171",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P3-717171",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P4-717171",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P5-717171",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P2-990099",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P3-990099",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P4-990099",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P5-990099",
+      "test": "T2.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P2-424242",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P3-424242",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P5-424242",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P8-424242",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P2-717171",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P3-717171",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P5-717171",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P8-717171",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P2-990099",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P3-990099",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P5-990099",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P8-990099",
+      "test": "T2.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.4-P2-424242-rev",
+      "test": "T2.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed; A is T2.3",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.4-P5-424242-rev",
+      "test": "T2.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed; A is T2.3",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.4-P2-717171-rev",
+      "test": "T2.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed; A is T2.3",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.4-P5-717171-rev",
+      "test": "T2.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed; A is T2.3",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.4-P2-990099-rev",
+      "test": "T2.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed; A is T2.3",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.4-P5-990099-rev",
+      "test": "T2.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed; A is T2.3",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.5-P2-424242-dup",
+      "test": "T2.5",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R1_FACE"
+      ],
+      "notes": "duplicate reference weighting probe; A is T2.1",
+      "recipe": "4b|cfg1|s4|R1_FACE+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.5-P5-424242-dup",
+      "test": "T2.5",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R1_FACE"
+      ],
+      "notes": "duplicate reference weighting probe; A is T2.1",
+      "recipe": "4b|cfg1|s4|R1_FACE+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.6-P8-424242",
+      "test": "T2.6",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R2_THREE_QUARTER|noLoRA"
+    },
+    {
+      "id": "T2.6-P9-424242",
+      "test": "T2.6",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R2_THREE_QUARTER|noLoRA"
+    },
+    {
+      "id": "T2.6-P8-717171",
+      "test": "T2.6",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R2_THREE_QUARTER|noLoRA"
+    },
+    {
+      "id": "T2.6-P9-717171",
+      "test": "T2.6",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R2_THREE_QUARTER|noLoRA"
+    },
+    {
+      "id": "T2.6-P8-990099",
+      "test": "T2.6",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R2_THREE_QUARTER|noLoRA"
+    },
+    {
+      "id": "T2.6-P9-990099",
+      "test": "T2.6",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R2_THREE_QUARTER|noLoRA"
+    },
+    {
+      "id": "T2.7-P1-424242-conflict",
+      "test": "T2.7",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "CHAR_B_FACE"
+      ],
+      "notes": "conflicting identities; requires CHAR_B_FACE promoted from T1.0-charB",
+      "recipe": "4b|cfg1|s4|R1_FACE+CHAR_B_FACE|noLoRA"
+    },
+    {
+      "id": "T2.7-P1-717171-conflict",
+      "test": "T2.7",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "CHAR_B_FACE"
+      ],
+      "notes": "conflicting identities; requires CHAR_B_FACE promoted from T1.0-charB",
+      "recipe": "4b|cfg1|s4|R1_FACE+CHAR_B_FACE|noLoRA"
+    },
+    {
+      "id": "T2.8-P1-424242-1024",
+      "test": "T2.8",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE_1024"
+      ],
+      "notes": "reference long edge 1024; native (1184) is T2.1-P1-424242",
+      "recipe": "4b|cfg1|s4|R1_FACE_1024|noLoRA"
+    },
+    {
+      "id": "T2.8-P1-424242-2048",
+      "test": "T2.8",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE_2048"
+      ],
+      "notes": "reference upscaled to 2048",
+      "recipe": "4b|cfg1|s4|R1_FACE_2048|noLoRA"
+    },
+    {
+      "id": "T2.9-P2-424242-3refs",
+      "test": "T2.9",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "R2_THREE_QUARTER"
+      ],
+      "notes": "Phase 0 accepted and priced 3 references; does the worker use them?",
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY+R2_THREE_QUARTER|noLoRA"
+    }
+  ]
+}

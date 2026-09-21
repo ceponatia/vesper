@@ -1,0 +1,100 @@
+{
+  "phase": "gate-10e-couch-fixers",
+  "title": "Gate 10e — the owner's short prompt on the couch + toy pose source (the best two-women render) with the anatomy fixer, and with the anatomy fixer + Klein Fixes, one seed: can a LoRA repair the second woman's legs and vulva while L9 holds the character's face?",
+  "adult": true,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "hand (owner yes 2026-09-18)",
+    "at": "2026-09-18T01:07:27.959Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "base render": "gate-10d-owner-short-prompt/G10d-couchtoy-424242 (owner: identity preserved, 2nd woman's vagina and legs deformed)"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G10e-couchtoy-L2-424242",
+      "test": "G10e.fixer",
+      "mode": "paid",
+      "promptText": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. Create a new photorealistic image of exactly two adult women. Do not paint over or directly transform any reference.\n\nSubject A: use Image 1 only for her facial identity and dark hair. Use Image 2 only for her body proportions. Ignore clothing, pose, and background from Images 1–2.\n\nSubject B: a different fictional 27-year-old woman with short platinum-blonde hair and a distinct face.\n\nImage 3 is pose/composition only. Recreate the body positions, orientation, contact points, spacing, and camera angle. Subject A takes the dark-haired woman’s position. Do not copy faces, hair, clothing, shoes, skin, or background from Image 3.\n\nBoth women are completely nude adults. Exactly two separate, anatomically coherent bodies with normal limbs, hands, feet, joints, and proportions. No fused bodies, extra limbs, duplicated parts, flesh-like clothing, or malformed anatomy.\n\nPriority: anatomy → pose → Subject A identity → proportions → realism. Pose in words: on a leather couch, Subject A sits at the left holding Subject B's raised foot and licking its sole, a purple toy in her vulva; Subject B reclines at the right, one leg raised toward Subject A, looking at the camera.",
+      "allowLongPrompt": true,
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_COUCH_TOY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L2:owner-short",
+      "notes": "owner short prompt + anatomy fixer 2.0 (fixed a foot in Gate 9 and the solo 424242 in Gate 10, identity-neutral)"
+    },
+    {
+      "id": "G10e-couchtoy-L2+L7-424242",
+      "test": "G10e.fixer",
+      "mode": "paid",
+      "promptText": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. Create a new photorealistic image of exactly two adult women. Do not paint over or directly transform any reference.\n\nSubject A: use Image 1 only for her facial identity and dark hair. Use Image 2 only for her body proportions. Ignore clothing, pose, and background from Images 1–2.\n\nSubject B: a different fictional 27-year-old woman with short platinum-blonde hair and a distinct face.\n\nImage 3 is pose/composition only. Recreate the body positions, orientation, contact points, spacing, and camera angle. Subject A takes the dark-haired woman’s position. Do not copy faces, hair, clothing, shoes, skin, or background from Image 3.\n\nBoth women are completely nude adults. Exactly two separate, anatomically coherent bodies with normal limbs, hands, feet, joints, and proportions. No fused bodies, extra limbs, duplicated parts, flesh-like clothing, or malformed anatomy.\n\nPriority: anatomy → pose → Subject A identity → proportions → realism. Pose in words: on a leather couch, Subject A sits at the left holding Subject B's raised foot and licking its sole, a purple toy in her vulva; Subject B reclines at the right, one leg raised toward Subject A, looking at the camera.",
+      "allowLongPrompt": true,
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_COUCH_TOY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L2+L7:owner-short",
+      "notes": "+ Klein Fixes for the partner's genitalia (costs identity when alone; L9 may hold hers)"
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "phase": "gate-3-challenge",
+  "title": "Gate 3 — challenge distilled with 4b-base (first look) and sdcpp createVariant (strength 0.4/0.6/0.8)",
+  "adult": false,
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.309Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {},
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G3-base-P1",
+      "test": "G3.base",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "notes": "4b-base first look, BFL recipe, no LoRA",
+      "recipe": "4b-base|cfg4|s50|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-base-P2",
+      "test": "G3.base",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "notes": "4b-base first look, BFL recipe, no LoRA",
+      "recipe": "4b-base|cfg4|s50|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-base-P5",
+      "test": "G3.base",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "modelVersion": "4b-base",
+        "cfgScale": 4,
+        "steps": 50
+      },
+      "notes": "4b-base first look, BFL recipe, no LoRA",
+      "recipe": "4b-base|cfg4|s50|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-variant-P5-str0.4",
+      "test": "G3.variant",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.4,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "compare against the native editImage result from the same single source (P5: gate-1 T2.2-P5-424242; P8: G3-native-P8-R3)",
+      "recipe": "4b|sdcpp:createVariant@0.4|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-variant-P5-str0.6",
+      "test": "G3.variant",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.6,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "compare against the native editImage result from the same single source (P5: gate-1 T2.2-P5-424242; P8: G3-native-P8-R3)",
+      "recipe": "4b|sdcpp:createVariant@0.6|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-variant-P5-str0.8",
+      "test": "G3.variant",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.8,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "compare against the native editImage result from the same single source (P5: gate-1 T2.2-P5-424242; P8: G3-native-P8-R3)",
+      "recipe": "4b|sdcpp:createVariant@0.8|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-variant-P8-str0.4",
+      "test": "G3.variant",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.4,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "compare against the native editImage result from the same single source (P5: gate-1 T2.2-P5-424242; P8: G3-native-P8-R3)",
+      "recipe": "4b|sdcpp:createVariant@0.4|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-variant-P8-str0.6",
+      "test": "G3.variant",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.6,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "compare against the native editImage result from the same single source (P5: gate-1 T2.2-P5-424242; P8: G3-native-P8-R3)",
+      "recipe": "4b|sdcpp:createVariant@0.6|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-variant-P8-str0.8",
+      "test": "G3.variant",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.8,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "compare against the native editImage result from the same single source (P5: gate-1 T2.2-P5-424242; P8: G3-native-P8-R3)",
+      "recipe": "4b|sdcpp:createVariant@0.8|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "G3-native-P8-R3",
+      "test": "G3.variant-control",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "notes": "fair comparator for the P8 createVariant arms: native editImage from the same single R3 source (Gate 1's P8 used [R1,R3])",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    }
+  ]
+}
