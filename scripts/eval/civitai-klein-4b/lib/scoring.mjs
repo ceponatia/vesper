@@ -70,7 +70,7 @@ function median(values) {
 }
 
 /**
- * Aggregate graded rows per recipe against the §21 continuation gates.
+ * Aggregate graded rows per recipe against the RESULTS.md continuation gates.
  * Only rows with a numeric score in a column count toward that column.
  */
 export function aggregateScores(rows) {

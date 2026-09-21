@@ -47,7 +47,7 @@ node scripts/eval/civitai-klein-4b/run.mjs run --manifest scripts/eval/civitai-k
 | `compare A B` | sha256 / pixel-identical / mean-abs-diff / dHash distance of two images |
 | `sheet --manifest F (--test T | --arms a,b) [--columns N]` | labelled contact sheet of delivered outputs |
 | `promote --manifest F --arm ID --as KEY` | copy a delivered output into `inputs/promoted/KEY.jpg` for use as a fixture (CHAR_B) |
-| `aggregate --phase P` | aggregate a graded `scores/P.csv` against the §21 gates |
+| `aggregate --phase P` | aggregate a graded `scores/P.csv` against the RESULTS.md continuation gates |
 | `summarize --manifest F` | rebuild `summaries/<phase>.{json,md}` from the per-arm records after an interrupted run |
 | `grid --spec S.json` | contact sheet from a spec (`{ title, columns, cells: [{ file, label, crop? }] }`; `crop` is fractional) — mixes phases, gates and the reference fixtures |
 

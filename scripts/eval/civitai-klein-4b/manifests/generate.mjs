@@ -221,6 +221,6 @@ writeFileSync(path.join(here, "index.json"), `${JSON.stringify({
     "phase-3-sampling": "Gate B: if two-reference identity (Phase 2) is not materially better than prompt-only over seeds, prefer Phase 6/7 over more CFG tuning.",
     "phase-6-base": "Gate D: if 4b-base wins clearly with acceptable cost/latency, stop optimizing distilled 4b.",
     "phase-7-variant": "Gate E: if createVariant beats editImage on the identity/edit trade-off, the operation choice is the limitation.",
-    "phase-10-robustness": "Gate F: acceptance thresholds in RESULTS.md §21; do not invent new settings once this phase begins.",
+    "phase-10-robustness": "Gate F: acceptance thresholds in RESULTS.md (not tracked in git); do not invent new settings once this phase begins.",
   },
 }, null, 2)}\n`);

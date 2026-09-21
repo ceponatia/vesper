@@ -143,7 +143,7 @@ function write(name, phase, title, arms, reuse) {
   write("gate-4-reliability.json", "gate-4-reliability", "Gate 4 — three-seed reliability pass on the finalist(s) + winner-only adult validation", arms, R.adultClothedControlsReused ? { "clothed scenes with the adult LoRA loaded": R.adultClothedControlsReused } : {});
 }
 
-// ------------------------------------------------------------ Gate 5 (owner-proposed face-lock wording, §2a)
+// ------------------------------------------------------------ Gate 5 (owner-proposed face-lock wording)
 if (R.faceLock) {
   const arms = [];
   const seeds = D.seeds.slice(0, 2);

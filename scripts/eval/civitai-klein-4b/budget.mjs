@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Sum the what-if quotes recorded in summaries/phase-*.json into a budget
- * table per phase, per test, and per §26 "highest-value" tranche.
+ * table per phase, per test, and per "highest-value" execution tranche
+ * (owner's adaptive-qualification-plan tranche order, not tracked in git).
  *
  *   node scripts/eval/civitai-klein-4b/budget.mjs [--out eval-images/civitai-klein-4b]
  */
@@ -12,7 +13,7 @@ import { DEFAULT_OUT_DIR } from "./lib/env.mjs";
 const outDir = path.resolve(process.argv.includes("--out") ? process.argv[process.argv.indexOf("--out") + 1] : DEFAULT_OUT_DIR);
 const summariesDir = path.join(outDir, "summaries");
 
-/** §26 highest-value execution order, expressed as test ids per tranche. */
+/** Highest-value execution order (owner's plan), expressed as test ids per tranche. */
 const TRANCHES = [
   { name: "T1 — determinism, no-ref baseline, R1/R3/[R1,R3], order reversal, step + cfg sweeps", tests: ["T1.0", "T1.1", "T1.2", "T1.3", "T2.1", "T2.2", "T2.3", "T2.4", "T3.1", "T3.2"] },
   { name: "T2 — LoRA on/off (L1, L2, L3), pairs, full stack, map-order reversal", tests: ["T4.0", "T4.L0", "T4.1", "T4.2", "T4.3", "T5.1", "T5.2", "T5.3", "T5.4", "T5.5"] },
@@ -51,7 +52,7 @@ for (const p of phases) for (const [test, v] of Object.entries(p.byTest)) {
   lines.push(`| ${p.phase} | ${test} | ${v.arms} | ${v.buzz} |`);
   testTotals[test] = v;
 }
-lines.push("", "## §26 tranches (cumulative)", "", "| Tranche | Arms | Quoted Buzz | Cumulative Buzz |", "| --- | ---: | ---: | ---: |");
+lines.push("", "## Highest-value tranches (cumulative)", "", "| Tranche | Arms | Quoted Buzz | Cumulative Buzz |", "| --- | ---: | ---: | ---: |");
 let cumulative = 0;
 for (const tranche of TRANCHES) {
   const arms = tranche.tests.reduce((sum, t) => sum + (testTotals[t]?.arms ?? 0), 0);
