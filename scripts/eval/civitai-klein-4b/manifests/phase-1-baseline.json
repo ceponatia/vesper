@@ -1,0 +1,198 @@
+{
+  "phase": "phase-1-baseline",
+  "title": "Phase 1 — determinism and prompt-only baseline (distilled 4b, no references, no LoRA)",
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.472Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T1.0-charB",
+      "test": "T1.0",
+      "mode": "paid",
+      "prompt": "CHAR_B_SEED",
+      "seed": 424242,
+      "input": {
+        "width": 1024,
+        "height": 1024
+      },
+      "notes": "second synthetic identity for T2.7/P11; promote its output as CHAR_B_FACE",
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.1-repeat-1",
+      "test": "T1.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "notes": "exact-repeat determinism: identical request, separate paid workflows",
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.1-repeat-2",
+      "test": "T1.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "notes": "exact-repeat determinism: identical request, separate paid workflows",
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.1-repeat-3",
+      "test": "T1.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "notes": "exact-repeat determinism: identical request, separate paid workflows",
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P2-424242",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P3-424242",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 424242,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P4-424242",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P5-424242",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P10-424242",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 424242,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P2-717171",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P3-717171",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 717171,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P4-717171",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 717171,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P5-717171",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P10-717171",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 717171,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P2-990099",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P3-990099",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P3",
+      "seed": 990099,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P4-990099",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 990099,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P5-990099",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.2-P10-990099",
+      "test": "T1.2",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 990099,
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T1.3-B-cfg5-s20",
+      "test": "T1.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "cfgScale": 5,
+        "steps": 20
+      },
+      "notes": "old Vesper settings; A is T1.1-repeat-1",
+      "recipe": "4b|cfg5|s20|noref|noLoRA"
+    }
+  ]
+}

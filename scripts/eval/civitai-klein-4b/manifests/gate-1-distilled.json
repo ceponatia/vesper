@@ -1,0 +1,208 @@
+{
+  "phase": "gate-1-distilled",
+  "title": "Gate 1 — distilled 4b viability: references, order, minimal sampling, prompt length",
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.307Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "no-ref P2": "phase-1-baseline/T1.1-repeat-1 (+ T1.2-P2-424242)",
+    "no-ref P5": "phase-1-baseline/T1.2-P5-424242",
+    "no-ref anatomy P3/P4/P10 ×2 seeds": "phase-1-baseline/T1.2-*",
+    "determinism": "phase-1-baseline/T1.1-repeat-1..3 (pixel-identical)"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T1.2-P1-424242",
+      "test": "G1.noref",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "notes": "no-reference baseline for P1 (P2/P5 exist in phase-1)",
+      "recipe": "4b|cfg1|s4|noref|noLoRA"
+    },
+    {
+      "id": "T2.1-P1-424242",
+      "test": "G1.R1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P2-424242",
+      "test": "G1.R1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.1-P5-424242",
+      "test": "G1.R1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.2-P2-424242",
+      "test": "G1.R3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.2-P5-424242",
+      "test": "G1.R3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P2-424242",
+      "test": "G1.R1R3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P5-424242",
+      "test": "G1.R1R3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.3-P8-424242",
+      "test": "G1.R1R3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T2.4-P2-424242-rev",
+      "test": "G1.R3R1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T2.4-P5-424242-rev",
+      "test": "G1.R3R1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "R1_FACE"
+      ],
+      "notes": "reference order reversed",
+      "recipe": "4b|cfg1|s4|R3_FULL_BODY+R1_FACE|noLoRA"
+    },
+    {
+      "id": "T3.1-P5-s8",
+      "test": "G1.sampling",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "cfg 1 / 4 steps is T2.3-P5-424242",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P5-cfg2.5",
+      "test": "G1.sampling",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 2.5,
+        "steps": 8
+      },
+      "recipe": "4b|cfg2.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.5-P12-verbose",
+      "test": "G1.prompt-length",
+      "mode": "paid",
+      "prompt": "P12",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "Vesper-length prompt; concise is T3.1-P5-s8",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    }
+  ]
+}

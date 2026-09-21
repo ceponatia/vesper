@@ -1,0 +1,599 @@
+{
+  "phase": "phase-7-variant",
+  "title": "Phase 7 — native editImage versus sdcpp createVariant (single R3 source)",
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.475Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T7.1-P7-str0.25",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.25,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.25|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P7-str0.4",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.4,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.4|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P7-str0.55",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P7-str0.7",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.7,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.7|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P7-str0.85",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.85,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.85|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P8-str0.25",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.25,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.25|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P8-str0.4",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.4,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.4|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P8-str0.55",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P8-str0.7",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.7,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.7|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.1-P8-str0.85",
+      "test": "T7.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.85,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.85|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P7-424242-native-edit",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P7-424242-variant",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P8-424242-native-edit",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P8-424242-variant",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P7-717171-native-edit",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P7-717171-variant",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P8-717171-native-edit",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P8-717171-variant",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 717171,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P7-990099-native-edit",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P7-990099-variant",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P8-990099-native-edit",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.2-P8-990099-variant",
+      "test": "T7.2",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 990099,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T7.3-P2-variant-L2",
+      "test": "T7.3",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T7.4-P2-variant-L3",
+      "test": "T7.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T7.5-P2-variant-L2+L3",
+      "test": "T7.5",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T7.3-P5-variant-L2",
+      "test": "T7.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T7.4-P5-variant-L3",
+      "test": "T7.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T7.5-P5-variant-L2+L3",
+      "test": "T7.5",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "engine": "sdcpp",
+        "ecosystem": "flux2Klein",
+        "operation": "createVariant",
+        "strength": 0.55,
+        "modelVersion": "4b",
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|sdcpp:createVariant@0.55|cfg1|s8|R3_FULL_BODY|L2@2+L3@0.6"
+    }
+  ]
+}

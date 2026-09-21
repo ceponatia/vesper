@@ -1,0 +1,201 @@
+{
+  "_note": "Every entry is resolved LIVE (GET civitai.com/api/v1/model-versions/{versionId}) before use; the harness refuses a key whose live id, modelId, type, status, base model or primary-file sha256 disagree with what is pinned here. expectedSha256 null means record-only (no pin yet). Live check 2026-09-17 corrected two entries from the plan document: the anatomy fixer's 2615475 is the 9B build (kept as the wrong-family control), and its 4B build is 2617474. 2026-09-17 (Gate 8 prep): L7–L12 are the 4B-labelled adult candidates found by listing all 399 Klein-4B LoRAs (UNCHAINED / FLUX 4 PLAY / Realistic Nudes named by the Party Time author do not exist for Klein 4B); base-labelled nudity LoRAs (Basic nude 2438721, Realistic Z-image Uncensored 2632482) were left out after Gate 2's base-labelled identity drift. 2026-09-17 (gate program): L13–L20 = skin, couple-pose, intercourse, male-anatomy, pose-transfer and reserve scene LoRAs; Klein 4B has NO lesbian/yuri, cowgirl/doggy or masturbation LoRA at all (399-model listing).",
+  "L1": {
+    "label": "NippleDiffusion - Flux2.Klein — 💜 General [4B] v2",
+    "modelId": 2331032,
+    "versionId": 2633618,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": "3a178706776a6c7964f2d47820e55b9d09a065285050cb33d8cee2ecad18075f",
+    "trigger": null,
+    "role": "current Vesper pilot LoRA (migration 0143/0145/0146); SFW interference + adult functional arms"
+  },
+  "L2": {
+    "label": "Klein Anatomy / Quality Fixer — Klein 4B (concept slider; author: 2.0 keeps the seed, 3.0 fixes more; untested by the author on 4B)",
+    "modelId": 2324991,
+    "versionId": 2617474,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "anatomy diagnostic"
+  },
+  "L2_9B_CONTROL": {
+    "label": "Klein Anatomy / Quality Fixer — Klein 9B v1.0 (WRONG-FAMILY CONTROL, never paid)",
+    "modelId": 2324991,
+    "versionId": 2615475,
+    "expectedBaseModel": "Flux.2 Klein 9B",
+    "expectedSha256": "a70eefabebbf81ace74eee169c67730e44cb6ddc334d85a63aa983e058b20b3b",
+    "trigger": null,
+    "role": "T0.11 only"
+  },
+  "L3": {
+    "label": "Consistence Edit Lora — Flux2 Klein 4B 20260314 (anti-drift edit LoRA; author suggests appending its trigger sentence to the edit prompt)",
+    "modelId": 1939453,
+    "versionId": 2771678,
+    "expectedBaseModel": "Flux.2 Klein 4B-base",
+    "expectedSha256": "bed1e7e8747bc4572a20a7fcef436e82cfbfa5430d0162eda713b55d7a3c7ce4",
+    "trigger": "transform the image to realistic photograph. add realistic details to the corrupted image. restore high frequence details from the corrupted image.",
+    "role": "source-consistency diagnostic; base-labelled, so the 4b arm is a cross-pairing"
+  },
+  "L4": {
+    "label": "Simple Fine Vector Flux.2 Klein 4B by Sarcastic TOFU — v1 — a flat VECTOR-ART style (clean shapes, poster / logo look); trigger Simple_Fine_Vector",
+    "modelId": 2462142,
+    "versionId": 2768357,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": "135befa0ff25fa475b475d85747bb5808446eeba5a8eedf05335d07c652c8d2b",
+    "trigger": "Simple_Fine_Vector",
+    "role": "Style LoRA whose effect is unmistakable (photo → flat vector illustration). The plan's Gate A canary: prove a LoRA is applied at all before judging subtle ones. Never paid (Gate 2 established application by pixel diff instead)"
+  },
+  "L5": {
+    "label": "Klein's Anatomy: Male — KleinAnatomy-4B (2026-02-08, experimental)",
+    "modelId": 2364523,
+    "versionId": 2671901,
+    "expectedBaseModel": "Flux.2 Klein 4B-base",
+    "expectedSha256": "d701233b21c3ff651be3d7bcdbd85cad0132d175bdf378be8800ac0a2e23e52a",
+    "trigger": null,
+    "role": "optional male adult-anatomy control"
+  },
+  "L5_V2": {
+    "label": "Klein's Anatomy: Male — KleinAnatomy-4B-V2 (2026-04-21, further 4B-base training, no uncut support)",
+    "modelId": 2364523,
+    "versionId": 2877826,
+    "expectedBaseModel": "Flux.2 Klein 4B-base",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "newer optional male control (not in the plan document; found in the live version list)"
+  },
+  "L6": {
+    "label": "PZNS Monotype Style v1 (epoch 7/10; author strength 0.8–1.1) — a fine-art PRINT style: monotype / printmaking texture, halftone grain, craquelure, vintage analog poster look; trigger pzns_style (pzns_texture)",
+    "modelId": 2920476,
+    "versionId": 3304274,
+    "expectedBaseModel": "Flux.2 Klein 4B-base",
+    "expectedSha256": "b39e1a2ed18de56f24ee68f120e1e9f1c74db28c481537340dfc3dd16999f587",
+    "trigger": "pzns_style",
+    "role": "Style LoRA whose effect is unmistakable (photo → vintage monotype print). Planned as the second 'canary' in stacking tests: when it is stacked with a subtle LoRA, a print-textured output proves the stack was applied at all and shows how much of the other LoRA survives. Never paid; base-labelled"
+  },
+  "L7": {
+    "label": "Klein Fixes (NSFW) — 4B (female anatomy: breast size/shape, vulva, anus, pubic hair; 176 MB)",
+    "modelId": 2482439,
+    "versionId": 2802658,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": "vulva",
+    "role": "Gate 8 candidate: genitalia-specific anatomy LoRA (trained words: breast size, breast shape, vulva, anus)"
+  },
+  "L8": {
+    "label": "Party Time - Female Nudity v2.0 [Klein 4B] (style LoRA, no trigger; author: 'unlock Klein for nude females', 180 MB)",
+    "modelId": 2458332,
+    "versionId": 3028757,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 8 candidate: general female-nudity LoRA"
+  },
+  "L9": {
+    "label": "Excellent Full Nude Flux.2 Klein 4B by Sarcastic TOFU (500 full-nude photos; 88 MB)",
+    "modelId": 2432232,
+    "versionId": 2734784,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model",
+    "role": "Gate 8 candidate: full-body nudity concept LoRA with a long trigger phrase"
+  },
+  "L10": {
+    "label": "Remove Clothing Censors — Klein 4B (no trigger; AUTHOR WARNS it does not preserve faces; 176 MB)",
+    "modelId": 730405,
+    "versionId": 2849333,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 8 candidate: most-downloaded 4B nudity LoRA; identity risk flagged by its author"
+  },
+  "L11": {
+    "label": "oops no panties — Klein 4B (pussy-peek concept, word 'pubis'; 88 MB)",
+    "modelId": 2704248,
+    "versionId": 3041149,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": "pubis",
+    "role": "Gate 8 reserve: partial-clothing genitalia concept"
+  },
+  "L12": {
+    "label": "Firm Sexy Body — Klein-4B-v4-20 (word 'prall': firm body, perky breasts, puffy nipples, 'fat pussy'; 88 MB)",
+    "modelId": 2304334,
+    "versionId": 2614435,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": "prall",
+    "role": "Gate 8 reserve: body-shape concept (may change her proportions)"
+  },
+  "L13": {
+    "label": "Real Skin (Less Synthetic) — Klein 4B (skin-texture realism LoRA, TF32-trained; no trigger; 2534398)",
+    "modelId": 2534398,
+    "versionId": 2856208,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 9 stack candidate: does a skin LoRA remove the face/body tone mismatch seen at every kneeling and floor adult render, without touching identity?"
+  },
+  "L14": {
+    "label": "Realistic Skin & Face — Professional_photography — Klein 4B (skin/face realism series; no trigger; 1426727)",
+    "modelId": 1426727,
+    "versionId": 3108164,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 9 stack candidate: second skin-realism LoRA (face-touching — identity risk to measure)"
+  },
+  "L15": {
+    "label": "Better Passion — v1.0 Klein_4b (two-person kissing / passionate embrace poses; offspring of the Z-Image 'Better Yuri' F/F LoRA; no trigger; 2356674)",
+    "modelId": 2356674,
+    "versionId": 2717306,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 10 scene LoRA for the two-women scene (the only couple-pose LoRA on Klein 4B; no lesbian/yuri-specific LoRA exists for 4B)"
+  },
+  "L16": {
+    "label": "Sarah Petersons POV Missionary Spread legs — v1.0 FKFB (M/F vaginal intercourse, missionary, POV; 466123)",
+    "modelId": 466123,
+    "versionId": 2659151,
+    "expectedBaseModel": "Flux.2 Klein 4B-base",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 10 scene LoRA for the man-and-woman scene: the only intercourse-pose LoRA on Klein 4B (base-labelled — cross-pairing like L3; POV framing may fight a third-person prompt)"
+  },
+  "L17": {
+    "label": "Flux2 Klein 4B Penis model — v2.0 (nude men, penis; v1 used trigger zpeepee0, v2 none; author: cfg 1–3, 4–8 steps; 2339050)",
+    "modelId": 2339050,
+    "versionId": 2633796,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 10 male-anatomy LoRA for the man (4B-labelled; L5_V2 Klein's Anatomy Male is the base-labelled alternative)"
+  },
+  "L18": {
+    "label": "Copy Pose [Qwen & Klein] — Flux.2 Klein 4B (v1.0) (edit LoRA: re-poses the character in Image 1 to match the pose in Image 2; 2380153)",
+    "modelId": 2380153,
+    "versionId": 2680617,
+    "expectedBaseModel": "Flux.2 Klein 4B-base",
+    "expectedSha256": null,
+    "trigger": "change the actions and poses in Image 1 to match those in Image 2",
+    "role": "Gate 11: pose transfer from a pose reference — the most direct test of whether a LoRA can deliver the seated / floor poses the model breaks (base-labelled)"
+  },
+  "L19": {
+    "label": "Ultimate Blowjob V2 — Flux.2 Klein — K3nk (M/F oral, deepthroat, 69; no trigger; 2520572)",
+    "modelId": 2520572,
+    "versionId": 2860994,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 10 reserve: oral scene LoRA (not in the default arms)"
+  },
+  "L20": {
+    "label": "Breast Grab From Behind — Flux 2.Klein 4B (two-person concept, partner behind her; no trigger; 1954514)",
+    "modelId": 1954514,
+    "versionId": 2896599,
+    "expectedBaseModel": "Flux.2 Klein 4B",
+    "expectedSha256": null,
+    "trigger": null,
+    "role": "Gate 10 reserve: two-person contact concept usable for M/F or F/F"
+  }
+}

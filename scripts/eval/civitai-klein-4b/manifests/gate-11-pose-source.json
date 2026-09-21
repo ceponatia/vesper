@@ -1,0 +1,55 @@
+{
+  "phase": "gate-11-pose-source",
+  "title": "Gate 11 pose source — prompt-only P10 floor pose (the proven 4b cfg 1 / 4 no-reference configuration that produced the clean seated POSE_SEATED) at two new seeds; the clean one is promoted as POSE_FLOOR",
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "hand (owner request 2026-09-17: new floor render from a proven configuration on a new seed)",
+    "at": "2026-09-17T22:24:51.786Z",
+    "decisions": "2026-09-17.6"
+  },
+  "reuse": {
+    "deformed prior render": "phase-1-baseline/T1.2-P10-424242 (owner: deformed — not usable)"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G11src-P10-135791",
+      "test": "G11.source",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 135791,
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "4b|cfg1|s4|noref|noLoRA",
+      "notes": "prompt-only floor pose of a different woman, candidate POSE_FLOOR reference"
+    },
+    {
+      "id": "G11src-P10-246802",
+      "test": "G11.source",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 246802,
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "4b|cfg1|s4|noref|noLoRA",
+      "notes": "prompt-only floor pose of a different woman, candidate POSE_FLOOR reference"
+    }
+  ]
+}

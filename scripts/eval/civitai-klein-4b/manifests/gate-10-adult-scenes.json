@@ -1,0 +1,1651 @@
+{
+  "phase": "gate-10-adult-scenes",
+  "title": "Gate 10 — sexual scenes with the nudity stack: woman + man (missionary, cowgirl), two women (prompt-only partner; third-reference partner), woman alone; scene LoRAs where Klein 4B has them, the other NSFW LoRAs 'just in case' where it does not",
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.310Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "solo nude baseline": "gate-8-adult-solo",
+    "two-hand / floor-pose failures without LoRAs": "gate-4-reliability P4/P5/P10, gate-6-adult A3"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G10-S1-base-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary)"
+    },
+    {
+      "id": "G10-S1-base-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary)"
+    },
+    {
+      "id": "G10-S1-base-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary)"
+    },
+    {
+      "id": "G10-S1-base+L17-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — male anatomy (4B-labelled penis LoRA)"
+    },
+    {
+      "id": "G10-S1-base+L17-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — male anatomy (4B-labelled penis LoRA)"
+    },
+    {
+      "id": "G10-S1-base+L17-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — male anatomy (4B-labelled penis LoRA)"
+    },
+    {
+      "id": "G10-S1-base+L16+L17-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L16",
+          "strength": 0.9
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L16+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — + the only intercourse-pose LoRA (base-labelled, POV-trained)"
+    },
+    {
+      "id": "G10-S1-base+L16+L17-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L16",
+          "strength": 0.9
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L16+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — + the only intercourse-pose LoRA (base-labelled, POV-trained)"
+    },
+    {
+      "id": "G10-S1-base+L16+L17-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L16",
+          "strength": 0.9
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L16+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — + the only intercourse-pose LoRA (base-labelled, POV-trained)"
+    },
+    {
+      "id": "G10-S1-base+L17+L20-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S1_MF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        },
+        {
+          "key": "L20",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1:base+L17+L20",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (missionary) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b) — two-person contact concept"
+    },
+    {
+      "id": "G10-S1B-base+L17-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S1B_MF_COWGIRL_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1B:base+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (cowgirl — no LoRA exists for it) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S1B-base+L16+L17-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S1B_MF_COWGIRL_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L16",
+          "strength": 0.9
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1B:base+L16+L17",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (cowgirl — no LoRA exists for it) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b) — does the missionary LoRA generalise?"
+    },
+    {
+      "id": "G10-S1B-base+L17+L20-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S1B_MF_COWGIRL_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        },
+        {
+          "key": "L20",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1B:base+L17+L20",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "woman + man (cowgirl — no LoRA exists for it) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S2-base-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner)"
+    },
+    {
+      "id": "G10-S2-base-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner)"
+    },
+    {
+      "id": "G10-S2-base-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner)"
+    },
+    {
+      "id": "G10-S2-base+L15-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L15",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L15",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — Better Passion couple-kissing poses"
+    },
+    {
+      "id": "G10-S2-base+L15-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L15",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L15",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — Better Passion couple-kissing poses"
+    },
+    {
+      "id": "G10-S2-base+L15-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L15",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L15",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — Better Passion couple-kissing poses"
+    },
+    {
+      "id": "G10-S2-base+L8-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L8",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S2-base+L10-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L10",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S2-base+L20-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L20",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L20",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S2-base+L16-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S2_FF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L16",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2:base+L16",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (prompt-only partner) — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S2R-base-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_3REF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "CHAR_B_FACE"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2R:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (second identity from a third reference)"
+    },
+    {
+      "id": "G10-S2R-base-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_3REF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "CHAR_B_FACE"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2R:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (second identity from a third reference)"
+    },
+    {
+      "id": "G10-S2R-base-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_3REF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "CHAR_B_FACE"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2R:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (second identity from a third reference)"
+    },
+    {
+      "id": "G10-S2R-base+L15-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_3REF_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "CHAR_B_FACE"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L15",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2R:base+L15",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (second identity from a third reference)"
+    },
+    {
+      "id": "G10-S2R-base+L15-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_3REF_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "CHAR_B_FACE"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L15",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2R:base+L15",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (second identity from a third reference)"
+    },
+    {
+      "id": "G10-S2R-base+L15-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S2_FF_3REF_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "CHAR_B_FACE"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L15",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2R:base+L15",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "two women (second identity from a third reference)"
+    },
+    {
+      "id": "G10-S3-base-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone"
+    },
+    {
+      "id": "G10-S3-base-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone"
+    },
+    {
+      "id": "G10-S3-base-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone"
+    },
+    {
+      "id": "G10-S3-base+L2-424242",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L2",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone — anatomy fixer on the solo pose"
+    },
+    {
+      "id": "G10-S3-base+L2-717171",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L2",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone — anatomy fixer on the solo pose"
+    },
+    {
+      "id": "G10-S3-base+L2-990099",
+      "test": "G10.scene",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L2",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone — anatomy fixer on the solo pose"
+    },
+    {
+      "id": "G10-S3-base+L8-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L8",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S3-base+L10-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L10",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S3-base+L11-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L11",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L11",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. pubis. ",
+      "notes": "one woman alone — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S3-base+L16-424242",
+      "test": "G10.justincase",
+      "mode": "paid",
+      "prompt": "S3_SOLO_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L16",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3:base+L16",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "one woman alone — OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+    },
+    {
+      "id": "G10-S2P-standing-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S2P_FF_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_STANDING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2P-standing:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S2P-standing-copypose-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FF",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_STANDING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2P-standing:copypose",
+      "notes": "owner pose source as Image 2 for the Copy Pose LoRA + nudity stack (single-subject tool — just in case)"
+    },
+    {
+      "id": "G10-S2P-couchtoy-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S2P_FF_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_COUCH_TOY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2P-couchtoy:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S2P-couchtoy-copypose-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FF",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_COUCH_TOY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2P-couchtoy:copypose",
+      "notes": "owner pose source as Image 2 for the Copy Pose LoRA + nudity stack (single-subject tool — just in case)"
+    },
+    {
+      "id": "G10-S2P-reclining-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S2P_FF_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_RECLINING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2P-reclining:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S2P-reclining-copypose-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "POSE_COPY_FF",
+      "seed": 424242,
+      "references": [
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_RECLINING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L18",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2P-reclining:copypose",
+      "notes": "owner pose source as Image 2 for the Copy Pose LoRA + nudity stack (single-subject tool — just in case)"
+    },
+    {
+      "id": "G10-S3P-solo-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S3P_SOLO_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_SOLO"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3P-solo:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S3P-solo2-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S3P_SOLO_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_SOLO_2"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S3P-solo2:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S1P-missionary-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S1P_MF_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_MF_MISSIONARY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1P-missionary:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S1P-cowgirl-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S1P_MF_POSE_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_MF_COWGIRL"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L17",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S1P-cowgirl:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S2Q-standing-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S2Q_STANDING_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_STANDING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2Q-standing:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S2Q-couchtoy-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S2Q_COUCHTOY_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_COUCH_TOY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2Q-couchtoy:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    },
+    {
+      "id": "G10-S2Q-reclining-edit3ref-424242",
+      "test": "G10.posesource",
+      "mode": "paid",
+      "prompt": "S2Q_RECLINING_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY",
+        "OWNER_POSE_FF_RECLINING"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "S2Q-reclining:edit3ref",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner pose source as Image 3, native editImage + nudity stack"
+    }
+  ]
+}

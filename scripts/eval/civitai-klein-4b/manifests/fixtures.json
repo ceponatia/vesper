@@ -1,0 +1,95 @@
+{
+  "_identity": "Sabrina — a Vesper-generated synthetic adult character. Source set: the Qwen-Image LoRA training dataset under ~/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset (20 captioned views, 880x1184 webp). Every core-suite reference below is the same identity. No real person, no public figure.",
+  "_preparation": "Every reference is re-encoded to JPEG (quality 92, 4:4:4) before it is sent, because Civitai's Klein lane fails silently on webp references (#626). maxEdgePx null keeps the native 880x1184 size, which mirrors what Vesper sends (no resize).",
+  "R1_FACE": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img13-armf-chestup.webp",
+    "maxEdgePx": null,
+    "role": "clean chest-up portrait, neutral expression, unobstructed face, even light"
+  },
+  "R2_THREE_QUARTER": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img01-canonical.webp",
+    "maxEdgePx": null,
+    "role": "waist-up view, clear hairline/jaw/shoulders. NOTE: frontal, not a true three-quarter angle — the set has none."
+  },
+  "R3_FULL_BODY": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img02-baseline-fullbody.webp",
+    "maxEdgePx": null,
+    "role": "neutral standing pose, hands and feet visible, plain beige outfit, sunlit studio"
+  },
+  "R4_ALT": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img20-new.webp",
+    "maxEdgePx": null,
+    "role": "same identity, golden-hour park lighting and background, close portrait"
+  },
+  "R5_TARGET_POSE": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img04-pose-best.webp",
+    "maxEdgePx": null,
+    "role": "deliberately difficult pose: both arms overhead in a V, legs in a wide stance, sunlit studio"
+  },
+  "R6_ALT_FULL_BODY": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img18-new.webp",
+    "maxEdgePx": null,
+    "role": "same identity, full body in a red satin slip dress and heels, dark studio — a different-wardrobe full-body view"
+  },
+  "R1_FACE_1024": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img13-armf-chestup.webp",
+    "maxEdgePx": 1024,
+    "role": "T2.8 reference-resolution arm: R1 downsized to a 1024 px long edge"
+  },
+  "R1_FACE_2048": {
+    "source": "/home/brian/lora-artifacts/vesper-sabrina-0q8vz9f3/dataset/img13-armf-chestup.webp",
+    "maxEdgePx": 2048,
+    "allowEnlargement": true,
+    "role": "T2.8 reference-resolution arm: R1 UPSCALED to a 2048 px long edge (the source is 1184 px; this adds no information and exists only to test whether oversized input changes the result)"
+  },
+  "CHAR_B_FACE": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/promoted/CHAR_B_FACE.jpg",
+    "maxEdgePx": null,
+    "role": "second synthetic identity for T2.7 and P11. NOT YET PRESENT: produced by the Phase 1 arm T1.0-charB (a prompt-only Klein render of a contrasting fictional adult woman) and promoted with `run.mjs promote --manifest phase-1 --arm T1.0-charB --as CHAR_B_FACE`."
+  },
+  "POSE_SEATED": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/promoted/POSE_SEATED.jpg",
+    "maxEdgePx": null,
+    "role": "Gate 11 pose reference (Image 2 for the Copy Pose LoRA): a DIFFERENT woman seated in a wooden chair, right leg crossed over the left knee — promoted from the Phase 1 prompt-only render T1.2-P4-424242 (`run.mjs promote --manifest manifests/phase-1-baseline.json --arm T1.2-P4-424242 --as POSE_SEATED`)"
+  },
+  "OWNER_POSE_FF_STANDING": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_FF_STANDING.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: lesbian-oral-1-generated): blonde woman standing, dark-haired woman kneeling in front of her (oral) — pose source for the two-women scene; portrait. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  },
+  "OWNER_POSE_FF_COUCH_TOY": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_FF_COUCH_TOY.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: lesbian-foot-generated): two women on a leather couch, dark-haired woman licking the blonde's foot while using a toy — pose source; portrait. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  },
+  "OWNER_POSE_FF_RECLINING": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_FF_RECLINING.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: lesbian-rub-generated): two women on a grey couch, dark-haired woman lying back, blonde performing oral — pose source; landscape. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  },
+  "OWNER_POSE_SOLO": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_SOLO.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: masturbate-2): woman alone lying on her back, legs spread, hand between her thighs — pose source for the solo scene; landscape. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  },
+  "OWNER_POSE_MF_MISSIONARY": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_MF_MISSIONARY.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: missionary-top-1): woman on her back, man's POV from above (his body mostly out of frame) — missionary pose source; portrait, POV framing. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  },
+  "OWNER_POSE_MF_COWGIRL": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_MF_COWGIRL.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: cowgirl-1): woman astride, man's POV from below (only his torso/hands visible) — cowgirl pose source; portrait, POV framing. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  },
+  "POSE_FLOOR": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/promoted/POSE_FLOOR.jpg",
+    "maxEdgePx": null,
+    "role": "Gate 11 pose reference: a different woman sitting on the floor, one knee raised toward the camera, one hand reaching forward — promoted from gate-11-pose-source/G11src-P10-246802 (prompt-only 4b cfg 1 / 4, owner-requested re-render 2026-09-17; the alternative G11src-P10-135791 is clean but cross-legged)"
+  },
+  "OWNER_POSE_SOLO_2": {
+    "source": "/home/brian/projects/vesper/eval-images/civitai-klein-4b/inputs/owner-poses/OWNER_POSE_SOLO_2.webp",
+    "maxEdgePx": 1248,
+    "role": "owner Seedream render (raw: masturbate-1): woman alone sitting up with knees apart, hand between her thighs — second solo pose source; landscape. Synthetic, no real person; supplied and pre-approved by the owner 2026-09-17; re-encoded to JPEG by the harness"
+  }
+}

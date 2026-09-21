@@ -1,0 +1,1107 @@
+{
+  "phase": "phase-5-stacks",
+  "title": "Phase 5 — LoRA stacking and order",
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.474Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T5.1-P2-L2+L3",
+      "test": "T5.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.1-P4-L2+L3",
+      "test": "T5.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.1-P5-L2+L3",
+      "test": "T5.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.1-P8-L2+L3",
+      "test": "T5.1",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.2-P2-L2+L1",
+      "test": "T5.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.2-P5-L2+L1",
+      "test": "T5.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.2-A1-L2+L1",
+      "test": "T5.2",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.3-P1-L3+L1",
+      "test": "T5.3",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.3-P5-L3+L1",
+      "test": "T5.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.3-P8-L3+L1",
+      "test": "T5.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.3-A1-L3+L1",
+      "test": "T5.3",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.4-P2-L2+L3+L1",
+      "test": "T5.4",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.4-P5-L2+L3+L1",
+      "test": "T5.4",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.4-P8-L2+L3+L1",
+      "test": "T5.4",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.4-A1-L2+L3+L1",
+      "test": "T5.4",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.5-P2-order-A-repeat",
+      "test": "T5.5",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "exact repeat of T5.4 (order A) to separate order effects from nondeterminism",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.5-P2-order-B",
+      "test": "T5.5",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "NSFW-first serialized order",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75+L3@0.6+L2@2"
+    },
+    {
+      "id": "T5.5-P5-order-A-repeat",
+      "test": "T5.5",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "exact repeat of T5.4 (order A) to separate order effects from nondeterminism",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.5-P5-order-B",
+      "test": "T5.5",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "NSFW-first serialized order",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75+L3@0.6+L2@2"
+    },
+    {
+      "id": "T5.6-P2-L4+L3",
+      "test": "T5.6",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "promptPrefix": "Simple_Fine_Vector. ",
+      "loras": [
+        {
+          "key": "L4",
+          "strength": 0.75
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L4@0.75+L3@0.6"
+    },
+    {
+      "id": "T5.6-P5-L4+L3",
+      "test": "T5.6",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "promptPrefix": "Simple_Fine_Vector. ",
+      "loras": [
+        {
+          "key": "L4",
+          "strength": 0.75
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L4@0.75+L3@0.6"
+    },
+    {
+      "id": "T5.7-P2-L3",
+      "test": "T5.7",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "matrix cell missing from Phase 4 (L3 alone on P2)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T5.7-P2-L3+L1",
+      "test": "T5.7",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "matrix cell missing from T5.3 (P2)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P2-717171-L2+L3",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.8-P5-717171-L2+L3",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.8-P2-990099-L2+L3",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.8-P5-990099-L2+L3",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6"
+    },
+    {
+      "id": "T5.8-P2-717171-L2+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.8-P5-717171-L2+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.8-P2-990099-L2+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.8-P5-990099-L2+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L1@0.75"
+    },
+    {
+      "id": "T5.8-P2-717171-L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P5-717171-L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P2-990099-L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P5-990099-L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P2-717171-L2+L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P5-717171-L2+L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P2-990099-L2+L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    },
+    {
+      "id": "T5.8-P5-990099-L2+L3+L1",
+      "test": "T5.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        },
+        {
+          "key": "L3",
+          "strength": 0.6
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "best four matrix configurations over the remaining seeds (decisions.bestStacks)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2+L3@0.6+L1@0.75"
+    }
+  ]
+}

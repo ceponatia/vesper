@@ -1,0 +1,951 @@
+{
+  "phase": "gate-9-adult-stacks",
+  "title": "Gate 9 — stacks: verified LoRAs (NippleDiffusion, anatomy fixer) and skin LoRAs with one or more nudity LoRAs, on the standing full-nude reference edit, three seeds (prune after Gate 8)",
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.310Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "members alone": "gate-8-adult-solo",
+    "L2 alone on clothed scenes": "gate-2-loras"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G9-L9+L1-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner's best single LoRA (Excellent Full Nude) + the verified breast LoRA"
+    },
+    {
+      "id": "G9-L9+L1-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner's best single LoRA (Excellent Full Nude) + the verified breast LoRA"
+    },
+    {
+      "id": "G9-L9+L1-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "owner's best single LoRA (Excellent Full Nude) + the verified breast LoRA"
+    },
+    {
+      "id": "G9-L9+L12-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L12",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. prall. ",
+      "notes": "best overall + best vulvas (Firm Sexy Body) — does the vulva quality transfer without the skinny bias?"
+    },
+    {
+      "id": "G9-L9+L12-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L12",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. prall. ",
+      "notes": "best overall + best vulvas (Firm Sexy Body) — does the vulva quality transfer without the skinny bias?"
+    },
+    {
+      "id": "G9-L9+L12-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L12",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. prall. ",
+      "notes": "best overall + best vulvas (Firm Sexy Body) — does the vulva quality transfer without the skinny bias?"
+    },
+    {
+      "id": "G9-L9+L7-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L7",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "best overall + Klein Fixes anatomy — identity cost?"
+    },
+    {
+      "id": "G9-L9+L7-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L7",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "best overall + Klein Fixes anatomy — identity cost?"
+    },
+    {
+      "id": "G9-L9+L7-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L7",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L7",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "best overall + Klein Fixes anatomy — identity cost?"
+    },
+    {
+      "id": "G9-L9+L10-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L10",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "best overall + the most natural pubic hair / breasts (L10) — does L9 hold the face against L10's drift?"
+    },
+    {
+      "id": "G9-L9+L10-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L10",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "best overall + the most natural pubic hair / breasts (L10) — does L9 hold the face against L10's drift?"
+    },
+    {
+      "id": "G9-L9+L10-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L10",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L10",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "best overall + the most natural pubic hair / breasts (L10) — does L9 hold the face against L10's drift?"
+    },
+    {
+      "id": "G9-L12+L1-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12+L1",
+      "promptPrefix": "prall. ",
+      "notes": "best vulvas + breasts"
+    },
+    {
+      "id": "G9-L12+L1-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12+L1",
+      "promptPrefix": "prall. ",
+      "notes": "best vulvas + breasts"
+    },
+    {
+      "id": "G9-L12+L1-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12+L1",
+      "promptPrefix": "prall. ",
+      "notes": "best vulvas + breasts"
+    },
+    {
+      "id": "G9-L9+L1+L2-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L2",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "verified anatomy fixer on the leading stack"
+    },
+    {
+      "id": "G9-L9+L1+L2-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L2",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "verified anatomy fixer on the leading stack"
+    },
+    {
+      "id": "G9-L9+L1+L2-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L2",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "verified anatomy fixer on the leading stack"
+    },
+    {
+      "id": "G9-L9+L1+L13-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L13",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L13",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "Real Skin on the leading stack — tone mismatch"
+    },
+    {
+      "id": "G9-L9+L1+L13-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L13",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L13",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "Real Skin on the leading stack — tone mismatch"
+    },
+    {
+      "id": "G9-L9+L1+L13-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L9",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        },
+        {
+          "key": "L13",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L9+L1+L13",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "Real Skin on the leading stack — tone mismatch"
+    },
+    {
+      "id": "G9-L12-bodytype-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_BODY_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12-bodytype",
+      "promptPrefix": "prall. ",
+      "notes": "owner: Firm Sexy Body leans very skinny — what does it do when the prompt pins her natural curvy build to Image 2?"
+    },
+    {
+      "id": "G9-L12-bodytype-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_BODY_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12-bodytype",
+      "promptPrefix": "prall. ",
+      "notes": "owner: Firm Sexy Body leans very skinny — what does it do when the prompt pins her natural curvy build to Image 2?"
+    },
+    {
+      "id": "G9-L12-bodytype-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_BODY_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L12",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L12-bodytype",
+      "promptPrefix": "prall. ",
+      "notes": "owner: Firm Sexy Body leans very skinny — what does it do when the prompt pins her natural curvy build to Image 2?"
+    },
+    {
+      "id": "G9-L8+L9-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        },
+        {
+          "key": "L9",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8+L9",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "OWNER: keep Party Time (good bodies) — can Excellent Full Nude hold the face it loses?"
+    },
+    {
+      "id": "G9-L8+L9-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        },
+        {
+          "key": "L9",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8+L9",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "OWNER: keep Party Time (good bodies) — can Excellent Full Nude hold the face it loses?"
+    },
+    {
+      "id": "G9-L8+L9-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        },
+        {
+          "key": "L9",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8+L9",
+      "promptPrefix": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+      "notes": "OWNER: keep Party Time (good bodies) — can Excellent Full Nude hold the face it loses?"
+    },
+    {
+      "id": "G9-L8+L1-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8+L1",
+      "notes": "Party Time + the verified breast LoRA (which kept identity 4 alone)"
+    },
+    {
+      "id": "G9-L8+L1-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8+L1",
+      "notes": "Party Time + the verified breast LoRA (which kept identity 4 alone)"
+    },
+    {
+      "id": "G9-L8+L1-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        },
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8+L1",
+      "notes": "Party Time + the verified breast LoRA (which kept identity 4 alone)"
+    },
+    {
+      "id": "G9-L8-face3ref-424242",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL3",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8-face3ref",
+      "notes": "OWNER: reinforce the face with another reference image — a second face view (R2 waist-up) as Image 2, body as Image 3 (5 Buzz)"
+    },
+    {
+      "id": "G9-L8-face3ref-717171",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL3",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8-face3ref",
+      "notes": "OWNER: reinforce the face with another reference image — a second face view (R2 waist-up) as Image 2, body as Image 3 (5 Buzz)"
+    },
+    {
+      "id": "G9-L8-face3ref-990099",
+      "test": "G9.stack",
+      "mode": "paid",
+      "prompt": "A4_GEN_FL3",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R2_THREE_QUARTER",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L8",
+          "strength": 0.9
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L8-face3ref",
+      "notes": "OWNER: reinforce the face with another reference image — a second face view (R2 waist-up) as Image 2, body as Image 3 (5 Buzz)"
+    }
+  ]
+}

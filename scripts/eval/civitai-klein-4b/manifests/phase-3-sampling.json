@@ -1,0 +1,582 @@
+{
+  "phase": "phase-3-sampling",
+  "title": "Phase 3 — sampling and prompt strategy on P5/P4 + [R1,R3]",
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.473Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T3.1-P5-s4",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P5-s6",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 6
+      },
+      "recipe": "4b|cfg1|s6|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P5-s8",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P5-s12",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 12
+      },
+      "recipe": "4b|cfg1|s12|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P4-s4",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "4b|cfg1|s4|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P4-s6",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 6
+      },
+      "recipe": "4b|cfg1|s6|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P4-s8",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.1-P4-s12",
+      "test": "T3.1",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 12
+      },
+      "recipe": "4b|cfg1|s12|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P5-cfg1.5",
+      "test": "T3.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1.5,
+        "steps": 8
+      },
+      "notes": "cfg 1.0 is T3.1-P5-s8",
+      "recipe": "4b|cfg1.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P5-cfg2",
+      "test": "T3.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 2,
+        "steps": 8
+      },
+      "notes": "cfg 1.0 is T3.1-P5-s8",
+      "recipe": "4b|cfg2|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P5-cfg2.5",
+      "test": "T3.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 2.5,
+        "steps": 8
+      },
+      "notes": "cfg 1.0 is T3.1-P5-s8",
+      "recipe": "4b|cfg2.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P4-cfg1.5",
+      "test": "T3.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1.5,
+        "steps": 8
+      },
+      "notes": "cfg 1.0 is T3.1-P4-s8",
+      "recipe": "4b|cfg1.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P4-cfg2",
+      "test": "T3.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 2,
+        "steps": 8
+      },
+      "notes": "cfg 1.0 is T3.1-P4-s8",
+      "recipe": "4b|cfg2|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.2-P4-cfg2.5",
+      "test": "T3.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 2.5,
+        "steps": 8
+      },
+      "notes": "cfg 1.0 is T3.1-P4-s8",
+      "recipe": "4b|cfg2.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.3-P5-neg",
+      "test": "T3.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "negativePrompt": "NEG1",
+      "input": {
+        "cfgScale": 2.5,
+        "steps": 8
+      },
+      "notes": "A is T3.2-P5-cfg2.5",
+      "recipe": "4b|cfg2.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.3-P4-neg",
+      "test": "T3.3",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "negativePrompt": "NEG1",
+      "input": {
+        "cfgScale": 2.5,
+        "steps": 8
+      },
+      "notes": "A is T3.2-P4-cfg2.5",
+      "recipe": "4b|cfg2.5|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.4-P5-anatomy-positive",
+      "test": "T3.4",
+      "mode": "paid",
+      "prompt": "P5+ANATOMY_POSITIVE",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "A is T3.1-P5-s8",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.4-P4-anatomy-positive",
+      "test": "T3.4",
+      "mode": "paid",
+      "prompt": "P4+ANATOMY_POSITIVE",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "A is T3.1-P4-s8",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.5-P12-verbose",
+      "test": "T3.5",
+      "mode": "paid",
+      "prompt": "P12",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "concise is T3.1-P5-s8",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.6-P5-order-A",
+      "test": "T3.6",
+      "mode": "paid",
+      "prompt": "P5_ORDER_A",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.6-P5-order-B",
+      "test": "T3.6",
+      "mode": "paid",
+      "prompt": "P5_ORDER_B",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.7-P5-roles",
+      "test": "T3.7",
+      "mode": "paid",
+      "prompt": "P5_ROLES",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.8-P5-expansion-true",
+      "test": "T3.8",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "enablePromptExpansion": true
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.8-P4-expansion-true",
+      "test": "T3.8",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "enablePromptExpansion": true
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.9-P2-832x1248",
+      "test": "T3.9",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "width": 832,
+        "height": 1248
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.9-P2-1024x1024",
+      "test": "T3.9",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "width": 1024,
+        "height": 1024
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.9-P2-1024x1536",
+      "test": "T3.9",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "width": 1024,
+        "height": 1536
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.9-P5-1024x1024",
+      "test": "T3.9",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "width": 1024,
+        "height": 1024
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.9-P5-1024x1536",
+      "test": "T3.9",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8,
+        "width": 1024,
+        "height": 1536
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.10-P5-717171-best",
+      "test": "T3.10",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning distilled recipe over the remaining seeds (decisions.distilledBest)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.10-P4-717171-best",
+      "test": "T3.10",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning distilled recipe over the remaining seeds (decisions.distilledBest)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.10-P5-990099-best",
+      "test": "T3.10",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning distilled recipe over the remaining seeds (decisions.distilledBest)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T3.10-P4-990099-best",
+      "test": "T3.10",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "winning distilled recipe over the remaining seeds (decisions.distilledBest)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    }
+  ]
+}

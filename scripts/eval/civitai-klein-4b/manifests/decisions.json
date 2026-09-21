@@ -1,0 +1,735 @@
+{
+  "_note": "Tunables the paid phases depend on. Defaults are the plan document's starting points; update after grading a phase and re-run `node scripts/eval/civitai-klein-4b/manifests/generate.mjs` to regenerate the later manifests. Arm ids are stable across regeneration only where the tunable is not part of the id.",
+  "version": "2026-09-18.4",
+  "seeds": [
+    424242,
+    717171,
+    990099
+  ],
+  "seedsStress": [
+    424242,
+    717171,
+    990099,
+    135791,
+    246802
+  ],
+  "size": {
+    "width": 832,
+    "height": 1248
+  },
+  "distilled": {
+    "cfgScale": 1,
+    "steps": 4
+  },
+  "distilledBest": {
+    "cfgScale": 1,
+    "steps": 4,
+    "_why": "Gate 1 (2026-09-17): on P5+[R1,R3] seed 424242, cfg1/s8 and cfg2.5/s8 were not meaningfully better than Vesper's default cfg1/s4, so Gate 2 runs at the default and reuses the Gate 1 L0 cells"
+  },
+  "base": {
+    "cfgScale": 4,
+    "steps": 50
+  },
+  "baseBest": {
+    "cfgScale": 4,
+    "steps": 30
+  },
+  "loraWeights": {
+    "L1": 0.75,
+    "L2": 2,
+    "L3": 0.6,
+    "L4": 0.75,
+    "L6": 0.9,
+    "L7": 0.9,
+    "L8": 0.9,
+    "L9": 0.9,
+    "L10": 0.9,
+    "L11": 0.9,
+    "L12": 0.9,
+    "L13": 0.9,
+    "L14": 0.9,
+    "L15": 0.9,
+    "L16": 0.9,
+    "L17": 0.9,
+    "L18": 1,
+    "L19": 0.9,
+    "L20": 0.9
+  },
+  "variantStrength": 0.55,
+  "includeOptional": false,
+  "revised": {
+    "_note": "Adaptive plan (2026-09-17 revision). gate1Winners/gate2Best/finalists are filled after grading each gate; empty lists generate no follow-up arms. Each entry: { label, input?, references?, loras? }.",
+    "bestReferences": [
+      "R1_FACE",
+      "R3_FULL_BODY"
+    ],
+    "gate1Winners": [],
+    "gate2Canary": false,
+    "gate2AnatomyFollowUp": true,
+    "faceLock": true,
+    "gate2Targeted": [
+      {
+        "base": "T2.2-P5-424242",
+        "prompt": "P5",
+        "references": [
+          "R3_FULL_BODY"
+        ],
+        "input": {
+          "cfgScale": 1,
+          "steps": 4
+        },
+        "why": "owner-flagged third hand (Gate 1)"
+      },
+      {
+        "base": "T3.5-P12-verbose",
+        "prompt": "P12",
+        "references": [
+          "R1_FACE",
+          "R3_FULL_BODY"
+        ],
+        "input": {
+          "cfgScale": 1,
+          "steps": 8
+        },
+        "why": "owner-flagged third hand (Gate 1)"
+      }
+    ],
+    "gate2Best": [],
+    "gate3BaseFollowUp": false,
+    "finalists": [
+      {
+        "label": "distilled-noLoRA",
+        "input": {
+          "cfgScale": 1,
+          "steps": 4
+        },
+        "references": [
+          "R1_FACE",
+          "R3_FULL_BODY"
+        ],
+        "loras": []
+      }
+    ],
+    "adultFinalist": {
+      "label": "distilled-L1",
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1"
+        }
+      ]
+    },
+    "adultClothedControlsReused": "gate-2-loras/G2-P2-L1 and G2-P5-L1 (same recipe, seed 424242) already show L1 loaded on clothed scenes",
+    "adultFollowUp": {
+      "_why": "HANDOFF §next-1 (2026-09-17): Gate 4's A1 'standing nude' stayed clothed 3/3 while A2 'topless' worked 3/3 — the LoRA needs its vocabulary against a clothed body reference. Not yet run: full nudity with that vocabulary, A3 (complex adult pose), and adult prompts with the Gate 5 face-lock wording. Four triples: vocabulary alone, vocabulary + face-lock A (the production shape), A2 + face-lock A, A3 + vocabulary + face-lock A.",
+      "label": "distilled-L1",
+      "loras": [
+        {
+          "key": "L1"
+        }
+      ],
+      "prompts": [
+        {
+          "key": "A1_VOCAB",
+          "recipe": "L1-vocab",
+          "notes": "A1 rephrased in the LoRA's vocabulary (topless, naked breasts, no underwear); no face-lock — isolates the vocabulary effect"
+        },
+        {
+          "key": "A1_VOCAB_FL",
+          "recipe": "L1-vocab-facelockA",
+          "notes": "A1 vocabulary + face-lock phrasing A (roles first, beige outfit excluded) — the production shape"
+        },
+        {
+          "key": "A2_FL",
+          "recipe": "L1-topless-facelockA",
+          "notes": "A2 (topless, black underwear, kneeling) + face-lock A — identity under the wording that already renders"
+        },
+        {
+          "key": "A3_VOCAB_FL",
+          "recipe": "L1-vocab-facelockA-floorpose",
+          "notes": "A3 complex floor pose (knees up, forearms crossed) in the LoRA vocabulary + face-lock A — the hard case"
+        }
+      ]
+    },
+    "faceLockRobustness": {
+      "_why": "HANDOFF §next-2 (2026-09-17): Gate 5 graded phrasings A/B at 4 on every P8 seed but only over two seeds; and the beige trousers from R3 leaked under the coat wherever no phrasing named trousers (717171: all three phrasings; 424242: B and C). Third seed for A/B on P7 and P8, plus phrasing A with trousers named at the seed that leaked and at the third seed.",
+      "thirdSeed": 990099,
+      "phrasings": [
+        "A",
+        "B"
+      ],
+      "trousers": {
+        "prompt": "P8_FL_A_TROUSERS",
+        "seeds": [
+          717171,
+          990099
+        ]
+      }
+    },
+    "adultProgram": {
+      "_why": "OWNER 2026-09-17 after Gate 6: (1) each LoRA individually, 3 seeds, on a reference edit; (2) stacks in interesting ways, incl. already-verified LoRAs with one or more nudity ones; (3) sexual scenes — one woman + one man, two women, one woman alone — with LoRAs, to see whether LoRAs fix the pose failures; plus agent-added gates. Weights: uniform 0.9 screening guess except L1 0.75 (Vesper pilot), L2 2.0 (author), L18 1.0 (edit LoRA).",
+      "seeds": "all three",
+      "solo": {
+        "prompt": "A4_GEN_FL",
+        "loras": [
+          "L1",
+          "L7",
+          "L8",
+          "L9",
+          "L10",
+          "L11",
+          "L12"
+        ],
+        "_note": "Gate 8: nudity / genitalia LoRAs alone on the standing full-nude prompt with face-lock A and genitalia vocabulary; L1 is the breasts-only baseline"
+      },
+      "promptPrefixByLora": {
+        "L9": "Excellent_Full_Nude, A RAW Pro Ultra HiRes erotic photo of a stark naked, fully nude female model. ",
+        "L11": "pubis. ",
+        "L12": "prall. "
+      },
+      "stacks": {
+        "prompt": "A4_GEN_FL",
+        "list": [
+          {
+            "label": "L9+L1",
+            "loras": [
+              "L9",
+              "L1"
+            ],
+            "why": "owner's best single LoRA (Excellent Full Nude) + the verified breast LoRA"
+          },
+          {
+            "label": "L9+L12",
+            "loras": [
+              "L9",
+              "L12"
+            ],
+            "why": "best overall + best vulvas (Firm Sexy Body) — does the vulva quality transfer without the skinny bias?"
+          },
+          {
+            "label": "L9+L7",
+            "loras": [
+              "L9",
+              "L7"
+            ],
+            "why": "best overall + Klein Fixes anatomy — identity cost?"
+          },
+          {
+            "label": "L9+L10",
+            "loras": [
+              "L9",
+              "L10"
+            ],
+            "why": "best overall + the most natural pubic hair / breasts (L10) — does L9 hold the face against L10's drift?"
+          },
+          {
+            "label": "L12+L1",
+            "loras": [
+              "L12",
+              "L1"
+            ],
+            "why": "best vulvas + breasts"
+          },
+          {
+            "label": "L9+L1+L2",
+            "loras": [
+              "L9",
+              "L1",
+              {
+                "key": "L2",
+                "strength": 2
+              }
+            ],
+            "why": "verified anatomy fixer on the leading stack"
+          },
+          {
+            "label": "L9+L1+L13",
+            "loras": [
+              "L9",
+              "L1",
+              "L13"
+            ],
+            "why": "Real Skin on the leading stack — tone mismatch"
+          },
+          {
+            "label": "L12-bodytype",
+            "loras": [
+              "L12"
+            ],
+            "prompt": "A4_GEN_BODY_FL",
+            "why": "owner: Firm Sexy Body leans very skinny — what does it do when the prompt pins her natural curvy build to Image 2?"
+          },
+          {
+            "label": "L8+L9",
+            "loras": [
+              "L8",
+              "L9"
+            ],
+            "why": "OWNER: keep Party Time (good bodies) — can Excellent Full Nude hold the face it loses?"
+          },
+          {
+            "label": "L8+L1",
+            "loras": [
+              "L8",
+              "L1"
+            ],
+            "why": "Party Time + the verified breast LoRA (which kept identity 4 alone)"
+          },
+          {
+            "label": "L8-face3ref",
+            "loras": [
+              "L8"
+            ],
+            "prompt": "A4_GEN_FL3",
+            "references": [
+              "R1_FACE",
+              "R2_THREE_QUARTER",
+              "R3_FULL_BODY"
+            ],
+            "why": "OWNER: reinforce the face with another reference image — a second face view (R2 waist-up) as Image 2, body as Image 3 (5 Buzz)"
+          }
+        ],
+        "_note": "Gate 9 as re-pruned on the OWNER's Gate 8 grades (2026-09-17): L9 Excellent Full Nude is the best single LoRA (identity 4/4/4, excellent body), L12 Firm Sexy Body makes the best vulvas (identity 3/4/4, skinny bias), L8 Party Time has doll-like faces (owner 3/2 at two seeds), L10 the best pubic hair but no face adherence, L11 strange vaginas, L7 best anatomy at an identity cost. Stacks build on L9/L12; L8 dropped; one L12 body-type prompt arm set. Owner amendment: Party Time kept — stacked with L9 and L1, and alone with a second face reference."
+      },
+      "scenes": {
+        "adultBase": [
+          "L9",
+          "L1"
+        ],
+        "_adultBaseNote": "set after Gate 9 (agent proposal 2026-09-18, pending owner confirmation): Excellent Full Nude + NippleDiffusion — identity 4 at every seed with hairy labia and detailed breasts; L9 carries a 1-Buzz fee per render. Previous default L1+L7 (Klein Fixes drifts identity).",
+        "list": [
+          {
+            "key": "S1",
+            "prompt": "S1_MF_FL",
+            "label": "woman + man (missionary)",
+            "configs": [
+              {
+                "label": "base",
+                "extra": []
+              },
+              {
+                "label": "base+L17",
+                "extra": [
+                  "L17"
+                ],
+                "why": "male anatomy (4B-labelled penis LoRA)"
+              },
+              {
+                "label": "base+L16+L17",
+                "extra": [
+                  "L16",
+                  "L17"
+                ],
+                "why": "+ the only intercourse-pose LoRA (base-labelled, POV-trained)"
+              },
+              {
+                "label": "base+L17+L20",
+                "extra": [
+                  "L17",
+                  "L20"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b) — two-person contact concept"
+              }
+            ]
+          },
+          {
+            "key": "S1B",
+            "prompt": "S1B_MF_COWGIRL_FL",
+            "label": "woman + man (cowgirl — no LoRA exists for it)",
+            "configs": [
+              {
+                "label": "base+L17",
+                "extra": [
+                  "L17"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L16+L17",
+                "extra": [
+                  "L16",
+                  "L17"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b) — does the missionary LoRA generalise?"
+              },
+              {
+                "label": "base+L17+L20",
+                "extra": [
+                  "L17",
+                  "L20"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              }
+            ]
+          },
+          {
+            "key": "S2",
+            "prompt": "S2_FF_FL",
+            "label": "two women (prompt-only partner)",
+            "configs": [
+              {
+                "label": "base",
+                "extra": []
+              },
+              {
+                "label": "base+L15",
+                "extra": [
+                  "L15"
+                ],
+                "why": "Better Passion couple-kissing poses"
+              },
+              {
+                "label": "base+L8",
+                "extra": [
+                  "L8"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L10",
+                "extra": [
+                  "L10"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L20",
+                "extra": [
+                  "L20"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L16",
+                "extra": [
+                  "L16"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              }
+            ]
+          },
+          {
+            "key": "S2R",
+            "prompt": "S2_FF_3REF_FL",
+            "references": [
+              "R1_FACE",
+              "R3_FULL_BODY",
+              "CHAR_B_FACE"
+            ],
+            "label": "two women (second identity from a third reference)",
+            "configs": [
+              {
+                "label": "base",
+                "extra": []
+              },
+              {
+                "label": "base+L15",
+                "extra": [
+                  "L15"
+                ]
+              }
+            ]
+          },
+          {
+            "key": "S3",
+            "prompt": "S3_SOLO_FL",
+            "label": "one woman alone",
+            "configs": [
+              {
+                "label": "base",
+                "extra": []
+              },
+              {
+                "label": "base+L2",
+                "extra": [
+                  {
+                    "key": "L2",
+                    "strength": 2
+                  }
+                ],
+                "why": "anatomy fixer on the solo pose"
+              },
+              {
+                "label": "base+L8",
+                "extra": [
+                  "L8"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L10",
+                "extra": [
+                  "L10"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L11",
+                "extra": [
+                  "L11"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              },
+              {
+                "label": "base+L16",
+                "extra": [
+                  "L16"
+                ],
+                "seeds": [
+                  424242
+                ],
+                "why": "OWNER 2026-09-17: Klein 4B has no lesbian, cowgirl/doggy or masturbation LoRA — try those scenes with the other NSFW LoRAs anyway, in case they carry undocumented training. One seed each; confirm winners over the other seeds (Gate 10b)"
+              }
+            ]
+          }
+        ],
+        "_note": "Gate 10. Every config keeps the face-lock A wording; the second woman's identity is prompt-only in S2 and CHAR_B_FACE (Phase 1 promoted render) as Image 3 in S2R — 3-reference edits price at 5 Buzz",
+        "confirm": [],
+        "_confirmNote": "Gate 10b: list {scene, label} pairs of one-seed configs that worked (e.g. {\"scene\":\"S2\",\"label\":\"base+L8\"}) and regenerate — they run over the two remaining seeds",
+        "_justInCaseNote": "2026-09-18: the '+L9' just-in-case configs were removed once adultBase became L9+L1 (redundant; the duplicated L9 prefix pushed the prompt over 1000 chars).",
+        "_ownerRuling_2026_09_18": "After the first 9 man-and-woman arms (S1 base ×3 incl. one silent provider failure, +L17 ×3, +L16+L17 ×3): only S1-base-717171 was not deformed; the missionary-LoRA stack produced no missionary pose, deformed genitalia at every seed and a clothed man. OWNER: skip the rest of the male arms (S1 +L17+L20, S1B cowgirl ×3, S1P pose-source missionary/cowgirl) — 'they're not going to generate correctly'. The runner was stopped during S1B-base+L17-424242 (billed, reconciled) and resumed with --skip over every finished and every S1* arm."
+      },
+      "poseCopy": {
+        "loras": [
+          "L18"
+        ],
+        "poses": [
+          {
+            "key": "seated",
+            "prompt": "POSE_COPY_SEATED",
+            "pose": "POSE_SEATED"
+          },
+          {
+            "key": "floor",
+            "prompt": "POSE_COPY_FLOOR",
+            "pose": "POSE_FLOOR"
+          }
+        ],
+        "imageOne": "R3_FULL_BODY",
+        "_note": "Gate 11 (agent-added): Copy Pose LoRA vs a no-LoRA control with the identical prompt and references [R3 (Image 1), pose reference (Image 2)] — can pose transfer deliver the seated / floor poses the model breaks from text alone (Gate 4 P4 3/3, P10 2/3)?",
+        "_floorNote": "2026-09-17: POSE_FLOOR re-rendered at the owner's request (gate-11-pose-source, 2 seeds, 4 Buzz); seed 246802 promoted (agent limb trace clean; owner may swap to 135791)."
+      },
+      "weightSweep": {
+        "winners": [],
+        "strengths": [
+          0.6,
+          1.2
+        ],
+        "prompt": "A4_GEN_FL",
+        "_note": "Gate 12 (agent-added): generated once Gate 8/9 winners are filled in — each winner at 0.6 and 1.2 around the 0.9 screen, 3 seeds"
+      },
+      "poseSources": {
+        "_why": "OWNER 2026-09-17: Seedream-rendered pose sources (pre-approved, synthetic) for the positions Klein 4B has no LoRA for. Two mechanisms per source, one seed each ('just in case'): (a) native editImage with the pose image as Image 3 and the nudity stack; (b) the Copy Pose LoRA with [R3, pose]. Arms whose file is missing under inputs/owner-poses/ are skipped at generation time.",
+        "seed": 424242,
+        "list": [
+          {
+            "key": "S2P-standing",
+            "fixture": "OWNER_POSE_FF_STANDING",
+            "scenePrompt": "S2P_FF_POSE_FL",
+            "copyPrompt": "POSE_COPY_FF"
+          },
+          {
+            "key": "S2P-couchtoy",
+            "fixture": "OWNER_POSE_FF_COUCH_TOY",
+            "scenePrompt": "S2P_FF_POSE_FL",
+            "copyPrompt": "POSE_COPY_FF"
+          },
+          {
+            "key": "S2P-reclining",
+            "fixture": "OWNER_POSE_FF_RECLINING",
+            "scenePrompt": "S2P_FF_POSE_FL",
+            "copyPrompt": "POSE_COPY_FF"
+          },
+          {
+            "key": "S3P-solo",
+            "fixture": "OWNER_POSE_SOLO",
+            "scenePrompt": "S3P_SOLO_POSE_FL",
+            "copyPrompt": null
+          },
+          {
+            "key": "S3P-solo2",
+            "fixture": "OWNER_POSE_SOLO_2",
+            "scenePrompt": "S3P_SOLO_POSE_FL",
+            "copyPrompt": null
+          },
+          {
+            "key": "S1P-missionary",
+            "fixture": "OWNER_POSE_MF_MISSIONARY",
+            "scenePrompt": "S1P_MF_POSE_FL",
+            "copyPrompt": null,
+            "extra": [
+              "L17"
+            ]
+          },
+          {
+            "key": "S1P-cowgirl",
+            "fixture": "OWNER_POSE_MF_COWGIRL",
+            "scenePrompt": "S1P_MF_POSE_FL",
+            "copyPrompt": null,
+            "extra": [
+              "L17"
+            ]
+          },
+          {
+            "key": "S2Q-standing",
+            "fixture": "OWNER_POSE_FF_STANDING",
+            "scenePrompt": "S2Q_STANDING_FL",
+            "copyPrompt": null
+          },
+          {
+            "key": "S2Q-couchtoy",
+            "fixture": "OWNER_POSE_FF_COUCH_TOY",
+            "scenePrompt": "S2Q_COUCHTOY_FL",
+            "copyPrompt": null
+          },
+          {
+            "key": "S2Q-reclining",
+            "fixture": "OWNER_POSE_FF_RECLINING",
+            "scenePrompt": "S2Q_RECLINING_FL",
+            "copyPrompt": null
+          }
+        ],
+        "_files": "received 2026-09-17 from the owner's desktop share (D:\\vesper-in\\pose-data, 7 webp files) into inputs/owner-poses/; raw/ keeps the originals",
+        "_v2Note": "OWNER 2026-09-18 after the S2P arms (pose image pasted onto or ignored, Copy Pose deformed): 'be very meticulous with Klein' — S2Q re-runs the three two-women poses with the scene stated first, both women defined, the pose written out spatially with Image 3 named as the guide, framing and limb counts; one seed each, native edit only."
+      }
+    }
+  },
+  "bestStacks": [
+    {
+      "label": "L2+L3",
+      "loras": [
+        {
+          "key": "L2"
+        },
+        {
+          "key": "L3"
+        }
+      ]
+    },
+    {
+      "label": "L2+L1",
+      "loras": [
+        {
+          "key": "L2"
+        },
+        {
+          "key": "L1"
+        }
+      ]
+    },
+    {
+      "label": "L3+L1",
+      "loras": [
+        {
+          "key": "L3"
+        },
+        {
+          "key": "L1"
+        }
+      ]
+    },
+    {
+      "label": "L2+L3+L1",
+      "loras": [
+        {
+          "key": "L2"
+        },
+        {
+          "key": "L3"
+        },
+        {
+          "key": "L1"
+        }
+      ]
+    }
+  ],
+  "bestAdultStack": {
+    "label": "L2+L1",
+    "loras": [
+      {
+        "key": "L2"
+      },
+      {
+        "key": "L1"
+      }
+    ]
+  },
+  "phase10": {
+    "distilled": [
+      {
+        "label": "distilled-noLoRA",
+        "input": {},
+        "loras": []
+      },
+      {
+        "label": "distilled-L2",
+        "input": {},
+        "loras": [
+          {
+            "key": "L2"
+          }
+        ]
+      }
+    ],
+    "base": [
+      {
+        "label": "base-noLoRA",
+        "input": {
+          "modelVersion": "4b-base"
+        },
+        "loras": []
+      },
+      {
+        "label": "base-L2",
+        "input": {
+          "modelVersion": "4b-base"
+        },
+        "loras": [
+          {
+            "key": "L2"
+          }
+        ]
+      }
+    ]
+  }
+}

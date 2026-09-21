@@ -1,0 +1,307 @@
+{
+  "phase": "gate-6-adult",
+  "title": "Gate 6 — adult follow-up on the finalist + L1 NippleDiffusion 0.75: A1 in the LoRA vocabulary (± face-lock A), A2 + face-lock A, A3 floor pose in the vocabulary + face-lock A; 3 seeds each",
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.309Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "A1 'nude' without the vocabulary (clothed 3/3)": "gate-4-reliability/G4-adult-distilled-L1-A1-*",
+    "A2 'topless' without face-lock (worked 3/3)": "gate-4-reliability/G4-adult-distilled-L1-A2-*",
+    "L1 on clothed scenes": "gate-2-loras/G2-P2-L1, G2-P5-L1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G6-A1_VOCAB-424242",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A1_VOCAB",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab",
+      "notes": "A1 rephrased in the LoRA's vocabulary (topless, naked breasts, no underwear); no face-lock — isolates the vocabulary effect"
+    },
+    {
+      "id": "G6-A1_VOCAB-717171",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A1_VOCAB",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab",
+      "notes": "A1 rephrased in the LoRA's vocabulary (topless, naked breasts, no underwear); no face-lock — isolates the vocabulary effect"
+    },
+    {
+      "id": "G6-A1_VOCAB-990099",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A1_VOCAB",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab",
+      "notes": "A1 rephrased in the LoRA's vocabulary (topless, naked breasts, no underwear); no face-lock — isolates the vocabulary effect"
+    },
+    {
+      "id": "G6-A1_VOCAB_FL-424242",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A1_VOCAB_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab-facelockA",
+      "notes": "A1 vocabulary + face-lock phrasing A (roles first, beige outfit excluded) — the production shape"
+    },
+    {
+      "id": "G6-A1_VOCAB_FL-717171",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A1_VOCAB_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab-facelockA",
+      "notes": "A1 vocabulary + face-lock phrasing A (roles first, beige outfit excluded) — the production shape"
+    },
+    {
+      "id": "G6-A1_VOCAB_FL-990099",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A1_VOCAB_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab-facelockA",
+      "notes": "A1 vocabulary + face-lock phrasing A (roles first, beige outfit excluded) — the production shape"
+    },
+    {
+      "id": "G6-A2_FL-424242",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A2_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-topless-facelockA",
+      "notes": "A2 (topless, black underwear, kneeling) + face-lock A — identity under the wording that already renders"
+    },
+    {
+      "id": "G6-A2_FL-717171",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A2_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-topless-facelockA",
+      "notes": "A2 (topless, black underwear, kneeling) + face-lock A — identity under the wording that already renders"
+    },
+    {
+      "id": "G6-A2_FL-990099",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A2_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-topless-facelockA",
+      "notes": "A2 (topless, black underwear, kneeling) + face-lock A — identity under the wording that already renders"
+    },
+    {
+      "id": "G6-A3_VOCAB_FL-424242",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A3_VOCAB_FL",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab-facelockA-floorpose",
+      "notes": "A3 complex floor pose (knees up, forearms crossed) in the LoRA vocabulary + face-lock A — the hard case"
+    },
+    {
+      "id": "G6-A3_VOCAB_FL-717171",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A3_VOCAB_FL",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab-facelockA-floorpose",
+      "notes": "A3 complex floor pose (knees up, forearms crossed) in the LoRA vocabulary + face-lock A — the hard case"
+    },
+    {
+      "id": "G6-A3_VOCAB_FL-990099",
+      "test": "G6.adult",
+      "mode": "paid",
+      "prompt": "A3_VOCAB_FL",
+      "seed": 990099,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "L1-vocab-facelockA-floorpose",
+      "notes": "A3 complex floor pose (knees up, forearms crossed) in the LoRA vocabulary + face-lock A — the hard case"
+    }
+  ]
+}

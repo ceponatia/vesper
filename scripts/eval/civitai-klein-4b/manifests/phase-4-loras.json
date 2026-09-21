@@ -1,0 +1,1082 @@
+{
+  "phase": "phase-4-loras",
+  "title": "Phase 4 — single-LoRA qualification (Gate A canary first)",
+  "generated": {
+    "by": "manifests/generate.mjs",
+    "at": "2026-09-17T17:20:23.473Z",
+    "decisions": "2026-09-17.1"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "T4.0-canary-A",
+      "test": "T4.0",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "Gate A: no LoRA, no trigger",
+      "recipe": "4b|cfg1|s8|noref|noLoRA"
+    },
+    {
+      "id": "T4.0-canary-B",
+      "test": "T4.0",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "promptPrefix": "Simple_Fine_Vector. ",
+      "loras": [
+        {
+          "key": "L4",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "Gate A: canary LoRA 0.75 + trigger",
+      "recipe": "4b|cfg1|s8|noref|L4@0.75"
+    },
+    {
+      "id": "T4.0-canary-C",
+      "test": "T4.0",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "loras": [
+        {
+          "key": "L4",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "Gate A: canary LoRA 0.75, trigger absent",
+      "recipe": "4b|cfg1|s8|noref|L4@0.75"
+    },
+    {
+      "id": "T4.L0-P1",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.L0-P2",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.L0-P7",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.L0-P8",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.L0-P9",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.L0-P10",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.L0-A1",
+      "test": "T4.L0",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "no-LoRA control at the Phase 4 recipe (P4/P5 controls are T3.1 at the best step count)",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|noLoRA"
+    },
+    {
+      "id": "T4.1-L1-w0.5-P1",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.5"
+    },
+    {
+      "id": "T4.1-L1-w0.5-P2",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.5"
+    },
+    {
+      "id": "T4.1-L1-w0.5-P5",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.5"
+    },
+    {
+      "id": "T4.1-L1-w0.75-P1",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T4.1-L1-w0.75-P2",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T4.1-L1-w0.75-P5",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T4.1-L1-w1-P1",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1"
+    },
+    {
+      "id": "T4.1-L1-w1-P2",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1"
+    },
+    {
+      "id": "T4.1-L1-w1-P5",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1"
+    },
+    {
+      "id": "T4.1-L1-w1.25-P1",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1.25
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1.25"
+    },
+    {
+      "id": "T4.1-L1-w1.25-P2",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1.25
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1.25"
+    },
+    {
+      "id": "T4.1-L1-w1.25-P5",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1.25
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1.25"
+    },
+    {
+      "id": "T4.1-L1-w0.75-A1",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "adult functional check of the pilot LoRA",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@0.75"
+    },
+    {
+      "id": "T4.1-L1-w1-A1",
+      "test": "T4.1",
+      "mode": "paid",
+      "prompt": "A1",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L1",
+          "strength": 1
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "notes": "adult functional check of the pilot LoRA",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L1@1"
+    },
+    {
+      "id": "T4.2-L2-w2-P2",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T4.2-L2-w2-P4",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T4.2-L2-w2-P5",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T4.2-L2-w2-P10",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2"
+    },
+    {
+      "id": "T4.2-L2-w2.5-P2",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2.5"
+    },
+    {
+      "id": "T4.2-L2-w2.5-P4",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2.5"
+    },
+    {
+      "id": "T4.2-L2-w2.5-P5",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2.5"
+    },
+    {
+      "id": "T4.2-L2-w2.5-P10",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 2.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@2.5"
+    },
+    {
+      "id": "T4.2-L2-w3-P2",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P2",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 3
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@3"
+    },
+    {
+      "id": "T4.2-L2-w3-P4",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P4",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 3
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@3"
+    },
+    {
+      "id": "T4.2-L2-w3-P5",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 3
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@3"
+    },
+    {
+      "id": "T4.2-L2-w3-P10",
+      "test": "T4.2",
+      "mode": "paid",
+      "prompt": "P10",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L2",
+          "strength": 3
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L2@3"
+    },
+    {
+      "id": "T4.3-L3-w0.5-P5",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.5"
+    },
+    {
+      "id": "T4.3-L3-w0.5-P7",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.5"
+    },
+    {
+      "id": "T4.3-L3-w0.5-P8",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.5"
+    },
+    {
+      "id": "T4.3-L3-w0.5-P9",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.5
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.5"
+    },
+    {
+      "id": "T4.3-L3-w0.6-P5",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T4.3-L3-w0.6-P7",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T4.3-L3-w0.6-P8",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T4.3-L3-w0.6-P9",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T4.3-L3-w0.75-P5",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.75"
+    },
+    {
+      "id": "T4.3-L3-w0.75-P7",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.75"
+    },
+    {
+      "id": "T4.3-L3-w0.75-P8",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.75"
+    },
+    {
+      "id": "T4.3-L3-w0.75-P9",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P9",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.75
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.75"
+    },
+    {
+      "id": "T4.3-L3-w0.6-P5-trigger",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P5",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "promptSuffix": " Transform the image to realistic photograph.",
+      "notes": "author's suggested trigger sentence appended",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    },
+    {
+      "id": "T4.3-L3-w0.6-P8-trigger",
+      "test": "T4.3",
+      "mode": "paid",
+      "prompt": "P8",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "loras": [
+        {
+          "key": "L3",
+          "strength": 0.6
+        }
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 8
+      },
+      "promptSuffix": " Transform the image to realistic photograph.",
+      "notes": "author's suggested trigger sentence appended",
+      "recipe": "4b|cfg1|s8|R1_FACE+R3_FULL_BODY|L3@0.6"
+    }
+  ]
+}

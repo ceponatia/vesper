@@ -1,0 +1,267 @@
+{
+  "phase": "gate-5-facelock",
+  "title": "Gate 5 — owner-proposed face-lock role wording on native editImage: P7 (wardrobe) and P8 (scene) × 3 phrasings × 2 seeds, [R1,R3], cfg 1 / 4",
+  "plan": "adaptive-2026-09-17",
+  "generated": {
+    "by": "manifests/generate-gates.mjs",
+    "at": "2026-09-18T00:54:13.309Z",
+    "decisions": "2026-09-18.4"
+  },
+  "reuse": {
+    "P8 plain baselines": "gate-1-distilled/T2.3-P8-424242, gate-4-reliability/G4-distilled-noLoRA-P8-717171"
+  },
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    {
+      "id": "G5-P7-plain-424242",
+      "test": "G5.baseline",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "plain",
+      "notes": "plain P7 wardrobe edit (never run before); P8 plain baselines are gate-1 T2.3-P8-424242 and gate-4 P8-717171"
+    },
+    {
+      "id": "G5-P7-plain-717171",
+      "test": "G5.baseline",
+      "mode": "paid",
+      "prompt": "P7",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "plain",
+      "notes": "plain P7 wardrobe edit (never run before); P8 plain baselines are gate-1 T2.3-P8-424242 and gate-4 P8-717171"
+    },
+    {
+      "id": "G5-P7-FLA-424242",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P7_FL_A",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A",
+      "notes": "roles up front (Image 1 = exact face, Image 2 = body only), outfit exclusion named"
+    },
+    {
+      "id": "G5-P7-FLA-717171",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P7_FL_A",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A",
+      "notes": "roles up front (Image 1 = exact face, Image 2 = body only), outfit exclusion named"
+    },
+    {
+      "id": "G5-P7-FLB-424242",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P7_FL_B",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-B",
+      "notes": "edit first, face features named, identity instruction last"
+    },
+    {
+      "id": "G5-P7-FLB-717171",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P7_FL_B",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-B",
+      "notes": "edit first, face features named, identity instruction last"
+    },
+    {
+      "id": "G5-P7-FLC-424242",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P7_FL_C",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-C",
+      "notes": "minimal: same woman as the face photo, keep exact face, change only clothes/scene"
+    },
+    {
+      "id": "G5-P7-FLC-717171",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P7_FL_C",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-C",
+      "notes": "minimal: same woman as the face photo, keep exact face, change only clothes/scene"
+    },
+    {
+      "id": "G5-P8-FLA-424242",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P8_FL_A",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A",
+      "notes": "roles up front (Image 1 = exact face, Image 2 = body only), outfit exclusion named"
+    },
+    {
+      "id": "G5-P8-FLA-717171",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P8_FL_A",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-A",
+      "notes": "roles up front (Image 1 = exact face, Image 2 = body only), outfit exclusion named"
+    },
+    {
+      "id": "G5-P8-FLB-424242",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P8_FL_B",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-B",
+      "notes": "edit first, face features named, identity instruction last"
+    },
+    {
+      "id": "G5-P8-FLB-717171",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P8_FL_B",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-B",
+      "notes": "edit first, face features named, identity instruction last"
+    },
+    {
+      "id": "G5-P8-FLC-424242",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P8_FL_C",
+      "seed": 424242,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-C",
+      "notes": "minimal: same woman as the face photo, keep exact face, change only clothes/scene"
+    },
+    {
+      "id": "G5-P8-FLC-717171",
+      "test": "G5.facelock",
+      "mode": "paid",
+      "prompt": "P8_FL_C",
+      "seed": 717171,
+      "references": [
+        "R1_FACE",
+        "R3_FULL_BODY"
+      ],
+      "input": {
+        "cfgScale": 1,
+        "steps": 4
+      },
+      "recipe": "facelock-C",
+      "notes": "minimal: same woman as the face photo, keep exact face, change only clothes/scene"
+    }
+  ]
+}

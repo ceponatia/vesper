@@ -1,0 +1,76 @@
+{
+  "phase": "phase-0-capability",
+  "title": "Phase 0 — zero-spend capability truth table (every arm is whatif=true)",
+  "defaults": {
+    "engine": "flux2",
+    "model": "klein",
+    "modelVersion": "4b",
+    "width": 832,
+    "height": 1248,
+    "quantity": 1,
+    "cfgScale": 1,
+    "steps": 4,
+    "sampleMethod": "euler",
+    "schedule": "simple",
+    "outputFormat": "jpeg",
+    "enablePromptExpansion": false
+  },
+  "arms": [
+    { "id": "T0.1-4b-create", "test": "T0.1", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "modelVersion": "4b" }, "notes": "variant acceptance: distilled 4b, createImage" },
+    { "id": "T0.1-4b-base-create", "test": "T0.1", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 50 }, "notes": "variant acceptance: 4b-base, createImage, BFL-style sampling" },
+    { "id": "T0.1-4b-edit-2refs", "test": "T0.1", "mode": "whatif", "prompt": "P2", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY"], "notes": "variant acceptance: distilled 4b editImage with two references (the current Vesper shape)" },
+    { "id": "T0.1-4b-base-edit-2refs", "test": "T0.1", "mode": "whatif", "prompt": "P2", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY"], "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 50 }, "notes": "variant acceptance: 4b-base editImage with two references" },
+
+    { "id": "T0.2-edit-1ref", "test": "T0.2", "mode": "whatif", "prompt": "P2", "seed": 424242, "references": ["R1_FACE"] },
+    { "id": "T0.2-edit-2refs", "test": "T0.2", "mode": "whatif", "prompt": "P2", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY"] },
+    { "id": "T0.2-edit-3refs", "test": "T0.2", "mode": "whatif", "prompt": "P2", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY", "R2_THREE_QUARTER"], "notes": "OpenAPI declares images maxItems 2; this records whether the live endpoint rejects, truncates or accepts a third" },
+    { "id": "T0.2-edit-4refs", "test": "T0.2", "mode": "whatif", "prompt": "P2", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY", "R2_THREE_QUARTER", "R4_ALT"] },
+
+    { "id": "T0.3-lora-1", "test": "T0.3", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L1", "strength": 0.75 } ] },
+    { "id": "T0.3-lora-2", "test": "T0.3", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L1", "strength": 0.75 }, { "key": "L4", "strength": 0.75 } ] },
+    { "id": "T0.3-lora-3", "test": "T0.3", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L2", "strength": 2.0 }, { "key": "L3", "strength": 0.6 }, { "key": "L1", "strength": 0.75 } ] },
+    { "id": "T0.3-lora-4", "test": "T0.3", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L2", "strength": 2.0 }, { "key": "L3", "strength": 0.6 }, { "key": "L1", "strength": 0.75 }, { "key": "L4", "strength": 0.75 } ] },
+
+    { "id": "T0.4-order-A", "test": "T0.4", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L2", "strength": 2.0 }, { "key": "L3", "strength": 0.6 }, { "key": "L1", "strength": 0.75 } ], "notes": "serialized key order: anatomy, consistency, nipple" },
+    { "id": "T0.4-order-B", "test": "T0.4", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L1", "strength": 0.75 }, { "key": "L3", "strength": 0.6 }, { "key": "L2", "strength": 2.0 } ], "notes": "serialized key order reversed: nipple, consistency, anatomy" },
+
+    { "id": "T0.5-4b-cfg1-s4", "test": "T0.5", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "cfgScale": 1, "steps": 4 } },
+    { "id": "T0.5-4b-cfg1-s8", "test": "T0.5", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "cfgScale": 1, "steps": 8 } },
+    { "id": "T0.5-4b-cfg2.5-s8", "test": "T0.5", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "cfgScale": 2.5, "steps": 8 } },
+    { "id": "T0.5-4b-cfg5-s20", "test": "T0.5", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "cfgScale": 5, "steps": 20 } },
+    { "id": "T0.5-4b-cfg1-s12", "test": "T0.5", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "cfgScale": 1, "steps": 12 }, "notes": "T3.1 step-sweep ceiling; quoted for budgeting" },
+    { "id": "T0.5-4b-edit2-cfg1-s8", "test": "T0.5", "mode": "whatif", "prompt": "P5", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY"], "input": { "cfgScale": 1, "steps": 8 }, "notes": "quote for the Phase 2/3 two-reference edit shape" },
+
+    { "id": "T0.6-4b-base-cfg4-s50", "test": "T0.6", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 50 } },
+    { "id": "T0.6-4b-base-cfg4-s30", "test": "T0.6", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 30 } },
+    { "id": "T0.6-4b-base-cfg3.5-s50", "test": "T0.6", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "modelVersion": "4b-base", "cfgScale": 3.5, "steps": 50 } },
+    { "id": "T0.6-4b-base-cfg4-s20", "test": "T0.6", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 20 }, "notes": "T6.2 step-sweep floor; quoted for budgeting" },
+    { "id": "T0.6-4b-base-edit2-cfg4-s50", "test": "T0.6", "mode": "whatif", "prompt": "P5", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY"], "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 50 }, "notes": "quote for the Phase 6 two-reference base edit shape" },
+
+    { "id": "T0.7-4b-cfg1-neg", "test": "T0.7", "mode": "whatif", "prompt": "P2", "seed": 424242, "negativePrompt": "NEG1", "input": { "cfgScale": 1, "steps": 4 } },
+    { "id": "T0.7-4b-cfg2.5-neg", "test": "T0.7", "mode": "whatif", "prompt": "P2", "seed": 424242, "negativePrompt": "NEG1", "input": { "cfgScale": 2.5, "steps": 8 } },
+    { "id": "T0.7-4b-base-cfg4-neg", "test": "T0.7", "mode": "whatif", "prompt": "P2", "seed": 424242, "negativePrompt": "NEG1", "input": { "modelVersion": "4b-base", "cfgScale": 4, "steps": 50 } },
+
+    { "id": "T0.8-expansion-false", "test": "T0.8", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "enablePromptExpansion": false } },
+    { "id": "T0.8-expansion-true", "test": "T0.8", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "enablePromptExpansion": true } },
+
+    { "id": "T0.9-1024x1024", "test": "T0.9", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "width": 1024, "height": 1024 } },
+    { "id": "T0.9-832x1248", "test": "T0.9", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "width": 832, "height": 1248 } },
+    { "id": "T0.9-1024x1536", "test": "T0.9", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "width": 1024, "height": 1536 } },
+    { "id": "T0.9-768x1344", "test": "T0.9", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "width": 768, "height": 1344 } },
+
+    { "id": "T0.10-sdcpp-variant-4b", "test": "T0.10", "mode": "whatif", "prompt": "P8", "seed": 424242, "references": ["R3_FULL_BODY"], "input": { "engine": "sdcpp", "ecosystem": "flux2Klein", "operation": "createVariant", "strength": 0.6, "modelVersion": "4b" } },
+    { "id": "T0.10-sdcpp-variant-4b-base", "test": "T0.10", "mode": "whatif", "prompt": "P8", "seed": 424242, "references": ["R3_FULL_BODY"], "input": { "engine": "sdcpp", "ecosystem": "flux2Klein", "operation": "createVariant", "strength": 0.6, "modelVersion": "4b-base", "cfgScale": 4, "steps": 50 } },
+    { "id": "T0.10-sdcpp-variant-4b-lora", "test": "T0.10", "mode": "whatif", "prompt": "P8", "seed": 424242, "references": ["R3_FULL_BODY"], "loras": [ { "key": "L1", "strength": 0.75 } ], "input": { "engine": "sdcpp", "ecosystem": "flux2Klein", "operation": "createVariant", "strength": 0.6, "modelVersion": "4b" }, "notes": "does the sdcpp variant path accept a LoRA map in the same request?" },
+    { "id": "T0.10-sdcpp-edit-4b-2refs", "test": "T0.10", "mode": "whatif", "prompt": "P5", "seed": 424242, "references": ["R1_FACE", "R3_FULL_BODY"], "input": { "engine": "sdcpp", "ecosystem": "flux2Klein", "operation": "editImage", "modelVersion": "4b" }, "notes": "sdcpp editImage shape, for the T7.2 native-vs-sdcpp comparison" },
+
+    { "id": "T0.11-9b-air-on-4b", "test": "T0.11", "mode": "whatif", "prompt": "P2", "seed": 424242, "loras": [ { "key": "L2_9B_CONTROL", "strength": 2.0 } ], "notes": "wrong-family control: a 9B-only LoRA AIR on the 4b variant. NEVER PAID." },
+
+    { "id": "T0.12-steps-2", "test": "T0.12", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "steps": 2 }, "notes": "config audit: Vesper's steps band starts at 1, the OpenAPI minimum is 4" },
+    { "id": "T0.12-cfg-0.5", "test": "T0.12", "mode": "whatif", "prompt": "P2", "seed": 424242, "input": { "cfgScale": 0.5 }, "notes": "config audit: cfgScale below the OpenAPI minimum of 1" },
+
+    { "id": "T0.13-priority-low", "test": "T0.13", "mode": "whatif", "prompt": "P2", "seed": 424242, "priority": "low", "notes": "priority quote baseline (owner ruling: stay low)" },
+    { "id": "T0.13-priority-normal", "test": "T0.13", "mode": "whatif", "prompt": "P2", "seed": 424242, "priority": "normal" },
+    { "id": "T0.13-priority-high", "test": "T0.13", "mode": "whatif", "prompt": "P2", "seed": 424242, "priority": "high" }
+  ]
+}
