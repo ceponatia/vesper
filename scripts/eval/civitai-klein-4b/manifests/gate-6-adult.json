@@ -1,6 +1,7 @@
 {
   "phase": "gate-6-adult",
   "title": "Gate 6 — adult follow-up on the finalist + L1 NippleDiffusion 0.75: A1 in the LoRA vocabulary (± face-lock A), A2 + face-lock A, A3 floor pose in the vocabulary + face-lock A; 3 seeds each",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

@@ -1,6 +1,7 @@
 {
   "phase": "phase-4-loras",
   "title": "Phase 4 — single-LoRA qualification (Gate A canary first)",
+  "adult": false,
   "generated": {
     "by": "manifests/generate.mjs",
     "at": "2026-09-17T17:20:23.473Z",

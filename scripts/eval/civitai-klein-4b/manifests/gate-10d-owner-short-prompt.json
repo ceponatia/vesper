@@ -1,6 +1,7 @@
 {
   "phase": "gate-10d-owner-short-prompt",
   "title": "Gate 10d — the owner's short structured prompt (subject A/B, Image 3 pose-only, anatomy, priority order) + the L9 trigger prefix + one compact pose-in-words line per source, on the three two-women pose sources as Image 3, L9+L1, one seed",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "hand (owner request 2026-09-18)",

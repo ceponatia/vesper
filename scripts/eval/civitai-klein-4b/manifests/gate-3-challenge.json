@@ -1,6 +1,7 @@
 {
   "phase": "gate-3-challenge",
   "title": "Gate 3 — challenge distilled with 4b-base (first look) and sdcpp createVariant (strength 0.4/0.6/0.8)",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

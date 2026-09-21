@@ -1,6 +1,7 @@
 {
   "phase": "phase-5-stacks",
   "title": "Phase 5 — LoRA stacking and order",
+  "adult": false,
   "generated": {
     "by": "manifests/generate.mjs",
     "at": "2026-09-17T17:20:23.474Z",

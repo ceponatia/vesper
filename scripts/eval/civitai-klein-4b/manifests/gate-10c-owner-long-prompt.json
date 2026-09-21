@@ -1,6 +1,7 @@
 {
   "phase": "gate-10c-owner-long-prompt",
   "title": "Gate 10c — the owner's structured long prompt (≈2.7k chars; subject/pose/anatomy/style/priority blocks) on the three two-women pose sources as Image 3, L9+L1, no LoRA trigger prefix, one seed — first a free what-if to see whether the API accepts a prompt over 1000 chars",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "hand (owner request 2026-09-18)",

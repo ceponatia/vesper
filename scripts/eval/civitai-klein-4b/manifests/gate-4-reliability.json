@@ -1,6 +1,7 @@
 {
   "phase": "gate-4-reliability",
   "title": "Gate 4 — three-seed reliability pass on the finalist(s) + winner-only adult validation",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

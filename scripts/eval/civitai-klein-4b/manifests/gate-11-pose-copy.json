@@ -1,6 +1,7 @@
 {
   "phase": "gate-11-pose-copy",
   "title": "Gate 11 — pose transfer: Copy Pose LoRA vs no-LoRA control, [R3 body (Image 1), promoted pose reference (Image 2)], seated and floor poses, three seeds",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

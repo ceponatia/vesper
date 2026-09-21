@@ -1,6 +1,7 @@
 {
   "phase": "gate-9-adult-stacks",
   "title": "Gate 9 — stacks: verified LoRAs (NippleDiffusion, anatomy fixer) and skin LoRAs with one or more nudity LoRAs, on the standing full-nude reference edit, three seeds (prune after Gate 8)",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

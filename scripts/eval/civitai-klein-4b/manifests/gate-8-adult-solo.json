@@ -1,6 +1,7 @@
 {
   "phase": "gate-8-adult-solo",
   "title": "Gate 8 — each nudity / genitalia LoRA alone (L1 baseline, L7–L12) on the standing full-nude reference edit with face-lock A and genitalia vocabulary, three seeds",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

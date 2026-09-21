@@ -1,6 +1,7 @@
 {
   "phase": "gate-10-adult-scenes",
   "title": "Gate 10 — sexual scenes with the nudity stack: woman + man (missionary, cowgirl), two women (prompt-only partner; third-reference partner), woman alone; scene LoRAs where Klein 4B has them, the other NSFW LoRAs 'just in case' where it does not",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

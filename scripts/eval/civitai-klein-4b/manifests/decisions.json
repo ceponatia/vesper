@@ -559,7 +559,7 @@
         "_note": "Gate 12 (agent-added): generated once Gate 8/9 winners are filled in — each winner at 0.6 and 1.2 around the 0.9 screen, 3 seeds"
       },
       "poseSources": {
-        "_why": "OWNER 2026-09-17: Seedream-rendered pose sources (pre-approved, synthetic) for the positions Klein 4B has no LoRA for. Two mechanisms per source, one seed each ('just in case'): (a) native editImage with the pose image as Image 3 and the nudity stack; (b) the Copy Pose LoRA with [R3, pose]. Arms whose file is missing under inputs/owner-poses/ are skipped at generation time.",
+        "_why": "OWNER 2026-09-17: Seedream-rendered pose sources (pre-approved, synthetic) for the positions Klein 4B has no LoRA for. Two mechanisms per source, one seed each ('just in case'): (a) native editImage with the pose image as Image 3 and the nudity stack; (b) the Copy Pose LoRA with [R3, pose]. The arms are always generated; a fixture file missing under inputs/owner-poses/ fails that arm at execution time, so the manifest is identical on every checkout.",
         "seed": 424242,
         "list": [
           {

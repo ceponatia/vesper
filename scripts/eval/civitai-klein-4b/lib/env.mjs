@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,41 +8,21 @@ export const DEFAULT_OUT_DIR = path.join(REPO_ROOT, "eval-images", "civitai-klei
 export const MANIFEST_DIR = path.join(HARNESS_ROOT, "manifests");
 
 /**
- * Minimal `.env` reader. The harness deliberately does not import the
- * application's env loader (`scripts/web.mjs`) so that it stays a
- * dependency-free evaluation script that touches no application code.
+ * The token comes from the process environment only. `scripts/web.mjs` solely
+ * owns loading the repository `.env`, so this harness adds no second loader;
+ * an operator who keeps the token in `.env` passes it with Node's own
+ * `--env-file` flag. It is read once, handed to the client, and appears in no
+ * saved file.
  */
-export function loadDotenv(file = path.join(REPO_ROOT, ".env")) {
-  const out = {};
-  let text;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    return out;
-  }
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line === "" || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq < 0) continue;
-    const key = line.slice(0, eq).trim().replace(/^export\s+/, "");
-    let value = line.slice(eq + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-      value = value.slice(1, -1);
-    }
-    out[key] = value;
-  }
-  return out;
-}
-
-/** The token is read once and handed to the client; nothing else ever sees it. */
 export function civitaiToken() {
-  const fromProcess = process.env.CIVITAI_API_TOKEN;
-  const token = (fromProcess && fromProcess.trim() !== "" ? fromProcess : loadDotenv().CIVITAI_API_TOKEN) ?? "";
-  if (token.trim() === "") {
-    throw new Error("CIVITAI_API_TOKEN is not set in the repository .env (or the environment)");
+  const token = (process.env.CIVITAI_API_TOKEN ?? "").trim();
+  if (token === "") {
+    throw new Error(
+      "CIVITAI_API_TOKEN is not set. Export it, or run the harness with Node's own env-file loader: " +
+        "node --env-file=.env scripts/eval/civitai-klein-4b/run.mjs ...",
+    );
   }
-  return token.trim();
+  return token;
 }
 
 function numberOr(value, fallback) {

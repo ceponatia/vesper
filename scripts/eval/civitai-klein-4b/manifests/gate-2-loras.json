@@ -1,6 +1,7 @@
 {
   "phase": "gate-2-loras",
   "title": "Gate 2 — LoRA triage: 8-config interference matrix on P2/P5, map-order reversal, best-config repeats",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

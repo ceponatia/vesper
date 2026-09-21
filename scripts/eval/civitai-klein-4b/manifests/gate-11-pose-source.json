@@ -1,6 +1,7 @@
 {
   "phase": "gate-11-pose-source",
   "title": "Gate 11 pose source — prompt-only P10 floor pose (the proven 4b cfg 1 / 4 no-reference configuration that produced the clean seated POSE_SEATED) at two new seeds; the clean one is promoted as POSE_FLOOR",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "hand (owner request 2026-09-17: new floor render from a proven configuration on a new seed)",

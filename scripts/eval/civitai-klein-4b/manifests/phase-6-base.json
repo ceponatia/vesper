@@ -1,6 +1,7 @@
 {
   "phase": "phase-6-base",
   "title": "Phase 6 — distilled 4b versus 4b-base (BFL recipe cfg 4 / 50 steps, then decisions.baseBest)",
+  "adult": false,
   "generated": {
     "by": "manifests/generate.mjs",
     "at": "2026-09-17T17:20:23.474Z",

@@ -1,6 +1,7 @@
 {
   "phase": "phase-0-capability",
   "title": "Phase 0 — zero-spend capability truth table (every arm is whatif=true)",
+  "adult": false,
   "defaults": {
     "engine": "flux2",
     "model": "klein",

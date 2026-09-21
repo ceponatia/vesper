@@ -1,6 +1,7 @@
 {
   "phase": "phase-10-robustness",
   "title": "Phase 10 — five-seed robustness matrix for the final candidates (decisions.phase10)",
+  "adult": false,
   "generated": {
     "by": "manifests/generate.mjs",
     "at": "2026-09-17T17:20:23.476Z",

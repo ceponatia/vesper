@@ -1,6 +1,7 @@
 {
   "phase": "gate-5-facelock",
   "title": "Gate 5 — owner-proposed face-lock role wording on native editImage: P7 (wardrobe) and P8 (scene) × 3 phrasings × 2 seeds, [R1,R3], cfg 1 / 4",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

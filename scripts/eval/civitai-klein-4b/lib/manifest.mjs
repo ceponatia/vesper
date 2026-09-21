@@ -170,14 +170,27 @@ export function echoReport(requested, echoed, expectations = echoExpectations(re
   return report;
 }
 
+/**
+ * The quoted price, or `null` when the response carries no billing data at
+ * all. Absent billing is NOT free: a zero here would satisfy the paid path's
+ * `typeof quotedBuzz === "number"` check and then consume none of the
+ * cumulative Buzz cap, so an unpriced submit must stay unquoted and be
+ * refused. Debit rows are summed only when every row states a numeric amount.
+ */
+function quotedBuzzOf(cost, transactions) {
+  if (typeof cost?.total === "number") return cost.total;
+  const debits = Array.isArray(transactions?.list) ? transactions.list.filter((t) => t?.type === "debit") : [];
+  if (debits.length === 0 || !debits.every((t) => typeof t.amount === "number")) return null;
+  return debits.reduce((sum, t) => sum + t.amount, 0);
+}
+
 /** What the what-if said about policy, payment and validity. */
 export function preflightVerdict(result) {
   const body = result.ok ? result.body : null;
   const step = body?.steps?.[0] ?? null;
   const transactions = body?.transactions ?? null;
   const cost = body?.cost ?? null;
-  const debits = Array.isArray(transactions?.list) ? transactions.list.filter((t) => t?.type === "debit") : [];
-  const quotedBuzz = typeof cost?.total === "number" ? cost.total : debits.reduce((sum, t) => sum + (typeof t.amount === "number" ? t.amount : 0), 0);
+  const quotedBuzz = quotedBuzzOf(cost, transactions);
   return {
     http: result.status,
     accepted: result.ok === true,
@@ -185,6 +198,7 @@ export function preflightVerdict(result) {
     stepStatus: step?.status ?? null,
     workflowId: body?.id ?? null,
     quotedBuzz,
+    quoteSource: quotedBuzz === null ? null : typeof cost?.total === "number" ? "cost.total" : "transactions.debits",
     cost,
     transactions,
     insufficientBuzz: typeof transactions?.insufficientBuzz === "boolean" ? transactions.insufficientBuzz : null,

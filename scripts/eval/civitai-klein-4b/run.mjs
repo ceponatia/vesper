@@ -18,7 +18,7 @@
  * cumulative ledger in the output directory. Every paid submit is preceded by a
  * what-if of the identical body and is never retried.
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { CivitaiClient, TERMINAL_STATUSES, pollWorkflow } from "./lib/civitai.mjs";
@@ -26,7 +26,7 @@ import { DEFAULT_OUT_DIR, REPO_ROOT, civitaiToken, resolveSpendGates } from "./l
 import { compareImages, contactSheet, dhash, fileInfo, prepareReference } from "./lib/image.mjs";
 import { buildWorkflow, composeInput, echoReport, loadManifest, loadShared, preflightVerdict, resolvePrompt } from "./lib/manifest.mjs";
 import { redact, sha256Hex } from "./lib/redact.mjs";
-import { aggregateScores, readCsv, upsertScoreTemplate } from "./lib/scoring.mjs";
+import { aggregateScores, readCsv, repointScoreRows, upsertScoreTemplate } from "./lib/scoring.mjs";
 
 const log = (line) => process.stdout.write(`${line}\n`);
 const nowIso = () => new Date().toISOString();
@@ -280,10 +280,66 @@ async function finishPaidArm(ctx, manifest, arm, armDir, workflow, timeline) {
   return result;
 }
 
+/**
+ * A rerun of an arm must not land on top of the previous attempt. The score
+ * sheet keys its rows by output path, so overwriting the render in place
+ * would leave the grader's scores and the old sha attached to bytes nobody
+ * graded; and a rerun that fails after this point would otherwise leave the
+ * previous attempt's `output.json` for `sheet`, `promote` and
+ * `continuation.mjs` to read as if it described the new one.
+ *
+ * Everything the prior attempt produced therefore moves under
+ * `runs/<phase>/<arm>/superseded/<prior workflow>/` and
+ * `images/<phase>/superseded/` before the new paid submit, and the graded
+ * rows move with the bytes they describe.
+ */
+function supersedePriorAttempt(ctx, manifest, arm, armDir, priorFiles) {
+  const priorFile = path.join(armDir, "output.json");
+  if (!existsSync(priorFile)) return null;
+  const prior = readJsonIf(priorFile, null);
+  const stamp = prior?.workflowId ? `wf-${prior.workflowId}` : `at-${nowIso().replace(/[:.]/g, "-")}`;
+  const archive = path.join(armDir, "superseded", stamp);
+  mkdirSync(archive, { recursive: true });
+  const moved = [];
+  for (const output of Array.isArray(prior?.outputs) ? prior.outputs : []) {
+    if (typeof output.file !== "string") continue;
+    const from = path.join(ctx.outDir, output.file);
+    if (!existsSync(from)) continue;
+    const to = path.join(ctx.outDir, "images", manifest.phase, "superseded", `${path.basename(output.file, ".jpg")}-${stamp}.jpg`);
+    mkdirSync(path.dirname(to), { recursive: true });
+    renameSync(from, to);
+    const relocated = relOut(ctx.outDir, to);
+    moved.push({ from: output.file, to: relocated });
+    output.file = relocated;
+  }
+  const repointed = repointScoreRows(ctx.outDir, manifest.phase, moved);
+  // `run` has already overwritten request/whatif/echo for the new attempt and
+  // hands their prior contents in; `reconcile` writes none of them, so there
+  // the files themselves belong to the attempt being archived.
+  for (const [name, text] of Object.entries(priorFiles ?? {})) writeFileSync(path.join(archive, name), text);
+  const carried = ["workflow.json", "timeline.json", "submit.json", "record.json"];
+  if (priorFiles === null) carried.push("request.json", "whatif.json", "echo.json");
+  for (const name of carried) {
+    const from = path.join(armDir, name);
+    if (existsSync(from)) renameSync(from, path.join(archive, name));
+  }
+  writeJson(path.join(archive, "output.json"), { ...prior, supersededAt: nowIso() });
+  rmSync(priorFile);
+  log(`    superseded prior attempt ${stamp}: ${moved.length} render(s) archived${repointed ? `, ${repointed.rows} graded row(s) repointed` : ""}`);
+  return { stamp, moved: moved.length };
+}
+
 async function runArm(ctx, manifest, arm, options) {
   const phase = manifest.phase;
   const armDir = path.join(ctx.outDir, "runs", phase, arm.id);
   mkdirSync(armDir, { recursive: true });
+  // This invocation overwrites request/whatif/echo in place; if a prior
+  // attempt already delivered an output, keep its copies for the archive.
+  const priorFiles = existsSync(path.join(armDir, "output.json"))
+    ? Object.fromEntries(["request.json", "whatif.json", "echo.json"]
+        .filter((name) => existsSync(path.join(armDir, name)))
+        .map((name) => [name, readFileSync(path.join(armDir, name), "utf8")]))
+    : null;
   const prompt = resolvePrompt(arm, ctx.shared.prompts);
   const negative = arm.negativePrompt === undefined ? undefined : (ctx.shared.prompts[arm.negativePrompt] ?? arm.negativePrompt);
   const references = await referencesFor(arm, ctx);
@@ -351,6 +407,14 @@ async function runArm(ctx, manifest, arm, options) {
 
   if ((arm.mode ?? "whatif") !== "paid" || options.quoteOnly) {
     record.paid = { attempted: false, reason: options.quoteOnly ? "quote-only" : "whatif arm" };
+    // Re-quoting an arm that already ran spends nothing and must not erase
+    // what that paid attempt recorded; record.json is the arm's state, not
+    // this invocation's log.
+    const prior = readJsonIf(path.join(armDir, "record.json"), null);
+    if (prior?.paid?.submitted === true) {
+      record.paid = { ...prior.paid, requotedAt: record.at, requotedBuzz: verdict.quotedBuzz };
+      if (prior.result) record.result = prior.result;
+    }
     writeJson(path.join(armDir, "record.json"), record);
     return record;
   }
@@ -377,6 +441,7 @@ async function runArm(ctx, manifest, arm, options) {
     return record;
   }
 
+  supersedePriorAttempt(ctx, manifest, arm, armDir, priorFiles);
   const submitBody = { ...workflow, externalId: safeExternalId(`${externalId}-p${randomUUID().slice(0, 6)}`) };
   ledger.entries.push({ at: nowIso(), phase, arm: arm.id, externalId: submitBody.externalId, workflowId: null, quoted: verdict.quotedBuzz, settled: null, status: "submitting" });
   ledger.paidRuns += 1;
@@ -517,6 +582,42 @@ async function commandRecent(flags) {
   }
 }
 
+/**
+ * Whether the fetched workflow is the one this arm submitted, and which
+ * ledger entry it already has.
+ *
+ * A reconcile attributes a paid render to an arm, so a valid but mistyped
+ * workflow id must be refused rather than downloaded, scored and published
+ * under the wrong arm. Every workflow this harness submits carries the
+ * `arm:<id>` and phase tags plus `metadata.{phase,arm}`, and an ambiguous
+ * submit leaves a ledger entry holding its `externalId` — so identity is
+ * checkable from the fetched workflow itself.
+ *
+ * `pending` is that ambiguous-submit entry: it already counted the paid run
+ * and its quote against the caps, so reconciliation updates it in place
+ * instead of appending a second entry for the same paid workflow.
+ */
+function reconcileIdentity(workflow, manifest, arm, ledger) {
+  const tags = Array.isArray(workflow?.tags) ? workflow.tags : [];
+  const metadata = workflow?.metadata ?? {};
+  const externalId = typeof workflow?.externalId === "string" ? workflow.externalId : null;
+  const mine = (entry) => entry.arm === arm.id && entry.phase === manifest.phase;
+  const byExternalId = externalId === null ? null : ledger.entries.find((e) => e.externalId === externalId) ?? null;
+  const openForArm = ledger.entries.filter((e) => e.workflowId === null && mine(e));
+  const foreignLedger = byExternalId !== null && !mine(byExternalId);
+  const byTag = tags.includes(`arm:${arm.id}`) && tags.includes(manifest.phase);
+  const byMetadata = metadata.arm === arm.id && metadata.phase === manifest.phase;
+  const byLedger = byExternalId !== null && mine(byExternalId);
+  const pending = byLedger && byExternalId.workflowId === null ? byExternalId
+    : byExternalId === null && externalId === null && openForArm.length > 0 ? openForArm[openForArm.length - 1]
+    : null;
+  return {
+    tags, metadata, externalId, byTag, byMetadata, byLedger, foreignLedger, pending,
+    existing: ledger.entries.find((e) => e.workflowId === workflow?.id) ?? null,
+    matches: !foreignLedger && (byTag || byMetadata || byLedger),
+  };
+}
+
 async function commandReconcile(flags) {
   if (!flags.manifest || !flags.arm || !flags.workflow) throw new Error("--manifest, --arm and --workflow are required");
   const manifest = loadManifest(path.resolve(flags.manifest));
@@ -532,13 +633,34 @@ async function commandReconcile(flags) {
     return;
   }
   const ledger = loadLedger(outDir);
-  if (!ledger.entries.some((e) => e.workflowId === workflow.id)) {
+  const identity = reconcileIdentity(workflow, manifest, arm, ledger);
+  if (!identity.matches) {
+    throw new Error(`workflow ${workflow.id} does not identify as ${manifest.phase}/${arm.id}: tags ${JSON.stringify(identity.tags)}, metadata ${JSON.stringify(identity.metadata)}, externalId ${identity.externalId ?? "-"}${identity.foreignLedger ? " (that externalId belongs to another arm in the ledger)" : ""}. Refusing to attribute it; find the right workflow with: recent --tags arm:${arm.id}`);
+  }
+  if (identity.existing) {
+    identity.existing.status = workflow.status;
+    saveLedger(outDir, ledger);
+  } else if (identity.pending) {
+    // The ambiguous submit already charged this workflow against both caps.
+    identity.pending.workflowId = workflow.id;
+    identity.pending.status = workflow.status;
+    identity.pending.reconciled = true;
+    if (typeof workflow.cost?.total === "number" && typeof identity.pending.quoted === "number" && workflow.cost.total !== identity.pending.quoted) {
+      ledger.quotedBuzz += workflow.cost.total - identity.pending.quoted;
+      identity.pending.quotedAtSubmit = identity.pending.quoted;
+      identity.pending.quoted = workflow.cost.total;
+    }
+    saveLedger(outDir, ledger);
+    log(`ledger: resolved the pending entry (externalId ${identity.pending.externalId ?? "-"}) — no second paid run counted`);
+  } else {
     ledger.entries.push({ at: nowIso(), phase: manifest.phase, arm: arm.id, externalId: workflow.externalId ?? null, workflowId: workflow.id, quoted: workflow.cost?.total ?? null, settled: null, status: workflow.status, reconciled: true });
     ledger.paidRuns += 1;
     ledger.quotedBuzz += workflow.cost?.total ?? 0;
     saveLedger(outDir, ledger);
   }
   const armDir = path.join(outDir, "runs", manifest.phase, arm.id);
+  const priorOutput = readJsonIf(path.join(armDir, "output.json"), null);
+  if (priorOutput && priorOutput.workflowId !== workflow.id) supersedePriorAttempt(ctx, manifest, arm, armDir, null);
   const finished = await finishPaidArm(ctx, manifest, arm, armDir, workflow, null);
   const recordFile = path.join(armDir, "record.json");
   const record = readJsonIf(recordFile, { arm: arm.id, test: arm.test, mode: "paid" });

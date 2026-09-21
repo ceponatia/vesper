@@ -1,6 +1,7 @@
 {
   "phase": "phase-3-sampling",
   "title": "Phase 3 — sampling and prompt strategy on P5/P4 + [R1,R3]",
+  "adult": false,
   "generated": {
     "by": "manifests/generate.mjs",
     "at": "2026-09-17T17:20:23.473Z",

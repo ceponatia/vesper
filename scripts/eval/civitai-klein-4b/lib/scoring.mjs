@@ -52,6 +52,31 @@ export function upsertScoreTemplate(outDir, phase, rows) {
   return file;
 }
 
+/**
+ * Repoint graded rows at the archived copy of a render that a rerun
+ * superseded. The grades in a row describe specific bytes (`sha12`), so when
+ * those bytes move out of the live output path the row moves with them; the
+ * rerun's fresh bytes then get their own ungraded row at the live path
+ * instead of inheriting the previous attempt's scores.
+ */
+export function repointScoreRows(outDir, phase, moves) {
+  const file = path.join(outDir, "scores", `${phase}.csv`);
+  if (!existsSync(file) || moves.length === 0) return null;
+  const byFrom = new Map(moves.map((move) => [move.from, move.to]));
+  const rows = readCsv(file);
+  let changed = 0;
+  for (const row of rows) {
+    const to = byFrom.get(row.output);
+    if (to === undefined) continue;
+    row.output = to;
+    changed += 1;
+  }
+  if (changed === 0) return null;
+  const lines = [HEADER.join(","), ...rows.map((row) => HEADER.map((h) => csvEscape(row[h])).join(","))];
+  writeFileSync(file, `${lines.join("\n")}\n`);
+  return { file, rows: changed };
+}
+
 export function readCsv(file) {
   const lines = readFileSync(file, "utf8").split(/\r?\n/).filter((line) => line.trim() !== "");
   if (lines.length === 0) return [];

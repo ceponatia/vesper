@@ -1,6 +1,7 @@
 {
   "phase": "gate-1-distilled",
   "title": "Gate 1 — distilled 4b viability: references, order, minimal sampling, prompt length",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",

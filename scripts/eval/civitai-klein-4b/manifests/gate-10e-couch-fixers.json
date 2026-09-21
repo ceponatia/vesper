@@ -1,6 +1,7 @@
 {
   "phase": "gate-10e-couch-fixers",
   "title": "Gate 10e — the owner's short prompt on the couch + toy pose source (the best two-women render) with the anatomy fixer, and with the anatomy fixer + Klein Fixes, one seed: can a LoRA repair the second woman's legs and vulva while L9 holds the character's face?",
+  "adult": true,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "hand (owner yes 2026-09-18)",

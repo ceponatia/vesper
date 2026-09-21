@@ -53,8 +53,15 @@ function arm(id, test, fields) {
   return entry;
 }
 
+/**
+ * `adult` is what `publish.mjs` reads to keep explicit renders out of the
+ * default share bundle: a file name cannot be trusted for that (a phase-4
+ * LoRA arm on prompt A1 reads as ordinary work), so the manifest states it.
+ * Adult arms inside an otherwise SFW phase are recognized by their prompt
+ * family (A*, S*, the two-women pose prompts).
+ */
 function manifest(phase, title, arms, extra = {}) {
-  return { phase, title, generated: { by: "manifests/generate.mjs", at: new Date().toISOString(), decisions: D.version }, defaults: DEFAULTS, ...extra, arms };
+  return { phase, title, adult: extra.adult ?? /adult/.test(phase), generated: { by: "manifests/generate.mjs", at: new Date().toISOString(), decisions: D.version }, defaults: DEFAULTS, ...extra, arms };
 }
 
 function write(name, value) {
@@ -214,13 +221,5 @@ const BASE_BEST = { modelVersion: "4b-base", cfgScale: D.baseBest.cfgScale, step
   write("phase-10-robustness.json", manifest("phase-10-robustness", "Phase 10 — five-seed robustness matrix for the final candidates (decisions.phase10)", arms));
 }
 
-writeFileSync(path.join(here, "index.json"), `${JSON.stringify({
-  order: ["phase-0-capability", "phase-1-baseline", "phase-2-references", "phase-3-sampling", "phase-4-loras", "phase-5-stacks", "phase-6-base", "phase-7-variant", "phase-8-stress", "phase-9-adult", "phase-10-robustness"],
-  gates: {
-    "phase-4-loras": "Gate A: run T4.0 first; if B is not obviously different from A, stop and investigate LoRA application.",
-    "phase-3-sampling": "Gate B: if two-reference identity (Phase 2) is not materially better than prompt-only over seeds, prefer Phase 6/7 over more CFG tuning.",
-    "phase-6-base": "Gate D: if 4b-base wins clearly with acceptable cost/latency, stop optimizing distilled 4b.",
-    "phase-7-variant": "Gate E: if createVariant beats editImage on the identity/edit trade-off, the operation choice is the limitation.",
-    "phase-10-robustness": "Gate F: acceptance thresholds in RESULTS.md (not tracked in git); do not invent new settings once this phase begins.",
-  },
-}, null, 2)}\n`);
+// index.json (the execution order) is written by generate-gates.mjs: the
+// current plan is the adaptive gate suite, and these phases are its archive.

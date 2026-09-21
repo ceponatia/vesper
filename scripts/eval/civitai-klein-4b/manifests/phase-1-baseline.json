@@ -1,6 +1,7 @@
 {
   "phase": "phase-1-baseline",
   "title": "Phase 1 — determinism and prompt-only baseline (distilled 4b, no references, no LoRA)",
+  "adult": false,
   "generated": {
     "by": "manifests/generate.mjs",
     "at": "2026-09-17T17:20:23.472Z",

@@ -1,6 +1,7 @@
 {
   "phase": "gate-7-facelock-robustness",
   "title": "Gate 7 — face-lock robustness: phrasings A/B on P7 and P8 at a third seed, plus phrasing A with trousers named on P8 at the leaking seed and the third seed",
+  "adult": false,
   "plan": "adaptive-2026-09-17",
   "generated": {
     "by": "manifests/generate-gates.mjs",
