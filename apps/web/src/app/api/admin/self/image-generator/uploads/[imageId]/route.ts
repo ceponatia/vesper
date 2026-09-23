@@ -23,7 +23,7 @@ export const DELETE = withOwnerAdmin<Params>(async (user, _req, ctx) => {
   const result = await deleteImageGeneratorUpload(user.id, imageId);
   if (result.status === "not_found") return jsonError("not_found", "upload not found", 404);
   if (result.status === "in_use") {
-    const runs = result.runCount === 1 ? "1 run" : `${String(result.runCount)} runs`;
+    const runs = result.runCount > 1 ? `${String(result.runCount)} runs` : "a run";
     return jsonError("upload_in_use", `this upload is an input to ${runs}; delete those runs first`, 409);
   }
   return jsonOk({ ok: true });
