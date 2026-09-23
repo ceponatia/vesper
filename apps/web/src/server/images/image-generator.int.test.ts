@@ -1568,6 +1568,39 @@ describe.skipIf(!ready)("image generator standalone uploads (#635)", () => {
     await deleteImageGeneratorRun(first.id, ownerId);
     expect(await deleteImageGeneratorUpload(ownerId, primary.imageId)).toEqual({ status: "deleted" });
   });
+
+  /**
+   * PROTECTS: only this admin's own runs hold an upload. Run creation records
+   * `inputs` without resolving them, so another admin can store a run naming
+   * this admin's image id.
+   *
+   * Falsified against an in-use guard with no `owner_id` condition: the
+   * foreign run below then blocks the delete as `in_use` and reveals how many
+   * of another admin's runs name the id.
+   */
+  it("ignores another admin's run that names the upload — the delete still succeeds", async () => {
+    const uploaded = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "shared-id.png",
+    });
+    expect(uploaded.ok).toBe(true);
+    if (!uploaded.ok) return;
+
+    const foreign = await createImageGeneratorRun({
+      ownerId: otherOwnerId,
+      request: {
+        modelId: PINNED_MODEL_ID,
+        prompt: "The other admin's run naming a foreign upload.",
+        inputs: { primary: [{ imageId: uploaded.imageId }], dedicated: [] },
+      },
+    });
+    if (!foreign.ok) throw new Error(`unexpected create refusal: ${foreign.refusal.code}`);
+
+    expect(await deleteImageGeneratorUpload(ownerId, uploaded.imageId)).toEqual({ status: "deleted" });
+    const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, uploaded.imageId)).limit(1);
+    expect(row).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
