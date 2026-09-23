@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ImageGeneratorForm, type ImageGeneratorPrefill } from "./image-generator-form";
 import { ImageGeneratorRunDetail } from "./image-generator-run-detail";
 import { ImageGeneratorRunList } from "./image-generator-run-list";
+import { ImageGeneratorUploadsPanel } from "./image-generator-uploads-panel";
 
 /**
  * The Image Generator's admin page: the raw prompt/model bench beside the
@@ -40,6 +41,7 @@ const MAX_LIST_POLLS = 100;
 export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) {
   const me = useAsyncData(() => meApi.get(), []);
   const runs = useAsyncData(() => imageGeneratorApi.runs.list(), []);
+  const uploads = useAsyncData(() => imageGeneratorApi.uploads.list(), []);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRunId ?? null);
   // Bumped by every accepted create so the form remounts blank.
@@ -146,6 +148,14 @@ export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) 
           error={runs.error}
           onReload={() => runs.reload()}
           onSelect={selectRun}
+        />
+
+        <ImageGeneratorUploadsPanel
+          uploads={uploads.data ?? []}
+          loading={uploads.loading}
+          error={uploads.error}
+          onReload={() => uploads.reload()}
+          onChanged={() => uploads.reload({ silent: true })}
         />
       </div>
     </PageContainer>

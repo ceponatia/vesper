@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   emptyImageGeneratorControls,
@@ -20,10 +20,14 @@ import {
   imageGeneratorRunOutputImageIds,
   imageGeneratorRunOutputs,
 } from "@/contracts/images/image-generator-outputs";
+import {
+  type ImageGeneratorUpload,
+  imageGeneratorUploadSourceSchema,
+} from "@/contracts/images/image-generator-upload";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr, parseOrNull } from "@/lib/parse";
-import { db, imageGeneratorRuns } from "../db";
-import { deleteOwnedImages } from "./asset-deletion";
+import { db, imageGeneratorRuns, images } from "../db";
+import { deleteOwnedImages, purgeImagesWhere } from "./asset-deletion";
 import { imageMeta } from "./asset-storage";
 import { loadImageModel } from "./models";
 
@@ -529,4 +533,92 @@ export async function deleteImageGeneratorRuns(
 export async function deleteImageGeneratorRun(runId: string, ownerId: string): Promise<DeleteImageGeneratorRunResult> {
   const { deleted, outputImagesRemoved } = await deleteImageGeneratorRuns([runId], ownerId);
   return { deleted: deleted > 0, outputImagesRemoved };
+}
+
+// ---------------------------------------------------------------------------
+// Standalone uploads — reference/control images filed directly to the bench,
+// never a run's own render (#635)
+// ---------------------------------------------------------------------------
+
+/**
+ * The two `meta.source` literals {@link storeReusableImageReference} (in
+ * `upload.ts`) writes on a reusable reference row minted OUTSIDE a run: a
+ * direct Generator upload, and a Files import. A run's own `generator_output`
+ * row never carries either value, and that absence is the WHOLE authorization
+ * boundary this section relies on — `kind` alone cannot tell "the bench's own
+ * upload shelf" from "a render a run produced", because both are
+ * `generator_output`. Every query below filters by this list; loosening it to
+ * a bare kind+owner filter would let the uploads panel list or delete a run's
+ * actual output image.
+ */
+const GENERATOR_UPLOAD_META_SOURCES = ["generator_upload", "admin_files_import"] as const;
+
+/** How many uploads the panel lists. A bench accumulates these slowly, like the Lab's fixtures. */
+const UPLOAD_LIST_LIMIT = 200;
+
+/** The `meta->>'source'` guard every upload query in this section applies. */
+function generatorUploadSourceGuard() {
+  return inArray(sql`${images.meta} ->> 'source'`, GENERATOR_UPLOAD_META_SOURCES);
+}
+
+/** One stored upload row, exactly as the panel needs it — no bytes, no URL. */
+function toWireImageGeneratorUpload(row: {
+  id: string;
+  createdAt: Date;
+  bytes: number;
+  meta: unknown;
+}): ImageGeneratorUpload {
+  const meta = imageMeta(row.meta);
+  const source = imageGeneratorUploadSourceSchema.safeParse(meta["source"]);
+  const originalName = typeof meta["originalName"] === "string" ? meta["originalName"] : undefined;
+  return {
+    imageId: row.id,
+    createdAt: row.createdAt.toISOString(),
+    bytes: row.bytes,
+    // The SQL guard already proved this row's source is one of the two
+    // literals at select time; this fallback only covers a meta bag rewritten
+    // in the gap between that read and this one, and must never be the reason
+    // a row disappears from the list.
+    source: source.success ? source.data : "generator_upload",
+    ...(originalName ? { originalName } : {}),
+  };
+}
+
+/**
+ * Every reference/control image this admin uploaded directly to the Generator
+ * bench — `generator_output` rows that are NOT a run's render — newest first.
+ * Ids and metadata only, no bytes; the panel reads pixels through the ordinary
+ * owner-scoped file route.
+ */
+export async function listImageGeneratorUploads(ownerId: string): Promise<ImageGeneratorUpload[]> {
+  const rows = await db()
+    .select({ id: images.id, createdAt: images.createdAt, bytes: images.bytes, meta: images.meta })
+    .from(images)
+    .where(and(eq(images.ownerId, ownerId), eq(images.kind, "generator_output"), generatorUploadSourceGuard()))
+    .orderBy(desc(images.createdAt))
+    .limit(UPLOAD_LIST_LIMIT);
+  return rows.map(toWireImageGeneratorUpload);
+}
+
+/**
+ * Retire one uploaded reference — the row and its file, both gone
+ * (`purgeImagesWhere` unlinks best-effort; the periodic image sweep reconciles
+ * a straggler). Scoped by owner, kind AND `meta.source` in one predicate, the
+ * same shape {@link deleteImageLabControl} (`image-lab-controls.ts`) uses for
+ * its own kind guard: a run's own `generator_output` row shares the kind but
+ * never the source, so this can never reach one even given its exact id.
+ *
+ * False when nothing matched — foreign, absent, wrong kind, or a run's own
+ * output — one answer for all four, so the route never confirms which.
+ */
+export async function deleteImageGeneratorUpload(ownerId: string, imageId: string): Promise<boolean> {
+  const removed = await purgeImagesWhere(
+    and(
+      eq(images.id, imageId),
+      eq(images.ownerId, ownerId),
+      eq(images.kind, "generator_output"),
+      generatorUploadSourceGuard(),
+    ),
+  );
+  return removed > 0;
 }

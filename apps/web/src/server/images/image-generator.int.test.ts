@@ -18,6 +18,7 @@ import {
   purgeOwnerRows,
   seedTestUser,
   testPngBuffer,
+  testPngDataUrl,
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
@@ -30,9 +31,12 @@ import {
   createImageGeneratorRun,
   deleteImageGeneratorRun,
   deleteImageGeneratorRuns,
+  deleteImageGeneratorUpload,
   getImageGeneratorRunDetail,
+  listImageGeneratorUploads,
   type ImageGeneratorRunRow,
 } from "./image-generator-store";
+import { importAdminFilesImageReference, uploadImageGeneratorReference } from "./upload";
 
 /**
  * The Image Generator's server half end to end against DATABASE_URL and a
@@ -1428,6 +1432,96 @@ describe.skipIf(!ready)("image generator records", () => {
       .where(eq(images.id, survivor?.resultImageId ?? ""))
       .limit(1);
     expect(output).toBeDefined();
+  });
+});
+
+describe.skipIf(!ready)("image generator standalone uploads (#635)", () => {
+  /**
+   * PROTECTS: the boundary this whole surface exists for. A direct upload and a
+   * Files import both list; a run's own rendered output — the exact same
+   * `generator_output` kind — never does.
+   *
+   * Falsified against an implementation that reads back by `(owner, kind)`
+   * alone: that reading lists the run's rendered image beside the two
+   * uploads, which is precisely the leak issue #635's acceptance criteria
+   * forbid.
+   */
+  it("lists only standalone uploads, never a run's own rendered output", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun();
+    await runImageGeneratorRun(id, ownerId, sink);
+    const run = await getImageGeneratorRunDetail(id, ownerId);
+    const outputId = run?.resultImageId ?? "";
+    expect(outputId).not.toBe("");
+
+    const uploaded = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "pose.png",
+    });
+    expect(uploaded.ok).toBe(true);
+
+    const importDataUrl = await testPngDataUrl(64, 64);
+    const imported = await importAdminFilesImageReference({
+      userId: ownerId,
+      buffer: Buffer.from(importDataUrl.slice(importDataUrl.indexOf(",") + 1), "base64"),
+      fileName: "depth.png",
+      adminFilePath: "refs/depth.png",
+    });
+    expect(imported.ok).toBe(true);
+    if (!uploaded.ok || !imported.ok) return;
+
+    const listedIds = (await listImageGeneratorUploads(ownerId)).map((upload) => upload.imageId);
+    expect(listedIds).toEqual(expect.arrayContaining([uploaded.imageId, imported.imageId]));
+    expect(listedIds).not.toContain(outputId);
+  });
+
+  it("deletes an uploaded reference — the row and its file both go", async () => {
+    const uploaded = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "control.png",
+    });
+    expect(uploaded.ok).toBe(true);
+    if (!uploaded.ok) return;
+
+    expect(await deleteImageGeneratorUpload(ownerId, uploaded.imageId)).toBe(true);
+    const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, uploaded.imageId)).limit(1);
+    expect(row).toBeUndefined();
+  });
+
+  /**
+   * PROTECTS: the delete door cannot reach a run's output even given its exact
+   * id — the same boundary the list assertion above proves, from the other
+   * side. A `deleteOwnedImage(id, owner, { kind: "generator_output" })` call
+   * (the kind-only guard every other hidden-kind delete uses) would pass this
+   * id straight through and destroy the run's evidence of what it rendered.
+   */
+  it("never deletes a run's own output through the uploads door, even with the exact id", async () => {
+    stubSuccessfulRenderer();
+    const { id, sink } = await createRun();
+    await runImageGeneratorRun(id, ownerId, sink);
+    const run = await getImageGeneratorRunDetail(id, ownerId);
+    const outputId = run?.resultImageId ?? "";
+    expect(outputId).not.toBe("");
+
+    expect(await deleteImageGeneratorUpload(ownerId, outputId)).toBe(false);
+    const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, outputId)).limit(1);
+    expect(row).toBeDefined();
+  });
+
+  it("answers another owner with nothing — the upload survives untouched", async () => {
+    const uploaded = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "foreign-check.png",
+    });
+    expect(uploaded.ok).toBe(true);
+    if (!uploaded.ok) return;
+
+    expect(await deleteImageGeneratorUpload(otherOwnerId, uploaded.imageId)).toBe(false);
+    const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, uploaded.imageId)).limit(1);
+    expect(row).toBeDefined();
   });
 });
 

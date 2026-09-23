@@ -25,3 +25,31 @@ export const imageGeneratorUploadRequestSchema = z.object({
 });
 
 export type ImageGeneratorUploadRequest = z.infer<typeof imageGeneratorUploadRequestSchema>;
+
+/**
+ * The two `meta.source` literals `storeReusableImageReference`
+ * (`server/images/upload.ts`) writes on a `generator_output` row minted
+ * OUTSIDE a run: a direct Generator upload, and a Files import. A run's own
+ * output row never carries either value — this is the entire authorization
+ * boundary between "the bench's own upload shelf" (issue #635) and "a render a
+ * run produced", since both share the same `kind`.
+ */
+export const imageGeneratorUploadSourceSchema = z.enum(["generator_upload", "admin_files_import"]);
+export type ImageGeneratorUploadSource = z.infer<typeof imageGeneratorUploadSourceSchema>;
+
+/**
+ * One reference/control image the admin uploaded directly to the Generator
+ * bench — never a run's own output — as the uploads panel reads it: ids and
+ * metadata only, no bytes. The owner reads the pixels through the ordinary
+ * owner-scoped image file route, exactly like every other hidden Generator
+ * asset.
+ */
+export const imageGeneratorUploadSchema = z.object({
+  imageId: z.string().min(1),
+  createdAt: z.string().min(1),
+  bytes: z.number().int().nonnegative(),
+  source: imageGeneratorUploadSourceSchema,
+  /** Display only — absent when no file name was recorded for this upload. */
+  originalName: z.string().min(1).max(255).optional(),
+});
+export type ImageGeneratorUpload = z.infer<typeof imageGeneratorUploadSchema>;

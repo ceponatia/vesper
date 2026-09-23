@@ -2,13 +2,14 @@
 
 ## Routes
 
-| Route                                          | Wrapper                  | Methods              |
-| ---------------------------------------------- | ------------------------ | -------------------- |
-| `/api/admin/self/image-generator/uploads`      | `withOwnerAdmin`         | POST (201)           |
-| `/api/admin/self/image-generator/runs`         | `withOwnerAdmin`         | GET list, POST (201) |
-| `/api/admin/self/image-generator/runs/delete`  | `withOwnerAdmin`         | POST bulk delete     |
-| `/api/admin/self/image-generator/runs/[runId]` | `withOwnerAdminResource` | GET detail, DELETE   |
-| `/api/admin/self/owned-images`                 | `withOwnerAdmin`         | GET                  |
+| Route                                                | Wrapper                  | Methods              |
+| ----------------------------------------------------- | ------------------------ | -------------------- |
+| `/api/admin/self/image-generator/uploads`            | `withOwnerAdmin`         | GET list, POST (201) |
+| `/api/admin/self/image-generator/uploads/[imageId]`  | `withOwnerAdmin`         | DELETE               |
+| `/api/admin/self/image-generator/runs`               | `withOwnerAdmin`         | GET list, POST (201) |
+| `/api/admin/self/image-generator/runs/delete`        | `withOwnerAdmin`         | POST bulk delete     |
+| `/api/admin/self/image-generator/runs/[runId]`       | `withOwnerAdminResource` | GET detail, DELETE   |
+| `/api/admin/self/owned-images`                       | `withOwnerAdmin`         | GET                  |
 
 Everything is self-scoped: models, images, and runs resolve against the requesting admin's own id,
 and another owner's run answers the same 404 a nonexistent one does.
@@ -18,13 +19,24 @@ runs the shared upload quota/abuse guard, then stores the decoded image through 
 row-before-file image lifecycle. PNG, JPEG, WebP, and AVIF are accepted; the shared decoder rejects
 other MIME types and oversized decoded payloads before they reach Sharp. The stored row has no
 entity, character, chat, or scene association and records `source: "generator_upload"` plus the
-original filename when supplied.
+original filename when supplied. A Files import lands through the same storage function
+(`storeReusableImageReference`) with `source: "admin_files_import"` instead.
 
 A Generator upload uses the hidden `generator_output` storage class, but it is not a run output:
 no run output record names it. Run deletion removes only the output image ids recorded by the runs
-being deleted, so an uploaded reference persists for later selection in the owned-image picker.
-Once the form receives the returned image id, a run treats it exactly like any other selected owned
-image — owner-scoped byte loading, preparation, capacity checks, dedicated-field routing, and
+being deleted, so an uploaded reference persists for later selection in the owned-image picker —
+and, since #635, in the settings page's own "Reference uploads" panel, until the admin deletes it.
+
+The upload GET and the `[imageId]` DELETE are the panel's own surface, scoped **strictly** by
+`meta.source in ("generator_upload", "admin_files_import")` on top of the ordinary owner+kind
+guard — never by kind alone. A run's rendered output shares the identical hidden
+`generator_output` kind and would otherwise be indistinguishable from an uploaded reference; the
+`meta.source` filter is the only thing that keeps this surface from ever listing or deleting one.
+DELETE removes the row and unlinks the file (the periodic sweep reconciles a straggler); an id that
+is foreign, absent, the wrong kind, or a run's own output all answer the same 404.
+
+Once the form receives an uploaded image's id, a run treats it exactly like any other selected
+owned image — owner-scoped byte loading, preparation, capacity checks, dedicated-field routing, and
 provider transport remain unchanged.
 
 The bulk delete takes its ids in a body — a list of them does not belong in a URL — capped at the
@@ -41,9 +53,9 @@ job from the route — a refused job slot deletes the just-created row rather th
 | Module                                                        | Owns                                                                                    |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `apps/web/src/contracts/images/image-generator.ts`            | statuses, request/wire schemas, failure codes                                           |
-| `apps/web/src/contracts/images/image-generator-upload.ts`     | bounded direct-upload request                                                           |
+| `apps/web/src/contracts/images/image-generator-upload.ts`     | bounded direct-upload request, and the uploads-panel wire schema (`meta.source` enum)   |
 | `apps/web/src/contracts/images/image-generator-outputs.ts`    | the per-prediction output record and its reader                                         |
-| `apps/web/src/server/images/image-generator-store.ts`         | row↔wire, create/list/detail/delete/settle                                              |
+| `apps/web/src/server/images/image-generator-store.ts`         | run row↔wire, create/list/detail/delete/settle, and the standalone-upload list/delete   |
 | `apps/web/src/server/images/image-generator-run.ts`           | atomic claim and prepare-to-settle coordination                                         |
 | `apps/web/src/server/images/image-generator-request.ts`       | request validation, version, profile and pre-spend planning                             |
 | `apps/web/src/server/images/image-generator-provenance.ts`    | capability snapshot and sanitized effective request                                     |

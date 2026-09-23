@@ -3,7 +3,10 @@ import {
   type ImageGeneratorCreateRunRequest,
   imageGeneratorRunSchema,
 } from "@/contracts/images/image-generator";
-import type { ImageGeneratorUploadRequest } from "@/contracts/images/image-generator-upload";
+import {
+  imageGeneratorUploadSchema,
+  type ImageGeneratorUploadRequest,
+} from "@/contracts/images/image-generator-upload";
 
 import { apiDelete, apiGet, apiPost, withQuery } from "./http";
 import { listOf } from "./shared";
@@ -16,6 +19,15 @@ const IMAGE_GENERATOR_API_ROOT = "/api/admin/self/image-generator";
 
 export const imageGeneratorApi = {
   uploads: {
+    /**
+     * Every reference/control image uploaded directly to the bench — never a
+     * run's own output (#635) — newest first.
+     */
+    list: () =>
+      apiGet(
+        listOf(imageGeneratorUploadSchema, "uploads"),
+        `${IMAGE_GENERATOR_API_ROOT}/uploads`,
+      ),
     /** Store one local raster and return the ready owner-scoped image id. */
     create: (body: ImageGeneratorUploadRequest) =>
       apiPost(
@@ -23,6 +35,9 @@ export const imageGeneratorApi = {
         `${IMAGE_GENERATOR_API_ROOT}/uploads`,
         body,
       ),
+    /** Delete one uploaded reference — DB row and on-disk file both removed. */
+    remove: (imageId: string) =>
+      apiDelete(`${IMAGE_GENERATOR_API_ROOT}/uploads/${imageId}`),
   },
   runs: {
     /** Latest first; `limit` defaults server-side to 50. */
