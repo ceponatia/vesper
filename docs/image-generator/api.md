@@ -33,7 +33,11 @@ guard — never by kind alone. A run's rendered output shares the identical hidd
 `generator_output` kind and would otherwise be indistinguishable from an uploaded reference; the
 `meta.source` filter is the only thing that keeps this surface from ever listing or deleting one.
 DELETE removes the row and unlinks the file (the periodic sweep reconciles a straggler); an id that
-is foreign, absent, the wrong kind, or a run's own output all answer the same 404.
+is foreign, absent, the wrong kind, or a run's own output all answer the same 404. An upload that any
+of the admin's runs records in its `inputs` (primary or dedicated) answers 409 `upload_in_use`: a
+pending run still has to load it, and a settled run shows it as an input and hands it to Duplicate.
+Deleting those runs frees it. Deleting an upload also clears it from the page's mounted new-run form,
+so a stale selection cannot submit.
 
 Once the form receives an uploaded image's id, a run treats it exactly like any other selected
 owned image — owner-scoped byte loading, preparation, capacity checks, dedicated-field routing, and

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, notExists, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   emptyImageGeneratorControls,
@@ -601,6 +601,30 @@ export async function listImageGeneratorUploads(ownerId: string): Promise<ImageG
 }
 
 /**
+ * The runs of this owner whose recorded `inputs` name `imageId` — as a primary
+ * reference or a dedicated structural input. Every such run still needs the
+ * upload: a pending/running one has not loaded it yet (it would settle
+ * `input_missing`), and a settled one shows it as its input thumbnail and hands
+ * it to Duplicate. Containment on each array, the same `@>` idiom the sim
+ * stores use for jsonb id lists.
+ */
+function runsReferencingUpload(ownerId: string, imageId: string) {
+  const needle = JSON.stringify([{ imageId }]);
+  return and(
+    eq(imageGeneratorRuns.ownerId, ownerId),
+    or(
+      sql`${imageGeneratorRuns.inputs} -> 'primary' @> ${needle}::jsonb`,
+      sql`${imageGeneratorRuns.inputs} -> 'dedicated' @> ${needle}::jsonb`,
+    ),
+  );
+}
+
+export type DeleteImageGeneratorUploadResult =
+  | { status: "deleted" }
+  | { status: "not_found" }
+  | { status: "in_use"; runCount: number };
+
+/**
  * Retire one uploaded reference — the row and its file, both gone
  * (`purgeImagesWhere` unlinks best-effort; the periodic image sweep reconciles
  * a straggler). Scoped by owner, kind AND `meta.source` in one predicate, the
@@ -608,17 +632,41 @@ export async function listImageGeneratorUploads(ownerId: string): Promise<ImageG
  * its own kind guard: a run's own `generator_output` row shares the kind but
  * never the source, so this can never reach one even given its exact id.
  *
- * False when nothing matched — foreign, absent, wrong kind, or a run's own
- * output — one answer for all four, so the route never confirms which.
+ * An upload any of this owner's runs still records as an input is refused as
+ * `in_use`, and that guard sits in the same delete predicate rather than a
+ * separate check first. The admin frees it by deleting those runs.
+ *
+ * `not_found` covers foreign, absent, wrong kind, and a run's own output — one
+ * answer for all four, so the route never confirms which.
  */
-export async function deleteImageGeneratorUpload(ownerId: string, imageId: string): Promise<boolean> {
+export async function deleteImageGeneratorUpload(
+  ownerId: string,
+  imageId: string,
+): Promise<DeleteImageGeneratorUploadResult> {
+  const uploadRow = and(
+    eq(images.id, imageId),
+    eq(images.ownerId, ownerId),
+    eq(images.kind, "generator_output"),
+    generatorUploadSourceGuard(),
+  );
   const removed = await purgeImagesWhere(
     and(
-      eq(images.id, imageId),
-      eq(images.ownerId, ownerId),
-      eq(images.kind, "generator_output"),
-      generatorUploadSourceGuard(),
+      uploadRow,
+      notExists(
+        db()
+          .select({ id: imageGeneratorRuns.id })
+          .from(imageGeneratorRuns)
+          .where(runsReferencingUpload(ownerId, imageId)),
+      ),
     ),
   );
-  return removed > 0;
+  if (removed > 0) return { status: "deleted" };
+
+  const [upload] = await db().select({ id: images.id }).from(images).where(uploadRow).limit(1);
+  if (upload === undefined) return { status: "not_found" };
+  const [referencing] = await db()
+    .select({ runs: count() })
+    .from(imageGeneratorRuns)
+    .where(runsReferencingUpload(ownerId, imageId));
+  return { status: "in_use", runCount: referencing?.runs ?? 0 };
 }

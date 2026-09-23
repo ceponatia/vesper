@@ -23,6 +23,7 @@ import { imageModelOptionLabel } from "@/lib/image-model-option-label";
 import {
   IMAGE_GENERATOR_MAX_IMAGE_COUNT,
   IMAGE_GENERATOR_PROMPT_MAX,
+  imageGeneratorDedicatedRoleSchema,
   type ImageGeneratorDedicatedRole,
   type ImageGeneratorVersionPolicy,
 } from "@/contracts/images/image-generator";
@@ -66,13 +67,21 @@ import { imageGeneratorRoleLabel } from "./image-generator-copy";
 
 export type { ImageGeneratorPrefill } from "./image-generator-form/prefill";
 
+const NO_DELETED_IMAGES: ReadonlySet<string> = new Set();
+
 export interface ImageGeneratorFormProps {
   prefill?: ImageGeneratorPrefill | null;
+  /** Images deleted since this form mounted — any selection naming one is cleared. */
+  deletedImageIds?: ReadonlySet<string>;
   /** The accepted run's id — the caller opens it and remounts this form blank. */
   onCreated: (runId: string) => void;
 }
 
-export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGeneratorFormProps) {
+export function ImageGeneratorForm({
+  prefill = null,
+  deletedImageIds = NO_DELETED_IMAGES,
+  onCreated,
+}: ImageGeneratorFormProps) {
   const toast = useToast();
   const models = useAsyncData(() => adminImageModelsApi.list(), []);
   const loras = useAsyncData(() => imageLorasApi.list(), []);
@@ -216,6 +225,25 @@ export function ImageGeneratorForm({ prefill = null, onCreated }: ImageGenerator
   // clearing extinguishes the condition).
   if (selectedModel !== null && !modelCanEdit && primaryRows.length > 0) {
     setPrimaryRows([]);
+  }
+
+  // An image deleted from the uploads shelf while this form holds it would
+  // submit a run that settles `input_missing`. Its row stays, emptied, so the
+  // admin sees which slot needs a new image (no latch: clearing extinguishes
+  // the condition).
+  const isDeleted = (imageId: string | null | undefined) =>
+    imageId !== null && imageId !== undefined && deletedImageIds.has(imageId);
+  if (primaryRows.some((row) => isDeleted(row.imageId))) {
+    setPrimaryRows((rows) => rows.map((row) => (isDeleted(row.imageId) ? { ...row, imageId: null } : row)));
+  }
+  if (Object.values(dedicated).some((imageId) => isDeleted(imageId))) {
+    setDedicated((current) => {
+      const next = { ...current };
+      for (const role of imageGeneratorDedicatedRoleSchema.options) {
+        if (isDeleted(next[role])) delete next[role];
+      }
+      return next;
+    });
   }
 
   // The LoRA control, offered only when the active version binds BOTH the

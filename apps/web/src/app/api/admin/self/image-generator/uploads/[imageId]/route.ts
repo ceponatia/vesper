@@ -13,10 +13,18 @@ type Params = { imageId: string };
  * run's own render all answer the same 404 — the service's `(id, owner, kind,
  * source)` selection is the authorization root, and the route never confirms
  * which of the four it was.
+ *
+ * An upload one of this admin's runs still records as an input answers 409
+ * `upload_in_use`: deleting it would fail a run that has not loaded it yet and
+ * break a settled run's input thumbnail and Duplicate.
  */
 export const DELETE = withOwnerAdmin<Params>(async (user, _req, ctx) => {
   const { imageId } = await ctx.params;
-  const deleted = await deleteImageGeneratorUpload(user.id, imageId);
-  if (!deleted) return jsonError("not_found", "upload not found", 404);
+  const result = await deleteImageGeneratorUpload(user.id, imageId);
+  if (result.status === "not_found") return jsonError("not_found", "upload not found", 404);
+  if (result.status === "in_use") {
+    const runs = result.runCount === 1 ? "1 run" : `${String(result.runCount)} runs`;
+    return jsonError("upload_in_use", `this upload is an input to ${runs}; delete those runs first`, 409);
+  }
   return jsonOk({ ok: true });
 });

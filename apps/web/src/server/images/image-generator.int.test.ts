@@ -1485,7 +1485,7 @@ describe.skipIf(!ready)("image generator standalone uploads (#635)", () => {
     expect(uploaded.ok).toBe(true);
     if (!uploaded.ok) return;
 
-    expect(await deleteImageGeneratorUpload(ownerId, uploaded.imageId)).toBe(true);
+    expect(await deleteImageGeneratorUpload(ownerId, uploaded.imageId)).toEqual({ status: "deleted" });
     const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, uploaded.imageId)).limit(1);
     expect(row).toBeUndefined();
   });
@@ -1505,7 +1505,7 @@ describe.skipIf(!ready)("image generator standalone uploads (#635)", () => {
     const outputId = run?.resultImageId ?? "";
     expect(outputId).not.toBe("");
 
-    expect(await deleteImageGeneratorUpload(ownerId, outputId)).toBe(false);
+    expect(await deleteImageGeneratorUpload(ownerId, outputId)).toEqual({ status: "not_found" });
     const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, outputId)).limit(1);
     expect(row).toBeDefined();
   });
@@ -1519,9 +1519,54 @@ describe.skipIf(!ready)("image generator standalone uploads (#635)", () => {
     expect(uploaded.ok).toBe(true);
     if (!uploaded.ok) return;
 
-    expect(await deleteImageGeneratorUpload(otherOwnerId, uploaded.imageId)).toBe(false);
+    expect(await deleteImageGeneratorUpload(otherOwnerId, uploaded.imageId)).toEqual({ status: "not_found" });
     const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, uploaded.imageId)).limit(1);
     expect(row).toBeDefined();
+  });
+
+  /**
+   * PROTECTS: an upload a run still records as an input survives its delete.
+   * Removing it would settle a not-yet-started run as `input_missing` and break
+   * a settled run's input thumbnail and Duplicate. Covers both input arrays,
+   * and that deleting the runs frees the upload again.
+   *
+   * Falsified against the owner+kind+source predicate alone: that purges both
+   * uploads while the runs below are still pending.
+   */
+  it("refuses to delete an upload a run still records as an input, until the run is gone", async () => {
+    const primary = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "identity.png",
+    });
+    const pose = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "pose.png",
+    });
+    expect(primary.ok && pose.ok).toBe(true);
+    if (!primary.ok || !pose.ok) return;
+
+    const first = await createRun({ inputs: { primary: [{ imageId: primary.imageId }], dedicated: [] } });
+    const second = await createRun({
+      modelId: DEDICATED_MODEL_ID,
+      inputs: { primary: [{ imageId: primary.imageId }], dedicated: [{ role: "pose", imageId: pose.imageId }] },
+    });
+
+    expect(await deleteImageGeneratorUpload(ownerId, primary.imageId)).toEqual({ status: "in_use", runCount: 2 });
+    expect(await deleteImageGeneratorUpload(ownerId, pose.imageId)).toEqual({ status: "in_use", runCount: 1 });
+    const survivors = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(inArray(images.id, [primary.imageId, pose.imageId]));
+    expect(survivors).toHaveLength(2);
+
+    await deleteImageGeneratorRun(second.id, ownerId);
+    expect(await deleteImageGeneratorUpload(ownerId, pose.imageId)).toEqual({ status: "deleted" });
+    expect(await deleteImageGeneratorUpload(ownerId, primary.imageId)).toEqual({ status: "in_use", runCount: 1 });
+
+    await deleteImageGeneratorRun(first.id, ownerId);
+    expect(await deleteImageGeneratorUpload(ownerId, primary.imageId)).toEqual({ status: "deleted" });
   });
 });
 

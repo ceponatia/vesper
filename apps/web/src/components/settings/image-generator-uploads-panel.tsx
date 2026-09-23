@@ -37,9 +37,9 @@ export interface ImageGeneratorUploadsPanelProps {
   loading: boolean;
   error: ApiError | null;
   onReload: () => void;
-  /** An upload was deleted — the panel owns none of the list itself; every
-   * change is settled by refetching it. */
-  onChanged: () => void;
+  /** An upload was deleted — the panel owns none of the list itself, so the
+   * caller refetches it and clears the id from anything still holding it. */
+  onDeleted: (imageId: string) => void;
 }
 
 const uploadSourceLabel: Record<ImageGeneratorUpload["source"], string> = {
@@ -62,7 +62,7 @@ export function ImageGeneratorUploadsPanel({
   loading,
   error,
   onReload,
-  onChanged,
+  onDeleted,
 }: ImageGeneratorUploadsPanelProps) {
   const [enlarged, setEnlarged] = useState<string | null>(null);
 
@@ -88,7 +88,7 @@ export function ImageGeneratorUploadsPanel({
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {uploads.map((upload) => (
-            <UploadCard key={upload.imageId} upload={upload} onEnlarge={setEnlarged} onChanged={onChanged} />
+            <UploadCard key={upload.imageId} upload={upload} onEnlarge={setEnlarged} onDeleted={onDeleted} />
           ))}
           {uploads.length === 0 ? (
             <p className="col-span-full text-sm text-paper-500">
@@ -145,11 +145,11 @@ function TileAction({
 function UploadCard({
   upload,
   onEnlarge,
-  onChanged,
+  onDeleted,
 }: {
   upload: ImageGeneratorUpload;
   onEnlarge: (imageId: string) => void;
-  onChanged: () => void;
+  onDeleted: (imageId: string) => void;
 }) {
   const toast = useToast();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -166,7 +166,7 @@ function UploadCard({
       return;
     }
     toast.push({ title: "Upload deleted", tone: "success" });
-    onChanged();
+    onDeleted(upload.imageId);
   };
 
   return (
