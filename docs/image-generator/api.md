@@ -3,7 +3,7 @@
 ## Routes
 
 | Route                                                | Wrapper                  | Methods              |
-| ----------------------------------------------------- | ------------------------ | -------------------- |
+| ---------------------------------------------------- | ------------------------ | -------------------- |
 | `/api/admin/self/image-generator/uploads`            | `withOwnerAdmin`         | GET list, POST (201) |
 | `/api/admin/self/image-generator/uploads/[imageId]`  | `withOwnerAdmin`         | DELETE               |
 | `/api/admin/self/image-generator/runs`               | `withOwnerAdmin`         | GET list, POST (201) |
