@@ -35,8 +35,9 @@ ACK_INDEX = "VESPER_INDEX_OK=1"
 # Local gate runs are an owner ruling (2026-08-22, tightened 2026-08-24):
 # CI validates; a local lint:package-resolution took the desktop down.
 # The settings deny list catches the bare families; this catches every
-# `pnpm test:*` / `pnpm lint:*` sub-script, `pnpm run …`, and scripts/verify.sh,
-# which the deny syntax (space-star prefixes only) cannot express.
+# `pnpm test:*` / `pnpm lint:*` sub-script, `pnpm run …`, scripts/verify.sh and
+# the CI integration launchers, which the deny syntax (space-star prefixes only)
+# cannot express.
 GATE_SCRIPT = re.compile(r"^(test|lint|typecheck|verify|vitest|build)(?::[\w.-]+)?$")
 GATE_ALLOWED = {"lint:docs"}  # sanctioned for documentation-only changes (AGENTS.md)
 PNPM_PASSTHROUGH = {"run", "exec", "dlx", "-r", "--recursive", "-w", "--workspace-root", "--stream", "--parallel"}
@@ -62,9 +63,24 @@ GATE_BINARIES = {"tsc", "tsgo", "eslint", "vitest", "jest", "tsd", "attw"}
 # Same idea for the bundlers, which only count when actually building: `next`
 # and `vite` also front `next dev` / `vite preview`, which the run workflow owns.
 GATE_BUILDERS = {"next": {"build"}, "vite": {"build"}, "turbo": {"build", "run"}}
+# The CI integration launchers, refused the way scripts/verify.sh is:
+# `ci-integration.mjs` drops, creates and migrates a local `vesper_ci_<mode>`
+# database and then runs the `app-int` project through Vitest, and
+# `integration-plan.mjs` loads Vitest itself through `createVitest`. Matched by
+# file name wherever a JS runtime, a runner, pnpm or a shell is about to execute
+# one — `node scripts/…`, `node ./scripts/…`, an absolute path, node options in
+# between, `pnpm exec node …`, or the file run directly. Their sibling
+# `integration-policy.mjs` (the `pnpm census:integration` git census) runs no
+# tests and is deliberately absent.
+GATE_LAUNCHERS = {"ci-integration.mjs", "integration-plan.mjs"}
+JS_RUNTIMES = {"node", "nodejs", "bun", "tsx", "deno"}
+SHELLS = ("bash", "sh", "zsh", "source", ".")
 # Substrings that make `main` bother tokenizing at all. Derived from the rules
 # above rather than retyped, so a checker added to either set stays reachable.
-PREFILTER = ("fly", "git", "pnpm", "verify.sh", *sorted(GATE_BINARIES), *sorted(GATE_BUILDERS))
+PREFILTER = (
+    "fly", "git", "pnpm", "verify.sh",
+    *sorted(GATE_BINARIES), *sorted(GATE_BUILDERS), *sorted(GATE_LAUNCHERS),
+)
 SEPARATORS = {"&&", "||", ";", "|", "&"}
 COMMIT_VALUE_OPTS = {
     "-m", "--message", "-F", "--file", "-C", "--reuse-message", "-c",
@@ -234,15 +250,49 @@ def gate_builder(seg: list[str], start: int) -> str | None:
     return None
 
 
+def gate_launcher(token: str) -> str | None:
+    """The CI integration launcher a token names as a file path, if any."""
+    base = os.path.basename(token.replace("\\", "/"))
+    return f"scripts/{base}" if base in GATE_LAUNCHERS else None
+
+
+def launcher_among(seg: list[str], start: int) -> str | None:
+    """A launcher anywhere in the segment from `start` on.
+
+    Every token is scanned rather than the script position located, for the
+    reason the pnpm walk below gives: node's own options sit between `node` and
+    the script (`node --env-file=.env scripts/ci-integration.mjs`), some take a
+    separate value, and every gap in a table of them would be a silent local
+    integration run. A path merely embedded in a longer token — `node -e
+    'import("./scripts/ci-integration.mjs")'` — is not a file name and passes.
+    """
+    for token in seg[start:]:
+        launcher = gate_launcher(token)
+        if launcher:
+            return launcher
+    return None
+
+
 def gate_violation(seg: list[str]) -> str | None:
     """A local application gate: the checkers themselves however invoked, a
-    pnpm test/lint/typecheck/verify script, or scripts/verify.sh."""
+    pnpm test/lint/typecheck/verify script, scripts/verify.sh, or a CI
+    integration launcher."""
     if not seg:
         return None
     # running the script (directly or via a shell), not merely naming it
-    invoked = seg[0] if seg[0] not in ("bash", "sh", "zsh", "source", ".") else (seg[1] if len(seg) > 1 else "")
+    invoked = seg[0] if seg[0] not in SHELLS else (seg[1] if len(seg) > 1 else "")
     if invoked.endswith("scripts/verify.sh"):
         return "scripts/verify.sh"
+    launcher = gate_launcher(invoked)
+    if launcher:
+        return launcher
+
+    # A JS runtime about to execute a launcher: `node scripts/ci-integration.mjs`.
+    runtime = os.path.basename(seg[0])
+    if runtime in JS_RUNTIMES:
+        launcher = launcher_among(seg, 1)
+        if launcher:
+            return f"{runtime} {launcher}"
 
     # The checker invoked directly, at the head of the segment or behind a
     # runner. `pnpm exec tsc` reaches this through the passthrough walk below.
@@ -250,7 +300,7 @@ def gate_violation(seg: list[str]) -> str | None:
     if direct:
         return direct
     if seg[0] in RUNNERS and len(seg) > 1:
-        behind = gate_behind(seg, 1)
+        behind = gate_behind(seg, 1) or launcher_among(seg, 1)
         if behind:
             return f"{seg[0]} {behind}"
 
@@ -279,7 +329,7 @@ def gate_violation(seg: list[str]) -> str | None:
         token = seg[i]
         if GATE_SCRIPT.match(token) and token not in GATE_ALLOWED:
             return f"pnpm {token}"
-        behind_pnpm = gate_binary(token) or gate_builder(seg, i)
+        behind_pnpm = gate_binary(token) or gate_builder(seg, i) or gate_launcher(token)
         if behind_pnpm:
             return f"pnpm {behind_pnpm}"
     return None
