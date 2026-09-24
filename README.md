@@ -67,7 +67,7 @@ See [docs/getting-started.md](docs/getting-started.md) for the full prerequisite
 - Run `pnpm` only from the repository root; `apps/web` has no `dev`, `build`, or `test` scripts of its own.
 - `.env` lives at the repository root and is loaded by the root launcher `scripts/web.mjs`, which `pnpm dev` / `build` / `start` all go through. Do not add a second `.env` under `apps/web`.
 - Common scripts: `pnpm dev`, `pnpm build`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:int`, `pnpm db:create`, `pnpm db:migrate`, `pnpm db:seed`, `pnpm db:studio`.
-- CI is the verification gate; there is no local pre-push gate. GitHub Actions runs lint, static checks, unit tests, engine integration, and a production build as applicable, and the aggregate `verify` check is required on `main` and `prod`.
+- CI is the verification gate; there is no local pre-push gate. GitHub Actions runs lint, static checks, unit tests, the complete integration inventory, and a production build as applicable, and the aggregate `verify` check is required on `main` and `prod`.
 
 ## Contributing
 

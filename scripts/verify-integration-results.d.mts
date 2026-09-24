@@ -41,8 +41,8 @@ export interface VerificationResult {
   };
 }
 
-export const INTEGRATION_JOB_NAME: RegExp;
-export const ARTIFACT_NAME: RegExp;
+export declare const INTEGRATION_JOB_NAME: RegExp;
+export declare const ARTIFACT_NAME: RegExp;
 
 export function loadEvidence(evidenceDir: string): EvidenceBatch[];
 export function envelopeShapeProblems(envelope: unknown): string[];

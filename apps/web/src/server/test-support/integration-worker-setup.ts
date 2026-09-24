@@ -1,6 +1,5 @@
 import { beforeEach, expect } from "vitest";
-import { requireIntegrationDb } from "./int-db";
-import { INTEGRATION_ATTESTATION_META_KEY, integrationWorkerAttestation } from "./integration-mode";
+import { INTEGRATION_ATTESTATION_META_KEY, integrationWorkerAttestation, requireIntegrationDb } from "./integration-mode";
 
 /**
  * `app-int` setup, after `apps/web/src/test/setup.ts` (which forces the fake

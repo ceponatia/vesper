@@ -30,11 +30,11 @@ export interface RecordedEnvironment {
   requireIntegrationDb: boolean;
 }
 
-export const EVIDENCE_SCHEMA: "vesper.integration-evidence";
-export const EVIDENCE_VERSION: number;
-export const MAX_SHARDS: number;
-export const DEFAULT_OUT_DIR: string;
-export const DEFAULT_DATABASE_SERVER: string;
+export declare const EVIDENCE_SCHEMA: "vesper.integration-evidence";
+export declare const EVIDENCE_VERSION: number;
+export declare const MAX_SHARDS: number;
+export declare const DEFAULT_OUT_DIR: string;
+export declare const DEFAULT_DATABASE_SERVER: string;
 
 export function parseShard(text: string | undefined): Shard;
 export function parseLauncherArgs(argv: string[]): LauncherOptions;

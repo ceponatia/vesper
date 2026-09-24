@@ -8,7 +8,8 @@ name: Promote dev → prod
 #
 # CI lives in `.github/workflows/ci.yml`. A PR targeting `prod` deliberately
 # forces the complete release-candidate suite — lint, static checks, unit tests,
-# engine integration and the production build — regardless of changed paths.
+# the complete integration inventory and the production build — regardless of
+# changed paths.
 on:
   workflow_dispatch:
 
@@ -45,4 +46,4 @@ jobs:
 
           gh pr create --repo "$REPO" --base prod --head main \
             --title "Promote dev → prod ($(date -u +%Y-%m-%d))" \
-            --body $'Automated promotion of `main` (dev) into `prod`.\n\nThis prod-bound PR runs the complete CI suite, including engine integration and the production build. Merge only after the required `verify` check is green.'
+            --body $'Automated promotion of `main` (dev) into `prod`.\n\nThis prod-bound PR runs the complete CI suite, including the complete integration inventory and the production build. Merge only after the required `verify` check is green.'

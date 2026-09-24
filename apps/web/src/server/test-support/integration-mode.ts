@@ -14,8 +14,8 @@ import path from "node:path";
  * out of the JSON report.
  *
  * Pure on purpose: no database, engine or policy import, so the setup that runs
- * ahead of every integration file adds nothing to its module graph. The two
- * names below are asserted equal to their owners' constants by
+ * ahead of every integration file loads nothing a suite might later `vi.mock`.
+ * The environment names below are asserted equal to their owners' constants by
  * `scripts/integration-policy.test.ts`.
  */
 
@@ -25,11 +25,23 @@ export const INTEGRATION_LEGACY_CAPABILITY_ENV = "VESPER_ALLOW_LEGACY_ENGINE_TES
 /** Mirrors `INTEGRATION_MODE_ENV` in `scripts/integration-policy.mjs`. */
 export const INTEGRATION_MODE_ENV = "VESPER_INTEGRATION_MODE";
 
-/** Newline-separated legacy exception files; the root Vitest config provides it to `app-int` workers. */
+/** Newline-separated legacy exception files; the root Vitest config provides it to `app-int` workers (mirrors the policy's constant). */
 export const INTEGRATION_LEGACY_FILES_ENV = "VESPER_INTEGRATION_LEGACY_FILES";
 
 /** The task-metadata key the evidence verifier reads. */
 export const INTEGRATION_ATTESTATION_META_KEY = "vesperIntegration";
+
+/** The canonical strict-database flag; the CI launcher and `pnpm test:int:strict` set it. */
+export const REQUIRE_INTEGRATION_DB_ENV = "REQUIRE_INTEGRATION_DB";
+
+/**
+ * True when an unreachable or unmigrated database must fail a suite rather than
+ * skip it (`probeIntegrationDb`). The two older signals, `CI=true` and
+ * `VESPER_REQUIRE_TEST_DB=1`, keep working so converting a suite never loosens it.
+ */
+export function requireIntegrationDb(env: Record<string, string | undefined> = process.env): boolean {
+  return env[REQUIRE_INTEGRATION_DB_ENV] === "true" || env.VESPER_REQUIRE_TEST_DB === "1" || env.CI === "true";
+}
 
 export interface IntegrationAttestation {
   mode: "strict" | "legacy";

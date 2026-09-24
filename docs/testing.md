@@ -33,14 +33,14 @@ The integration commands have different selections:
 
 | Command                                      | Selection                                                                      |
 | -------------------------------------------- | ------------------------------------------------------------------------------ |
-| `pnpm test:int`                              | Whole `app-int` project in the `all` view; probes may self-skip outside CI     |
-| `pnpm test:int:strict`                       | Whole `app-int` project; an unreachable or unmigrated database fails           |
+| `pnpm test:int`                              | Whole `app-int` project in one `all` process; cannot pass as a whole           |
+| `pnpm test:int:strict`                       | The same, with an unreachable or unmigrated database failing                   |
 | `node scripts/ci-integration.mjs --mode=...` | One authorization mode and shard on its own database; the CI executor          |
 | `pnpm census:integration`                    | The policy census: discovered suites, strict/legacy partition, problems        |
-| `pnpm test:engine`                           | Curated engine, image, and authoring paths in `app-int`; not a CI selection    |
+| `pnpm test:engine`                           | Curated paths in one `all` process; cannot pass as a whole; not in CI          |
 | `pnpm test:engine-e*`                        | Focused engine proof paths used for targeted gate work                         |
 
-The `all` view holds legacy-fixture suites, which need the legacy capability, and strict suites, whose authorization-denial claims need it absent, in one process, so no single `all` process can pass both. The two launcher modes are the complete run; [Integration modes](#integration-modes) owns the split.
+`pnpm test:int`, `pnpm test:int:strict`, and `pnpm test:engine` run in the unpartitioned `all` view. One process then holds the legacy-fixture suites, which fail collection unless the legacy capability is on, and the strict suites, whose authorization-denial claims fail when it is on, so none of these commands passes as a whole. The two launcher modes are the complete run; [Integration modes](#integration-modes) owns the split.
 
 ## Test layers
 

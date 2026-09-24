@@ -27,15 +27,16 @@ export interface IntegrationCensus {
   universeHash: string;
 }
 
-export const POLICY_VERSION: number;
-export const INTEGRATION_MODE_ENV: "VESPER_INTEGRATION_MODE";
-export const INTEGRATION_MODES: readonly IntegrationMode[];
-export const CI_INTEGRATION_MODES: readonly CiIntegrationMode[];
-export const LEGACY_CAPABILITY_ENV: "VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER";
-export const APPLICATION_INTEGRATION_ROOTS: readonly string[];
-export const APPLICATION_INTEGRATION_SUFFIX: string;
-export const APPLICATION_INTEGRATION_INCLUDE: readonly string[];
-export const LEGACY_INTEGRATION_EXCEPTIONS: readonly LegacyIntegrationException[];
+export declare const POLICY_VERSION: number;
+export declare const INTEGRATION_MODE_ENV: "VESPER_INTEGRATION_MODE";
+export declare const INTEGRATION_LEGACY_FILES_ENV: "VESPER_INTEGRATION_LEGACY_FILES";
+export declare const INTEGRATION_MODES: readonly IntegrationMode[];
+export declare const CI_INTEGRATION_MODES: readonly CiIntegrationMode[];
+export declare const LEGACY_CAPABILITY_ENV: "VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER";
+export declare const APPLICATION_INTEGRATION_ROOTS: readonly string[];
+export declare const APPLICATION_INTEGRATION_SUFFIX: string;
+export declare const APPLICATION_INTEGRATION_INCLUDE: readonly string[];
+export declare const LEGACY_INTEGRATION_EXCEPTIONS: readonly LegacyIntegrationException[];
 
 export function isApplicationIntegrationPath(file: string): boolean;
 export function looksLikeIntegrationTest(file: string): boolean;

@@ -138,7 +138,6 @@ describe.runIf(ready)("readSimChatMeters integrates to the branch clock (slice 2
 });
 
 // `readSimChatGarments`'s own database-backed cases (#297) live in
-// `simulation/sim-chat-garments.int.test.ts` instead of here: this file is
-// `app-int`, which ordinary CI never selects, while `pnpm test:engine` (the
-// `engine integration` job) takes the whole `simulation/` directory. They were
-// moved rather than duplicated — a proof no job runs proves nothing.
+// `simulation/sim-chat-garments.int.test.ts` instead of here. Both files run in
+// CI's strict integration mode; the cases stay in one place rather than being
+// duplicated.

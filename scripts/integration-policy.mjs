@@ -41,6 +41,9 @@ export const POLICY_VERSION = 1;
 /** The process-scoped selector read by the root Vitest configuration. */
 export const INTEGRATION_MODE_ENV = "VESPER_INTEGRATION_MODE";
 
+/** The `app-int` worker variable carrying the exception files, newline-separated. */
+export const INTEGRATION_LEGACY_FILES_ENV = "VESPER_INTEGRATION_LEGACY_FILES";
+
 /** Every mode the configuration understands; unset means `all`. */
 export const INTEGRATION_MODES = Object.freeze(["strict", "legacy", "all"]);
 

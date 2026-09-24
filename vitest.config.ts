@@ -1,6 +1,7 @@
 import path from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
 import {
+  INTEGRATION_LEGACY_FILES_ENV,
   INTEGRATION_MODE_ENV,
   LEGACY_INTEGRATION_EXCEPTIONS,
   integrationSelectionForMode,
@@ -97,7 +98,7 @@ export default defineConfig({
           setupFiles: integrationSetup,
           env: {
             [INTEGRATION_MODE_ENV]: integrationMode,
-            VESPER_INTEGRATION_LEGACY_FILES: LEGACY_INTEGRATION_EXCEPTIONS.map((entry) => entry.file).join("\n"),
+            [INTEGRATION_LEGACY_FILES_ENV]: LEGACY_INTEGRATION_EXCEPTIONS.map((entry) => entry.file).join("\n"),
           },
         },
       },
