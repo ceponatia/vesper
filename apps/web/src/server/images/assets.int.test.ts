@@ -428,6 +428,13 @@ async function seedAcceptedPortrait(characterId: string): Promise<void> {
     .where(eq(characters.id, characterId));
 }
 
+/**
+ * A provider transport's refusal when its credential is absent — Replicate's
+ * `REPLICATE_API_TOKEN not configured`, fal's `FAL_API_KEY not configured` —
+ * naming the environment variable an operator has to set.
+ */
+const MISSING_PROVIDER_CREDENTIAL = /\b[A-Z][A-Z0-9]*_(?:API_TOKEN|API_KEY) not configured\b/;
+
 async function imageRow(imageId: string): Promise<ImageRow | undefined> {
   const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
   return row;
@@ -454,8 +461,10 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
     // The stored error names the missing provider credential, so an operator
-    // reading the row knows what to configure (Replicate is THE image backend).
-    expect((row?.meta as Record<string, unknown>).error).toContain("REPLICATE_API_TOKEN");
+    // reading the row knows what to configure. Which provider that is follows
+    // the seeded default profile for the task (Replicate or fal today), so the
+    // assertion names the credential's shape rather than one provider.
+    expect((row?.meta as Record<string, unknown>).error).toMatch(MISSING_PROVIDER_CREDENTIAL);
     const recorded = sink.items.filter((d) => d.code === "images.avatar.generate_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
@@ -481,7 +490,7 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
 
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
-    expect((row?.meta as Record<string, unknown>).error).toContain("REPLICATE_API_TOKEN");
+    expect((row?.meta as Record<string, unknown>).error).toMatch(MISSING_PROVIDER_CREDENTIAL);
     const recorded = sink.items.filter((d) => d.code === "images.variant.generate_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
