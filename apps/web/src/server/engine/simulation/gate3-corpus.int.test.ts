@@ -43,7 +43,11 @@ import {
  * teardown + pool close).
  */
 
-const harness = await simulationSuiteHarness({ suite: "gate3-corpus.int.test", table: "sim_access_grants" });
+const harness = await simulationSuiteHarness({
+  suite: "gate3-corpus.int.test",
+  table: "sim_access_grants",
+  legacyPlayerMode: true,
+});
 
 const SEED_SECOND = 100_000;
 /** Cafe → shop is the shift commute; cafe → doorstep is the walk home. */

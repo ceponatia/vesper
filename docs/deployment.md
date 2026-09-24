@@ -174,7 +174,7 @@ moves through a **promotion PR**.
    *Run workflow* (opens a `main → prod` PR for you), or locally:
    `gh pr create --base prod --head main`.
 2. **Require the promotion PR's full CI run to pass.** A PR whose base is `prod`
-   forces every CI gate, engine integration and production build included,
+   forces every CI gate, the integration gate and production build included,
    regardless of changed paths. The required aggregate `verify` check is the
    release-candidate gate for the promotion itself.
 3. **Merge** the PR. That's the only way commits reach `prod`.

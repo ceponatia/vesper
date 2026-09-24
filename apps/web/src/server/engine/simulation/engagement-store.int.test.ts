@@ -32,7 +32,11 @@ import {
  * world teardown + pool close).
  */
 
-const harness = await simulationSuiteHarness({ suite: "engagement-store.int.test", table: "sim_engagements" });
+const harness = await simulationSuiteHarness({
+  suite: "engagement-store.int.test",
+  table: "sim_engagements",
+  legacyPlayerMode: true,
+});
 
 const SEED_SECOND = 60_000;
 const WALK = 600;

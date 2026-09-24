@@ -100,7 +100,7 @@ jobs:
             echo '| --- | --- |'
             echo "| docs | $DOCS |"
             echo "| code | $CODE |"
-            echo "| integration | $INTEGRATION |"
+            echo "| integration (complete inventory) | $INTEGRATION |"
             echo "| engine benchmark | $ENGINE |"
             echo "| production build | $BUILD |"
             echo "| Docker build | $DOCKER |"
@@ -214,8 +214,17 @@ jobs:
       - name: Package-owned pure suites
         run: pnpm -r --workspace-concurrency=2 run test
 
+  # The complete application integration inventory, discovered by
+  # scripts/integration-policy.mjs and split into two authorization modes.
+  # Each runner executes its shard of both modes as separate Vitest processes
+  # against separate migrated-from-zero databases (scripts/ci-integration.mjs):
+  # STRICT carries no legacy synthetic-player capability; LEGACY carries it for
+  # the audited exception files only. Both batches run even when the first
+  # fails, so one run reports every failure; either failure fails the job.
+  # The shard count (2) appears here, in the job name, and in verify's
+  # --shards; the evidence verifier rejects any disagreement.
   integration:
-    name: engine integration (${{ matrix.shard }})
+    name: integration (${{ matrix.shard }}/2)
     needs: changes
     if: needs.changes.outputs.integration == 'true'
     runs-on: ubuntu-latest
@@ -223,7 +232,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1/2, 2/2]
+        shard: [1, 2]
+    env:
+      INTEGRATION_SHARDS: 2
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -234,15 +247,29 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Start Postgres 17 and pgvector
         run: docker compose up -d --wait
-      - name: Apply migrations from zero
-        run: pnpm db:migrate
-      - name: Curated integration shard
-        run: pnpm test:engine -- --project=app-int --shard=${{ matrix.shard }}
-        env:
-          VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER: 1
+      - name: Strict integration batch
+        id: strict
+        run: node scripts/ci-integration.mjs --mode=strict --shard=${{ matrix.shard }}/${{ env.INTEGRATION_SHARDS }}
+      - name: Legacy-fixture integration batch
+        id: legacy
+        if: ${{ !cancelled() && steps.strict.outcome != 'skipped' }}
+        run: node scripts/ci-integration.mjs --mode=legacy --shard=${{ matrix.shard }}/${{ env.INTEGRATION_SHARDS }}
       - name: Gate 1 deterministic-path benchmark
-        if: needs.changes.outputs.engine == 'true' && matrix.shard == '1/2'
-        run: pnpm eval:engine-gate1
+        if: ${{ !cancelled() && needs.changes.outputs.engine == 'true' && matrix.shard == 1 && steps.strict.outcome != 'skipped' }}
+        env:
+          DATABASE_URL: postgresql://vesper:vesper_dev_password@localhost:5435/vesper_ci_benchmark
+        run: |
+          pnpm db:create
+          pnpm db:migrate
+          pnpm eval:engine-gate1
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-evidence-shard-${{ matrix.shard }}-of-${{ env.INTEGRATION_SHARDS }}-attempt-${{ github.run_attempt }}
+          path: integration-evidence/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Print database logs on failure
         if: failure()
         run: docker compose logs --no-color || true
@@ -304,7 +331,33 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # A successful integration matrix proves each process exited 0, not that
+      # the complete inventory ran once in the right mode. The evidence check
+      # reconciles the uploaded plans and reports; it runs whenever integration
+      # applies (even after a failed shard, for its summary) and fails verify
+      # on missing, duplicate, stale, wrong-mode, skipped or failed evidence.
+      - name: Check out the integration policy
+        if: ${{ !cancelled() && needs.changes.outputs.integration == 'true' }}
+        uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: ${{ !cancelled() && needs.changes.outputs.integration == 'true' }}
+        with:
+          node-version: 22
+      - name: Download integration evidence
+        if: ${{ !cancelled() && needs.changes.outputs.integration == 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: integration-evidence-*
+          path: integration-evidence
+      - name: Verify integration evidence
+        if: ${{ !cancelled() && needs.changes.outputs.integration == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/verify-integration-results.mjs --evidence=integration-evidence --shards=2
       - name: Require every applicable gate
+        if: ${{ !cancelled() }}
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           DOCS_RESULT: ${{ needs.docs.result }}
@@ -343,7 +396,7 @@ jobs:
           gate "static checks" "$CODE" "$STATIC_RESULT"
           gate "app unit tests" "$CODE" "$UNIT_APP_RESULT"
           gate "workspace package tests" "$CODE" "$UNIT_PACKAGES_RESULT"
-          gate "engine integration" "$INTEGRATION" "$INTEGRATION_RESULT"
+          gate "integration" "$INTEGRATION" "$INTEGRATION_RESULT"
           gate "production build" "$BUILD" "$BUILD_RESULT"
           gate "Docker packaging build" "$DOCKER" "$DOCKER_RESULT"
           if [[ "$failed" != "0" ]]; then

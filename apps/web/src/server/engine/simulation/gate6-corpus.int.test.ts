@@ -43,6 +43,7 @@ import { advanceBranchStoryTime } from "./scheduler-store";
 const harness = await simulationSuiteHarness({
   suite: "gate6-corpus.int.test",
   table: "sim_cohorts",
+  legacyPlayerMode: true,
 });
 
 const DAY = 86_400;

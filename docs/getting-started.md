@@ -114,7 +114,7 @@ No API keys? Everything still runs in **demo mode** (deterministic narrative, pl
 pnpm dev / build / start
 pnpm test / test:watch / test:int / typecheck / lint     # individual runs — see testing.md
 pnpm test:int:strict                        # strict form of test:int — an unreachable DB fails
-                                            #   instead of skipping (testing.md §Strict integration mode)
+                                            #   instead of skipping (testing.md §Integration modes)
 pnpm db:generate                            # after editing apps/web/src/server/db/schema.ts → review drizzle/ SQL
 pnpm db:migrate
 pnpm db:studio                              # drizzle studio

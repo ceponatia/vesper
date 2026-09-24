@@ -192,8 +192,8 @@ Subagents never run on the session's own model when that model is Fable.
 - GitHub Actions CI on GitHub-hosted runners is the gate. Draft PRs run no gates; ready PRs run applicable
   jobs. The aggregate `verify` check is required on `main` and `prod`.
 - Do not add a CI workflow without an explicit owner decision.
-- Report only what the exact workflow/run selected at the tested head SHA. A green aggregate does not prove
-  an unscheduled suite ran; the full `app-int` surface is not currently selected by ordinary CI.
+- Report only what the exact workflow/run executed at the tested head SHA. Every ready code change runs the
+  complete `app-int` inventory, and `verify` reconciles its evidence; a docs-only change runs none of it.
 - UI testing runs only against `https://vesper.fly.dev`; `verify` owns QA-account selection and sign-in.
   Never substitute local Postgres plus `pnpm dev` for UI evidence.
 - Put screenshots, rendered evaluations, and all other evaluation/task output in gitignored root

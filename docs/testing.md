@@ -12,7 +12,7 @@ Do not run application tests or gates on the development machine. The prohibitio
 
 Code changes are validated by the applicable jobs in `.github/workflows/ci.yml`. A documentation-only change may run `pnpm lint:docs` locally because `scripts/check-docs.mjs` uses Node built-ins and starts no application service. A skill-owned shell or Python helper may use dependency-free offline fixture tests when those fixtures start neither Vesper nor a database nor an external service.
 
-Command definitions in `package.json` describe suite ownership. CI may invoke a narrower command directly when it needs to shard work across independent GitHub-hosted runners. Their presence does not authorize local execution.
+Command definitions in `package.json` describe suite ownership. CI runs the integration inventory through `scripts/ci-integration.mjs` rather than a `package.json` script, because each CI batch fixes its own mode, database, and shard. No command's presence authorizes local execution.
 
 ## Test projects
 
@@ -29,16 +29,18 @@ The root `pnpm test` script remains the developer-facing composition of the `app
 
 Application setup forces `AI_FAKE=1` and removes live provider credentials. Package configurations have no application setup and no `@/` alias; package tests resolve workspace dependencies through installed workspace links.
 
-The root integration scripts have different selections:
+The integration commands have different selections:
 
-| Script                 | Selection                                                                 |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `pnpm test:int`        | Entire `app-int` project; database probes may self-skip outside strict CI |
-| `pnpm test:int:strict` | Entire `app-int` project with unreachable or unmigrated DB as failure     |
-| `pnpm test:engine`     | Explicit curated integration paths listed in `package.json`               |
-| `pnpm test:engine-e*`  | Focused engine proof paths used for targeted gate work                    |
+| Command                                      | Selection                                                                      |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| `pnpm test:int`                              | Whole `app-int` project in the `all` view; probes may self-skip outside CI     |
+| `pnpm test:int:strict`                       | Whole `app-int` project; an unreachable or unmigrated database fails           |
+| `node scripts/ci-integration.mjs --mode=...` | One authorization mode and shard on its own database; the CI executor          |
+| `pnpm census:integration`                    | The policy census: discovered suites, strict/legacy partition, problems        |
+| `pnpm test:engine`                           | Curated engine, image, and authoring paths in `app-int`; not a CI selection    |
+| `pnpm test:engine-e*`                        | Focused engine proof paths used for targeted gate work                         |
 
-CI selects the curated `pnpm test:engine` surface, but appends `--project=app-int` so a directory argument cannot accidentally collect pure tests that already ran in the unit shards. It also shards that curated integration surface across two independent runners. No current CI job selects the entire `pnpm test:int` or `pnpm test:int:strict` project; the coverage boundary is documented below.
+The `all` view holds legacy-fixture suites, which need the legacy capability, and strict suites, whose authorization-denial claims need it absent, in one process, so no single `all` process can pass both. The two launcher modes are the complete run; [Integration modes](#integration-modes) owns the split.
 
 ## Test layers
 
@@ -83,17 +85,26 @@ Search these homes and the nearest existing suite before creating setup. Extend 
 - Preserve literal assertions only where the literal is the contract, including persisted hashes, wire formats, migration compatibility, and security allowlists.
 - Symlink-containment tests may self-skip only when the local platform cannot create their fixture. `CI=true` makes fixture failure fatal so a security gate cannot disappear from CI.
 
-## Strict integration mode
+## Integration modes
+
+`scripts/integration-policy.mjs` owns the application integration inventory; the root Vitest configuration, the CI launcher, and the evidence verifier all read it.
+
+- The universe is every tracked `*.int.test.ts` under `apps/web/src/` or `scripts/`. It is discovered, never listed: a new ordinary suite joins the gate by existing. Package-owned tests keep their own configurations and are outside it.
+- An integration-looking file the universe cannot collect, such as a `.int.test.tsx`, a `.int.spec.ts`, or an `.int.test.ts` outside both roots and outside `packages/`, is a census problem.
+- The policy's legacy exceptions name exact files, each with a reason. The STRICT mode runs every other suite; the LEGACY mode runs exactly the exceptions. There is no directory or pattern admission, and a stale, duplicate, pattern, or non-integration entry is a census problem.
+- `VESPER_INTEGRATION_MODE` is `strict`, `legacy`, or unset (`all`). The `app-int` project applies it inside its own `include`/`exclude`, because Vitest does not pass a command-line include or exclude down to a project. An unknown value fails configuration loading.
+- A suite is a legacy exception only when an expected outcome needs a `player` principal whose id names no account to pass `authorizeSimulationCommand` on a branch no chat anchors, whether the outcome is an acceptance or a domain-level rejection. Such a suite passes `legacyPlayerMode: true` to `simulationSuiteHarness`, whose default is `false`; that option fails the file at collection unless the capability is on. `scripts/integration-policy.test.ts` requires the exception list and those declarations to agree.
+- A suite that asserts an authorization denial is strict. `command-authz.int.test.ts` proves an account-less player is refused on an unanchored branch with the capability absent; `command-authz-legacy.int.test.ts` proves the capability admits only that combination and never a real account or an anchored branch.
+
+Every `app-int` worker runs `apps/web/src/server/test-support/integration-worker-setup.ts` after the application setup and before the suite is imported. In the `strict` and `legacy` modes it requires strict database probes and the fake providers. A strict worker must not carry `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER` in any form. A legacy worker must carry it under `NODE_ENV=test` and may import only a listed exception. A contradiction fails that file's collection. Every test in those modes records the worker's attestation in its task metadata under `vesperIntegration`, where the evidence verifier reads it back out of the JSON report.
 
 Every application integration suite uses `probeIntegrationDb` from `@/server/test-support`, directly or through `simulationSuiteHarness`. In ordinary non-CI execution the probe can self-skip when the database is absent. Strict signals (`REQUIRE_INTEGRATION_DB=true`, `VESPER_REQUIRE_TEST_DB=1`, or `CI=true`) make absence or migration failure fatal.
 
-Suites that submit the legacy synthetic `player` principal against directly seeded simulation branches call `requireLegacyUnanchoredEngineTestMode`. CI's curated engine shards export `VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1`. Authorization-denial suites that are outside that curated command remain separate and must leave that capability disabled.
-
-Integration files still run without file parallelism because tests within one shard share one database. CI parallelism happens one level higher: each integration shard has its own runner, Postgres instance, migrations, and teardown. That preserves isolation while reducing wall-clock time. Image-row fixtures normally use `canonicalImageRow`, which derives a path satisfying the `images_path_canonical` database constraint. Tests of the constraint itself may deliberately construct invalid rows.
+Integration files run without file parallelism because the files in one process share one database. CI parallelism happens one level higher, on separate runners and separate databases. Image-row fixtures normally use `canonicalImageRow`, which derives a path satisfying the `images_path_canonical` database constraint. Tests of the constraint itself may deliberately construct invalid rows.
 
 ## The verification gate
 
-GitHub Actions runs `.github/workflows/ci.yml` on GitHub-hosted `ubuntu-latest` runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch and every pull request into `prod` force all release-candidate gates. Workflow-file changes also force the integration, production-build, and Docker packaging gates so CI changes exercise the jobs they modify.
+GitHub Actions runs `.github/workflows/ci.yml` on GitHub-hosted `ubuntu-latest` runners. Draft pull requests run no jobs. Ready pull requests run jobs selected from changed paths; a manual dispatch and every pull request into `prod` force all release-candidate gates. Workflow-file changes also force the Gate 1 benchmark, production-build, and Docker packaging gates so CI changes exercise the jobs they modify.
 
 | Job                      | Current command and claim                                                                    |
 | ------------------------ | -------------------------------------------------------------------------------------------- |
@@ -102,11 +113,13 @@ GitHub Actions runs `.github/workflows/ci.yml` on GitHub-hosted `ubuntu-latest` 
 | Static checks            | Cycles, route auth, package boundaries/resolution, typecheck, jscpd                          |
 | App unit tests           | Two `vitest --project=app --shard=…` jobs                                                    |
 | Workspace package tests  | Package-owned pure suites with bounded workspace concurrency                                 |
-| Engine integration       | Two isolated Postgres-backed shards of curated `pnpm test:engine -- --project=app-int`       |
+| Integration              | Two runners, each running its strict and legacy shard through `scripts/ci-integration.mjs`   |
 | Production build         | Next production build with the Fly builder's heap ceiling and persisted `.next/cache`        |
 | Docker packaging build   | Production Docker image build when packaging inputs move and for release-candidate runs      |
 
-Documentation-only changes run the documentation job. Ready code changes run lint, static checks, both application-unit shards, and package tests. Changed-path rules decide whether integration, production build, and Docker packaging apply. `scripts/ci-classify.mjs` owns those path rules and has table-driven tests so an exclusion cannot drift silently from the suites CI actually runs.
+Documentation-only changes run the documentation job. Every ready code change, meaning any change with a path that is not documentation, runs lint, static checks, both application-unit shards, package tests, and the complete integration gate. No feature area, test-only, script-only, or CI-policy-only change can suppress integration. Changed-path rules decide only the Gate 1 benchmark, the production build, and Docker packaging. `scripts/ci-classify.mjs` owns those rules and has table-driven tests.
+
+A path is documentation when it ends in `.md`, is an issue or pull-request template, or sits under `docs/` with a documentation extension (`.md`, `.mdx`, `.txt`, `.yaml`, `.yml`, or an image) and no `.test.` or `.spec.` in its name. A test or executable file does not become documentation by moving under `docs/`. The safe-follow-up detector imports the same predicate. Deleted and renamed paths are classified on both sides, because the changed-path list is collected without rename detection.
 
 Ordinary application and workspace-source changes now select the production build. This is intentional: the build has been cheaper than the slowest test gates in recent Actions runs, so running it concurrently broadens verification without normally extending the critical path. Docker validation remains narrower because it is intended to prove packaging inputs, not every application edit.
 
@@ -120,12 +133,27 @@ The changed-route authorization guard receives the actual PR base SHA from CI ra
 
 The full inventory is intentionally release-gated because it checks repository-wide state rather than only the current diff. It reports how many resource-ID routes it examined and fails when that count is zero: an API tree or `RESOURCE_ROUTE` change that empties the inventory is a broken gate, so it turns the release check red instead of passing a vacuous scan as evidence.
 
-### What a green integration job proves
+### What a green integration gate proves
 
-The `engine integration` matrix starts two independent Postgres instances, migrates each from zero, and divides the exact `pnpm test:engine` path list in `package.json` across Vitest shards. That list includes the successor simulation-store directory and named successor narrator, admin, image, identity-pack, authoring, and route suites. `CI=true` makes their database probes strict.
+The integration matrix has two runners. Each starts one disposable Postgres service and runs its shard of the strict mode, then its shard of the legacy mode, as separate Vitest processes through `scripts/ci-integration.mjs`. Each batch:
 
-The classifier treats `apps/web/src/server/authoring/**` as integration-relevant because the curated engine command includes DB-backed authoring suites. This closes the previous mismatch where authoring-only changes could skip the integration job that owned their database assertions.
+- reconciles `git ls-files` against the policy and fails on any census problem;
+- drops, creates, and migrates from zero its own `vesper_ci_strict` or `vesper_ci_legacy` database on the local service, and refuses a non-local host;
+- asks Vitest for the discovered universe and for its mode's inventory and shard, through Vitest's own file listing and configured sequencer, and fails when either disagrees with the census;
+- runs `pnpm exec vitest run --project=app-int --no-file-parallelism --shard=<i>/<n>` from an argument array with the console and JSON reporters. A strict child never carries the legacy capability; a legacy child always does;
+- records a planned-empty shard as no-work without invoking Vitest; and
+- writes `integration-evidence/<mode>/envelope.json` beside the JSON report, uploaded as `integration-evidence-shard-<i>-of-<n>-attempt-<k>`.
 
-The curated job still does not run the entire `app-int` project. In particular, `apps/web/src/app/api/gallery.int.test.ts` and `apps/web/src/server/api/authz-matrix.int.test.ts` are not automatically selected merely because integration ran. Many legacy-chat, route, memory, retention, quota, and other integration suites also remain outside the curated command. A green integration matrix leaves every unselected suite unverified.
+The legacy batch runs even when the strict batch fails, so one run reports both, and either failure fails the job. The Gate 1 benchmark runs once, on shard 1, against its own migrated `vesper_ci_benchmark` database without the legacy capability.
 
-Completion reports must therefore continue to map each target integration test file to the script and CI job that selected it. When a relevant suite is outside `test:engine`, the report states that it did not run, even if aggregate `verify` is green. `package.json` remains the exact source of the curated integration selection; inferred family names are not evidence that a file ran.
+Whenever integration applies, `verify` runs `scripts/verify-integration-results.mjs` before its job-status check, and it fails `verify` unless:
+
+- the census it recomputes from its own checkout has no problem, and every batch discovered exactly that universe;
+- each mode and shard has exactly one batch from the job attempt the GitHub API reports as that shard's latest execution, so an earlier attempt's success never covers a rerun;
+- every batch tested this run's checkout and pull-request head and base, under this policy hash, with its own database, recorded environment, and the launcher's exact argument array;
+- the planned shards partition each mode's inventory, and the two modes partition the universe;
+- the executed files, counted before any merge, equal the planned files with multiplicity one, and no pure `app` file appears;
+- every executed file passed with at least one passed case and no failed, skipped, or todo case, and every case carries the attestation for its mode; and
+- every planned-empty shard recorded no-work.
+
+A green `verify` on a code change therefore means every tracked application integration suite executed exactly once, in its mode, and passed. The gate has no exception mechanism for skipped or todo cases. The `verify` job summary lists each batch's planned and executed files, case counts, durations, and evidence artifact. A completion report cites that run at the tested head, not a file's membership in the inventory.

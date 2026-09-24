@@ -36,7 +36,11 @@ import {
  * guard + world teardown + pool close).
  */
 
-const harness = await simulationSuiteHarness({ suite: "lod-store.int.test", table: "sim_actor_lods" });
+const harness = await simulationSuiteHarness({
+  suite: "lod-store.int.test",
+  table: "sim_actor_lods",
+  legacyPlayerMode: true,
+});
 
 const SEED_SECOND = 200_000;
 

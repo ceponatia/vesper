@@ -26,10 +26,10 @@ import { apiRequest, routeCtx } from "./route-request";
  * single fixed `ROLLOUT_WORLD_ID` / `ROLLOUT_BRANCH_ID` pair — the seed deletes
  * and recreates that one world, and the commands below advance that one branch
  * clock — so two of them in flight at once tear each other's world out from
- * under the assertions. Run them under `vitest --no-file-parallelism` (what
- * `pnpm test:int` does), and keep them in one sequential invocation when running
- * a subset by hand. Suites that want an isolated world should seed their own id
- * (see `sim-seed.ts`) rather than reach for this module.
+ * under the assertions. Run them under `vitest --no-file-parallelism` (every
+ * integration invocation runs with it), and keep them in one sequential
+ * invocation when running a subset by hand. Suites that want an isolated world
+ * should seed their own id (see `sim-seed.ts`) rather than reach for this module.
  *
  * The `POST /api/chats` handler is passed IN rather than imported here: nothing
  * in `src/server/test-support` imports `src/app`, and keeping it that way stops

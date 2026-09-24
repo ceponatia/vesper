@@ -57,7 +57,11 @@ import {
  * teardown + pool close).
  */
 
-const harness = await simulationSuiteHarness({ suite: "activity-store.int.test", table: "sim_activities" });
+const harness = await simulationSuiteHarness({
+  suite: "activity-store.int.test",
+  table: "sim_activities",
+  legacyPlayerMode: true,
+});
 
 const SEED_SECOND = 20_000;
 const NAP_SECONDS = 1_800;

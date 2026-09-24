@@ -98,6 +98,7 @@ describe("ci-safe-followup", () => {
     ["a force push or rebase", { ancestor: false }, /not an ancestor/],
     ["an empty diff", { changed: [] }, /no paths changed/],
     ["a code path among the documentation paths", { changed: ["docs/testing.md", "apps/web/x.ts"] }, /apps\/web\/x\.ts/],
+    ["a test file under docs/, which is code, not documentation", { changed: ["docs/foo.test.ts"] }, /docs\/foo\.test\.ts/],
     ["a workflow change", { changed: [".github/workflows/ci.yml"] }, /workflow changed/],
     ["no previous run at the previous head", { runs: [] }, /no CI run for pull request #358/],
     ["a previous run for a different pull request", { runs: [{ ...GREEN_RUN, pull_requests: [{ number: 1, base: { sha: BASE } }] }] }, /no CI run for pull request #358/],

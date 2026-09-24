@@ -4,13 +4,23 @@ import { readFileSync, appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// A path is documentation iff:
+//   - it ends with `.md` (anywhere in the tree, not only under `docs/`); or
+//   - it starts with `.github/ISSUE_TEMPLATE/` or `.github/PULL_REQUEST_TEMPLATE`; or
+//   - it starts with `docs/`, its extension is one of DOCS_DIR_EXTENSIONS, and
+//     its basename is not a test/spec file.
+// A test or executable input does not become documentation merely by moving
+// under `docs/`: `docs/foo.test.ts`, `docs/tools/x.mjs`, `docs/a.json`, and
+// `docs/run.sh` are all code.
+const DOCS_DIR_EXTENSIONS = new Set([".md", ".mdx", ".txt", ".yaml", ".yml", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"]);
+const TEST_OR_SPEC_BASENAME = /\.(test|spec)\./;
+
 export function isDocumentationPath(file) {
-  return (
-    file.startsWith("docs/") ||
-    file.endsWith(".md") ||
-    file.startsWith(".github/ISSUE_TEMPLATE/") ||
-    file.startsWith(".github/PULL_REQUEST_TEMPLATE")
-  );
+  if (file.endsWith(".md")) return true;
+  if (file.startsWith(".github/ISSUE_TEMPLATE/") || file.startsWith(".github/PULL_REQUEST_TEMPLATE")) return true;
+  if (!file.startsWith("docs/")) return false;
+  if (!DOCS_DIR_EXTENSIONS.has(path.extname(file))) return false;
+  return !TEST_OR_SPEC_BASENAME.test(path.basename(file));
 }
 
 function any(files, predicate) {
@@ -55,53 +65,13 @@ export function classifyChanges({ files, eventName = "", baseRef = "", safeFollo
 
   const workflowChanged = any(files, (file) => file.startsWith(".github/workflows/"));
 
-  const integration =
-    promotion ||
-    workflowChanged ||
-    any(files, (file) => {
-      if (matches(file, [
-        "apps/web/src/server/engine/chat-pipeline",
-        "apps/web/src/server/engine/chat-reply-stream",
-        "apps/web/src/server/engine/chat-reply-store",
-        "apps/web/src/server/engine/chat-summary",
-        "apps/web/src/server/engine/chat-authority",
-      ])) return true;
-
-      if (matches(file, [
-        "apps/web/src/server/engine/chat-",
-        "apps/web/src/server/engine/prompts/chat-",
-        "apps/web/src/server/engine/prompts/character-chat",
-      ])) return false;
-
-      // Authoring has DB-backed suites in test:engine. Keep only the known
-      // no-DB server areas excluded; new server/API families fail closed by
-      // selecting integration.
-      if (matches(file, [
-        "apps/web/src/server/auth/",
-        "apps/web/src/server/memory/",
-        "apps/web/src/server/reference-extraction/",
-      ])) return false;
-
-      if (matches(file, ["apps/web/src/server/", "apps/web/src/app/api/"])) return true;
-      if (matches(file, ["apps/web/src/contracts/images/"])) return true;
-      if (matches(file, ["apps/web/src/contracts/"])) return false;
-
-      return matches(file, [
-        "apps/web/src/lib/simulation/",
-        "apps/web/src/test/",
-        "packages/",
-        "drizzle/",
-        "scripts/db-",
-        "scripts/eval/engine-gate1/",
-        "docker/",
-        "docker-compose",
-        "package.json",
-        "apps/web/package.json",
-        "pnpm-lock.yaml",
-        "pnpm-workspace.yaml",
-        "vitest.config.",
-      ]);
-    });
+  // Every ready, non-documentation code change requires the complete
+  // integration gate: `code` (computed above) already covers a promotion and
+  // fails closed to `true` for any path that isn't documentation, including
+  // auth, chat, memory, test-only, script-only, CI-policy-only and unknown
+  // paths. There is no narrower prefix carve-out here anymore — the Gate 1
+  // benchmark (`engine`, below) stays the only narrower gate.
+  const integration = code;
 
   const engine =
     promotion ||

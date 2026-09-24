@@ -40,7 +40,11 @@ import {
  * (the options assertion).
  */
 
-const harness = await simulationSuiteHarness({ suite: "snapshot-reads.int.test", table: "sim_engagements" });
+const harness = await simulationSuiteHarness({
+  suite: "snapshot-reads.int.test",
+  table: "sim_engagements",
+  legacyPlayerMode: true,
+});
 
 const SEED_SECOND = 60_000;
 const WALK = 600;

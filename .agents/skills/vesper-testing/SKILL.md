@@ -54,6 +54,6 @@ implementation is reported complete.
 
 Name the test file changed, the claim it protects, and the CI job or script that actually selects it. A green aggregate `verify` result means all applicable jobs succeeded; it does not mean every repository suite ran.
 
-Read [CI evidence and uncovered suites](references/ci-evidence.md) before claiming integration coverage. The current `engine integration` job runs the curated `pnpm test:engine` targets, not the whole `app-int` project. If the target suite is outside that list, explicitly mark it unverified even when CI is green. Do not substitute a prohibited local run.
+Read [CI evidence](references/ci-evidence.md) before claiming integration coverage. Every ready code change runs the complete `app-int` inventory in its strict and legacy modes, and `verify` reconciles the evidence; cite that run's evidence summary at the tested head, not the file's presence in the repository. Do not substitute a prohibited local run.
 
 If no test was added, say why: existing coverage owns the invariant, another gate catches the defect, or the change introduces no meaningful runtime behavior.

@@ -32,14 +32,15 @@ export function legacyEngineTestPlayerPrincipal(controlledActorIds: string[]): L
 
 /**
  * Collection-time guard for the suites that submit the legacy fixture against
- * directly-seeded (unanchored) branches. Without the opt-in,
+ * directly-seeded (unanchored) branches — the files that pass
+ * `legacyPlayerMode: true` to `simulationSuiteHarness`. Without the opt-in,
  * `authorizeSimulationCommand` refuses every player command as
- * `unanchored_player`, which a plain local `pnpm test:int` surfaces as ~120
- * opaque domain failures ("expected the transfer to be accepted, got
- * rejected") — so fail the file at collection naming the actual cause instead.
- * Call it only after the DB probe succeeds (an unreachable database keeps its
- * self-skip behavior), and never from the authorization suites
- * (command-authz.int.test), whose denial coverage must not depend on the flag.
+ * `unanchored_player`, which a strict-mode run surfaces as dozens of opaque
+ * domain failures ("expected the transfer to be accepted, got rejected") — so
+ * fail the file at collection naming the actual cause instead. Call it only
+ * after the DB probe succeeds (an unreachable database keeps its self-skip
+ * behavior), and never from the authorization suites (command-authz.int.test),
+ * whose denial coverage must hold with the capability absent.
  */
 export function requireLegacyUnanchoredEngineTestMode(suite: string, env: NodeJS.ProcessEnv = process.env): void {
   if (legacyUnanchoredEngineTestMode(env)) return;
@@ -51,8 +52,9 @@ export function requireLegacyUnanchoredEngineTestMode(suite: string, env: NodeJS
     `[${suite}] ${cause}. This suite submits the legacy synthetic player fixture ` +
       `("${LEGACY_ENGINE_TEST_PLAYER_ID}") against directly-seeded unanchored branches, so without the opt-in ` +
       `the simulation authorization seam refuses every player command as "unanchored_player" and the run reports ` +
-      `dozens of misleading domain failures instead of this message. Re-run as ` +
-      `\`${LEGACY_ENGINE_TEST_PLAYER_ENV}=1 pnpm test:int\` (CI already exports the flag for \`pnpm test:engine\`). ` +
-      `Details: docs/testing.md §"Running the whole integration suite locally".`,
+      `dozens of misleading domain failures instead of this message. This suite must be listed as a legacy ` +
+      `exception in scripts/integration-policy.mjs and run in the legacy integration mode, ` +
+      `\`node scripts/ci-integration.mjs --mode=legacy\` (CI runs that mode for every listed file). ` +
+      `Details: docs/testing.md §"Integration modes".`,
   );
 }

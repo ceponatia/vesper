@@ -33,7 +33,7 @@ Targets (default: all)
   typecheck   tsc across the root, the app, and every package
   test        the pure Vitest suite (no database)
   jscpd       copy-paste threshold
-  engine      DB-backed engine/rollout suite + Gate 1 benchmark (needs `pnpm db:up`)
+  engine      complete integration inventory (strict + legacy modes) + Gate 1 benchmark (needs `pnpm db:up`)
   build       Next production build, heap-pinned to the Fly builder's 4 GB ceiling
 EOF
 }
@@ -137,7 +137,10 @@ gate_engine() {
     failed+=(engine)
     return 0
   fi
-  gate engine 8G 6144 env VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 REQUIRE_INTEGRATION_DB=true pnpm test:engine
+  # The complete integration inventory, in the two authorization modes CI runs
+  # (scripts/ci-integration.mjs creates and migrates its own vesper_ci_* database).
+  gate integration-strict 8G 6144 node scripts/ci-integration.mjs --mode=strict
+  gate integration-legacy 8G 6144 node scripts/ci-integration.mjs --mode=legacy
   gate engine-gate1-benchmark 4G 4096 pnpm eval:engine-gate1
 }
 

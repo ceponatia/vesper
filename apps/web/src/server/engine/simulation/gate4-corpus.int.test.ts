@@ -48,6 +48,7 @@ const TURN_SPAN = 400;
 const harness = await simulationSuiteHarness({
   suite: "gate4-corpus.int.test",
   table: "sim_memory_documents",
+  legacyPlayerMode: true,
 });
 
 /** Cafe (hall: player+mara; shop: iris) and a park (noor) — two locations. */

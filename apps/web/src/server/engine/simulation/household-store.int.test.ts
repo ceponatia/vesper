@@ -92,6 +92,7 @@ const harness = await simulationSuiteHarness({
   suite: "household-store.int.test",
   table: "sim_households",
   trackBranchMembers: true,
+  legacyPlayerMode: true,
 });
 
 const SEED_SECOND = 60_000;

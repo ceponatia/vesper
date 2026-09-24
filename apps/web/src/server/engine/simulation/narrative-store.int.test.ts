@@ -52,6 +52,7 @@ const WALK = 300;
 const harness = await simulationSuiteHarness({
   suite: "narrative-store.int.test",
   table: "sim_narrative_cuts",
+  legacyPlayerMode: true,
 });
 
 /** One cafe with three zones; player and Mara share the hall, Iris shelves stock. */

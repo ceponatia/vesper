@@ -33,6 +33,7 @@ const WALK_AB = 600;
 const harness = await simulationSuiteHarness({
   suite: "move-together-store.int.test",
   table: "sim_physical_loci",
+  legacyPlayerMode: true,
 });
 
 interface TogetherCase {

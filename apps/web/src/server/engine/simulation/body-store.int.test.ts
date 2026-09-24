@@ -47,7 +47,11 @@ import {
  * teardown + pool close).
  */
 
-const harness = await simulationSuiteHarness({ suite: "body-store.int.test", table: "sim_body_meters" });
+const harness = await simulationSuiteHarness({
+  suite: "body-store.int.test",
+  table: "sim_body_meters",
+  legacyPlayerMode: true,
+});
 
 /** The cut's body surface, read the way the arbiter reads it: inside one snapshot. */
 function bodilyReadsAt(input: Parameters<typeof computeEngagementBodilyReads>[1]) {
