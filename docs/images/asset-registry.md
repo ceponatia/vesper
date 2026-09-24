@@ -63,8 +63,12 @@ portrait studio's full rows come from the owner-strict `GET /api/characters/:id/
 `identity_face_crop` is hard-deleted with its character, one case of the Gallery-listable
 survival rule below ([identity-packs.md](identity-packs.md)); the two lab kinds belong to the
 [Advanced Image Lab](../image-lab/README.md) and are deleted with their experiment or by an admin's
-explicit fixture delete; `generator_output` is an
-[Image Generator](../image-generator/README.md) run's render, hard-deleted with its run;
+explicit fixture delete; `generator_output` is either an
+[Image Generator](../image-generator/README.md) run's render, hard-deleted with its run, or a
+reference/control image the admin uploaded directly to the bench (`meta.source` is
+`generator_upload` or `admin_files_import` rather than absent), explicitly deletable through its own
+uploads panel and never through a run's own delete path — the two subtypes share the hidden kind but
+never the `meta.source` value, which is the entire authorization boundary between them;
 `reference_view` is one slot of a character's reference view set
 ([pipelines/reference-views.md](pipelines/reference-views.md)), hard-deleted with its character by
 the same Gallery-listable survival rule, and read by its owner through the ordinary owner file

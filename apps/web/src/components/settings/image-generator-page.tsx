@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ImageGeneratorForm, type ImageGeneratorPrefill } from "./image-generator-form";
 import { ImageGeneratorRunDetail } from "./image-generator-run-detail";
 import { ImageGeneratorRunList } from "./image-generator-run-list";
+import { ImageGeneratorUploadsPanel } from "./image-generator-uploads-panel";
 
 /**
  * The Image Generator's admin page: the raw prompt/model bench beside the
@@ -40,6 +41,7 @@ const MAX_LIST_POLLS = 100;
 export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) {
   const me = useAsyncData(() => meApi.get(), []);
   const runs = useAsyncData(() => imageGeneratorApi.runs.list(), []);
+  const uploads = useAsyncData(() => imageGeneratorApi.uploads.list(), []);
 
   const [selectedRunId, setSelectedRunId] = useState<string | null>(initialRunId ?? null);
   // Bumped by every accepted create so the form remounts blank.
@@ -48,6 +50,9 @@ export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) 
   // from it (the lab's idiom): the form owns its state after mount, so a
   // reused instance would ignore a second pre-fill.
   const [prefill, setPrefill] = useState<{ id: number; values: ImageGeneratorPrefill } | null>(null);
+  // Uploads deleted from the shelf this visit. The mounted form clears any
+  // selection naming one, so it cannot submit a run whose input is gone.
+  const [deletedUploadIds, setDeletedUploadIds] = useState<ReadonlySet<string>>(() => new Set());
 
   // The single door for changing which run is open: state and URL move
   // together, so a refresh or a pasted link lands back on the same record.
@@ -129,6 +134,7 @@ export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) 
         <ImageGeneratorForm
           key={`${String(prefill?.id ?? 0)}-${String(formGeneration)}`}
           prefill={prefill?.values ?? null}
+          deletedImageIds={deletedUploadIds}
           onCreated={(runId) => {
             // Everything the form was holding is spent the moment the request
             // is accepted — the pre-fill included. The new run's detail is
@@ -146,6 +152,17 @@ export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) 
           error={runs.error}
           onReload={() => runs.reload()}
           onSelect={selectRun}
+        />
+
+        <ImageGeneratorUploadsPanel
+          uploads={uploads.data ?? []}
+          loading={uploads.loading}
+          error={uploads.error}
+          onReload={() => uploads.reload()}
+          onDeleted={(imageId) => {
+            setDeletedUploadIds((previous) => new Set(previous).add(imageId));
+            uploads.reload({ silent: true });
+          }}
         />
       </div>
     </PageContainer>

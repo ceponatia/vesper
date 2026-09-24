@@ -269,11 +269,14 @@ export {
   type DeleteImageGeneratorRunResult,
   deleteImageGeneratorRuns,
   type DeleteImageGeneratorRunsResult,
+  deleteImageGeneratorUpload,
+  type DeleteImageGeneratorUploadResult,
   getImageGeneratorRunDetail,
   type ImageGeneratorProviderOutcome,
   type ImageGeneratorRunPayload,
   type ImageGeneratorRunRow,
   listImageGeneratorRuns,
+  listImageGeneratorUploads,
   toWireImageGeneratorRun,
 } from "./image-generator-store";
 export { runImageGeneratorRun } from "./image-generator-run";
