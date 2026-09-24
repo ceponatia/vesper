@@ -473,15 +473,22 @@ export function verifyIntegrationEvidence({ batches, census, identity, shardCoun
 // ---------------------------------------------------------------------------
 
 /**
- * The latest executed attempt of each integration shard, from every job
- * execution in the run (`filter=all`). A rerun of a shard is a new job
- * execution with a higher `run_attempt`; a shard that was not rerun keeps its
- * earlier execution.
- * @param {Array<{ id?: number, name?: string, run_attempt?: number }>} jobs
+ * The latest EXECUTED attempt of each integration shard, from every job record
+ * in the run (`filter=all`).
+ *
+ * A rerun of a shard is a new execution with a higher `run_attempt`. A shard
+ * that was NOT rerun ("Re-run failed jobs", or a single-job rerun) is still
+ * listed again under the new attempt — with a new job id and the new
+ * `run_attempt`, but the same `started_at`/`completed_at` as the execution it
+ * carries over (observed on run 36070936379, attempt 2). So records are grouped
+ * by shard and timing, and each group counts under the LOWEST attempt it
+ * appears in: the attempt that actually ran it. A record with no start time
+ * counts as its own execution, so a rerun that never produced evidence fails.
+ * @param {Array<{ id?: number, name?: string, run_attempt?: number, started_at?: string | null, completed_at?: string | null }>} jobs
  * @param {number} shardCount
  */
 export function authoritativeAttemptsFromJobs(jobs, shardCount) {
-  const attempts = new Map();
+  const executions = new Map();
   const seen = new Set();
   for (const job of jobs) {
     if (!isObject(job) || seen.has(job.id)) continue;
@@ -489,7 +496,17 @@ export function authoritativeAttemptsFromJobs(jobs, shardCount) {
     const match = INTEGRATION_JOB_NAME.exec(job.name ?? "");
     if (match === null || Number(match[2]) !== shardCount || !isPositiveInteger(job.run_attempt)) continue;
     const index = Number(match[1]);
-    attempts.set(index, Math.max(attempts.get(index) ?? 0, job.run_attempt));
+    const timing =
+      typeof job.started_at === "string" && job.started_at !== ""
+        ? `${job.started_at}|${job.completed_at ?? ""}`
+        : `id:${String(job.id)}`;
+    const key = `${index}|${timing}`;
+    const previous = executions.get(key);
+    executions.set(key, { index, attempt: Math.min(previous?.attempt ?? job.run_attempt, job.run_attempt) });
+  }
+  const attempts = new Map();
+  for (const { index, attempt } of executions.values()) {
+    attempts.set(index, Math.max(attempts.get(index) ?? 0, attempt));
   }
   return attempts;
 }

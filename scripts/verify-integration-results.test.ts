@@ -538,6 +538,37 @@ describe("authoritative attempts", () => {
       [2, 2],
     ]);
   });
+
+  it("counts a job carried into a rerun under the attempt that actually executed it", () => {
+    // The job listing GitHub returned for run 36070936379 after re-running only
+    // `integration (2/2)`: the untouched shard 1 reappears under attempt 2 with a
+    // new id but its attempt-1 timing, and must not demand attempt-2 evidence.
+    const attempts = authoritativeAttemptsFromJobs(
+      [
+        { id: 107871544485, name: "integration (1/2)", run_attempt: 1, started_at: "2026-09-24T23:05:37Z", completed_at: "2026-09-24T23:09:42Z" },
+        { id: 107871544559, name: "integration (2/2)", run_attempt: 1, started_at: "2026-09-24T23:05:37Z", completed_at: "2026-09-24T23:08:53Z" },
+        { id: 107872916875, name: "integration (2/2)", run_attempt: 2, started_at: "2026-09-24T23:10:35Z", completed_at: "2026-09-24T23:13:56Z" },
+        { id: 107872918578, name: "integration (1/2)", run_attempt: 2, started_at: "2026-09-24T23:05:37Z", completed_at: "2026-09-24T23:09:42Z" },
+        { id: 107873816362, name: "verify", run_attempt: 2, started_at: "2026-09-24T23:14:00Z", completed_at: "2026-09-24T23:14:10Z" },
+      ],
+      2,
+    );
+    expect([...attempts.entries()].sort()).toEqual([
+      [1, 1],
+      [2, 2],
+    ]);
+  });
+
+  it("treats a rerun record with no start time as its own execution", () => {
+    const attempts = authoritativeAttemptsFromJobs(
+      [
+        { id: 1, name: "integration (1/2)", run_attempt: 1, started_at: "2026-09-24T23:05:37Z", completed_at: "2026-09-24T23:09:42Z" },
+        { id: 2, name: "integration (1/2)", run_attempt: 2, started_at: null, completed_at: null },
+      ],
+      2,
+    );
+    expect(attempts.get(1)).toBe(2);
+  });
 });
 
 describe("loading downloaded artifacts", () => {

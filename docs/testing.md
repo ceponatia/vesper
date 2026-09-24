@@ -149,7 +149,7 @@ The legacy batch runs even when the strict batch fails, so one run reports both,
 Whenever integration applies, `verify` runs `scripts/verify-integration-results.mjs` before its job-status check, and it fails `verify` unless:
 
 - the census it recomputes from its own checkout has no problem, and every batch discovered exactly that universe;
-- each mode and shard has exactly one batch from the job attempt the GitHub API reports as that shard's latest execution, so an earlier attempt's success never covers a rerun;
+- each mode and shard has exactly one batch from the job attempt that last executed that shard, read from the GitHub jobs API, so an earlier attempt's success never covers a rerun. A job GitHub carries into a rerun without executing it again reappears under the new attempt with its original timing, and it counts under the attempt that ran it;
 - every batch tested this run's checkout and pull-request head and base, under this policy hash, with its own database, recorded environment, and the launcher's exact argument array;
 - the planned shards partition each mode's inventory, and the two modes partition the universe;
 - the executed files, counted before any merge, equal the planned files with multiplicity one, and no pure `app` file appears;

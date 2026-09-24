@@ -55,7 +55,13 @@ export function verifyIntegrationEvidence(input: {
   authoritativeAttempts: Map<number, number> | null;
 }): VerificationResult;
 export function authoritativeAttemptsFromJobs(
-  jobs: ReadonlyArray<{ id?: number; name?: string; run_attempt?: number }>,
+  jobs: ReadonlyArray<{
+    id?: number;
+    name?: string;
+    run_attempt?: number;
+    started_at?: string | null;
+    completed_at?: string | null;
+  }>,
   shardCount: number,
 ): Map<number, number>;
 export function renderSummary(result: VerificationResult): string;
