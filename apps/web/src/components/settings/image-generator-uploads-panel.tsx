@@ -130,9 +130,11 @@ export function ImageGeneratorUploadsPanel({
         title: `Deleted ${String(deleted.length)} upload${deleted.length === 1 ? "" : "s"}`,
         tone: "success",
       });
-    } else if (inUse.length === 0) {
-      // Every id was already gone — another tab got there first. Refetch so
-      // the tiles stop claiming otherwise.
+    } else {
+      // Nothing went, so the caller's post-delete refetch never fires — but an
+      // id in neither list was already gone (another tab got there first),
+      // even beside ones a run still holds. Refetch so its tile stops
+      // claiming otherwise.
       onReload();
     }
     if (inUse.length > 0) {
