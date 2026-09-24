@@ -271,6 +271,8 @@ export {
   type DeleteImageGeneratorRunsResult,
   deleteImageGeneratorUpload,
   type DeleteImageGeneratorUploadResult,
+  deleteImageGeneratorUploads,
+  type DeleteImageGeneratorUploadsResult,
   getImageGeneratorRunDetail,
   type ImageGeneratorProviderOutcome,
   type ImageGeneratorRunPayload,

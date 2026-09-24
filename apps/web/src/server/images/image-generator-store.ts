@@ -670,3 +670,37 @@ export async function deleteImageGeneratorUpload(
     .where(runsReferencingUpload(ownerId, imageId));
   return { status: "in_use", runCount: referencing?.runs ?? 0 };
 }
+
+export interface DeleteImageGeneratorUploadsResult {
+  /** Ids actually removed — row and file both. */
+  deleted: string[];
+  /** Ids refused because one of this owner's runs still records them as an input. */
+  inUse: string[];
+}
+
+/**
+ * Retire several uploaded references at once — the uploads panel's
+ * multi-select delete. Each id goes through {@link deleteImageGeneratorUpload}
+ * in turn rather than one set-wide predicate: the in-use guard is a subquery
+ * bound to one literal id, and a set-wide version would have to correlate on
+ * the outer image row, which Drizzle renders unqualified in a single-table
+ * statement and would silently bind to the run's own `id` instead.
+ *
+ * An id that is foreign, absent, the wrong kind, or a run's own output is in
+ * neither list, so `deleted` is exactly what went away. Ids are de-duplicated,
+ * because a repeated one would otherwise be reported once deleted and once not
+ * found.
+ */
+export async function deleteImageGeneratorUploads(
+  ownerId: string,
+  imageIds: readonly string[],
+): Promise<DeleteImageGeneratorUploadsResult> {
+  const deleted: string[] = [];
+  const inUse: string[] = [];
+  for (const imageId of new Set(imageIds)) {
+    const result = await deleteImageGeneratorUpload(ownerId, imageId);
+    if (result.status === "deleted") deleted.push(imageId);
+    else if (result.status === "in_use") inUse.push(imageId);
+  }
+  return { deleted, inUse };
+}

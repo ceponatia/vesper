@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 import type { ImageGeneratorUpload } from "@/contracts/images/image-generator-upload";
 import { imageGeneratorApi, imageUrl, type ApiError } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cx } from "@/components/ui/cx";
 import { ErrorState } from "@/components/ui/error-state";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
@@ -23,6 +24,14 @@ import { useToast } from "@/components/ui/toast";
  * and "Really delete? / Keep" resolved on the tile itself instead of behind a
  * modal that would cover the very image being judged.
  *
+ * Clearing out a pile one tile at a time is its own chore, so the tiles also
+ * carry tick boxes and the header the run list's "Select all / N selected /
+ * Delete selected" bar. A batch is about many images at once rather than the
+ * one under the cursor, so it confirms in the run list's dialog instead of on
+ * a tile. An upload a run still uses is refused one by one, not the batch
+ * with it: the rest go, and the refused ones stay ticked so the highlighted
+ * tiles are exactly the ones still waiting on a run's delete.
+ *
  * This panel owns no review state (an upload carries none) and no upload
  * form — uploading happens inline wherever the reference picker needs one;
  * this is only where an admin comes back to see what has piled up and clear
@@ -37,9 +46,9 @@ export interface ImageGeneratorUploadsPanelProps {
   loading: boolean;
   error: ApiError | null;
   onReload: () => void;
-  /** An upload was deleted — the panel owns none of the list itself, so the
-   * caller refetches it and clears the id from anything still holding it. */
-  onDeleted: (imageId: string) => void;
+  /** Uploads were deleted — the panel owns none of the list itself, so the
+   * caller refetches it and clears the ids from anything still holding them. */
+  onDeleted: (imageIds: readonly string[]) => void;
 }
 
 const uploadSourceLabel: Record<ImageGeneratorUpload["source"], string> = {
@@ -57,6 +66,12 @@ function formatBytes(bytes: number): string {
   return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
 }
 
+/** What the batch confirmation says — the count it names is the one about to be sent. */
+function bulkDeleteCopy(count: number): string {
+  const subject = count === 1 ? "This upload and its file are" : `These ${String(count)} uploads and their files are`;
+  return `${subject} removed. Any upload a run still uses as an input is kept instead — delete that run first.`;
+}
+
 export function ImageGeneratorUploadsPanel({
   uploads,
   loading,
@@ -64,7 +79,71 @@ export function ImageGeneratorUploadsPanel({
   onReload,
   onDeleted,
 }: ImageGeneratorUploadsPanelProps) {
+  const toast = useToast();
   const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  // The ids the open confirmation names, fixed when it opened, so the delete
+  // sent is the one the dialog counted even if a reload lands in between.
+  const [pending, setPending] = useState<string[] | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Ids the server has already dropped, hidden until the caller's refetch
+  // lands (the run list's idiom): a deleted tile that lingers through the
+  // reload reads as a delete that did not happen.
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+
+  const visible = uploads.filter((upload) => !removed.has(upload.imageId));
+
+  const toggle = (imageId: string) =>
+    setSelected((previous) => {
+      const next = new Set(previous);
+      if (!next.delete(imageId)) next.add(imageId);
+      return next;
+    });
+
+  // Selection is read back through the tiles on screen, never straight out of
+  // the set: a reload can retire an upload while its id is still ticked, and a
+  // count or a delete built on that id would be about an image nobody can see.
+  const selectedVisible = visible.filter((upload) => selected.has(upload.imageId));
+  const allSelected = visible.length > 0 && selectedVisible.length === visible.length;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visible.map((upload) => upload.imageId)));
+
+  const markDeleted = (imageIds: readonly string[]) => {
+    setRemoved((previous) => new Set([...previous, ...imageIds]));
+    onDeleted(imageIds);
+  };
+
+  const confirmDelete = async () => {
+    if (pending === null) return;
+    setDeleting(true);
+    const result = await imageGeneratorApi.uploads.removeMany(pending);
+    setDeleting(false);
+    if (!result.ok) {
+      toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
+      return;
+    }
+    const { deleted, inUse } = result.data;
+    setPending(null);
+    setSelected(new Set(inUse));
+    if (deleted.length > 0) {
+      markDeleted(deleted);
+      toast.push({
+        title: `Deleted ${String(deleted.length)} upload${deleted.length === 1 ? "" : "s"}`,
+        tone: "success",
+      });
+    } else {
+      // Nothing went, so the caller's post-delete refetch never fires — but an
+      // id in neither list was already gone (another tab got there first),
+      // even beside ones a run still holds. Refetch so its tile stops
+      // claiming otherwise.
+      onReload();
+    }
+    if (inUse.length > 0) {
+      toast.push({
+        title: `Kept ${String(inUse.length)} upload${inUse.length === 1 ? "" : "s"} a run still uses`,
+        description: "Still selected — delete the runs that use them first.",
+      });
+    }
+  };
 
   return (
     <section className="rounded-card border border-ink-600 bg-ink-850 p-5">
@@ -76,21 +155,53 @@ export function ImageGeneratorUploadsPanel({
             longer need — the file on disk goes with the row.
           </p>
         </div>
-        <Button size="sm" onClick={onReload}>
-          Refresh
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          {visible.length > 0 ? (
+            <>
+              <label className="flex cursor-pointer items-center gap-2 text-xs text-paper-400">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  className="accent-accent-500"
+                  aria-label="Select every upload shown"
+                />
+                Select all
+              </label>
+              <span className="text-xs tabular-nums text-paper-500">{selectedVisible.length} selected</span>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={selectedVisible.length === 0}
+                onClick={() => setPending(selectedVisible.map((upload) => upload.imageId))}
+              >
+                Delete selected
+              </Button>
+            </>
+          ) : null}
+          <Button size="sm" onClick={onReload}>
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error ? <ErrorState error={error} onRetry={onReload} /> : null}
 
-      {loading && uploads.length === 0 ? (
+      {loading && visible.length === 0 ? (
         <Skeleton className="h-24 w-full" />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-          {uploads.map((upload) => (
-            <UploadCard key={upload.imageId} upload={upload} onEnlarge={setEnlarged} onDeleted={onDeleted} />
+          {visible.map((upload) => (
+            <UploadCard
+              key={upload.imageId}
+              upload={upload}
+              picked={selected.has(upload.imageId)}
+              onToggle={() => toggle(upload.imageId)}
+              onEnlarge={setEnlarged}
+              onDeleted={(imageId) => markDeleted([imageId])}
+            />
           ))}
-          {uploads.length === 0 ? (
+          {visible.length === 0 ? (
             <p className="col-span-full text-sm text-paper-500">
               No standalone uploads yet. A file uploaded through the reference picker below shows up here.
             </p>
@@ -99,6 +210,16 @@ export function ImageGeneratorUploadsPanel({
       )}
 
       <ImageLightbox imageId={enlarged} alt="Uploaded reference" onClose={() => setEnlarged(null)} />
+
+      <ConfirmDialog
+        open={pending !== null}
+        onClose={() => setPending(null)}
+        onConfirm={() => void confirmDelete()}
+        title={pending !== null && pending.length > 1 ? `Delete ${String(pending.length)} uploads?` : "Delete this upload?"}
+        busy={deleting}
+      >
+        {pending !== null ? bulkDeleteCopy(pending.length) : null}
+      </ConfirmDialog>
     </section>
   );
 }
@@ -144,10 +265,14 @@ function TileAction({
 /** One uploaded reference: the pixels shown whole, its provenance and size, and the one ruling an admin makes on it. */
 function UploadCard({
   upload,
+  picked,
+  onToggle,
   onEnlarge,
   onDeleted,
 }: {
   upload: ImageGeneratorUpload;
+  picked: boolean;
+  onToggle: () => void;
   onEnlarge: (imageId: string) => void;
   onDeleted: (imageId: string) => void;
 }) {
@@ -170,20 +295,39 @@ function UploadCard({
   };
 
   return (
-    <figure className="flex flex-col overflow-hidden rounded-card border border-ink-600">
-      <button
-        type="button"
-        onClick={() => onEnlarge(upload.imageId)}
-        aria-label="Enlarge uploaded reference"
-        className="block w-full cursor-pointer"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; shown whole, uncropped */}
-        <img
-          src={imageUrl(upload.imageId)}
-          alt="Uploaded reference"
-          className="aspect-square w-full bg-ink-950 object-contain"
-        />
-      </button>
+    <figure
+      className={cx(
+        "flex flex-col overflow-hidden rounded-card border transition-colors",
+        picked ? "border-accent-500/70" : "border-ink-600",
+      )}
+    >
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => onEnlarge(upload.imageId)}
+          aria-label="Enlarge uploaded reference"
+          className="block w-full cursor-pointer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- local asset route; shown whole, uncropped */}
+          <img
+            src={imageUrl(upload.imageId)}
+            alt="Uploaded reference"
+            className="aspect-square w-full bg-ink-950 object-contain"
+          />
+        </button>
+        {/* The tick box overlays the enlarge button as a sibling, never inside
+            it: an input nested in a button is invalid, and a click on it would
+            open the lightbox instead of ticking. Backed so it reads on any image. */}
+        <label className="touch-target absolute top-1.5 left-1.5 flex size-7 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 backdrop-blur-sm">
+          <input
+            type="checkbox"
+            checked={picked}
+            onChange={onToggle}
+            className="accent-accent-500"
+            aria-label={`Select upload ${upload.originalName ?? upload.imageId}`}
+          />
+        </label>
+      </div>
       <figcaption className="flex flex-1 flex-col gap-1 px-2 py-1.5 text-[11px] text-paper-400">
         <span className="flex flex-wrap items-center gap-1">
           <Tag>{uploadSourceLabel[upload.source]}</Tag>

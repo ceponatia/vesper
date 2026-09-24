@@ -38,6 +38,20 @@ export const imageGeneratorApi = {
     /** Delete one uploaded reference — DB row and on-disk file both removed. */
     remove: (imageId: string) =>
       apiDelete(`${IMAGE_GENERATOR_API_ROOT}/uploads/${imageId}`),
+    /**
+     * Delete several uploaded references — the panel's multi-select delete.
+     * `inUse` lists the ones a run still records as an input, which stay; an
+     * id that is not this admin's upload is in neither list.
+     */
+    removeMany: (ids: string[]) =>
+      apiPost(
+        z.object({
+          deleted: z.array(z.string()).catch([]),
+          inUse: z.array(z.string()).catch([]),
+        }),
+        `${IMAGE_GENERATOR_API_ROOT}/uploads/delete`,
+        { ids },
+      ),
   },
   runs: {
     /** Latest first; `limit` defaults server-side to 50. */
