@@ -32,6 +32,7 @@ import {
   deleteImageGeneratorRun,
   deleteImageGeneratorRuns,
   deleteImageGeneratorUpload,
+  deleteImageGeneratorUploads,
   getImageGeneratorRunDetail,
   listImageGeneratorUploads,
   type ImageGeneratorRunRow,
@@ -1600,6 +1601,75 @@ describe.skipIf(!ready)("image generator standalone uploads (#635)", () => {
     expect(await deleteImageGeneratorUpload(ownerId, uploaded.imageId)).toEqual({ status: "deleted" });
     const [row] = await db().select({ id: images.id }).from(images).where(eq(images.id, uploaded.imageId)).limit(1);
     expect(row).toBeUndefined();
+  });
+
+  /**
+   * PROTECTS: `deleteImageGeneratorUploads`'s own contract — the uploads
+   * panel's multi-select delete. One batch names a free upload, an
+   * upload a run still records as an input, that same run's OWN rendered
+   * output, a foreign owner's upload, and the free upload's id a second time.
+   * The result must be EXACTLY `{ deleted: [free], inUse: [inUse] }`: the
+   * in-use upload, the run's output, and the foreign upload all survive
+   * untouched, and the repeated id is reported once rather than twice.
+   *
+   * Falsified against an implementation that reports every requested id as
+   * deleted — never re-checking each id's own outcome — and against one that
+   * stops the whole batch at the first refusal instead of running every id
+   * through {@link deleteImageGeneratorUpload}'s own guards in turn, which
+   * would leave `inUse`/the run output/the foreign row unreached and the
+   * result short of `free`.
+   */
+  it("resolves a mixed batch to exactly the ids that could go, leaving the rest untouched", async () => {
+    stubSuccessfulRenderer();
+    const free = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "free.png",
+    });
+    const inUse = await uploadImageGeneratorReference({
+      userId: ownerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "in-use.png",
+    });
+    expect(free.ok && inUse.ok).toBe(true);
+    if (!free.ok || !inUse.ok) return;
+
+    // Holds `inUse` as an input — never run, so its `inputs` column is set at
+    // create time, exactly as the single-delete "refuses ... in_use" case
+    // above relies on.
+    await createRun({ inputs: { primary: [{ imageId: inUse.imageId }], dedicated: [] } });
+
+    const { id, sink } = await createRun();
+    await runImageGeneratorRun(id, ownerId, sink);
+    const outputId = (await getImageGeneratorRunDetail(id, ownerId))?.resultImageId ?? "";
+    expect(outputId).not.toBe("");
+
+    const foreign = await uploadImageGeneratorReference({
+      userId: otherOwnerId,
+      dataUrl: await testPngDataUrl(64, 64),
+      fileName: "foreign.png",
+    });
+    expect(foreign.ok).toBe(true);
+    if (!foreign.ok) return;
+
+    const result = await deleteImageGeneratorUploads(ownerId, [
+      free.imageId,
+      inUse.imageId,
+      outputId,
+      foreign.imageId,
+      free.imageId,
+    ]);
+
+    expect(result).toEqual({ deleted: [free.imageId], inUse: [inUse.imageId] });
+
+    const [freeRow] = await db().select({ id: images.id }).from(images).where(eq(images.id, free.imageId)).limit(1);
+    expect(freeRow).toBeUndefined();
+
+    const survivors = await db()
+      .select({ id: images.id })
+      .from(images)
+      .where(inArray(images.id, [inUse.imageId, outputId, foreign.imageId]));
+    expect(survivors).toHaveLength(3);
   });
 });
 

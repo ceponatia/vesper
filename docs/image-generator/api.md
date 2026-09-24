@@ -5,6 +5,7 @@
 | Route                                                | Wrapper                  | Methods              |
 | ---------------------------------------------------- | ------------------------ | -------------------- |
 | `/api/admin/self/image-generator/uploads`            | `withOwnerAdmin`         | GET list, POST (201) |
+| `/api/admin/self/image-generator/uploads/delete`     | `withOwnerAdmin`         | POST bulk delete     |
 | `/api/admin/self/image-generator/uploads/[imageId]`  | `withOwnerAdmin`         | DELETE               |
 | `/api/admin/self/image-generator/runs`               | `withOwnerAdmin`         | GET list, POST (201) |
 | `/api/admin/self/image-generator/runs/delete`        | `withOwnerAdmin`         | POST bulk delete     |
@@ -27,7 +28,7 @@ no run output record names it. Run deletion removes only the output image ids re
 being deleted, so an uploaded reference persists for later selection in the owned-image picker —
 and, since #635, in the settings page's own "Reference uploads" panel, until the admin deletes it.
 
-The upload GET and the `[imageId]` DELETE are the panel's own surface, scoped **strictly** by
+The upload GET, the `[imageId]` DELETE, and the bulk POST are the panel's own surface, scoped **strictly** by
 `meta.source in ("generator_upload", "admin_files_import")` on top of the ordinary owner+kind
 guard — never by kind alone. A run's rendered output shares the identical hidden
 `generator_output` kind and would otherwise be indistinguishable from an uploaded reference; the
@@ -38,6 +39,12 @@ of the admin's runs records in its `inputs` (primary or dedicated) answers 409 `
 pending run still has to load it, and a settled run shows it as an input and hands it to Duplicate.
 Deleting those runs frees it. Deleting an upload also clears it from the page's mounted new-run form,
 so a stale selection cannot submit.
+
+The bulk POST (`uploads/delete`) is the panel's multi-select delete: a body of up to 200 ids, each
+passed through the single DELETE's own guards in turn. It answers `{ deleted, inUse }` — the ids
+removed, and the ids a run still records as an input, which stay. An in-use upload never fails the
+rest of the batch, and an id that is foreign, absent, the wrong kind, or a run's own output is in
+neither list, so `deleted` is exactly what went away.
 
 Once the form receives an uploaded image's id, a run treats it exactly like any other selected
 owned image — owner-scoped byte loading, preparation, capacity checks, dedicated-field routing, and

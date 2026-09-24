@@ -159,8 +159,8 @@ export function ImageGeneratorPage({ initialRunId }: { initialRunId?: string }) 
           loading={uploads.loading}
           error={uploads.error}
           onReload={() => uploads.reload()}
-          onDeleted={(imageId) => {
-            setDeletedUploadIds((previous) => new Set(previous).add(imageId));
+          onDeleted={(imageIds) => {
+            setDeletedUploadIds((previous) => new Set([...previous, ...imageIds]));
             uploads.reload({ silent: true });
           }}
         />
