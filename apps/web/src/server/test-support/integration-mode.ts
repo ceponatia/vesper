@@ -62,7 +62,13 @@ export interface IntegrationWorkerInput {
   strictDatabase: boolean;
 }
 
-const PROVIDER_CREDENTIALS = ["OPENROUTER_API_KEY", "REPLICATE_API_TOKEN", "FEATHERLESS_API_TOKEN"] as const;
+const PROVIDER_CREDENTIALS = [
+  "OPENROUTER_API_KEY",
+  "REPLICATE_API_TOKEN",
+  "FEATHERLESS_API_TOKEN",
+  "FAL_API_KEY",
+  "CIVITAI_API_TOKEN",
+] as const;
 
 /**
  * Check the worker's environment against its declared mode. Returns the

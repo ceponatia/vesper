@@ -96,6 +96,11 @@ export default defineConfig({
           include: integrationSelection.include,
           exclude: [...configDefaults.exclude, ...integrationSelection.exclude],
           setupFiles: integrationSetup,
+          // Vitest's default `sequence.setupFiles` is "parallel", which would race
+          // `integration-worker-setup.ts`'s attestation check against `setup.ts`
+          // setting AI_FAKE and clearing provider credentials. "list" runs them in
+          // the array's order, each awaited before the next starts.
+          sequence: { setupFiles: "list" },
           env: {
             [INTEGRATION_MODE_ENV]: integrationMode,
             [INTEGRATION_LEGACY_FILES_ENV]: LEGACY_INTEGRATION_EXCEPTIONS.map((entry) => entry.file).join("\n"),

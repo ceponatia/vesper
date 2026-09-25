@@ -7,3 +7,5 @@ process.env.AI_FAKE = "1";
 delete process.env.OPENROUTER_API_KEY;
 delete process.env.REPLICATE_API_TOKEN;
 delete process.env.FEATHERLESS_API_TOKEN;
+delete process.env.FAL_API_KEY;
+delete process.env.CIVITAI_API_TOKEN;

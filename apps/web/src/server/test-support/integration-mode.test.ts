@@ -85,6 +85,8 @@ describe("integrationWorkerAttestation", () => {
   it.each<[string, Record<string, string | undefined>]>([
     ["without AI_FAKE", { AI_FAKE: undefined }],
     ["with a provider credential", { OPENROUTER_API_KEY: "sk-live" }],
+    ["with an image-provider credential", { FAL_API_KEY: "fal-live" }],
+    ["with a LoRA-provider credential", { CIVITAI_API_TOKEN: "civitai-live" }],
   ])("fails a worker %s", (_label, change) => {
     expect(() => integrationWorkerAttestation(input({ [INTEGRATION_MODE_ENV]: "strict", ...change }))).toThrow(/fake-provider setup/);
   });
