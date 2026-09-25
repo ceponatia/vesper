@@ -75,7 +75,7 @@ while :; do
   if [ "$checks_rc" -eq 0 ] || [ "$checks_rc" -eq 1 ] || [ "$checks_rc" -eq 8 ]; then
     if jq -e 'type == "array"' <<<"$checks" >/dev/null 2>&1; then valid=1; fi
   fi
-  if grep -qi 'no checks reported' <<<"$checks_err$checks"; then
+  if grep -qiE 'no (required )?checks reported' <<<"$checks_err$checks"; then
     checks='[]'
     valid=1
   fi

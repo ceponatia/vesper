@@ -47,6 +47,8 @@ run_case wait-failing 1 'FAILED for head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # An unrelated successful check cannot satisfy the required aggregate.
 run_case wait-unrelated 2 'CI/verify is absent' wait-ci.sh 0
 run_case wait-no-checks 2 'no required checks registered' wait-ci.sh 0
+# gh 2.101.0 words the same transient state as "no REQUIRED checks reported".
+run_case wait-no-required-checks 2 'no required checks registered' wait-ci.sh 0
 run_case wait-required-peer-fail 1 'Security/security' wait-ci.sh 0
 # A successful sample is discarded when the full head changes during the read.
 run_case wait-stale 2 'discarded checks read for the previous head' wait-ci.sh 0

@@ -63,6 +63,13 @@ if [ "$1 $2" = "pr checks" ]; then
       echo 'no checks reported on the branch' >&2
       exit 1
       ;;
+    wait-no-required-checks)
+      # gh 2.101.0's actual wording for the same transient state — inserts
+      # "required" between "no" and "checks", breaking a grep for the older
+      # phrasing above.
+      echo "no required checks reported on the 'main' branch" >&2
+      exit 1
+      ;;
     *)
       printf '[{"name":"verify","workflow":"CI","bucket":"pass","state":"SUCCESS"}]\n'
       ;;
