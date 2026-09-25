@@ -61,6 +61,7 @@ import {
 const harness = await simulationSuiteHarness({
   suite: "social-store.int.test",
   table: "sim_relationship_ledger",
+  legacyPlayerMode: true,
 });
 const ready = harness.ready;
 

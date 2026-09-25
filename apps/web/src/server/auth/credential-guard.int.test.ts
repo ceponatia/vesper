@@ -146,14 +146,19 @@ describe.skipIf(!ready)("durable credential backoff", () => {
     const before = await readCredentialFailures(SUBJECT);
     await grantCredentialBypass(SUBJECT, 600_000, now);
 
-    // Open during the window...
+    // Open during the window, however long the attack keeps going...
     expect((await chargeCredentialAttempt(SUBJECT, now)).allowed).toBe(true);
+    const lateInWindow = now + 599_000;
+    expect((await chargeCredentialAttempt(SUBJECT, lateInWindow)).allowed).toBe(true);
     // ...and the count underneath kept accruing rather than being wiped, so an
     // unused grant leaves the account exactly as protected as it was.
     const after = await readCredentialFailures(SUBJECT);
     expect(after?.failures).toBeGreaterThan(before?.failures ?? 0);
 
-    // Once it expires the backoff resumes from where the attack left it.
+    // Once it expires the backoff resumes from where the attack left it: the
+    // wait armed by the attack's last charge inside the window outlives it. (A
+    // single charge at `now` could not show this — its wait, capped at
+    // MAX_BACKOFF_MS, is long over ten minutes later.)
     expect((await chargeCredentialAttempt(SUBJECT, now + 600_001)).allowed).toBe(false);
   });
 

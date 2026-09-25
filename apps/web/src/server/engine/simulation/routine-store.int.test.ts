@@ -42,6 +42,7 @@ import { advanceBranchStoryTime } from "./scheduler-store";
 const harness = await simulationSuiteHarness({
   suite: "routine-store.int.test",
   table: "sim_actor_lods",
+  legacyPlayerMode: true,
 });
 const ready = harness.ready;
 

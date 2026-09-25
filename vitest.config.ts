@@ -1,5 +1,12 @@
 import path from "node:path";
 import { configDefaults, defineConfig } from "vitest/config";
+import {
+  INTEGRATION_LEGACY_FILES_ENV,
+  INTEGRATION_MODE_ENV,
+  LEGACY_INTEGRATION_EXCEPTIONS,
+  integrationSelectionForMode,
+  resolveIntegrationMode,
+} from "./scripts/integration-policy.mjs";
 
 /**
  * The APPLICATION test projects — and only those.
@@ -44,10 +51,24 @@ import { configDefaults, defineConfig } from "vitest/config";
  * than as a CLI `--exclude` because Vitest passes only a fixed set of CLI
  * options down to projects — `include`/`exclude` are not among them, so a
  * command-line filter would silently stop applying.
+ *
+ * The same reason puts the integration AUTHORIZATION MODE here. `app-int`'s
+ * universe comes from `scripts/integration-policy.mjs`, and
+ * `VESPER_INTEGRATION_MODE` narrows it inside the project: `strict` is every
+ * suite except the audited legacy-fixture exceptions, `legacy` is exactly those
+ * exceptions, and unset (`all`) is the whole universe — what `pnpm test:int`
+ * has always run. An unknown mode fails configuration loading. CI runs `strict`
+ * and `legacy` as separate processes through `scripts/ci-integration.mjs`; the
+ * extra `app-int` setup file makes each worker assert its own mode before a
+ * suite is imported.
  */
 
 const applicationAliases = { "@": path.resolve(__dirname, "./apps/web/src") };
 const applicationSetup = ["./apps/web/src/test/setup.ts"];
+const integrationSetup = [...applicationSetup, "./apps/web/src/server/test-support/integration-worker-setup.ts"];
+
+const integrationMode = resolveIntegrationMode(process.env);
+const integrationSelection = integrationSelectionForMode(integrationMode);
 
 export default defineConfig({
   test: {
@@ -72,8 +93,18 @@ export default defineConfig({
         test: {
           name: "app-int",
           environment: "node",
-          include: ["apps/web/src/**/*.int.test.ts", "scripts/**/*.int.test.ts"],
-          setupFiles: applicationSetup,
+          include: integrationSelection.include,
+          exclude: [...configDefaults.exclude, ...integrationSelection.exclude],
+          setupFiles: integrationSetup,
+          // Vitest's default `sequence.setupFiles` is "parallel", which would race
+          // `integration-worker-setup.ts`'s attestation check against `setup.ts`
+          // setting AI_FAKE and clearing provider credentials. "list" runs them in
+          // the array's order, each awaited before the next starts.
+          sequence: { setupFiles: "list" },
+          env: {
+            [INTEGRATION_MODE_ENV]: integrationMode,
+            [INTEGRATION_LEGACY_FILES_ENV]: LEGACY_INTEGRATION_EXCEPTIONS.map((entry) => entry.file).join("\n"),
+          },
         },
       },
     ],

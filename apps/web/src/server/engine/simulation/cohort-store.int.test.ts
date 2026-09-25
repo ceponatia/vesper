@@ -30,7 +30,11 @@ import {
  * scaffold (probe + legacy-player guard + world teardown + pool close).
  */
 
-const harness = await simulationSuiteHarness({ suite: "cohort-store.int.test", table: "sim_cohorts" });
+const harness = await simulationSuiteHarness({
+  suite: "cohort-store.int.test",
+  table: "sim_cohorts",
+  legacyPlayerMode: true,
+});
 
 /** Day 2, 07:33. The market window (08:00–18:00) opens 27 minutes later. */
 const SEED_SECOND = 200_000;

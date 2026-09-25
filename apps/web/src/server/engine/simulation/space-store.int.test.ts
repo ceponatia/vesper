@@ -36,6 +36,7 @@ const WALK_BC = 300;
 const harness = await simulationSuiteHarness({
   suite: "space-store.int.test",
   table: "sim_physical_loci",
+  legacyPlayerMode: true,
 });
 const ready = harness.ready;
 

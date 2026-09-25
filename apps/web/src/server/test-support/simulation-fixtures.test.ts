@@ -14,9 +14,9 @@ describe("requireLegacyUnanchoredEngineTestMode", () => {
     ).not.toThrow();
   });
 
-  it("fails a flagless run naming the opt-in command and the doc section", () => {
+  it("fails a flagless run naming the legacy policy, the legacy-mode launcher, and the doc section", () => {
     expect(() => requireLegacyUnanchoredEngineTestMode("space-store.int.test", { NODE_ENV: "test" })).toThrow(
-      /\[space-store\.int\.test\][\s\S]*VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 is not set[\s\S]*unanchored_player[\s\S]*VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 pnpm test:int[\s\S]*docs\/testing\.md/,
+      /\[space-store\.int\.test\][\s\S]*VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER=1 is not set[\s\S]*unanchored_player[\s\S]*scripts\/integration-policy\.mjs[\s\S]*node scripts\/ci-integration\.mjs --mode=legacy[\s\S]*docs\/testing\.md/,
     );
   });
 

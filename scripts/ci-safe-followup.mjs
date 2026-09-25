@@ -18,13 +18,13 @@
 //      push or a rebase breaks that, and so does a previous head the checkout
 //      no longer has: both fall back.
 //   3. PATHS — every path in `git diff --name-only --no-renames PREVIOUS NEW`
-//      is in the documentation set the classifier's whole-PR rule uses
-//      (`docs/*`, `*.md`, `.github/ISSUE_TEMPLATE/*`,
-//      `.github/PULL_REQUEST_TEMPLATE*`). Rename detection is off so a code
-//      file moved into a documentation path shows up as its deleted source
-//      too, not only as its documentation destination. An empty diff falls
-//      back. The workflow file is outside the set, so a
-//      workflow change falls back like any other code path.
+//      passes `isDocumentationPath` (imported from `./ci-classify.mjs`, the
+//      same predicate the whole-PR classifier uses — see there for the exact
+//      rule). Rename detection is off so a code file moved into a
+//      documentation path shows up as its deleted source too, not only as its
+//      documentation destination. An empty diff falls back. The workflow file
+//      is outside the set, so a workflow change falls back like any other
+//      code path.
 //   4. PREVIOUS RESULT — the newest CI workflow run for this pull request at
 //      the previous head completed with `success`, and the pull request's base
 //      SHA recorded on that run equals the base SHA of this event (a base that
@@ -49,25 +49,17 @@ import { appendFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isDocumentationPath } from "./ci-classify.mjs";
+
 const ZERO_SHA = "0000000000000000000000000000000000000000";
 const API_TIMEOUT_MS = 15_000;
 const VERIFY_CHECK_NAME = "verify";
 const ACTIONS_APP_SLUG = "github-actions";
 
-/**
- * The classifier's documentation path set, one predicate per bash glob:
- * `docs/*` | `*.md` | `.github/ISSUE_TEMPLATE/*` | `.github/PULL_REQUEST_TEMPLATE*`.
- * Bash `*` matches `/` inside a `case` pattern, so `docs/*` is a prefix test.
- * @param {string} file repo-relative path with forward slashes
- */
-export function isDocumentationPath(file) {
-  return (
-    file.startsWith("docs/") ||
-    file.endsWith(".md") ||
-    file.startsWith(".github/ISSUE_TEMPLATE/") ||
-    file.startsWith(".github/PULL_REQUEST_TEMPLATE")
-  );
-}
+// The documentation-path predicate is owned by `./ci-classify.mjs` so both
+// scripts agree on exactly one rule; re-exported here so existing imports of
+// `isDocumentationPath` from this module keep working.
+export { isDocumentationPath };
 
 function isSha(value) {
   return typeof value === "string" && /^[0-9a-f]{40}$/.test(value) && value !== ZERO_SHA;

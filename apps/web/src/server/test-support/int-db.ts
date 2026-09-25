@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/server/db";
+import { REQUIRE_INTEGRATION_DB_ENV, requireIntegrationDb } from "./integration-mode";
 
 /**
  * The shared connectivity probe every `.int.test.ts` suite runs at
@@ -20,20 +21,8 @@ import { db } from "@/server/db";
  * keep working so converting a suite never loosens it.
  */
 
-/** The canonical strict-mode flag; `pnpm test:int:strict` sets it. */
-const STRICT_ENV = "REQUIRE_INTEGRATION_DB";
-
 /** A probe that hangs is a failure too — never let a suite block on a dead host. */
 const PROBE_TIMEOUT_MS = 4_000;
-
-/** True when an unreachable database must fail the run rather than skip it. */
-export function requireIntegrationDb(): boolean {
-  return (
-    process.env[STRICT_ENV] === "true" ||
-    process.env.VESPER_REQUIRE_TEST_DB === "1" ||
-    process.env.CI === "true"
-  );
-}
 
 /**
  * Probe the integration database for `suite`, reading one row from `table` so
@@ -57,7 +46,7 @@ export async function probeIntegrationDb(suite: string, table = "characters"): P
     if (requireIntegrationDb()) {
       throw new Error(
         `[${suite}] integration database unreachable or unmigrated (probe: select 1 from ${table} limit 1): ${reason}. ` +
-          `Strict integration mode is ON (${STRICT_ENV}=true — the release gate, \`pnpm test:int:strict\`), so this suite fails ` +
+          `Strict database probes are ON (${REQUIRE_INTEGRATION_DB_ENV}=true, VESPER_REQUIRE_TEST_DB=1 or CI=true — every CI integration batch runs this way), so this suite fails ` +
           `instead of skipping. Start the database (\`pnpm db:up\`), apply migrations (\`pnpm db:migrate\`), or run plain ` +
           `\`pnpm test:int\` if skipping is acceptable.`,
       );

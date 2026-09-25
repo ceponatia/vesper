@@ -66,6 +66,7 @@ const harness = await simulationSuiteHarness({
   // Selecting from sim_snapshots is itself the from-zero migration check.
   table: "sim_snapshots",
   cleanup: "afterEach",
+  legacyPlayerMode: true,
 });
 
 const SEED_STORY_SECOND = 57_600;

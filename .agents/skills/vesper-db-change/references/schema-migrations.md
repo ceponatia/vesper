@@ -30,7 +30,7 @@ For every affected table, answer these questions from current data and both appl
 
 `fly.toml` runs `pnpm -w run db:migrate` as the Fly release command before new Machines receive traffic. The old application can continue serving while the migration runs. Keep the transition compatible with the old and new application versions, or stage an incompatible contract change across releases.
 
-CI's engine integration migrates a fresh Postgres database from zero and then runs the repository's curated `pnpm test:engine` selection. This proves only that checked-in history can build that fresh schema and that the selected suites passed. It does not by itself prove an upgrade of representative populated data, production lock behavior, a backfill's preservation rules, or any unselected `app-int` suite.
+CI's integration gate migrates fresh Postgres databases from zero (one per authorization mode on each runner) and then runs the complete `app-int` inventory against them. This proves that checked-in history builds that fresh schema and that every application integration suite passed on it. It does not by itself prove an upgrade of representative populated data, production lock behavior, or a backfill's preservation rules.
 
 Before delivery, record:
 

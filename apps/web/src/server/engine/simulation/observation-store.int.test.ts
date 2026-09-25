@@ -25,6 +25,7 @@ const WALK = 600;
 const harness = await simulationSuiteHarness({
   suite: "observation-store.int.test",
   table: "sim_observations",
+  legacyPlayerMode: true,
 });
 
 /**

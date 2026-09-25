@@ -110,9 +110,10 @@ async function principalAccountExists(principalId: string, database: Db): Promis
  * resolve exactly one owning chat and match it. This keeps the service boundary
  * fail-closed even if a future caller accepts a raw branch id.
  *
- * The aggregate legacy engine suite may opt into synthetic fixture principals
- * because those domain tests directly seed branches and predate account/chat
- * ownership. Even in that mode, an id that exists in `users` is denied: the
+ * The legacy integration mode (an audited list of durable-engine suites) may
+ * opt into synthetic fixture principals because those domain tests directly
+ * seed branches and predate account/chat ownership. Even in that mode, an id
+ * that exists in `users` is denied: the
  * compatibility seam can never turn a real account into an unanchored owner.
  */
 export async function authorizeSimulationCommand(

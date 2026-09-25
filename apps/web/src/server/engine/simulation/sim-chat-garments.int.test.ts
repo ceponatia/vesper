@@ -29,14 +29,11 @@ import { submitDurableApplyGarmentOperation } from "./garment-store";
  * `sim_garment.mapping_unresolved` reason plus the plain name list, or a
  * structured read whose exposure degrades to fully covered.
  *
- * **Why it lives under `simulation/`.** These cases were written inside
- * `../sim-surfaces.int.test.ts`, which belongs to the `app-int` project that
- * ordinary CI never selects: `pnpm test:engine` (the `engine integration` job)
- * takes `apps/web/src/server/engine/simulation` as a whole directory and no
- * named `apps/web/src/server/engine/*.int.test.ts` beyond `sim-narrator`. A
- * database-backed proof that no job runs proves nothing, so the cases moved to
- * where the job looks. `readSimChatGarments` is imported from `../sim-surfaces`
- * directly; nothing imports a test file, so that edge cannot close a cycle.
+ * **Where it lives.** These cases were first written inside
+ * `../sim-surfaces.int.test.ts`; they stay here, beside the other durable
+ * simulation suites, and CI runs both files in the strict integration mode.
+ * `readSimChatGarments` is imported from `../sim-surfaces` directly; nothing
+ * imports a test file, so that edge cannot close a cycle.
  *
  * The db-free degradation guards for the surrounding sim-surface reads stay in
  * `../sim-surfaces.degradation.test.ts`; each case here seeds its OWN isolated

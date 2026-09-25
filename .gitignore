@@ -17,6 +17,9 @@ data/
 # repository root and stays LOCAL (owner ruling 2026-08-28, #346). Never docs/.
 /eval-images/
 
+# Local output of scripts/ci-integration.mjs (CI uploads it as an artifact).
+/integration-evidence/
+
 # No raster imagery enters git anywhere (owner ruling 2026-08-28): eval renders,
 # evidence, and screenshots are all local-only, regenerable artifacts. Already-
 # tracked files (the app icons under apps/web/src/app) stay tracked; when the UI

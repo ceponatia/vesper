@@ -438,14 +438,19 @@ describe.runIf(ready)("the ensemble roster shares the handle table (design #298)
 
   it("an unresolvable member handle drops with the EXISTING diagnostic — no new rejection code, nothing touched", async () => {
     const chat = await ensembleChat();
-    const before = JSON.stringify(chat.scenario.garments);
+    const before = structuredClone(chat.scenario.garments);
     const { scenario, sink } = await settle({
       chat,
       scenario: chat.scenario,
       roster: rosterWithMara([MARA_SCARF_DEF, MARA_SHIRT_DEF]),
       archivist: withOps([{ op: "roll", garment: "mara.necklace", part: "root", degree: "slight" }]),
     });
-    expect(JSON.stringify(scenario.garments)).toBe(before);
+    // Structural equality, not a byte-for-byte string: `before` is the store as
+    // built in memory, while `scenario` comes back from a jsonb column, and
+    // jsonb normalizes object key order (shorter keys first, then bytewise). The
+    // blueprint map's insertion order therefore never survives persistence, even
+    // when nothing changed — which is exactly what this case must prove.
+    expect(scenario.garments).toEqual(before);
     expect(sink.items.map((d) => d.code)).toContain("garment_op.garment_unresolved");
   });
 });

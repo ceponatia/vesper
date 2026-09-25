@@ -4,14 +4,18 @@ import path from "node:path";
 import { and, eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
+  attr,
   endTestPool,
+  makeProfile,
   probeIntegrationDb,
   purgeOwnerRows,
   seedTestUser,
+  testPngBuffer,
   testPngDataUrl,
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
+import type { CharacterProfile } from "@/contracts/world/profile";
 import { characters, db, images, items, locations } from "../db";
 import { absoluteImagePath, dataRoot } from "./paths";
 import { createImageAsset, failImage, GALLERY_IMAGE_KINDS, saveImageBuffer, type ImageRow } from "./asset-storage";
@@ -360,11 +364,76 @@ async function outsideDemoMode<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-async function seedCharacter(name: string): Promise<string> {
-  const [row] = await db().insert(characters).values({ ownerId: userId, name }).returning({ id: characters.id });
+async function seedCharacter(name: string, profile?: CharacterProfile): Promise<string> {
+  const [row] = await db()
+    .insert(characters)
+    .values({ ownerId: userId, name, ...(profile === undefined ? {} : { profile }) })
+    .returning({ id: characters.id });
   if (!row) throw new Error("failed to create character");
   return row.id;
 }
+
+/**
+ * Every reference-free-required core attribute the avatar/variant digest join
+ * demands before it will compile a program (`character-adapter.ts`'s gap-1 age
+ * anchor plus the `referenceFreeRequired` appearance walk): apparent age,
+ * gender, hair color and length, face shape, build frame and weight, eyes and
+ * skin tone. Values copied from `laneProbeProfile` (`test-support/image-lane-probe.ts`),
+ * which is proven to compile through these exact lanes — this profile omits
+ * only that fixture's succubus-specific morphology, which a default-species
+ * character never requires.
+ */
+function completeAppearanceProfile(overrides: Partial<CharacterProfile> = {}): CharacterProfile {
+  return makeProfile({
+    attributes: [
+      attr("identity.apparent_age", "late_twenties"),
+      attr("identity.gender", "female"),
+      attr("skin.tone", "brown"),
+      attr("hair.color", "platinum"),
+      attr("hair.length", "shoulder_length"),
+      attr("eyes.color", "blue"),
+      attr("face.shape", "oval"),
+      attr("build.frame", "sturdy"),
+      attr("build.weight_presentation", "soft"),
+    ],
+    ...overrides,
+  });
+}
+
+/**
+ * An accepted canonical portrait for `characterId`: a real, decodable,
+ * portrait-shaped (3:4) PNG well past the identity pack's heuristic-crop size
+ * floor, stored and pointed at by both `avatarImageId` and
+ * `acceptedAvatarImageId` — the state `acceptPortrait` leaves behind, written
+ * directly the way `identity-pack-lifecycle.int.test.ts`'s `seedSubject` does,
+ * since accepting through the route would only queue async pack preparation.
+ * With no scripted face detector, `ensureIdentityPack` falls back to the
+ * deterministic `heuristic_v1` crop, which is enough for the `canonical_only`
+ * strategy the seeded `variant`-task profile declares (`canonical_identity`
+ * never runs the face-crop policy gate or refuses on face size — only warns).
+ */
+async function seedAcceptedPortrait(characterId: string): Promise<void> {
+  const portrait = await createImageAsset({
+    ownerId: userId,
+    kind: "avatar",
+    entityKind: "character",
+    entityId: characterId,
+    prompt: "portrait",
+  });
+  const saved = await saveImageBuffer(portrait.id, await testPngBuffer(384, 512));
+  if (saved?.status !== "ready") throw new Error("failed to store the accepted portrait");
+  await db()
+    .update(characters)
+    .set({ avatarImageId: saved.id, acceptedAvatarImageId: saved.id, acceptedAt: new Date() })
+    .where(eq(characters.id, characterId));
+}
+
+/**
+ * A provider transport's refusal when its credential is absent — Replicate's
+ * `REPLICATE_API_TOKEN not configured`, fal's `FAL_API_KEY not configured` —
+ * naming the environment variable an operator has to set.
+ */
+const MISSING_PROVIDER_CREDENTIAL = /\b[A-Z][A-Z0-9]*_(?:API_TOKEN|API_KEY) not configured\b/;
 
 async function imageRow(imageId: string): Promise<ImageRow | undefined> {
   const [row] = await db().select().from(images).where(eq(images.id, imageId)).limit(1);
@@ -379,7 +448,12 @@ async function imageRow(imageId: string): Promise<ImageRow | undefined> {
  */
 describe.skipIf(!ready)("generation-failure degradation", () => {
   it("a failed avatar generation fails the row AND records images.avatar.generate_failed", async () => {
-    const characterId = await seedCharacter("Diagnostic Subject");
+    // A bare name alone no longer reaches the provider: the character-adapter
+    // join (#375) refuses the program BEFORE provider spend when a required
+    // fact (apparent age, or any reference-free-required appearance attribute)
+    // never reached the digest. A complete sheet is required to prove THIS
+    // case's claim — that a missing PROVIDER credential fails the row.
+    const characterId = await seedCharacter("Diagnostic Subject", completeAppearanceProfile());
     const sink = new DiagnosticCollector();
 
     const { imageId } = await outsideDemoMode(() => generateAvatar({ characterId, userId, sink }));
@@ -387,8 +461,10 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
     // The stored error names the missing provider credential, so an operator
-    // reading the row knows what to configure (Replicate is THE image backend).
-    expect((row?.meta as Record<string, unknown>).error).toContain("REPLICATE_API_TOKEN");
+    // reading the row knows what to configure. Which provider that is follows
+    // the seeded default profile for the task (Replicate or fal today), so the
+    // assertion names the credential's shape rather than one provider.
+    expect((row?.meta as Record<string, unknown>).error).toMatch(MISSING_PROVIDER_CREDENTIAL);
     const recorded = sink.items.filter((d) => d.code === "images.avatar.generate_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");
@@ -399,10 +475,13 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
   });
 
   it("a failed portrait-variant edit fails the row AND records images.variant.generate_failed", async () => {
-    // The lane needs a ready canonical avatar or it takes the reference-less
-    // branch below; demo mode paints one for free.
+    // Since identity packs became the unconditional identity source (#109),
+    // the lane needs a PREPARED identity pack, not merely a ready avatar row:
+    // an accepted canonical portrait `ensureIdentityPack` can derive from, so
+    // the render reaches the provider instead of refusing on the pack's own
+    // precondition (asserted separately by the next case, below).
     const characterId = await seedCharacter("Variant Subject");
-    await generateAvatar({ characterId, userId });
+    await seedAcceptedPortrait(characterId);
     const sink = new DiagnosticCollector();
 
     const imageId = await outsideDemoMode(() =>
@@ -411,7 +490,7 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
 
     const row = await imageRow(imageId);
     expect(row?.status).toBe("failed");
-    expect((row?.meta as Record<string, unknown>).error).toContain("REPLICATE_API_TOKEN");
+    expect((row?.meta as Record<string, unknown>).error).toMatch(MISSING_PROVIDER_CREDENTIAL);
     const recorded = sink.items.filter((d) => d.code === "images.variant.generate_failed");
     expect(recorded).toHaveLength(1);
     expect(recorded[0]?.severity).toBe("warn");

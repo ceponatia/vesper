@@ -78,6 +78,7 @@ import { POST as participantAdd } from "./[chatId]/participants/route";
 import { GET as matrixGet, PUT as matrixPut } from "./[chatId]/relationships/route";
 import { GET as libGet, PUT as libPut } from "../characters/[id]/relationships/route";
 import { DELETE as participantRemove, PATCH as participantPatch } from "./[chatId]/participants/[characterId]/route";
+import { PATCH as inspectorStatePatch } from "../admin/self/chat-inspector/[chatId]/participants/[characterId]/state/route";
 
 // Self-skips when the database is unreachable; under strict integration mode
 // (`pnpm test:int:strict`) the same failure is fatal instead — this suite owns
@@ -93,6 +94,7 @@ beforeEach(() => resetRateLimits());
 
 const ctx = (chatId: string) => routeCtx({ chatId });
 const msgCtx = (chatId: string, messageId: string) => routeCtx({ chatId, messageId });
+const inspectorCtx = (chatId: string, characterId: string) => routeCtx({ chatId, characterId });
 
 const createReq = (body: unknown): NextRequest => apiRequest("/api/chats", { body });
 const postReq = (chatId: string, body: unknown): NextRequest => apiRequest(`/api/chats/${chatId}`, { body });
@@ -107,6 +109,15 @@ const stateReq = (chatId: string, body: unknown, characterId?: string): NextRequ
     method: "PATCH",
     body,
     ...(characterId === undefined ? {} : { query: { characterId } }),
+  });
+// Engine/debug fields (design #603, docs/openapi/chat-state/README.md): the
+// aggregate route 410s `inspector_state_moved` for these now — the admin
+// self-inspector participant-state resource addresses the member by path
+// segment, not by `?characterId=`.
+const inspectorStateReq = (chatId: string, characterId: string, body: unknown): NextRequest =>
+  apiRequest(`/api/admin/self/chat-inspector/${chatId}/participants/${characterId}/state`, {
+    method: "PATCH",
+    body,
   });
 const takeReq = (chatId: string, messageId: string, body: unknown): NextRequest =>
   apiRequest(`/api/chats/${chatId}/messages/${messageId}/take`, { method: "PATCH", body });
@@ -838,16 +849,24 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take
             familiarity: index + 3,
             mindNote: `baseline-${member.name}`,
             outfit: `baseline-outfit-${member.name}`,
-            memoryQueries: [`baseline-query-${member.name}`],
-            openLoops: [`baseline-loop-${member.name}`],
-            surfacedCues: { energy: `baseline-band-${member.name}` },
-            callbackHistory: [{ ref: `baseline-callback-${member.name}`, atClockMinutes: index }],
           },
           member.id,
         ),
         ctx(chat.id),
       );
       expect(patched.status).toBe(200);
+      // Engine/debug fields moved to the inspector resource (design #603); the
+      // aggregate route 410s them now. Addressed by path segment, not by query.
+      const patchedInspector = await inspectorStatePatch(
+        inspectorStateReq(chat.id, member.id, {
+          memoryQueries: [`baseline-query-${member.name}`],
+          openLoops: [`baseline-loop-${member.name}`],
+          surfacedCues: { energy: `baseline-band-${member.name}` },
+          callbackHistory: [{ ref: `baseline-callback-${member.name}`, atClockMinutes: index }],
+        }),
+        inspectorCtx(chat.id, member.id),
+      );
+      expect(patchedInspector.status).toBe(200);
       const baseline = await loadChatState(chat.id, member.id);
       if (!baseline) throw new Error(`missing baseline for ${member.name}`);
       baselines.set(member.id, baseline);
@@ -876,16 +895,22 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=regenerate (another take
             regard: 90 + index,
             mindNote: marker,
             outfit: marker,
-            memoryQueries: [marker],
-            openLoops: [marker],
-            surfacedCues: { energy: marker },
-            callbackHistory: [{ ref: marker, atClockMinutes: 99 }],
           },
           member.id,
         ),
         ctx(chat.id),
       );
       expect(patched.status).toBe(200);
+      const patchedInspector = await inspectorStatePatch(
+        inspectorStateReq(chat.id, member.id, {
+          memoryQueries: [marker],
+          openLoops: [marker],
+          surfacedCues: { energy: marker },
+          callbackHistory: [{ ref: marker, atClockMinutes: 99 }],
+        }),
+        inspectorCtx(chat.id, member.id),
+      );
+      expect(patchedInspector.status).toBe(200);
       await db()
         .update(characterChatState)
         .set({
@@ -1184,7 +1209,14 @@ describe.runIf(ready)("POST /api/chats/:chatId — kind=rerun (atomic re-send, d
       .from(characterChatMessages)
       .where(and(eq(characterChatMessages.chatId, chat.id), eq(characterChatMessages.role, "assistant")))
       .limit(1);
-    expect(reply?.meta).toEqual({}); // the surviving reply is the complete rerun, not the stopped partial
+    // Every legacy-lane reply is unconditionally stamped with the run that wrote
+    // it (contracts/turns/chat-message-meta.ts, #193) — so the surviving row is
+    // never bag-empty. What this case actually proves is the absence of the
+    // `stopped` marker: the surviving reply is the completed rerun, not the
+    // stopped partial.
+    const meta = reply?.meta as { stopped?: unknown; narratorRun?: unknown } | null | undefined;
+    expect(meta?.stopped).toBeUndefined();
+    expect(meta?.narratorRun).toBeDefined();
   });
 
   it("409s chat_busy with the transcript byte-identical when the lock can't be re-acquired", async () => {
@@ -1537,8 +1569,12 @@ describe.runIf(ready)("relationship matrix — seeding + routes", () => {
     const bId = await mkCharacter("Lib B");
     const cId = await mkCharacter("Lib C");
 
+    // Library defaults are a replace-set (owner ruling 2026-07-07) guarded by
+    // optimistic concurrency since #522: PUT must name the `baseRevision` it
+    // is replacing.
     const put1 = await libPut(
       libReq(aId, {
+        baseRevision: 0,
         edges: [
           { toCharacterId: bId, record: { familiarity: "acquainted", regard: "friendly", kind: "coworkers", history: "", looming: false } },
           { toCharacterId: cId, record: { familiarity: "strangers", regard: "neutral", kind: "", history: "", looming: false } },
@@ -1546,11 +1582,12 @@ describe.runIf(ready)("relationship matrix — seeding + routes", () => {
       }),
       idCtx(aId),
     );
-    expect(put1.status).toBe(200);
+    const saved1 = await expectJson<{ revision: number }>(put1, 200);
 
     // Replace-set: dropping C keeps only B.
     await libPut(
       libReq(aId, {
+        baseRevision: saved1.revision,
         edges: [{ toCharacterId: bId, record: { familiarity: "familiar", regard: "warm", kind: "coworkers", history: "", looming: false } }],
       }),
       idCtx(aId),

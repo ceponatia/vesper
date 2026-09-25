@@ -43,6 +43,7 @@ import { submitDurablePromoteActorFromCohort } from "./promotion-store";
 const harness = await simulationSuiteHarness({
   suite: "promotion-store.int.test",
   table: "sim_cohorts",
+  legacyPlayerMode: true,
 });
 const ready = harness.ready;
 

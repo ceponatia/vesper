@@ -20,16 +20,22 @@
  */
 export const LEGACY_ENGINE_TEST_PLAYER_ID = "principal-1";
 
-/** Environment key used only by the aggregate legacy engine test command. */
+/**
+ * Environment key set only for the legacy integration mode
+ * (`node scripts/ci-integration.mjs --mode=legacy`), which runs just the audited
+ * legacy exceptions listed in `scripts/integration-policy.mjs`.
+ */
 export const LEGACY_ENGINE_TEST_PLAYER_ENV = "VESPER_ALLOW_LEGACY_ENGINE_TEST_PLAYER";
 
 /**
- * Whether the aggregate engine run has opted into legacy synthetic principals.
+ * Whether this process runs in the legacy integration mode, which admits legacy
+ * synthetic principals.
  *
  * This is intentionally only a mode check. The authorization seam separately
  * proves that the submitted id is NOT a real account before admitting it, so an
  * opted-in test run still cannot make an unanchored branch writable by a seeded
- * user. Production and ordinary integration runs never enable this mode.
+ * user. Production never enables this mode, and neither does the strict
+ * integration mode that every other suite runs in (the key is absent there).
  */
 export function legacyUnanchoredEngineTestMode(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV === "test" && env[LEGACY_ENGINE_TEST_PLAYER_ENV] === "1";

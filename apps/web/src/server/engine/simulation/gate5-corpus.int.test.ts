@@ -121,6 +121,7 @@ const harness = await simulationSuiteHarness({
   suite: "gate5-corpus.int.test",
   table: "sim_relationship_ledger",
   trackBranchMembers: true,
+  legacyPlayerMode: true,
 });
 
 /**

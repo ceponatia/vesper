@@ -104,6 +104,26 @@ REFUSED = [
     ("pnpm --workspace-concurrency 1 exec tsc", "a numeric option value"),
     ("pnpm --reporter default exec tsc", "a value that looks like a script name"),
     ("pnpm --silent test", "a global flag before a gate script"),
+    # The CI integration launchers (#638) run the app-int suite against a local
+    # database — `ci-integration.mjs` drops, creates and migrates it first — so
+    # they are the same gate however they are reached, like scripts/verify.sh.
+    ("node scripts/ci-integration.mjs --mode=strict --shard=1/2", "the launcher, the way CI calls it"),
+    ("node ./scripts/ci-integration.mjs --mode=legacy", "a ./ prefix"),
+    ("node /home/brian/projects/vesper/scripts/ci-integration.mjs --mode=strict", "an absolute path"),
+    ("node --env-file=.env scripts/ci-integration.mjs --mode=strict", "a node option before the script"),
+    ("node --import tsx scripts/ci-integration.mjs --mode=strict", "a separate-value node option"),
+    ("cd scripts && node ci-integration.mjs --mode=strict", "from inside scripts/, by file name"),
+    ("pnpm exec node scripts/ci-integration.mjs --mode=strict", "behind pnpm exec node"),
+    ("pnpm exec scripts/ci-integration.mjs --mode=strict", "run through pnpm exec directly"),
+    ("npx node scripts/ci-integration.mjs --mode=strict", "behind a runner"),
+    ("./scripts/ci-integration.mjs --mode=strict", "executed directly"),
+    ("bash scripts/ci-integration.mjs", "handed to a shell"),
+    ("tsx scripts/ci-integration.mjs --mode=strict", "another JS runtime"),
+    ("VESPER_INTEGRATION_MODE=strict node scripts/ci-integration.mjs", "behind an env prefix"),
+    ("git status && node scripts/ci-integration.mjs --mode=legacy", "chained after allowed work"),
+    ("node scripts/integration-plan.mjs --out=/tmp/plan.json --shard=1/2", "the planner, which loads Vitest"),
+    ("node ./scripts/integration-plan.mjs --out=plan.json", "the planner with a ./ prefix"),
+    ("pnpm exec node scripts/integration-plan.mjs --out=plan.json", "the planner behind pnpm exec node"),
 ]
 
 # Each must keep working. A hook that blocks ordinary work gets routed around.
@@ -132,6 +152,17 @@ ALLOWED = [
     "pnpm why lint-staged",
     "pnpm install --prefer-offline",
     "sed -n '1,40p' apps/web/src/lib/media-preview.ts",
+    # The integration policy's git census runs no tests, and naming a launcher
+    # is not running it.
+    "node scripts/integration-policy.mjs census",
+    "node scripts/integration-policy.mjs census --json",
+    "pnpm census:integration",
+    "cat scripts/ci-integration.mjs",
+    "sed -n '1,80p' scripts/integration-plan.mjs",
+    "git diff -- scripts/ci-integration.mjs scripts/integration-plan.mjs",
+    "git add scripts/ci-integration.mjs",
+    "grep -n buildVitestArgs scripts/ci-integration.mjs",
+    "node -e 'import(\"./scripts/ci-integration.mjs\").then((m) => console.log(m.parseShard(\"1/2\")))'",
 ]
 
 failures: list[str] = []
@@ -150,7 +181,7 @@ for command in ALLOWED:
 
 # Every gate must survive main's substring prefilter, which is what silently
 # unreachable rules look like from the outside.
-for binary in sorted(set(preflight.GATE_BINARIES) | set(preflight.GATE_BUILDERS)):
+for binary in sorted(set(preflight.GATE_BINARIES) | set(preflight.GATE_BUILDERS) | set(preflight.GATE_LAUNCHERS)):
     if not any(key in binary for key in preflight.PREFILTER):
         failures.append("PREFILTER MISSES %r — check() would never see it" % binary)
 

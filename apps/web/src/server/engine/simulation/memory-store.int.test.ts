@@ -42,6 +42,7 @@ const TURN_SPAN = 400;
 const harness = await simulationSuiteHarness({
   suite: "memory-store.int.test",
   table: "sim_memory_documents",
+  legacyPlayerMode: true,
 });
 
 /** Cafe (hall + shop) and a park: iris overhears from the shop, noor is away. */

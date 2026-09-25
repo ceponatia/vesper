@@ -38,7 +38,7 @@ import {
  * Call it ONCE at module scope, awaited, before the first `describe`:
  *
  * ```ts
- * const harness = await simulationSuiteHarness({ suite: "cohort-store.int.test", table: "sim_cohorts" });
+ * const harness = await simulationSuiteHarness({ suite: "time-job-store.int.test", table: "sim_time_jobs" });
  * describe.runIf(harness.ready)("…", () => { … });
  * ```
  *
@@ -64,9 +64,21 @@ export interface SimulationSuiteHarnessOptions {
   table: string;
   /**
    * Whether this suite submits the legacy synthetic player against directly
-   * seeded (unanchored) branches. Default true — that is what the durable store
-   * suites do. The authorization suites (command-authz.int.test) MUST pass
-   * `false`: their denial coverage may not depend on the opt-in flag.
+   * seeded (unanchored) branches. Default `false`: a suite runs in the strict
+   * integration mode, where the authorization seam refuses every `player`
+   * command on a branch no chat anchors.
+   *
+   * `true` is an explicit, audited opt-in for a suite that submits a `player`
+   * principal whose id names no account against a directly seeded unanchored
+   * branch and needs that command to clear the seam. It fails the file at
+   * collection unless the legacy capability is on, and such a file must ALSO be
+   * listed as a legacy exception in `scripts/integration-policy.mjs`, which is
+   * what makes CI run it in the legacy integration mode. Decide it per file
+   * from what the file submits, never per directory.
+   *
+   * `false` only skips that collection guard; it does not clear or assert the
+   * capability. A suite whose claims need the capability ABSENT (the
+   * authorization suites, command-authz.int.test) asserts that itself.
    */
   legacyPlayerMode?: boolean;
   /**
@@ -91,7 +103,7 @@ export async function simulationSuiteHarness(
   const {
     suite,
     table,
-    legacyPlayerMode = true,
+    legacyPlayerMode = false,
     cleanup = "afterAll",
     trackBranchMembers = false,
   } = options;
@@ -167,9 +179,11 @@ export const systemPrincipal: SimTestPrincipal = {
 
 /**
  * The legacy synthetic player, controlling exactly one actor. Its id comes from
- * `LEGACY_ENGINE_TEST_PLAYER_ID` (simulation-fixtures) — the authorization seam
- * matches on that exact value, so a hand-written "principal-1" here would drift
- * out from under the opt-in the moment the fixture id changes.
+ * `LEGACY_ENGINE_TEST_PLAYER_ID` (simulation-fixtures), so the fixture id has one
+ * definition. The authorization seam admits it on an unanchored branch only in
+ * the legacy integration mode (it admits ANY id that names no account there, not
+ * just this one), so a suite submitting it must pass `legacyPlayerMode: true`
+ * and be a listed legacy exception.
  */
 export function playerPrincipal(actorId: string): LegacyEngineTestPlayerPrincipal {
   return legacyEngineTestPlayerPrincipal([actorId]);

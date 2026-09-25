@@ -40,6 +40,7 @@ import { submitDurableOpenEngagement } from "./simulation/engagement-store";
 const harness = await simulationSuiteHarness({
   suite: "sim-narrator.int.test",
   table: "sim_narrative_cuts",
+  legacyPlayerMode: true,
 });
 const ready = harness.ready;
 

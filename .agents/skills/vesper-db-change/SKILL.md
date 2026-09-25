@@ -24,7 +24,7 @@ Read [schema-migrations.md](references/schema-migrations.md) for schema, generat
 - Redact credentials and connection strings. Report project, branch, endpoint, and database identifiers only to the extent needed to distinguish the target.
 - Never use `drizzle-kit push`. Never automate Drizzle's create-versus-rename prompt with a fake TTY, `yes`, or unbounded input. If that prompt appears, stop generation and have the owner run `pnpm db:generate` interactively.
 - Do not automatically run `pnpm db:create`, `pnpm db:migrate`, or `pnpm db:seed`. Seed is a separate, potentially destructive operation even when it is idempotent for its intended fixtures.
-- Do not run local application tests, lint, typecheck, builds, or Vitest. Use `$vesper-testing` to identify the owning coverage and the exact CI job that selects it. A green aggregate check does not prove an unselected `app-int` suite ran.
+- Do not run local application tests, lint, typecheck, builds, or Vitest. Use `$vesper-testing` to identify the owning coverage and the exact CI job that selects it. Every ready code change runs the complete `app-int` inventory from freshly migrated databases; cite the run's `verify` integration evidence, not a green aggregate alone.
 - Use `$verify` for authorized deployed-path checks after the relevant Fly release and database target are known.
 
 ## Completion record

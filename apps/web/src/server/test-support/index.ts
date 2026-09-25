@@ -4,6 +4,7 @@
 // here import vitest, which must never enter the production build graph).
 // Always import through this barrel (eslint.config.mjs no-restricted-imports).
 export * from "./int-db";
+export * from "./integration-mode";
 export * from "./simulation-fixtures";
 export * from "./image-fixtures";
 export * from "./identity-pack-fixtures";
@@ -20,6 +21,7 @@ export * from "./sim-harness";
 export * from "./sim-seed";
 export * from "./sim-events";
 export * from "./sim-assertions";
+export * from "./sim-authz-fixtures";
 export * from "./sim-rhythms";
 export * from "./chat-fixtures";
 export * from "./chat-archivist-mock";
