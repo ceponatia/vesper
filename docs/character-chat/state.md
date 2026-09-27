@@ -135,16 +135,33 @@ meters from `metersAtMinutes` to the clock it is handed and re-stamps them there
   exact to within `METER_DRIFT_STEP_PRECISION` (two 1/10 000 units), so an interval
   split into n steps agrees with one step to within n of it.
 - **Pieces.** An interval is cut wherever one of the character's conditions begins or
-  ends; `integrateChatMeters` integrates each piece under the conditions standing through
-  it.
-- **Sleep.** A standing `asleep` condition (matched by label, however it began) holds
+  ends and at every routine crossing; `integrateChatMeters` integrates each piece under
+  the conditions standing through it.
+- **Sleep.** A standing `asleep` condition (matched by label, however it began), or a
+  crossed routine sleep window, holds
   the energy reserve instead of letting it drain and credits the time slept —
   simulation-core's `deriveSleepCredit`, +0.09 per story hour, never past 0.95. Credit
   accrues as the sleep is integrated, so a night caught up in one step or many lands on
   the same reserve, and conditions expire only after their interval is integrated, so a
-  sleep read after it ended still credits once. An `asleep` condition that ends inside
-  the interval sets `lastSleepEndedAtMinutes` — real sleep, as opposed to merely
-  reaching a scheduled wake time.
+  sleep read after it ended still credits once. Sleep that ends inside the interval —
+  an `asleep` condition or a crossed routine window — sets `lastSleepEndedAtMinutes`:
+  real sleep, as opposed to merely reaching a scheduled wake time.
+- **Routine on time off the scene.** A time skip, and any catch-up of an away
+  character, also crosses the character's routine (`contracts/turns/chat-routine.ts`):
+  each window of their sleep routine it spans is sleep, held and credited like an
+  `asleep` condition, and each self-care point it passes lands there — a wash sets
+  hygiene to 0.95 at its window's end (simulation-core's `rhythmSelfCareEffects`), and
+  drift resumes from that point. Windows belong to the day they start on, on the chat
+  calendar, weekday masks honored. An away member catching up reaches the same meters as
+  a present member skipping the same interval, and a stamp moving past a crossing means
+  it is never credited twice. A present member on an ordinary exchange crosses nothing:
+  talking through bedtime earns no sleep. A skip landing inside a present member's sleep
+  window wakes them there; an away member sleeps on.
+- **Routine defaults** (owner ruling 2026-09-27). A schedule with no typed `sleep` row
+  sleeps 23:00–07:00 — the same window its sleep pressure assumes. A schedule with no
+  typed `wash` row washes once a day, as each window of its sleep routine ends. A typed
+  row of that kind replaces the default; a row with no kind never has an effect; `meal`
+  has no default and restores nothing (meals belong to the body-needs work).
 - **Energy read.** The reserve is read against the character's circadian sleep pressure
   through the one derived-read path (`readChatMeters`, [../contracts/meters.md](../contracts/meters.md)
   §Reads); `chatMeterReads(state, scenario, profile)` is the chat helper every consumer

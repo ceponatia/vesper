@@ -3,7 +3,7 @@ import { METER_FIXED_POINT_ONE, type BodyRhythmRow } from "@vesper/simulation-co
 import { worldCharacterIdSchema } from "@vesper/simulation-core/contracts/identity";
 import type { CalendarStart } from "@/lib/clock";
 import type { ActiveCondition } from "../conditions/condition";
-import { anchorMinuteOfDay, latestScheduleOccurrence } from "../turns/chat-routine";
+import { anchorMinuteOfDay, latestScheduleOccurrence, sleepRoutineOf } from "../turns/chat-routine";
 import type { ScheduleEntry } from "../world/profile";
 import {
   MOOD_BRIGHT_MIN,
@@ -54,16 +54,18 @@ export function chatStorySecond(clockMinutes: number, calendarStart: CalendarSta
 }
 
 /**
- * The sleep rhythm governing a moment: the typed sleep row whose latest
- * occurrence began at or before it, weekday mask honored. Empty when the
- * schedule has none, which simulation-core reads as its 23:00–07:00 default.
+ * The sleep rhythm governing a moment: the row of the character's sleep
+ * routine (`sleepRoutineOf` — typed sleep rows, else the 23:00–07:00 default)
+ * whose latest occurrence began at or before it, weekday mask honored. Empty
+ * only when a masked routine has not occurred in the past week, which
+ * simulation-core reads as its default window.
  */
 export function chatSleepRhythmAt(
   schedule: readonly ScheduleEntry[],
   clockMinutes: number,
   calendarStart: CalendarStart,
 ): BodyRhythmRow[] {
-  const occurrence = latestScheduleOccurrence(schedule, "sleep", clockMinutes, calendarStart);
+  const occurrence = latestScheduleOccurrence(sleepRoutineOf(schedule), "sleep", clockMinutes, calendarStart);
   if (occurrence === null) return [];
   return [
     {

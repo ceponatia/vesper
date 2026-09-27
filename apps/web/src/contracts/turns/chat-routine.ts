@@ -1,3 +1,4 @@
+import { DEFAULT_SLEEP_WINDOW } from "@vesper/simulation-core/contracts/bodies";
 import { resolveGameTime, type CalendarStart } from "@/lib/clock";
 import type { ScheduleEntry, ScheduleKind } from "../world/profile";
 
@@ -83,4 +84,51 @@ export function latestScheduleOccurrence(
     }
   }
   return latest;
+}
+
+/**
+ * The sleep routine a character keeps: their typed `sleep` rows, or — when the
+ * schedule types none at all — the default 23:00–07:00 night, the same window
+ * sleep pressure falls back to (simulation-core's `DEFAULT_SLEEP_WINDOW`). One
+ * source, so the window pressure assumes is the window sleep is credited in.
+ * Only a schedule with no typed sleep row falls back; a typed row with a
+ * weekday mask is taken as written.
+ */
+export function sleepRoutineOf(schedule: readonly ScheduleEntry[]): ScheduleEntry[] {
+  const typed = schedule.filter((entry) => entry.kind === "sleep");
+  if (typed.length > 0) return typed;
+  return [
+    {
+      startMinute: DEFAULT_SLEEP_WINDOW.startMinuteOfDay,
+      endMinute: DEFAULT_SLEEP_WINDOW.endMinuteOfDay,
+      locationName: "home",
+      activity: "sleeping",
+      kind: "sleep",
+    },
+  ];
+}
+
+
+/**
+ * Where a routine of `kind` lands its effect inside `(fromMinutes, toMinutes]`,
+ * earliest first: each typed row's window END. A character with no typed
+ * `wash` row at all keeps the default morning wash — once a day, as each window
+ * of their sleep routine (`sleepRoutineOf`) ends. Any typed wash row replaces
+ * it; no other kind has a default.
+ */
+export function routineLandings(
+  schedule: readonly ScheduleEntry[],
+  kind: ScheduleKind,
+  fromMinutes: number,
+  toMinutes: number,
+  calendarStart: CalendarStart,
+): number[] {
+  const typed = schedule.some((entry) => entry.kind === kind);
+  const occurrences =
+    typed || kind !== "wash"
+      ? scheduleOccurrences(schedule, kind, fromMinutes, toMinutes, calendarStart)
+      : scheduleOccurrences(sleepRoutineOf(schedule), "sleep", fromMinutes, toMinutes, calendarStart);
+  return occurrences
+    .map((occurrence) => occurrence.endMinutes)
+    .filter((atMinutes) => atMinutes > fromMinutes && atMinutes <= toMinutes);
 }

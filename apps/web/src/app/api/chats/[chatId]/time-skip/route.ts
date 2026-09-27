@@ -43,8 +43,9 @@ type Params = { chatId: string };
  * scenario clock advances once (one story timeline for the whole roster), the
  * one-shot skip note is stamped on the scenario (worded by the primary's regard
  * band), and the skip records itself into the scenario's ring. Every member's
- * meters then integrate across the skipped minutes — away members too, because
- * physiology is presence-independent — and each PRESENT member also takes the
+ * meters then integrate across the skipped minutes, crossing their routine (sleep
+ * windows credited, washes landed) — away members too, because physiology is
+ * presence-independent — and each PRESENT member also takes the
  * scene-boundary half: timed-condition expiry, the familiarity scene-budget
  * reset, feeling softening, rhythm dress. The clock and every member row commit
  * in ONE transaction, so a failed skip changes nothing. A chat with no state row

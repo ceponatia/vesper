@@ -103,7 +103,8 @@ exchange:
    ONE story timeline, never per member), then `driftChatState` (pure) catches every
    member up to it, present or away alike: meters integrate by the story minutes since
    they were stamped, sleep holds and restores the energy reserve, an energy read at
-   its floor collapses into sleep, and conditions expire against the shared clock
+   its floor collapses into sleep, an away member's routine (sleep windows, washes)
+   plays out as they catch up, and conditions expire against the shared clock
    ([state.md](state.md) §Elapsed-time meter drift). Only present members take the
    exchange's feeling beat (`decayExchangeFeeling`). **No time passes between visits**
    — there is no wall-clock model, and the only between-scene
@@ -111,7 +112,8 @@ exchange:
    clock, stamps its one-shot `pending_skip_note` (worded by the primary's regard band,
    `chatSkipNote`, with a "a life meanwhile" license **and the calendar landing** —
    "It is now Friday evening") and `skip_history` ring, then catches every member's
-   meters up across the skipped minutes and gives each PRESENT member the
+   meters up across the skipped minutes — crossing each one's routine, so a skip past
+   bedtime sleeps and a skip past the morning wash washes — and gives each PRESENT member the
    scene-boundary half (`skipChatMember`: condition expiry, scene-budget reset, feeling
    softening, and **rhythm auto-dress** — a `profile.schedule` row covering the
    skipped-to clock that names an outfit preset re-dresses the member for that window,

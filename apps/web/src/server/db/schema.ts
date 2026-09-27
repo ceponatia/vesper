@@ -962,7 +962,8 @@ export const characterChatState = pgTable(
     /**
      * Narrative presence: "present" = sharing the
      * player's scene; "away" = offstage living their life (no memory legs; their
-     * meters drift on the shared clock like everyone's). The ONLY location-like state chat tracks; the
+     * meters drift on the shared clock like everyone's, and their routine — sleep,
+     * wash — plays out as they catch up). The ONLY location-like state chat tracks; the
      * roster panel is the manual override, the archivist confirms transitions.
      */
     presence: text("presence", { enum: ["present", "away"] }).notNull().default("present"),

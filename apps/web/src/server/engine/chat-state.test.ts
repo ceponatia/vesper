@@ -9,7 +9,7 @@ import { conditionKey, type ActiveCondition } from "@/contracts/conditions/condi
 import type { ChatPersonalNotes } from "@/contracts/turns/chat-archivist";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
-import { characterProfileSchema } from "@/contracts/world/profile";
+import { characterProfileSchema, type CharacterProfile, type ScheduleEntry } from "@/contracts/world/profile";
 import { makeProfile } from "@/server/test-support";
 import { SKIP_HISTORY_CAP } from "@/contracts/turns/chat-skip";
 import { CHAT_DEFAULT_CALENDAR_START as CAL } from "@/contracts/turns/chat-clock";
@@ -309,7 +309,7 @@ describe("driftChatState — meters follow elapsed story time on the shared cloc
     }
   });
 
-  it("an away character catches up when read, exactly as a present one does", () => {
+  it("an away character catches up when read — through a daytime interval exactly as a present one does", () => {
     const present = stamped(0);
     const away = stamped(0, { presence: "away" });
     const readPresent = driftChatState(present, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight, calendarStart: CAL });
@@ -412,6 +412,90 @@ describe("the energy reserve: sleep and collapse on the story clock", () => {
   it("never collapses a character with no sleep on record", () => {
     const worn = withEnergy(0.2, { metersAtMinutes: at(1, 4) - 1 });
     expect(drift(worn, at(1, 4)).conditions).toEqual([]);
+  });
+});
+
+describe("routine crossings on skipped and away time", () => {
+  /** Chat minute of `hour:minute` on calendar day `day` (default anchor: day 0, 8:00am = minute 0). */
+  const at = (day: number, hour: number, minute = 0): number => day * 1_440 + hour * 60 + minute - 8 * 60;
+  const row = (kind: ScheduleEntry["kind"], startMinute: number, endMinute: number): ScheduleEntry => ({
+    startMinute,
+    endMinute,
+    locationName: "home",
+    activity: kind ?? "errands",
+    ...(kind === undefined ? {} : { kind }),
+  });
+  /** No typed sleep or wash row: the default 23:00–07:00 night and the default wash as it ends. */
+  const untyped = makeProfile();
+  const evening = (profile: CharacterProfile, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(profile),
+    metersAtMinutes: at(0, 22),
+    meters: { ...initialMeters(), hygiene: 0.8, energy: 0.9 },
+    ...overrides,
+  });
+  const skipTo = (state: ChatState, profile: CharacterProfile, clockMinutes: number): ChatState =>
+    driftChatState(state, profile, { clockMinutes, calendarStart: CAL, skipped: true });
+  const readAt = (state: ChatState, profile: CharacterProfile, clockMinutes: number): ChatState =>
+    driftChatState(state, profile, { clockMinutes, calendarStart: CAL });
+  /** Hygiene drifted `minutes` with no wash, to the documented step precision. */
+  const expectUnwashed = (state: ChatState, minutes: number, steps: number) =>
+    expect(
+      Math.abs((state.meters.hygiene ?? Number.NaN) - (applyMeterDrift({ hygiene: 0.8 }, minutes).hygiene ?? 0)),
+    ).toBeLessThanOrEqual(steps * METER_DRIFT_STEP_PRECISION);
+
+  it("a skip to 08:00 across the default 07:00 wash gets it; one ending at 06:00 does not", () => {
+    const washed = skipTo(evening(untyped), untyped, at(1, 8));
+    // Drift after the wash counts only the hour since it — and a re-read credits nothing more.
+    expect(washed.meters.hygiene).toBe(applyMeterDrift({ hygiene: 0.95 }, 60).hygiene);
+    expect(skipTo(washed, untyped, at(1, 8))).toBe(washed);
+    expectUnwashed(skipTo(evening(untyped), untyped, at(1, 6)), 480, 2);
+  });
+
+  it("a typed wash row replaces the default morning wash and lands at its own window's end", () => {
+    const eveningBather = makeProfile({ schedule: [row("wash", 1_140, 1_170)] }); // 19:00–19:30
+    expectUnwashed(skipTo(evening(eveningBather), eveningBather, at(1, 8)), 600, 3);
+    const bathed = skipTo(evening(eveningBather, { metersAtMinutes: at(0, 18) }), eveningBather, at(0, 20));
+    expect(bathed.meters.hygiene).toBe(applyMeterDrift({ hygiene: 0.95 }, 30).hygiene);
+  });
+
+  it("an away member's catch-up credits the default night exactly as a present member's skip does, however it is read", () => {
+    const skipped = skipTo(evening(untyped), untyped, at(1, 8));
+    const away = readAt(evening(untyped, { presence: "away" }), untyped, at(1, 8));
+    expect(away.meters).toEqual(skipped.meters);
+    expect(away.meters.energy ?? 0).toBeGreaterThan(0.85); // slept: held and credited
+    expect(away.lastSleepEndedAtMinutes).toBe(at(1, 7));
+    expect(skipped.lastSleepEndedAtMinutes).toBe(at(1, 7));
+    // One story minute at a time (an away member through a night of exchanges):
+    // the same night and the same wash, each credited once.
+    let stepped = evening(untyped, { presence: "away" });
+    for (let clock = at(0, 22) + 1; clock <= at(1, 8); clock += 1) stepped = readAt(stepped, untyped, clock);
+    for (const [id, value] of Object.entries(away.meters)) {
+      expect(Math.abs((stepped.meters[id] ?? Number.NaN) - value)).toBeLessThanOrEqual(600 * METER_DRIFT_STEP_PRECISION);
+    }
+    expect(stepped.lastSleepEndedAtMinutes).toBe(at(1, 7));
+  });
+
+  it("a present character talking through bedtime crosses nothing — no sleep, no wash", () => {
+    const stayedUp = readAt(evening(untyped), untyped, at(1, 8));
+    const slept = skipTo(evening(untyped), untyped, at(1, 8));
+    expect(stayedUp.meters.energy ?? 1).toBeLessThan(slept.meters.energy ?? 0);
+    expectUnwashed(stayedUp, 600, 1);
+    expect(stayedUp.lastSleepEndedAtMinutes).toBeNull();
+  });
+
+  it("a meal row restores nothing and a kind-less row does nothing", () => {
+    const busyDay = makeProfile({ schedule: [row("meal", 720, 780), row(undefined, 840, 900)] });
+    const start = (profile: CharacterProfile) => evening(profile, { metersAtMinutes: at(0, 8) });
+    expect(skipTo(start(busyDay), busyDay, at(0, 18)).meters).toEqual(skipTo(start(untyped), untyped, at(0, 18)).meters);
+  });
+
+  it("a typed sleep row replaces the default night; a skip landing inside it wakes a present member only", () => {
+    const lateSleeper = makeProfile({ schedule: [row("sleep", 60, 540)] }); // 01:00–09:00
+    const skipped = skipTo(evening(lateSleeper), lateSleeper, at(1, 8));
+    const away = readAt(evening(lateSleeper, { presence: "away" }), lateSleeper, at(1, 8));
+    expect(away.meters).toEqual(skipped.meters);
+    expect(skipped.lastSleepEndedAtMinutes).toBe(at(1, 8)); // the scene resumed: awake
+    expect(away.lastSleepEndedAtMinutes).toBeNull(); // still asleep off-scene
   });
 });
 
