@@ -163,6 +163,46 @@ const chatRulesNodes = (
 };
 
 /**
+ * Exact-model opening-directive overrides (#479 camera-contract hotfix).
+ *
+ * The default opening beat below reads, to ONE narrator, as an invitation to speak AS
+ * the character in the first person rather than narrate them: a controlled run
+ * (2026-09-04, issue #471) found first-person narration in all three opening samples
+ * with the default "open the scene in character" wording, paired with the unchanged
+ * `(Open the scene. Speak first, in character.)` cue, and held third person in all
+ * three once the tail directive was reworded as an explicit narrator/camera
+ * instruction. History then amplifies whichever person the first reply set, so the
+ * fix has to land on the directive that produces that first reply, not on a
+ * generic anchor added elsewhere.
+ *
+ * Keyed by the exact catalog id (`DarkArtsForge/Asmodeus-24B-v3`,
+ * `lib/narrative-models.ts`) rather than by provider or capability, matching the
+ * adapter's own exact-ID keying for this row (docs/text-models/models/asmodeus-24b-v3.md)
+ * — a hotfix ahead of #261/#262's resolved narrator-profile seam, which will absorb
+ * this table without changing any rendered byte. An id with no entry here (every
+ * other narrator, including an unrecognized/absent one) renders the unchanged default
+ * directive, so this table can only ever narrow behavior for one exact id.
+ */
+const OPENING_DIRECTIVE_OVERRIDES: Record<string, (name: string, player: string) => string> = {
+  "DarkArtsForge/Asmodeus-24B-v3": (name, player) =>
+    `Opening beat: ${player} has not spoken yet. Begin the conversation yourself — open the scene as its narrator, describing ${name} acting and speaking in the third person (never as "I"), grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`,
+};
+
+/**
+ * The opening-beat directive text: `OPENING_DIRECTIVE_OVERRIDES[modelId]` when the
+ * resolved narrator has one, otherwise today's directive verbatim. `modelId` absent
+ * (an older caller, a test fixture, or a preview build that doesn't thread it) behaves
+ * exactly like an unlisted id — the untouched default.
+ */
+function openingBeatDirective(modelId: string | undefined, name: string, player: string): string {
+  const override = modelId === undefined ? undefined : OPENING_DIRECTIVE_OVERRIDES[modelId];
+  return (
+    override?.(name, player) ??
+    `Opening beat: ${player} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
+  );
+}
+
+/**
  * Build the system prompt embodying `name` from their saved profile, split into the
  * stable prefix + volatile tail. Attribute applicability is checked against the
  * realized body (`realizeBody`) so a stale attribute (e.g. wings left on a character
@@ -546,7 +586,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     context(
       "response_directive",
       input.opening
-        ? `Opening beat: ${playerName ?? "the player"} has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`
+        ? openingBeatDirective(input.narratorModelId, displayName, playerName ?? "the player")
         : buildResponseShapeLine(input),
     ),
   ];

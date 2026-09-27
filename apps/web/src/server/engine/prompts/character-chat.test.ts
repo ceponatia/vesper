@@ -376,6 +376,70 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(systemPrompt()).not.toContain("Opening beat");
   });
 
+  // --- #479: exact-model opening-directive hotfix (Asmodeus camera contract) ---
+
+  describe("opening-beat directive — exact-model override (#479)", () => {
+    // lib/narrative-models.ts's catalog id — the table is keyed on it exactly.
+    const ASMODEUS_ID = "DarkArtsForge/Asmodeus-24B-v3";
+    // A representative sample of established, unprofiled narrators (Aion 3.0, GLM 5.2,
+    // DeepSeek 4 Flash) plus the absent case (no narratorModelId threaded at all —
+    // an older caller or a fixture that predates #479).
+    const UNPROFILED_IDS: (string | undefined)[] = [
+      undefined,
+      "aion-labs/aion-3.0",
+      "z-ai/glm-5.2",
+      "~deepseek/deepseek-v4-flash-latest",
+    ];
+
+    const defaultDirective =
+      'Opening beat: the player has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.';
+    const asmodeusDirective =
+      'Opening beat: the player has not spoken yet. Begin the conversation yourself — open the scene as its narrator, describing Mara acting and speaking in the third person (never as "I"), grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.';
+
+    it("renders today's opening directive verbatim for every narrator without an override", () => {
+      const baseline = systemPrompt({ opening: true });
+      expect(baseline).toContain(defaultDirective);
+      for (const narratorModelId of UNPROFILED_IDS) {
+        expect(systemPrompt({ opening: true, narratorModelId })).toBe(baseline);
+      }
+    });
+
+    it("asks Asmodeus to narrate the opening beat in the third person", () => {
+      const asmodeus = systemPrompt({ opening: true, narratorModelId: ASMODEUS_ID });
+      expect(asmodeus).toContain(asmodeusDirective);
+      // The controlled run's fix is the third-person camera instruction; everything the
+      // beat otherwise preserves (one opening beat, grounding, the player-agency close)
+      // survives unchanged in the same sentence.
+      expect(asmodeus).toContain("third person");
+      expect(asmodeus).toContain('never as "I"');
+      expect(asmodeus).not.toContain("open the scene in character");
+    });
+
+    it("changes ONLY Asmodeus's opening-directive line — every other rendered byte is unchanged", () => {
+      const baseline = promptParts({ opening: true });
+      const asmodeus = promptParts({ opening: true, narratorModelId: ASMODEUS_ID });
+      // The stable prefix never carries the opening directive — untouched by construction.
+      expect(asmodeus.prefix).toBe(baseline.prefix);
+      expect(baseline.tail).toContain(defaultDirective);
+      expect(asmodeus.tail).toContain(asmodeusDirective);
+      // Swapping the one changed sentence back recovers the baseline tail byte-for-byte.
+      expect(asmodeus.tail.replace(asmodeusDirective, defaultDirective)).toBe(baseline.tail);
+    });
+
+    it("does not affect a non-opening turn (no every-turn anchor)", () => {
+      expect(systemPrompt({ narratorModelId: ASMODEUS_ID })).toBe(systemPrompt());
+      expect(systemPrompt({ narratorModelId: ASMODEUS_ID })).not.toContain("third person");
+    });
+
+    it("contains no accidental /think trigger substring in the assembled opening prompt", () => {
+      // The host template treats a literal "/think" in the initial system message as a
+      // reasoning-scratchpad trigger (issue #471's superseding template review). Checked
+      // on the Asmodeus opening specifically, since that is the prompt this hotfix edits.
+      const asmodeus = systemPrompt({ opening: true, narratorModelId: ASMODEUS_ID });
+      expect(asmodeus).not.toContain("/think");
+    });
+  });
+
   // --- Opportunistic sensory cues ---
 
   it("surfaces presentation.scent_baseline as a closeness-gated Sensory cues block, not a flat attribute line", () => {
