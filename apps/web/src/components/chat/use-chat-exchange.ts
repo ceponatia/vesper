@@ -6,7 +6,12 @@ import { chatsApi, sendChatMessage, type ChatStreamOutcome } from "@/lib/client/
 import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { useToast } from "@/components/ui/toast";
 import { PER_CHAT_DEFAULTS, type PerChatState } from "./chat-conversation-state";
-import { replyFailureToast, replyWithdrawnAfterStreaming } from "./reply-failure";
+import {
+  POST_STREAM_RELOAD_RETRY_MS,
+  postStreamNotice,
+  replyFailureToast,
+  replyUnconfirmedToast,
+} from "./reply-failure";
 import type { useChatTranscript } from "./use-chat-transcript";
 
 type Setter<K extends keyof PerChatState> = Dispatch<SetStateAction<PerChatState[K]>>;
@@ -182,7 +187,13 @@ export function useChatExchange({ chatId, transcript, ready, archived, setArchiv
     // already started. This resets to the newest page — history the reader paged in
     // collapses (they're at the bottom after their own exchange; Load earlier brings
     // it back), and the cursor re-syncs.
-    const fresh = await reloadTranscript();
+    let fresh = await reloadTranscript();
+    // One retry after a short backoff: the reload is how the client learns the
+    // exchange's verdict, so a single transient failure must not decide it.
+    if (!fresh.ok && isCurrent()) {
+      await new Promise<void>((resolve) => setTimeout(resolve, POST_STREAM_RELOAD_RETRY_MS));
+      if (isCurrent()) fresh = await reloadTranscript();
+    }
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange —
     // and the scene list, since a big moment may have auto-queued a render (slice 9).
@@ -203,13 +214,15 @@ export function useChatExchange({ chatId, transcript, ready, archived, setArchiv
     // refused to keep as a reply (a one-token `length` stub) streamed before the
     // generation's finish was known. It was never persisted, so the same reload
     // already replaced the bubble with the stored transcript — the popup says why
-    // the text the player watched arrive is gone.
+    // the text the player watched arrive is gone. If the reload failed even after
+    // its retry, the client cannot tell which it was: a neutral notice says so
+    // rather than presenting the bubble as settled (`postStreamNotice`).
     const failure = fresh.ok ? fresh.data.chat.lastReplyFailure : null;
-    if (!received || replyWithdrawnAfterStreaming(failure)) {
-      toast.push({
-        ...replyFailureToast(who, failure),
-        tone: "error",
-      });
+    const notice = postStreamNotice({ received, reloaded: fresh.ok, failure });
+    if (notice === "reply_failed") {
+      toast.push({ ...replyFailureToast(who, failure), tone: "error" });
+    } else if (notice === "reply_unconfirmed") {
+      toast.push({ ...replyUnconfirmedToast(who), tone: "info" });
     }
     return outcome;
   };

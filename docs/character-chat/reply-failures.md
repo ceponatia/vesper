@@ -59,7 +59,10 @@ withholds instead of keeping as a reply.
    zero-tokens-received path always hands it to `replyFailureToast`; after a stream
    that DID deliver text, the popup fires only when `replyWithdrawnAfterStreaming`
    says the fresh record withdrew it (the `length_stub` cause), so no other record can
-   turn a visible reply into a "didn't reply". `replyFailureToast`
+   turn a visible reply into a "didn't reply". The refetch is retried once after a
+   short backoff; if it still fails after text streamed, the client has no verdict, so
+   `postStreamNotice` shows a neutral "couldn't confirm the reply" notice pointing at a
+   page reload, and the bubble is never presented as settled. `replyFailureToast`
    (`components/chat/reply-failure.ts`) maps each class to its own copy
    (quoting the provider's words where they add signal) with a 10-minute staleness
    guard. An `empty_reply` carrying a cause takes that cause's copy instead of the

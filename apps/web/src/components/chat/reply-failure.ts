@@ -147,6 +147,49 @@ export function replyWithdrawnAfterStreaming(
   return failure.code === "empty_reply" && failure.cause !== undefined && WITHDRAWN_AFTER_STREAMING.has(failure.cause);
 }
 
+/**
+ * How long the post-stream transcript reload waits before its one retry. A single
+ * failed GET is usually a transient blip; one short retry is what lets the client
+ * learn the exchange's verdict instead of guessing it.
+ */
+export const POST_STREAM_RELOAD_RETRY_MS = 1_000;
+
+/**
+ * What the player is told once a reply stream has closed cleanly (PURE; `now` is
+ * injectable for tests):
+ *
+ * - `reply_failed` — show `replyFailureToast`: nothing streamed, or the fresh record
+ *   says the server withdrew what did (`replyWithdrawnAfterStreaming`).
+ * - `reply_unconfirmed` — text streamed, but the transcript reload failed even after
+ *   its retry, so the client cannot tell a settled reply from a withheld fragment. The
+ *   bubble stays (retracting a reply that may well be saved would be worse), and a
+ *   neutral notice says it is unconfirmed instead of passing it off as settled.
+ * - `none` — text streamed and the reload confirmed nothing was withdrawn.
+ */
+export function postStreamNotice(input: {
+  received: boolean;
+  /** The post-stream transcript reload succeeded, after its one retry. */
+  reloaded: boolean;
+  failure: ChatReplyFailure | null | undefined;
+  now?: number;
+}): "none" | "reply_failed" | "reply_unconfirmed" {
+  if (!input.received) return "reply_failed";
+  if (!input.reloaded) return "reply_unconfirmed";
+  return replyWithdrawnAfterStreaming(input.failure, input.now) ? "reply_failed" : "none";
+}
+
+/**
+ * The neutral notice for `reply_unconfirmed`. It asserts neither success nor failure
+ * — only that the client could not check — and says how to see what was saved.
+ */
+export function replyUnconfirmedToast(who: string): { title: string; description: string } {
+  return {
+    title: `Couldn't confirm ${who}'s reply`,
+    description:
+      "The conversation didn't refresh after the reply finished, so what's shown may not match what was saved. Reload the page to see the saved conversation.",
+  };
+}
+
 function isStale(failure: ChatReplyFailure, now: number): boolean {
   if (!failure.at) return false; // degraded record with no stamp — it was just fetched, trust it
   const age = now - Date.parse(failure.at);
