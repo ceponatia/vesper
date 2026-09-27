@@ -16,10 +16,12 @@
 #   WARN  a docs/ file whose diff is mostly whitespace (a formatter ran over docs)
 #   WARN  markdown table rows whose pipes do not line up (docs are read raw)
 #   WARN  dynamic-state wording added under docs/ (status, remaining, awaiting…)
-#   WARN  a touched legacy [param] route still on bare withUser (lint:authz fires)
+#   WARN  a changed [param] route with a bare withUser handler that carries no
+#         authorization evidence lint:authz accepts (route-authz.py predicts it)
 #   WARN  ageAnchor mentioned in a census-guarded file (the test greps source text)
 #   INFO  new test files, so vesper-testing's question gets asked
 set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)   # before any cd: $0 may be relative
 
 BASE=main; PR_BODY=""; DIR=""
 while [ $# -gt 0 ]; do
@@ -97,15 +99,25 @@ for f in "${files[@]}"; do
   esac
 done
 
-# --- lint:authz touch gate ---------------------------------------------------------------------
-for f in "${files[@]}"; do
-  case "$f" in apps/web/src/app/api/*\[*\]*route.ts)
-    [ -f "$f" ] || continue
-    if grep -q 'withUser(' "$f" && ! grep -qE 'withAuthorizedResource|withOwnedEntity|withOwnerAdmin|withCrossAccountSupport' "$f"; then
-      warn "$f: touched legacy bare-withUser route — lint:authz fails on ANY edit; migrate the wrapper or revert the file out of the diff"
-    fi ;;
-  esac
-done
+# --- lint:authz ----------------------------------------------------------------------------------
+# The gate's own file set: content-changed paths, pure renames (R100) excluded. route-authz.py
+# applies RESOURCE_ROUTE and judges every withUser( / withUser<Params>( handler as the gate does.
+mapfile -t routes < <(git diff --name-status --find-renames -l0 --diff-filter=ACMR "$range" \
+  | awk -F'\t' '$1 != "R100" { p = ($1 ~ /^[RC]/) ? $3 : $2; if (p ~ /route\.ts$/) print p }')
+if [ ${#routes[@]} -gt 0 ]; then
+  if ! command -v python3 >/dev/null; then
+    warn "python3 not found — lint:authz not predicted for ${#routes[@]} changed route file(s)"
+  else
+    rc=0; unsafe=$(python3 "$HERE/route-authz.py" --gate scripts/check-route-authz.ts "${routes[@]}") || rc=$?
+    if [ "$rc" -eq 1 ]; then
+      while IFS= read -r f; do
+        warn "$f: a bare withUser handler has no authorization evidence — lint:authz will fail; use an owner-scoped wrapper, a guarded approved helper called with user.id and the route param, or an inline (route id, owner id) .where predicate"
+      done <<<"$unsafe"
+    elif [ "$rc" -ne 0 ]; then
+      warn "lint:authz not predicted for ${#routes[@]} changed route file(s): route-authz.py exited $rc (message above)"
+    fi
+  fi
+fi
 
 # --- census-guarded files ------------------------------------------------------------------------
 for f in "${files[@]}"; do
