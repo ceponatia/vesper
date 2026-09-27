@@ -57,10 +57,10 @@ lives in the scenario's `scene_memory` (see [scene-memory.md](scene-memory.md)).
   instruction: begin the scene in character, grounded in the scenario and current state,
   ending on a present moment that invites the player in, never narrating for them. One
   exact narrator id currently overrides this text: `DarkArtsForge/Asmodeus-24B-v3` gets
-  an explicit third-person camera instruction ("describing {name} acting and speaking in
-  the third person — never as 'I'") in place of "open the scene in character" — a
-  controlled run found the default phrasing produced first-person narration from this
-  model, while the explicit camera instruction held third person. Keyed by the exact
+  an explicit narrator instruction ("open the scene as its narrator: {name} acts and
+  speaks first, written in the third person") in place of "open the scene in character"
+  — a controlled run found the default phrasing produced first-person narration from
+  this model, while the explicit camera instruction held third person. Keyed by the exact
   catalog id in `OPENING_DIRECTIVE_OVERRIDES` (`prompts/character-chat/single.ts`); every
   other narrator's opening beat is byte-identical to before.
 - **Reply-discipline gates (volatile tail).** Pure reads over the window's last 1–2

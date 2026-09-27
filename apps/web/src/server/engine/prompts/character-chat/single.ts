@@ -1,3 +1,4 @@
+import { ASMODEUS_24B_V3_ID } from "@vesper/text-models";
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
@@ -170,22 +171,25 @@ const chatRulesNodes = (
  * (2026-09-04, issue #471) found first-person narration in all three opening samples
  * with the default "open the scene in character" wording, paired with the unchanged
  * `(Open the scene. Speak first, in character.)` cue, and held third person in all
- * three once the tail directive was reworded as an explicit narrator/camera
- * instruction. History then amplifies whichever person the first reply set, so the
- * fix has to land on the directive that produces that first reply, not on a
- * generic anchor added elsewhere.
+ * three once the tail directive was reworded as a narrator instruction — measured as
+ * "Open the scene as its narrator: Sabrina acts and speaks first, written in the third
+ * person …" (#471, the character's own name in the tested sentence; `name` below
+ * interpolates it). That measurement covers only the narration outside quoted speech —
+ * it says nothing about first-person pronouns INSIDE the character's own dialogue, so
+ * the override does not add a "never as I" clause the run never tested. History then
+ * amplifies whichever person the first reply set, so the fix has to land on the
+ * directive that produces that first reply, not on a generic anchor added elsewhere.
  *
- * Keyed by the exact catalog id (`DarkArtsForge/Asmodeus-24B-v3`,
- * `lib/narrative-models.ts`) rather than by provider or capability, matching the
- * adapter's own exact-ID keying for this row (docs/text-models/models/asmodeus-24b-v3.md)
- * — a hotfix ahead of #261/#262's resolved narrator-profile seam, which will absorb
- * this table without changing any rendered byte. An id with no entry here (every
+ * Keyed by `ASMODEUS_24B_V3_ID` (`@vesper/text-models`, the adapter's own exact-ID
+ * registry — docs/text-models/models/asmodeus-24b-v3.md) rather than by provider or
+ * capability — a hotfix ahead of #261/#262's resolved narrator-profile seam, which will
+ * absorb this table without changing any rendered byte. An id with no entry here (every
  * other narrator, including an unrecognized/absent one) renders the unchanged default
  * directive, so this table can only ever narrow behavior for one exact id.
  */
 const OPENING_DIRECTIVE_OVERRIDES: Record<string, (name: string, player: string) => string> = {
-  "DarkArtsForge/Asmodeus-24B-v3": (name, player) =>
-    `Opening beat: ${player} has not spoken yet. Begin the conversation yourself — open the scene as its narrator, describing ${name} acting and speaking in the third person (never as "I"), grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`,
+  [ASMODEUS_24B_V3_ID]: (name, player) =>
+    `Opening beat: ${player} has not spoken yet. Begin the conversation yourself — open the scene as its narrator: ${name} acts and speaks first, written in the third person, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.`,
 };
 
 /**
