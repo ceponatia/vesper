@@ -217,6 +217,16 @@ export function applyChatContactRelease(input: {
  * `separated` rather than `withdrawn` for the same reason the story-clock skip
  * uses it: nobody took their hand back, the distance simply stopped allowing it.
  * An unnamed departure covers every player-involved contact there is.
+ *
+ * Two callers share this exact semantic: the turn plan's own departure lexicon
+ * (`detectChatDeparture`, an ordinary "I step back"), and the turn's pre-plan
+ * #330 hook for a grounded move onto furniture/a fixture WITHIN the current
+ * place ("I walk over to the desk", owner ruling 2026-09-27) — an UNNAMED
+ * departure (`targetSubject: null`) with no distance stated, since only the
+ * player's own body moved and an ensemble's OTHER contacts must survive it.
+ * The second caller passes a `band` the function never reads (this covers
+ * ends, never asserts a distance); pass whichever value reads best at the call
+ * site.
  */
 export function applyChatContactDeparture(input: {
   readonly scene: SceneState;
@@ -242,16 +252,17 @@ export function applyChatContactDeparture(input: {
 /**
  * End every active contact in the scene — the hook the lane's own transitions use.
  *
- * Called once per exchange for each discontinuity that fired, all outside the
- * turn plan's own attempt resolution: a story-clock skip ends everything as
- * `separated` (owner ruling, 2026-07-31 — an hour later, nobody's hand is still
- * where it was); leaving the scene ends everything as `scene_changed`; and a
- * grounded move onto furniture/a fixture WITHIN the current place ends
- * everything as `separated` too (#330, owner ruling 2026-09-27 — the scene did
- * not change, but the player's own body still crossed the room). The core's law
- * 4 still applies per contact, so a sweep asserted from before a contact's last
- * update leaves that contact alone with a `warn` rather than writing a
- * time-travelling end.
+ * Two callers, both outside the turn plan because both are things that happen TO
+ * a conversation rather than one body's own move: a story-clock skip ends
+ * everything as `separated` (owner ruling, 2026-07-31 — an hour later, nobody's
+ * hand is still where it was), and leaving the scene ends everything as
+ * `scene_changed`. A move onto furniture/a fixture WITHIN the current place
+ * (#330) deliberately does NOT call this — only the player's own body moved, so
+ * it scopes to the player's own contacts via `applyChatContactDeparture`
+ * instead, never touching a contact between two OTHER present characters. The
+ * core's law 4 still applies per contact, so a sweep asserted from before a
+ * contact's last update leaves that contact alone with a `warn` rather than
+ * writing a time-travelling end.
  */
 export function endAllChatContacts(
   scene: SceneState,
@@ -277,17 +288,20 @@ export function endAllChatContacts(
  * relations from being about anything any more (owner ruling, 2026-08-04;
  * `withoutScenePairRelations`).
  *
- * Four triggers, folded into two fields, and the ruling's own asymmetry decides
- * the blast radius:
+ * Exactly three, and the ruling's own asymmetry decides the blast radius:
  *
- * - `wholeScene` — the place changed, the story clock explicitly skipped, or a
- *   grounded move landed on furniture/a fixture WITHIN the current place (#330,
- *   owner ruling 2026-09-27: the player's own body still crossed the room, even
- *   though the named place did not). Any of the three means EVERY pair's
- *   distance is a claim about a room, a moment, or a position that is gone.
+ * - `wholeScene` — the place changed, or the story clock explicitly skipped.
+ *   The whole chat moved or time jumped, so EVERY pair's distance is a claim
+ *   about a room or a moment that is gone.
  * - `awaySubjects` — the members this cut says are offstage. Only the relations
  *   they are party to clear; the bodies still in the room did not move relative
  *   to each other because somebody else walked out.
+ * - `movedSubjects` — members still IN the room whose own body repositioned
+ *   within it (#330, owner ruling 2026-09-27: a grounded move onto furniture/a
+ *   fixture WITHIN the current place, e.g. "I walk over to the desk"). Only the
+ *   relations THAT member is party to clear — an ensemble's other members did
+ *   not move relative to each other because one of them crossed the room, so
+ *   this must never fold into `wholeScene`.
  *
  * The ordinary per-turn clock tick is deliberately NOT a discontinuity. Minutes
  * passing inside one continuous scene is what a conversation IS, and treating
@@ -295,13 +309,15 @@ export function endAllChatContacts(
  * permanently unknown.
  */
 export interface ChatSceneDiscontinuity {
-  /**
-   * A place change, an explicit story-clock skip, or a grounded within-place
-   * furniture move (#330) — clears every pair.
-   */
+  /** A place change or an explicit story-clock skip — clears every pair. */
   readonly wholeScene: boolean;
   /** Members this cut says are offstage — clears only their own relations. */
   readonly awaySubjects: readonly AffordanceSubjectId[];
+  /**
+   * Members still present whose own body repositioned within the current place
+   * (#330) — clears only their own relations, never everyone's.
+   */
+  readonly movedSubjects: readonly AffordanceSubjectId[];
 }
 
 /**
@@ -313,9 +329,16 @@ export interface ChatSceneDiscontinuity {
  * exchange simply has nothing left to drop, and their distance stays unknown
  * until explicit movement states a new one.
  *
- * Contacts are NOT ended here. The two producers are deliberately separate:
- * `endAllChatContacts` already owns the skip/place-change ends under their own
- * event refs and ledger rows, and this is the state that has to move with them.
+ * `awaySubjects` and `movedSubjects` use the SAME subject-scoped removal
+ * (`withoutScenePairRelations`) — the split is only which list a caller fills,
+ * not a different mechanism — so a member who is somehow both this exchange
+ * still clears exactly once (a `Set` dedupes the union).
+ *
+ * Contacts are NOT ended here. The producers are deliberately separate:
+ * `endAllChatContacts` (skip/place-change) and `applyChatContactDeparture`
+ * (#330's within-place move, scoped to the player) already own those ends
+ * under their own event refs and ledger rows, and this is the state that has
+ * to move with them.
  */
 export function chatSceneAfterDiscontinuity(
   scene: SceneState,
@@ -323,6 +346,7 @@ export function chatSceneAfterDiscontinuity(
 ): SceneState {
   if (input.wholeScene) return withoutAllScenePairRelations(scene);
   let next = scene;
-  for (const subjectId of input.awaySubjects) next = withoutScenePairRelations(next, subjectId);
+  const subjects = new Set([...input.awaySubjects, ...input.movedSubjects]);
+  for (const subjectId of subjects) next = withoutScenePairRelations(next, subjectId);
   return next;
 }
