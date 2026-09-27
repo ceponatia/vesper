@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Issues and Docs"
+  short_description: "Write issues and durable Vesper documentation"
+  default_prompt: "Use $vesper-docs to turn this request into the appropriate Vesper issue or durable documentation."
+
+policy:
+  allow_implicit_invocation: true

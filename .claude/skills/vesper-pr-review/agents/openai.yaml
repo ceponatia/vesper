@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper PR Review"
+  short_description: "Review Vesper CI, comments, and merge readiness"
+  default_prompt: "Use $vesper-pr-review to inspect this Vesper pull request and carry its authorized CI and review work to a truthful completion."
+
+policy:
+  allow_implicit_invocation: true

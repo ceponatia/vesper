@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Board Operations"
+  short_description: "Manage Vesper issues, PR links, and board state"
+  default_prompt: "Use $vesper-board to perform the requested Vesper issue, pull request, or project-board lifecycle operation."
+
+policy:
+  allow_implicit_invocation: true

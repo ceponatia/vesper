@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper UX Review"
+  short_description: "Review substantial flows for friction and recovery"
+  default_prompt: "Use $vesper-ux-review to review this substantial workflow for friction, defaults, disclosure, and recovery."
+
+policy:
+  allow_implicit_invocation: true

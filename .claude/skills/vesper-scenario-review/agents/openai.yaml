@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Scenario Review"
+  short_description: "Review substantial flows across failure states"
+  default_prompt: "Use $vesper-scenario-review to review this user flow across meaningful state transitions and recovery paths."
+
+policy:
+  allow_implicit_invocation: true

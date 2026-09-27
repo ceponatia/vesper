@@ -26,8 +26,10 @@ independently. Custom Codex roles pin their own model and effort:
 | `vesper-test-keeper` | Terra / medium | Test ownership analysis and scoped test edits after coding. |
 | `vesper-ui-reviewer` | Terra / medium | Rendered UI and accessibility evidence. |
 | `vesper-ux-reviewer` | Terra / medium | Bounded workflow friction and recovery review. |
+| `vesper-reviewer` | Sol / medium | Read-only semantic review of a diff before integration or a PR. |
 | `vesper-scenario-reviewer` | Sol / medium | Adversarial state-transition, authorization, and recovery analysis. |
 | `vesper-escalation` | Sol / high | An exhausted Terra correction round or a documented consequential trigger that needs a new model of the problem. |
+| `vesper-orchestrator` | Sol / high | Top-level coordination when a session selects it; Codex has no project default-agent setting. |
 
 For ad-hoc/default Codex roles, target Terra / medium through the spawn
 interface when it supports an explicit override; this is repository policy,
@@ -71,20 +73,30 @@ Do not use Sol escalation for routine work solely because it is available.
 
 ## Subagent model policy (Claude)
 
+Every Claude session in this project runs as `vesper-orchestrator` (Opus 5.5,
+`claude-opus-5-5`): `.claude/settings.json` sets it as the main-session `agent`,
+and its prompt replaces Claude Code's built-in system prompt. It coordinates and
+delegates; it is never spawned as a subagent.
+
 A delegated slice runs on a project role under `.claude/agents/`, and each of
 those roles pins its own model in its frontmatter; the parent never passes
 `model` on a call to a `vesper-*` role. `.claude/hooks/agent_policy.py`
 (a PreToolUse hook on the Agent tool) enforces this: it refuses an
 implementation brief sent to an un-pinned agent type, a `vesper-escalation`
-spawn with no escalation record, and an explicit `model` override on a
-pinned Vesper role.
+spawn with no escalation record, an explicit `model` override on a
+pinned Vesper role, and any spawn of `vesper-orchestrator`.
 
 | Role | Model | Use |
 | --- | --- | --- |
+| `vesper-orchestrator` | Opus 5.5 | The main-session agent: plans, delegates, reviews, integrates, and delivers. |
 | `vesper-builder` | Sonnet | Default worker for a bounded slice with a brief: well-specified issues, ordinary fixes, tests, contained refactors, mechanical work. Stops after one failed attempt and returns an escalation record instead of retrying. |
 | `vesper-escalation` | Opus | Takes over a slice from that record, or owns from the start a slice touching kernel or simulation-core logic, migrations, authorization, persistence or replay correctness. Reconsiders the approach instead of repairing the previous patch. |
 | `vesper-reviewer` | Opus | Read-only semantic review of a diff before integration or a PR. |
 | `vesper-test-keeper` | Sonnet | Test reconciliation after a coding task; see Skills and work state. |
+| `vesper-context-scout` | Sonnet | Read-only context brief for a fresh worker or handoff. |
+| `vesper-scenario-reviewer` | Opus | Read-only adversarial review of a substantial multi-step flow. |
+| `vesper-ux-reviewer` | Sonnet | Read-only friction, defaults, and recovery review of a substantial workflow. |
+| `vesper-ui-reviewer` | Sonnet | Rendered desktop/mobile review of the deployed UI; writes only under `eval-images/`. |
 
 Escalate when: the builder returns an escalation record or reports a failed
 attempt; a second plausible approach would have different architectural
@@ -110,8 +122,13 @@ Subagents never run on the session's own model when that model is Fable.
 
 ## Skills and work state
 
-- Canonical skills live under `.agents/skills/`; `.claude/skills/*` are compatibility symlinks. Edit the
-  canonical source and follow a matching skill when its trigger applies.
+- Canonical skills live under `.agents/skills/`; agent roles live in `.agents/catalog.json`,
+  `.agents/common.md`, and `.agents/roles/`. rolesync renders `.claude/agents/`, `.codex/agents/`, and the
+  byte-for-byte skill copies in `.claude/skills/` from them. Edit only the canonical sources, then run
+  `rolesync sync` and `rolesync check`; never hand-edit a generated file. rolesync does not copy a file's
+  executable bit, so after a sync that rewrote a helper script, restore it with `chmod +x` and confirm with
+  `.agents/skills/vesper-skill-maintenance/scripts/check_structure.py`. Follow a matching skill when its
+  trigger applies.
 - `vesper-docs` owns issue text and durable docs; `vesper-board` owns issue creation and lifecycle mechanics.
 - `vesper-agent-build` owns delegated implementation; `vesper-testing` test placement and CI selection;
   `vesper-pr-review` CI/review/merge; and `verify` authorized Fly evidence.
@@ -120,7 +137,8 @@ Subagents never run on the session's own model when that model is Fable.
 - `vesper-model-onboard`: text/image model identity, provider evidence, adapters, and deployed behavior.
 - `vesper-skill-maintenance`: skill discovery, routing, helpers, and hook/runtime compatibility.
 - For substantial delegated work, use `vesper-task-context`. Select `vesper-ux-review`, `vesper-ui-quality`,
-  or `vesper-scenario-review` when the change warrants that review; their custom roles live in `.codex/agents/`.
+  or `vesper-scenario-review` when the change warrants that review; their roles (`vesper-ux-reviewer`,
+  `vesper-ui-reviewer`, `vesper-scenario-reviewer`) exist on both platforms.
 - After any coding task, run the `vesper-test-keeper` role (`.codex/agents/`, `.claude/agents/`) before
   reporting the work complete: it brings the tests that own the changed or new code in line with the change
   under `vesper-testing`'s rules and reports the CI evidence. It edits tests only.
