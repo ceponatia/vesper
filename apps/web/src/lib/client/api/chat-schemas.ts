@@ -214,6 +214,8 @@ export const chatStateSnapshotSchema = z.object({
     regardDelta: 0,
     moodDelta: 0,
     arousalDelta: 0,
+    hygieneDelta: 0,
+    intimateScene: null,
     changed: [],
     feeling: null,
     regardScale: 1,

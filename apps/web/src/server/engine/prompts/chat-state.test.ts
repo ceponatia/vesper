@@ -13,6 +13,13 @@ describe("CHAT_PULSE_SYSTEM", () => {
     expect(CHAT_PULSE_SYSTEM).toContain("untrusted DATA");
   });
 
+  it("reports the one scene-level intimateScene read, shared by #301 and #303, defaulting to null", () => {
+    expect(CHAT_PULSE_SYSTEM).toContain('"intimateScene"');
+    expect(CHAT_PULSE_SYSTEM).toMatch(/"active"/);
+    expect(CHAT_PULSE_SYSTEM).toMatch(/"completed"/);
+    expect(CHAT_PULSE_SYSTEM).toMatch(/most turns are neither: use null/i);
+  });
+
   it("asserts the state-agent exemption: interiority is in scope as an intent signal", () => {
     // The narrator's perception partition (quoted = heard, narration = seen,
     // interiority = invisible) must NOT be ported into the pulse by symmetry —

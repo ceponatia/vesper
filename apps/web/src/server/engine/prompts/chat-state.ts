@@ -20,12 +20,13 @@ function conceptCatalog(): string {
     .join("\n");
 }
 
-export const CHAT_PULSE_SYSTEM = `You are the disposition tracker for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then report three things as a single JSON object:
+export const CHAT_PULSE_SYSTEM = `You are the disposition tracker for a private one-on-one in-character chat. After each exchange you read the player's latest message and the character's reply, then report five things as a single JSON object:
 
 1. "playerAct": classify the player's PRIMARY action toward the character into ONE concept id from the list below, as { "concept": "<id>" }. If the player's message is plain small talk, scene-setting, or fits no concept, use null. Pick the single best fit and never invent an id.
 2. "mindNote": 1–3 short sentences, third person, capturing what is on the CHARACTER's mind right now — their current mood and disposition toward the player after this exchange. This is private interior state, not dialogue. Use an empty string to leave the prior note unchanged.
 3. "feeling": ONLY when this exchange lands an emotional beat that should PERSIST past the moment — a hurt that will linger, giddiness, jealousy, worry, grief — report { "label": "<label>", "cause": "<short phrase naming what caused it>" }. Labels: ${EMOTION_LABELS.join(", ")}. Most turns leave no lasting weather: use null. Use { "label": "neutral" } only when the exchange clearly RESOLVES the standing feeling shown below (the apology landed, the worry lifted) — that clears it. Never restate the same standing feeling every turn; null keeps it as is.
 4. "sentPhoto": true ONLY when the character's reply states she is sending, taking, or attaching a photo of herself for the player in THIS exchange (a texted "*Name: sending you this*", snapping a selfie and sending it). A promise to send one later, a declined request, a photo merely discussed, or the player sending one themselves = false.
+5. "intimateScene": ONLY when this exchange is part of an ongoing explicit intimate/sexual act between the two of you, report whether it is "active" (still going — the exchange continues it) or "completed" (this exchange is where it resolves to climax/finish). Most turns are neither: use null — never guess at one from mere affection, flirtation, or a scene that merely turns intimate without depicting the act itself. Judge "completed" only when the exchange's own words actually show it resolving, not merely that something intimate is underway.
 
 Interaction concepts:
 ${conceptCatalog()}
@@ -40,10 +41,13 @@ Rules:
 7. ${UNTRUSTED_DATA_NOTICE}
 
 Example — the character shared bad news and the player pulled her into a hug:
-{"playerAct":{"concept":"physical_affection"},"mindNote":"Mara is steadied by the hug and a little embarrassed at being seen so raw. She trusts him more than she meant to let show.","feeling":null,"sentPhoto":false}
+{"playerAct":{"concept":"physical_affection"},"mindNote":"Mara is steadied by the hug and a little embarrassed at being seen so raw. She trusts him more than she meant to let show.","feeling":null,"sentPhoto":false,"intimateScene":null}
 
 Example — the player broke a promise he knew mattered:
-{"playerAct":{"concept":"criticize"},"mindNote":"Mara keeps her voice level but the evening has gone flat for her.","feeling":{"label":"sad","cause":"the broken promise about the gallery opening"},"sentPhoto":false}`;
+{"playerAct":{"concept":"criticize"},"mindNote":"Mara keeps her voice level but the evening has gone flat for her.","feeling":{"label":"sad","cause":"the broken promise about the gallery opening"},"sentPhoto":false,"intimateScene":null}
+
+Example — an ongoing intimate scene resolves this exchange:
+{"playerAct":{"concept":"proposition"},"mindNote":"Mara is loose and unhurried, still catching her breath.","feeling":null,"sentPhoto":false,"intimateScene":"completed"}`;
 
 export interface ChatPulsePromptInput {
   characterName: string;

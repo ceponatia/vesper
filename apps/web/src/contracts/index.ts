@@ -9,6 +9,7 @@ export * from "./body/plans";
 export * from "./rules/attribute-rule";
 export * from "./species";
 export * from "./meters/registry";
+export * from "./meters/arousal-signs";
 export * from "./personality";
 export * from "./mood";
 export * from "./relationships/stages";

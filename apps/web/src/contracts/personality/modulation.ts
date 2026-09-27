@@ -109,13 +109,16 @@ export const AROUSAL_DISINHIBITION_WEIGHT = 0.3;
 
 /**
  * Render-time disposition overlays from physical state: high `intoxication`
- * (and, lighter, `arousal`) temporarily lowers `intimate.inhibition`, `social.guardedness`,
- * and `temperament.composure` so a drunk character reads looser, less guarded, and more
- * volatile — without ever writing the authored sliders. Returns `source:"condition"`
+ * temporarily lowers `intimate.inhibition`, `social.guardedness`, and
+ * `temperament.composure` so a drunk character reads looser, less guarded, and more
+ * volatile; `arousal` contributes ONLY to `intimate.inhibition` (owner ruling, #301 —
+ * being turned on narrows judgment about intimacy, not social composure or guard) —
+ * without ever writing the authored sliders. Returns `source:"condition"`
  * overlays (precedence 3, so they win over the authored `creation` value) for the prompt's
  * `dispositionBands` to pre-resolve; the shift recedes as the meters drift back. **Only
  * traits the character actually authored are shifted** (we never invent a disposition the
- * author didn't give). Empty when below the floor, or no relevant traits ⇒ today's behavior.
+ * author didn't give). Empty when both drives are below the floor, or no relevant traits ⇒
+ * today's behavior.
  */
 export function stateDispositionOverlays(
   traits: readonly TraitValue[],
@@ -124,14 +127,19 @@ export function stateDispositionOverlays(
   if (traits.length === 0) return [];
   const intoxication = meters.intoxication ?? 0;
   const arousal = meters.arousal ?? 0;
-  const drive = Math.min(1, intoxication + AROUSAL_DISINHIBITION_WEIGHT * arousal);
-  if (drive < DISINHIBITION_FLOOR) return [];
-  const drop = DISINHIBITION_SPAN * drive;
+  // Two separate drives: inhibition answers to both intoxication and arousal;
+  // guardedness/composure answer to intoxication alone (arousal never lowers them).
+  const inhibitionDrive = Math.min(1, intoxication + AROUSAL_DISINHIBITION_WEIGHT * arousal);
+  const guardedDrive = Math.min(1, intoxication);
+  if (inhibitionDrive < DISINHIBITION_FLOOR && guardedDrive < DISINHIBITION_FLOOR) return [];
   const resolved = resolveTraits(traits, []);
   const overlays: TraitValue[] = [];
   for (const id of DISINHIBITION_TRAITS) {
+    const drive = id === "intimate.inhibition" ? inhibitionDrive : guardedDrive;
+    if (drive < DISINHIBITION_FLOOR) continue;
     const current = resolved.find((t) => t.id === id);
     if (!current) continue; // only shift authored traits — never fabricate a disposition
+    const drop = DISINHIBITION_SPAN * drive;
     overlays.push({ id, value: Math.max(-100, current.value - drop), source: "condition" });
   }
   return overlays;

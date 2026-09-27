@@ -2,12 +2,14 @@ import {
   applyMeterDrift,
   CHAT_DEFAULT_CALENDAR_START,
   chatGameTime,
+  conditionKey,
   formatChatMoment,
   isConditionExpired,
   meterDefinitions,
   personalizeMeters,
   resolveOutfitPreset,
   SKIP_HISTORY_CAP,
+  type ActiveCondition,
   type CharacterProfile,
   type ChatSkipAmount,
   type SkipRecord,
@@ -17,6 +19,19 @@ import { CHAT_FEELING_SKIP_STEPS, decayFeelingState } from "../chat-feeling";
 import { CHAT_METER_CATCH_UP_MAX_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
 import { chatSkipNote } from "../prompts/character-chat";
 import type { ChatScenario, ChatState } from "./types";
+
+/**
+ * Whether a standing condition (from the set covering this WHOLE interval/piece)
+ * holds `meterId`'s drift still — today just `heated` suspending `arousal` (#301),
+ * so an ongoing intimate scene doesn't visibly cool between exchanges. A small,
+ * named predicate rather than a general framework: a future standing suspension
+ * (e.g. an `asleep` condition holding a different meter) adds its own clause here,
+ * not a second mechanism.
+ */
+export function suspendsMeterDrift(conditions: readonly ActiveCondition[], meterId: string): boolean {
+  if (meterId !== "arousal") return false;
+  return conditions.some((c) => conditionKey(c) === "heated");
+}
 
 /**
  * Integrate a character's meters across the story interval `[fromMinutes,
@@ -29,16 +44,25 @@ import type { ChatScenario, ChatState } from "./types";
  * it (a crossed routine window, a standing condition that suspends a meter's
  * drift) integrates each piece with this function and applies the boundary's
  * effect between them.
+ *
+ * `conditions` (#301): the conditions standing for this WHOLE interval/piece —
+ * any meter `suspendsMeterDrift` says they hold still is excluded from this
+ * call's drift entirely. Absent ⇒ every meter drifts, exactly today's behavior.
  */
 export function integrateChatMeters(args: {
   meters: Record<string, number>;
   profile: CharacterProfile;
   fromMinutes: number;
   toMinutes: number;
+  conditions?: readonly ActiveCondition[];
 }): Record<string, number> {
   const elapsed = Math.min(args.toMinutes - args.fromMinutes, CHAT_METER_CATCH_UP_MAX_MINUTES);
   if (!(elapsed > 0)) return args.meters;
-  return applyMeterDrift(args.meters, elapsed, personalizeMeters(meterDefinitions, args.profile.traits));
+  const conditions = args.conditions ?? [];
+  const definitions = personalizeMeters(meterDefinitions, args.profile.traits).filter(
+    (def) => !suspendsMeterDrift(conditions, def.id),
+  );
+  return applyMeterDrift(args.meters, elapsed, definitions);
 }
 
 /**
@@ -69,7 +93,10 @@ export function driftChatState(
     if (state.metersAtMinutes !== null && !expired) return state;
     return { ...state, conditions, metersAtMinutes: state.metersAtMinutes ?? clockMinutes };
   }
-  const meters = integrateChatMeters({ meters: state.meters, profile, fromMinutes: from, toMinutes: clockMinutes });
+  // Conditions standing for this WHOLE interval (post-expiry above, so a `heated`
+  // that just expired no longer suspends arousal): `integrateChatMeters` holds any
+  // meter `suspendsMeterDrift` says they cover still for the piece.
+  const meters = integrateChatMeters({ meters: state.meters, profile, fromMinutes: from, toMinutes: clockMinutes, conditions });
   return { ...state, meters, metersAtMinutes: clockMinutes, conditions };
 }
 

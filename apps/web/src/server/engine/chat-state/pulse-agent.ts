@@ -154,6 +154,8 @@ function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason
       regardDelta: 0,
       moodDelta: 0,
       arousalDelta: 0,
+      hygieneDelta: 0,
+      intimateScene: null,
       changed: [],
       feeling: state.feeling.current?.label ?? null,
       regardScale: 1,
