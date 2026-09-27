@@ -136,7 +136,7 @@ export function ScheduleEditor({ schedule, onChange, outfitPresets = [] }: Sched
                       />
                     )}
                   </Field>
-                  <Field label="Kind" hint="What the world reacts to — leave blank when none fit.">
+                  <Field label="Kind" hint="Optional — sleep, wash, meal, work or leisure; leave blank when none fit.">
                     {(id) => (
                       <Select
                         id={id}
