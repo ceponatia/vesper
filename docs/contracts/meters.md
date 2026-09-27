@@ -53,14 +53,14 @@ Every law and rate is per story hour and matches the successor's body registry
 2026-09-27, real-life timing; see below), and `@vesper/simulation-core`'s own
 hygiene rate is untouched.
 
-| Meter          | Behavior                                                                                                |
-| -------------- | -------------------------------------------------------------------------------------------------------- |
-| `hygiene`      | Linear ≈0.009/h toward 0 — washed to 0.95, noticeable odor at ≈10 h, unwashed at 72 h (see below).       |
-| `energy`       | A reserve: proportional decay toward 0, half-life 16·ln2 h; sleep restores it; bands read its balance.   |
-| `stress`       | Linear 0.03/h toward calm; composure speeds or slows it.                                                 |
-| `arousal`      | Linear 0.2/h toward a libido-shifted resting point; held still while `heated` stands (see below).        |
-| `intoxication` | Linear 0.12/h toward sober.                                                                               |
-| `mood`         | Valence — 0 low / 0.5 even / 1 bright; linear 0.06/h back to an optimism-shifted keel.                    |
+| Meter          | Behavior                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| `hygiene`      | Linear ≈0.009/h toward 0 — washed to 0.95, noticeable odor at ≈10 h, unwashed at 72 h (see below).     |
+| `energy`       | A reserve: proportional decay toward 0, half-life 16·ln2 h; sleep restores it; bands read its balance. |
+| `stress`       | Linear 0.03/h toward calm; composure speeds or slows it.                                               |
+| `arousal`      | Linear 0.2/h toward a libido-shifted resting point; held still while `heated` stands (see below).      |
+| `intoxication` | Linear 0.12/h toward sober.                                                                            |
+| `mood`         | Valence — 0 low / 0.5 even / 1 bright; linear 0.06/h back to an optimism-shifted keel.                 |
 
 **Hygiene's own derivation** (owner ruling 2026-09-27, #303 review — real-life
 timing, not the successor's pace): washed to 0.95 (`rhythmSelfCareEffects`'s
