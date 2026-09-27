@@ -439,6 +439,12 @@ describe("routine crossings on skipped and away time", () => {
     meters: { ...initialMeters(), hygiene: 0.8, energy: 0.9 },
     ...overrides,
   });
+  /** A seeded state whose meters hold at story minute `atMinutes` (mirrors the `driftChatState` describe's helper). */
+  const stamped = (atMinutes: number, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(untyped),
+    metersAtMinutes: atMinutes,
+    ...overrides,
+  });
   const skipTo = (state: ChatState, profile: CharacterProfile, clockMinutes: number): ChatState =>
     driftChatState(state, profile, { clockMinutes, calendarStart: CAL, skipped: true });
   const readAt = (state: ChatState, profile: CharacterProfile, clockMinutes: number): ChatState =>
