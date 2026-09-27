@@ -133,6 +133,10 @@ export async function loadPreExchangeScenario(
  */
 const storedChatStateSchema = z.object({
   meters: metersSchema,
+  // The stamp the anchored meters hold at, so a retake re-integrates exactly the
+  // interval the discarded take did. An anchor written before the stamp existed
+  // heals to null: its meters hold at the clock the retake meets.
+  metersAtMinutes: z.number().int().nonnegative().nullable().catch(null).default(null),
   regard: z.number(),
   familiarity: z.number().catch(0).default(0),
   familiaritySceneGain: z.number().catch(0).default(0),

@@ -36,22 +36,24 @@ export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
  * visit each exchange advances it CHAT_TICK_MINUTES; between visits no time
  * passes at all — a player away for a week returns to a scene where nothing
  * moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the one between-scene
- * lever, and in v1 they are narrative flavor only: clock + condition expiry +
- * the skip note — meters untouched. (Affinity never decays.)
+ * lever: they advance the clock, and meters follow the minutes that actually
+ * elapsed. (Affinity never decays.)
  *
  * 4 → 1 (owner ruling 2026-07-15): one exchange ≈ one
  * story minute, so ordinary conversation barely moves the visible clock and skips
- * are the primary time mover. Meter pacing did NOT follow the tick — see
- * CHAT_METER_DRIFT_MINUTES.
+ * are the primary time mover. Meters drift by that same elapsed story time
+ * (`driftChatState`), so a busy conversation barely moves a slow need while a
+ * skip moves it by the hours it covers; the feeling alone decays per exchange.
  */
 export const CHAT_TICK_MINUTES = 1;
 /**
- * Story-minutes of meter decay applied per exchange (the drift sweep):
- * meter pacing is exchange-keyed in spirit — like the feeling's per-exchange decay
- * — so when the clock tick dropped 4 → 1 this kept the shipped per-exchange meter
- * feel instead of slowing it 4×. Deliberately decoupled from CHAT_TICK_MINUTES.
+ * The elapsed-time catch-up bound: one meter integration covers at most the
+ * latest seven story days of its interval. Every adopted drift law has long
+ * settled by then, so the bound changes no current result; it keeps the work a
+ * segmented interval does (one piece per crossed boundary) finite however long
+ * a character went unread.
  */
-export const CHAT_METER_DRIFT_MINUTES = 4;
+export const CHAT_METER_CATCH_UP_MAX_MINUTES = 7 * 24 * 60;
 /**
  * In-game minutes per player skip amount — moved to the contract so the clock
  * card can preview landings client-side; re-exported

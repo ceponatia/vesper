@@ -122,7 +122,12 @@ export async function editParticipantState(args: {
   if (args.patch.regard !== undefined) next.regard = clampRegard(args.patch.regard);
   if (args.patch.familiarity !== undefined) next.familiarity = clampFamiliarity(args.patch.familiarity);
   if (args.patch.relationship !== undefined) next.relationship = args.patch.relationship;
-  if (args.patch.meters !== undefined) next.meters = clampMeters(args.patch.meters);
+  if (args.patch.meters !== undefined) {
+    next.meters = clampMeters(args.patch.meters);
+    // Author-set values hold as of now: re-stamp at the chat's current clock on
+    // persist (see `ChatState.metersAtMinutes`).
+    next.metersAtMinutes = null;
+  }
   if (args.patch.conditions !== undefined) next.conditions = args.patch.conditions.map(seedConditionEffects);
   if (args.patch.mindNote !== undefined) next.mindNote = args.patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
   if (args.patch.whereabouts !== undefined) next.whereabouts = args.patch.whereabouts.trim().slice(0, WHEREABOUTS_MAX_CHARS);

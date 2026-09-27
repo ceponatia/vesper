@@ -9,6 +9,7 @@ import {
   meterById,
   meterDefinitions,
   meterStateCue,
+  METER_DRIFT_STEP_PRECISION,
   splitStateCues,
   type MeterDefinition,
 } from "./registry";
@@ -30,15 +31,55 @@ describe("meter registry", () => {
 });
 
 describe("applyMeterDrift", () => {
-  it("applies signed per-hour drift scaled by elapsed minutes", () => {
+  const definition = (id: string): MeterDefinition => {
+    const found = meterById(id);
+    if (found === undefined) throw new Error(`no ${id} meter in the registry`);
+    return found;
+  };
+  const linearRatePerHour = (def: MeterDefinition): number => def.recoveryPerHour ?? Math.abs(def.perHour);
+  /** One drift step lands within the documented precision of its exact law. */
+  const expectWithin = (actual: number | undefined, expected: number, steps = 1) =>
+    expect(Math.abs((actual ?? Number.NaN) - expected)).toBeLessThanOrEqual(steps * METER_DRIFT_STEP_PRECISION);
+
+  it("moves a linear meter by its per-story-hour rate, scaled by elapsed minutes", () => {
     const next = applyMeterDrift({ hygiene: 0.9, stress: 0.5 }, 60);
-    expect(next.hygiene).toBeCloseTo(0.86, 10); // -0.04/h
-    expect(next.stress).toBeCloseTo(0.47, 10); // -0.03/h
+    expectWithin(next.hygiene, 0.9 - linearRatePerHour(definition("hygiene")));
+    expectWithin(next.stress, 0.5 - linearRatePerHour(definition("stress")));
+    expectWithin(applyMeterDrift({ hygiene: 0.9 }, 30).hygiene, 0.9 - linearRatePerHour(definition("hygiene")) / 2);
   });
 
-  it("scales fractionally for partial hours", () => {
-    const next = applyMeterDrift({ hygiene: 0.9 }, 30);
-    expect(next.hygiene).toBeCloseTo(0.88, 10);
+  it("moves nothing over zero elapsed time", () => {
+    expect(applyMeterDrift({ hygiene: 0.123456, energy: 0.654321 }, 0)).toEqual({ hygiene: 0.123456, energy: 0.654321 });
+  });
+
+  it("halves a proportional meter's distance to its baseline every half-life, from either side", () => {
+    const def: MeterDefinition = {
+      id: "calm",
+      label: "Calm",
+      description: "Synthetic proportional meter.",
+      initial: 0.5,
+      perHour: 0,
+      baseline: 0.5,
+      law: { kind: "proportional", halfLifeHours: 2 },
+      thresholds: [],
+    };
+    expectWithin(applyMeterDrift({ calm: 0.9 }, 120, [def]).calm, 0.7);
+    expectWithin(applyMeterDrift({ calm: 0.9 }, 240, [def]).calm, 0.6);
+    expectWithin(applyMeterDrift({ calm: 0.1 }, 120, [def]).calm, 0.3);
+  });
+
+  it("integrates an interval split into steps to the one-step result within the documented precision", () => {
+    // Every adopted meter, whichever law it declares: nine story hours one
+    // minute at a time (a busy conversation) against the same hours in one step.
+    const minutes = 540;
+    const start = Object.fromEntries(meterDefinitions.map((def) => [def.id, 0.9]));
+    let stepped = start;
+    for (let minute = 0; minute < minutes; minute += 1) stepped = applyMeterDrift(stepped, 1);
+    const whole = applyMeterDrift(start, minutes);
+    for (const def of meterDefinitions) {
+      expectWithin(stepped[def.id], whole[def.id] ?? Number.NaN, minutes);
+    }
+    expect(new Set(meterDefinitions.map((def) => def.law?.kind ?? "linear"))).toEqual(new Set(["linear", "proportional"]));
   });
 
   it("clamps at 0", () => {

@@ -123,6 +123,15 @@ export interface ChatScenario {
 /** The in-memory state for ONE roster character, drifted/seeded/pulsed and persisted as a row. */
 export interface ChatState {
   meters: Record<string, number>;
+  /**
+   * The story minute `meters` hold at: the origin `driftChatState` integrates
+   * elapsed story time from, moved to the clock it integrates to, so a second
+   * read at one clock changes nothing. `null` ⇒ the values hold at the first
+   * clock they meet — a fresh seed, an author's meter edit, or a rollback anchor
+   * written before the stamp existed; persisting one stamps the chat's current
+   * clock.
+   */
+  metersAtMinutes: number | null;
   /** The feeling axis (was `affinity`) — volatile, moved by the reaction pulse. −100..100. */
   regard: number;
   /** The knowledge axis — a slow ratchet, 0..100, never down. */
@@ -233,9 +242,10 @@ export interface ChatState {
   bodySurface: BodySurfaceState;
   /**
    * Narrative presence: "present" shares the player's scene; "away" is offstage
-   * — meters freeze, no memory legs, only salience-gated relationship lines
-   * reach the prompt. Roster panel = manual override; the archivist confirms
-   * transitions.
+   * — no memory legs, only salience-gated relationship lines reach the prompt.
+   * Presence gates narration only: an away body's meters drift on the shared
+   * clock like everyone's. Roster panel = manual override; the archivist
+   * confirms transitions.
    */
   presence: ChatPresence;
   /**

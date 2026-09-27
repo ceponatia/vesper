@@ -10,10 +10,16 @@ import {
   type ChatFixture,
   type ChatSeat,
 } from "@/server/test-support";
-import { loadChatScenario, loadChatState, persistChatState } from "./chat-state/store";
+import {
+  loadChatScenario,
+  loadChatState,
+  persistChatState,
+  persistChatTimeSkip,
+  saveChatScenario,
+} from "./chat-state/store";
 import { loadPreExchangeState, savePreExchangeSnapshot } from "./chat-state/snapshots";
 import { persistSurfaceTransferSettlement } from "./chat-state/surface-transfer";
-import { seedChatState, type ChatState } from "./chat-state";
+import { driftChatState, seedChatState, type ChatState } from "./chat-state";
 import {
   commitBodySurfaceDeposit,
   emptyBodySurfaceState,
@@ -217,5 +223,81 @@ describe.runIf(ready)("a transfer-bearing settle commits as one write", () => {
     const after = await loadChatState(chat.chatId, fixture.characterId, sink);
     expect(after?.bodySurface.deposits).toBeUndefined();
     expect(after?.bodySurface.transfers).toBeUndefined();
+  });
+});
+
+/**
+ * The meters' story-time stamp (#299) is a persistence claim. Drift integrates
+ * from the minute a row's meters hold at, so every write must carry that minute,
+ * a never-stamped state (a fresh seed, an author's meter edit) must take its
+ * chat's clock AS OF THE WRITE rather than minute 0 — or the first read would
+ * drain the character across the chat's whole history — and the retake anchor
+ * must carry it, or a retake would re-integrate a different interval than the
+ * take it discards.
+ */
+describe.runIf(ready)("the meters' story-time stamp", () => {
+  it("round-trips an explicit stamp through the row and the retake anchor", async () => {
+    const stamped: ChatState = { ...seedChatState(richProfile()), metersAtMinutes: 120 };
+    await persistChatState(chat.chatId, fixture.characterId, stamped);
+    expect((await loadChatState(chat.chatId, fixture.characterId))?.metersAtMinutes).toBe(120);
+    await savePreExchangeSnapshot(chat.chatId, fixture.characterId, stamped);
+    expect((await loadPreExchangeState(chat.chatId, fixture.characterId)).state?.metersAtMinutes).toBe(120);
+  });
+
+  it("stamps a never-stamped state at its chat's clock as of the write", async () => {
+    const later = await newChat(fixture);
+    const scenario = await loadChatScenario(later.chatId);
+    if (scenario === null) throw new Error("fixture has no scenario");
+    await saveChatScenario(later.chatId, { ...scenario, clockMinutes: 300 });
+    await persistChatState(later.chatId, fixture.characterId, seedChatState(richProfile()));
+    expect((await loadChatState(later.chatId, fixture.characterId))?.metersAtMinutes).toBe(300);
+  });
+});
+
+/**
+ * A time skip's clock and member rows are one write. The failure is INJECTED as
+ * in the transfer suite above: the second member names nobody, so its upsert
+ * violates the `character_id` foreign key AFTER the advanced scenario and the
+ * first member's caught-up row were already written inside the transaction. A
+ * skip that committed the clock first and the members one by one (its shape
+ * before #299) would leave the clock nine story hours past a member still
+ * stamped at the old boundary.
+ */
+describe.runIf(ready)("a time skip commits the clock and every member together", () => {
+  it("rolls the advanced clock back with a member write that fails", async () => {
+    const baseline: ChatState = { ...seedChatState(richProfile()), metersAtMinutes: 0 };
+    await persistChatState(chat.chatId, fixture.characterId, baseline);
+    const scenario = await loadChatScenario(chat.chatId);
+    if (scenario === null) throw new Error("fixture has no scenario");
+    const skipped = { ...scenario, clockMinutes: scenario.clockMinutes + 540 };
+    const caughtUp = driftChatState(baseline, richProfile(), { clockMinutes: skipped.clockMinutes });
+
+    await expect(
+      persistChatTimeSkip(chat.chatId, skipped, [
+        { characterId: fixture.characterId, state: caughtUp },
+        { characterId: "nobody_at_all_0000000000", state: caughtUp },
+      ]),
+    ).rejects.toThrow();
+
+    expect((await loadChatScenario(chat.chatId))?.clockMinutes).toBe(scenario.clockMinutes);
+    const after = await loadChatState(chat.chatId, fixture.characterId);
+    expect(after?.metersAtMinutes).toBe(0);
+    expect(after?.meters).toEqual(baseline.meters);
+  });
+
+  it("writes the advanced clock and every member's caught-up row when it succeeds", async () => {
+    const baseline: ChatState = { ...seedChatState(richProfile()), metersAtMinutes: 0 };
+    await persistChatState(chat.chatId, fixture.characterId, baseline);
+    const scenario = await loadChatScenario(chat.chatId);
+    if (scenario === null) throw new Error("fixture has no scenario");
+    const skipped = { ...scenario, clockMinutes: scenario.clockMinutes + 540 };
+    const caughtUp = driftChatState(baseline, richProfile(), { clockMinutes: skipped.clockMinutes });
+
+    await persistChatTimeSkip(chat.chatId, skipped, [{ characterId: fixture.characterId, state: caughtUp }]);
+
+    expect((await loadChatScenario(chat.chatId))?.clockMinutes).toBe(skipped.clockMinutes);
+    const after = await loadChatState(chat.chatId, fixture.characterId);
+    expect(after?.metersAtMinutes).toBe(skipped.clockMinutes);
+    expect(after?.meters).toEqual(caughtUp.meters);
   });
 });
