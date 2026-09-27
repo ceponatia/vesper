@@ -10,6 +10,7 @@ import {
   isCheckInReply,
   replyEndsInQuestion,
   type ChatCueHint,
+  type SceneMovementContext,
 } from "./chat-intent";
 
 const cue = (overrides: Partial<ChatCueHint> = {}): ChatCueHint => ({
@@ -116,11 +117,25 @@ describe("deriveChatSensoryAllowance (narrator-prompt-consolidation slice 4)", (
   });
 });
 
+/** Both scene-movement reads of one line: the place change and the within-place move. */
+const movement = (input: string, context: SceneMovementContext = {}) => ({
+  place: detectSceneMovement(input, context),
+  within: detectWithinPlaceMovement(input, context),
+});
+const placeChange = (place: string) => ({ place, within: null });
+const withinPlace = (within: string) => ({ place: null, within });
+const NO_MOVE = { place: null, within: null };
+/** A place a mis-read once minted: a name and nothing the fiction established about it. */
+const stubDesk = { name: "desk", details: [], connections: [] };
+/** The same name, established by the fiction as a place (a nook called "the desk"). */
+const establishedDesk = { name: "desk", details: ["a reading nook everyone calls the desk"], connections: [] };
+
 describe("detectSceneMovement (chat scene memory)", () => {
   it("captures a destination after a movement verb + preposition + article", () => {
     expect(detectSceneMovement("I follow her to the kitchen.")).toBe("kitchen");
     expect(detectSceneMovement("Let's move to the living room.")).toBe("living room");
-    expect(detectSceneMovement("She leads you into the back garden.")).toBe("back garden");
+    expect(detectSceneMovement("She leads me into the back garden.")).toBe("back garden");
+    expect(detectSceneMovement("We make our way to the kitchen.")).toBe("kitchen");
   });
 
   it("captures adverbial destinations (outside / upstairs)", () => {
@@ -133,6 +148,8 @@ describe("detectSceneMovement (chat scene memory)", () => {
     expect(detectSceneMovement("Listen to the radio with me.")).toBeNull();
     expect(detectSceneMovement("What did you do today?")).toBeNull();
     expect(detectSceneMovement("")).toBeNull();
+    expect(movement("I walk over to talk to the bartender.")).toEqual(NO_MOVE);
+    expect(movement("I walk over to Wren.")).toEqual(NO_MOVE);
   });
 
   it("rejects denied, hypothetical, and historical scene transitions", () => {
@@ -150,12 +167,53 @@ describe("detectSceneMovement (chat scene memory)", () => {
   it("does not move the scene for an unrelated third party's own errand (#330)", () => {
     expect(detectSceneMovement("The bartender walks back to the back room for napkins.")).toBeNull();
     expect(detectSceneMovement("Mara heads to the kitchen to grab a drink.")).toBeNull();
+    expect(movement("I watch the bartender walk to the back room.")).toEqual(NO_MOVE);
+    expect(movement("My friend walks to the kitchen.")).toEqual(NO_MOVE);
+  });
+
+  it("reads a shared subject from the previous clause, never an empty clause as the player (#330)", () => {
+    expect(movement("The bartender nods and walks to the back room.")).toEqual(NO_MOVE);
+    expect(movement("The bartender, sighing, walks to the back room.")).toEqual(NO_MOVE);
+    expect(movement("Mara grabs her purse and heads to the kitchen.")).toEqual(NO_MOVE);
+    // The player's own shared subject, and an imperative with nothing before its verb, still move.
+    expect(detectSceneMovement("I grab my keys and head to the kitchen.")).toBe("kitchen");
+    expect(detectSceneMovement("Head to the kitchen.")).toBe("kitchen");
+    // An opening participle takes the subject after its comma.
+    expect(detectSceneMovement("Walking into the kitchen, I grab a glass.")).toBe("kitchen");
+    expect(detectSceneMovement("Walking into the kitchen, she grabs a glass.")).toBeNull();
   });
 
   it("still allows legitimate movement into a brand-new place (leading/being led)", () => {
     expect(detectSceneMovement("She leads me to the back room.")).toBe("back room");
     expect(detectSceneMovement("I lead her to the back room.")).toBe("back room");
-    expect(detectSceneMovement("He carries you to the bedroom.")).toBe("bedroom");
+    expect(detectSceneMovement("He carries me to the bedroom.")).toBe("bedroom");
+    expect(detectSceneMovement("The two of us head to the kitchen.")).toBe("kitchen");
+    expect(detectSceneMovement("Mara and I head to the kitchen.")).toBe("kitchen");
+  });
+
+  it("reads 'you' as the character in player input, as the sensory read does (#330)", () => {
+    expect(movement("She leads you into the back garden.")).toEqual(NO_MOVE);
+    expect(movement("He carries you to the bedroom.")).toEqual(NO_MOVE);
+    expect(movement("The waiter shows you to your table.")).toEqual(NO_MOVE);
+    expect(movement("The waiter leads you to your table.")).toEqual(NO_MOVE);
+  });
+
+  it("counts the persona's name as the player in player input (#330)", () => {
+    const persona = { playerNames: ["Brian"] };
+    expect(detectSceneMovement("Brian walks to the kitchen.", persona)).toBe("kitchen");
+    expect(detectSceneMovement("Mara leads Brian to the cellar.", persona)).toBe("cellar");
+    expect(detectSceneMovement("Brian walks to the kitchen.")).toBeNull();
+    expect(detectSceneMovement("Mara leads Brian to the cellar.")).toBeNull();
+  });
+
+  it("lets storyteller input move the scene through any subject, furniture still vetoed (#330)", () => {
+    const storyteller = { narratorInput: true };
+    expect(detectSceneMovement("The group heads to the tavern.", storyteller)).toBe("tavern");
+    expect(detectSceneMovement("Mara leads Brian to the cellar.", storyteller)).toBe("cellar");
+    expect(detectSceneMovement("The bartender nods and walks to the back room.", storyteller)).toBe("back room");
+    expect(detectSceneMovement("She leads you into the back garden.", storyteller)).toBe("back garden");
+    expect(detectSceneMovement("The group heads to the tavern.")).toBeNull();
+    expect(movement("The bartender walks over to the desk.", storyteller)).toEqual(NO_MOVE);
   });
 
   it("a mere mention of a place, with no movement verb, never changes the scene", () => {
@@ -163,44 +221,79 @@ describe("detectSceneMovement (chat scene memory)", () => {
     expect(detectSceneMovement("I love this kitchen.")).toBeNull();
   });
 
-  // #330, owner ruling 2026-09-27: a player-grounded move onto furniture/a fixture
-  // WITHIN the current place is not a place change — the desk is not a room.
-  it("does not read furniture/a fixture as a destination, even when the move is grounded", () => {
+  // #330, owner ruling 2026-09-27: a player's move onto furniture/a fixture WITHIN the
+  // current place is not a place change — the desk is not a room.
+  it("does not read furniture/a fixture as a destination, even when the player moves", () => {
     expect(detectSceneMovement("I walk over to the desk.")).toBeNull();
     expect(detectSceneMovement("I carry my drink over to the counter.")).toBeNull();
     expect(detectSceneMovement("She leads me to the fireplace.")).toBeNull();
+  });
+
+  it("cuts the destination at its first function word before classifying it (#330)", () => {
+    expect(movement("I walk over to her desk and lean against it.")).toEqual(withinPlace("desk"));
+    expect(movement("I walk to the window to look out.")).toEqual(withinPlace("window"));
+    expect(movement("I walk over to the table by the window.")).toEqual(withinPlace("table"));
+    expect(movement("I walk to the back room for napkins.")).toEqual(placeChange("back room"));
   });
 
   it("room-type nouns are never read as furniture (back room / kitchen / garden stay places)", () => {
     expect(detectSceneMovement("I walk over to the back room.")).toBe("back room");
     expect(detectSceneMovement("I walk over to the kitchen.")).toBe("kitchen");
     expect(detectSceneMovement("I walk over to the garden.")).toBe("garden");
+    expect(detectSceneMovement("We head up to the second floor.")).toBe("second floor");
   });
 
-  it("still switches to a furniture-named destination once it is an established place", () => {
-    expect(detectSceneMovement("I walk over to the desk.", { knownPlaceNames: ["desk"] })).toBe("desk");
+  it("switches to a furniture-named destination only once the fiction established it, never a stub (#330)", () => {
+    expect(movement("I walk over to the desk.", { knownPlaces: [establishedDesk] })).toEqual(placeChange("desk"));
+    expect(movement("I walk over to the desk.", { knownPlaces: [stubDesk] })).toEqual(withinPlace("desk"));
   });
 
-  it("accepts 'us' in the first-person subject ('the two of us')", () => {
-    expect(detectSceneMovement("The two of us head to the kitchen.")).toBe("kitchen");
+  it("reads every movement in the line and reports the last place change (#330)", () => {
+    expect(movement("I walk to the door, and we head outside.")).toEqual(placeChange("outside"));
+    expect(movement("I grab my keys and walk to the door. We step outside.")).toEqual(placeChange("outside"));
+    expect(movement("I walk to the kitchen to grab a drink, then carry it back to the living room.")).toEqual(
+      placeChange("living room"),
+    );
+  });
+
+  it("never reads a gesture, a garment, or an idiom as locomotion", () => {
+    expect(movement("I move my hand to her thigh.")).toEqual(NO_MOVE);
+    expect(movement("I bring the glass to my lips.")).toEqual(NO_MOVE);
+    expect(movement("She takes me into her arms.")).toEqual(NO_MOVE);
+    expect(movement("I slip into my dress.")).toEqual(NO_MOVE);
+    expect(movement("We come to an agreement.")).toEqual(NO_MOVE);
+    expect(movement("I take off my shirt and toss it to the floor.")).toEqual(NO_MOVE);
+    expect(movement("I move closer to her on the couch.")).toEqual(NO_MOVE);
   });
 });
 
 describe("detectWithinPlaceMovement (chat scene memory: furniture, #330)", () => {
-  it("reads a player-grounded move onto furniture/a fixture within the current place", () => {
+  it("reads the player's own move onto furniture/a fixture within the current place", () => {
     expect(detectWithinPlaceMovement("I walk over to the desk.")).toBe("desk");
     expect(detectWithinPlaceMovement("I carry my drink over to the counter.")).toBe("counter");
     expect(detectWithinPlaceMovement("She leads me to the fireplace.")).toBe("fireplace");
+    expect(detectWithinPlaceMovement("I grab my keys and walk to the door.")).toBe("door");
+    expect(detectWithinPlaceMovement("I slip to the floor.")).toBe("floor");
   });
 
-  it("is null for a real place change, a mere mention, or an ungrounded third party's move", () => {
+  it("is null for a real place change, a mere mention, or a third party's move", () => {
     expect(detectWithinPlaceMovement("I walk over to the kitchen.")).toBeNull();
     expect(detectWithinPlaceMovement("There's a desk by the window.")).toBeNull();
     expect(detectWithinPlaceMovement("The bartender walks back to the counter.")).toBeNull();
+    expect(detectWithinPlaceMovement("The bartender, sighing, walks over to the counter.")).toBeNull();
   });
 
   it("is null once the furniture-named phrase is an established place", () => {
-    expect(detectWithinPlaceMovement("I walk over to the desk.", { knownPlaceNames: ["desk"] })).toBeNull();
+    expect(detectWithinPlaceMovement("I walk over to the desk.", { knownPlaces: [establishedDesk] })).toBeNull();
+  });
+
+  it("reads only the player's own move in storyteller input ('you', the persona's name)", () => {
+    const storyteller = { narratorInput: true, playerNames: ["Brian"] };
+    expect(detectWithinPlaceMovement("You walk over to the desk.", storyteller)).toBe("desk");
+    expect(detectWithinPlaceMovement("Brian walks over to the desk.", storyteller)).toBe("desk");
+    expect(detectWithinPlaceMovement("The waiter leads you to your table.", storyteller)).toBe("table");
+    expect(detectWithinPlaceMovement("Mara walks over to the desk.", storyteller)).toBeNull();
+    expect(detectWithinPlaceMovement("You walk over to the desk.")).toBeNull();
   });
 });
 

@@ -573,16 +573,28 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       { advance: true, clockMinutes: tickedClock },
     );
 
+    // Who the player is in THIS chat: the chat's own
+    // persona pick, else the owner's default, else their account name — so the
+    // character addresses someone by name instead of a faceless "the user".
+    // Resolved before the movement read below, which counts the persona's name as the
+    // player's own subject ("Brian walks to the kitchen"; #330).
+    const player = await resolveChatPersona({ ownerId: owner, chatId });
+
     // --- Scene memory: deterministic movement switch (pre-prompt) ------------
-    // A movement/arrival in the player's input switches the current place BEFORE the prompt
+    // A movement/arrival in the turn's input switches the current place BEFORE the prompt
     // builds, so THIS turn's Scene injection is right (a stub place is minted on first
     // mention); the archivist reconciles the rest post-turn. "Just changed" = a new current
     // place this turn, or a pending time skip (both call for re-establishing the setting once).
-    // Both detectors require the move to be grounded in the player, not an unrelated third
-    // party's own errand (#330). A grounded move onto furniture/a fixture within the current
-    // place is NOT a place change (owner ruling on #330, 2026-09-27) — `withinPlaceMove`
-    // carries that signal to the contact leg below instead of `movedTo`/`switchScenePlace`.
-    const sceneMovementContext = { knownPlaceNames: baseScenario.sceneMemory.places.map((place) => place.name) };
+    // In player input the move must be the player's own, never an unrelated third party's
+    // errand; storyteller input is authorized scene authoring and may move the scene through
+    // anyone (#330). A move onto furniture/a fixture within the current place is NOT a place
+    // change (owner ruling on #330, 2026-09-27) — `withinPlaceMove` carries the player's own
+    // such move to the contact leg below instead of `movedTo`/`switchScenePlace`.
+    const sceneMovementContext = {
+      knownPlaces: baseScenario.sceneMemory.places,
+      narratorInput,
+      playerNames: [player.name],
+    };
     const movedTo = playerContent ? detectSceneMovement(playerContent, sceneMovementContext) : null;
     const withinPlaceMove = playerContent ? detectWithinPlaceMovement(playerContent, sceneMovementContext) : null;
     const preSceneCurrent = baseScenario.sceneMemory.current;
@@ -602,11 +614,6 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     if (history.length >= CHARACTER_CHAT_SUMMARIZE_AT * 2) {
       void enqueueChatSummary({ chatId });
     }
-
-    // Who the player is in THIS chat: the chat's own
-    // persona pick, else the owner's default, else their account name — so the
-    // character addresses someone by name instead of a faceless "the user".
-    const player = await resolveChatPersona({ ownerId: owner, chatId });
 
     // What the post-turn agents read as the player's turn: the message plus a
     // clearly-labeled note of what the attached photos showed — so a shown photo
