@@ -1,5 +1,9 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { characterChats, characterChatState, db } from "@/server/db";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import {
   dropChatFixture,
@@ -314,3 +318,93 @@ describe.runIf(ready)("a time skip commits the clock and every member together",
     expect(after?.meters).toEqual(caughtUp.meters);
   });
 });
+
+/**
+ * Migration 0149's hand-written backfill, replayed against staged rows.
+ *
+ * CI migrates a FRESH database, where the backfill finds no row to stamp, so
+ * the statement that decides what every existing conversation's meters hold
+ * at is otherwise never run against a pre-existing row. This replays the
+ * statement exactly as the migration ships it — read from the file, never
+ * re-typed, the replay pattern `image-model-seeds.int.test.ts` uses for the
+ * image-registry migrations — beside rows staged the way the column's arrival
+ * found them: stamps NULL, on chats standing at different clocks, plus one row
+ * a current writer already stamped.
+ *
+ * The statement is global by design (every NULL row in the database); rows
+ * other suites inserted without a stamp receive exactly what the migration
+ * would have given them.
+ */
+describe.runIf(ready)("migration 0149 backfills each unstamped row from its own chat's clock", () => {
+  const MIGRATION_FILE = "drizzle/0149_chat-meters-at-minutes.sql";
+
+  /** 0149's shipped backfill, as the file carries it (its leading comment included). */
+  async function backfillStatements(): Promise<string[]> {
+    const sqlText = await readFile(path.join(process.cwd(), MIGRATION_FILE), "utf8");
+    return sqlText
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter((statement) => statement.toUpperCase().includes('UPDATE "CHARACTER_CHAT_STATE"'));
+  }
+
+  async function replayBackfill(): Promise<void> {
+    const statements = await backfillStatements();
+    for (const statement of statements) await db().execute(sql.raw(statement));
+  }
+
+  async function stampsAndMeters(chatIds: readonly string[]) {
+    const rows = await db()
+      .select({
+        chatId: characterChatState.chatId,
+        metersAtMinutes: characterChatState.metersAtMinutes,
+        meters: characterChatState.meters,
+      })
+      .from(characterChatState)
+      .where(and(inArray(characterChatState.chatId, [...chatIds]), eq(characterChatState.characterId, fixture.characterId)));
+    return new Map(rows.map((row) => [row.chatId, row]));
+  }
+
+  it("stamps every NULL row with its own chat's clock, leaves a stamped row and every meters value alone, and is a no-op on re-run", async () => {
+    // A file this suite could not parse must fail before anything is staged.
+    expect(await backfillStatements(), `${MIGRATION_FILE} must carry exactly one backfill UPDATE`).toHaveLength(1);
+
+    const staged = [
+      { clockMinutes: 300, metersAtMinutes: null, meters: { hygiene: 0.41, energy: 0.52 } },
+      { clockMinutes: 1_440, metersAtMinutes: null, meters: { hygiene: 0.63, stress: 0.74 } },
+      // Stamped by a current writer at a minute that is NOT its chat's clock — rewinding it would show.
+      { clockMinutes: 500, metersAtMinutes: 123, meters: { hygiene: 0.85, mood: 0.5 } },
+    ];
+    const chatIds: string[] = [];
+    for (const row of staged) {
+      const seat = await newChat(fixture);
+      chatIds.push(seat.chatId);
+      await db().update(characterChats).set({ clockMinutes: row.clockMinutes }).where(eq(characterChats.id, seat.chatId));
+      await db().insert(characterChatState).values({
+        chatId: seat.chatId,
+        characterId: fixture.characterId,
+        meters: row.meters,
+        metersAtMinutes: row.metersAtMinutes,
+      });
+    }
+
+    await replayBackfill();
+    const after = await stampsAndMeters(chatIds);
+    for (const [index, row] of staged.entries()) {
+      const chatId = chatIds[index];
+      if (chatId === undefined) throw new Error("staged chat missing");
+      const stored = after.get(chatId);
+      expect(stored?.metersAtMinutes).toBe(row.metersAtMinutes ?? row.clockMinutes);
+      expect(stored?.meters).toEqual(row.meters);
+    }
+
+    // Guarded on IS NULL: once stamped, a row is never re-stamped — even after
+    // its chat's clock moves on.
+    const firstChat = chatIds[0];
+    if (firstChat === undefined) throw new Error("staged chat missing");
+    await db().update(characterChats).set({ clockMinutes: 999 }).where(eq(characterChats.id, firstChat));
+    await replayBackfill();
+    const rerun = await stampsAndMeters(chatIds);
+    expect(chatIds.map((chatId) => rerun.get(chatId)?.metersAtMinutes)).toEqual([300, 1_440, 123]);
+  });
+});
+
