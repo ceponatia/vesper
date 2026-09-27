@@ -132,7 +132,13 @@ export async function editChatState(args: {
   if (patch.familiarity !== undefined) next.familiarity = clampFamiliarity(patch.familiarity);
   if (patch.relationship !== undefined) next.relationship = patch.relationship;
   if (patch.mindNote !== undefined) next.mindNote = patch.mindNote.trim().slice(0, CHAT_MIND_NOTE_MAX_CHARS);
-  if (patch.meters !== undefined) next.meters = clampMeters(patch.meters);
+  if (patch.meters !== undefined) {
+    next.meters = clampMeters(patch.meters);
+    // The author set these values as of NOW (the state read shows meters caught up
+    // to the clock), so they re-stamp at the chat's current clock on persist —
+    // never re-integrating the interval the author already saw.
+    next.metersAtMinutes = null;
+  }
   if (patch.conditions !== undefined) next.conditions = patch.conditions.map(seedConditionEffects);
   if (patch.wornItemIds !== undefined) next.wornItemIds = patch.wornItemIds.map((s) => s.trim()).filter(Boolean);
   if (patch.outfitPresetId !== undefined) next.outfitPresetId = patch.outfitPresetId.trim();

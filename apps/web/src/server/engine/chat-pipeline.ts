@@ -87,6 +87,8 @@ import {
 import { reconcileMessageMemory } from "./chat-memory";
 import { resolveSeededOutfit } from "./chat-state/outfit-fold";
 import {
+  chatMeterReads,
+  decayExchangeFeeling,
   driftChatState,
   finalizeChatState,
   seedChatScenario,
@@ -566,10 +568,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // ONE story clock, ticked once per exchange (never per member).
     const tickedClock = baseScenario.clockMinutes + CHAT_TICK_MINUTES;
 
-    let driftedState = driftChatState(
-      await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
-      profile,
-      { advance: true, clockMinutes: tickedClock },
+    // Meters catch up by the story minutes elapsed since they were stamped; the
+    // feeling takes its separate per-exchange beat.
+    let driftedState = decayExchangeFeeling(
+      driftChatState(
+        await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
+        profile,
+        { clockMinutes: tickedClock, calendarStart: baseScenario.calendarStart },
+      ),
     );
 
     // --- Scene memory: deterministic movement switch (pre-prompt) ------------
@@ -618,8 +624,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // --- Ensemble roster -----------------------------------------------------
     // The members beyond the primary: load each one's state (seeding from their
-    // authored defaults like a fresh 1-on-1), and tick ONLY present members —
-    // presence gating the advance IS the away-freeze.
+    // authored defaults like a fresh 1-on-1) and catch EVERY member's meters up
+    // to the ticked clock — physiology is presence-independent. Only PRESENT
+    // members take the exchange's feeling beat.
     const ensembleActive = (input.roster?.length ?? 0) > 1;
     const others = ensembleActive
       ? await Promise.all(
@@ -642,10 +649,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               const preExchangeState = storedMember;
               const seededMember = storedMember ?? seedChatState(memberProfile);
               const resolved = await resolveSeededOutfit(seededMember, owner, memberProfile, sink);
-              const state = driftChatState(resolved, memberProfile, {
-                advance: resolved.presence === "present",
+              const caughtUp = driftChatState(resolved, memberProfile, {
                 clockMinutes: tickedClock,
+                calendarStart: baseScenario.calendarStart,
               });
+              const state = caughtUp.presence === "present" ? decayExchangeFeeling(caughtUp) : caughtUp;
               return {
                 characterId: member.characterId,
                 memoryGroupId: member.memoryGroupId,
@@ -1054,7 +1062,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // one-shot skip note this beat just rendered, and store the
         // rollback anchor so even an opening beat can be regenerated.
         try {
-          const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
+          const surfacedCues = splitStateCues(
+            chatMeterReads(driftedState, scenario, profile),
+            driftedState.surfacedCues,
+          ).nextBands;
           await persistChatState(chatId, characterId, { ...driftedState, surfacedCues });
           await saveChatScenario(chatId, { ...scenario, pendingSkipNote: "", pendingMeanwhileNote: "" });
           await savePreExchangeSnapshot(chatId, characterId, storedState);

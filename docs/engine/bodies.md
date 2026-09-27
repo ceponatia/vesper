@@ -171,6 +171,12 @@ guesses:
 - [../contracts/body.md](../contracts/body.md) — the anatomy and
   body-location registry engine embodiment places facts against.
 - [../contracts/meters.md](../contracts/meters.md) — the chat lane's parallel
-  continuous-meter and mood model, and the shared meter-id vocabulary.
+  continuous-meter and mood model, and the shared meter-id vocabulary; its meters
+  drift on story time through this same kernel, under the same law and rate per meter,
+  its sleep credits through `deriveSleepCredit`, and its energy reads through the same
+  circadian pressure and energy read. Its graded arousal narration
+  (kindled/flushed/wound-tight/cresting, settling into afterglow) is a thin adapter over
+  this doc's read layer — `deriveIntimacyRead`/`deriveVisibleBodySigns` — so the two
+  lanes share one physiology and one afterglow duration.
 - [../resilience.md](../resilience.md) — the degrade-over-fail discipline
   this doc's rhythm and read-layer rules follow.

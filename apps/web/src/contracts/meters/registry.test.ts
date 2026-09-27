@@ -9,6 +9,7 @@ import {
   meterById,
   meterDefinitions,
   meterStateCue,
+  METER_DRIFT_STEP_PRECISION,
   splitStateCues,
   type MeterDefinition,
 } from "./registry";
@@ -30,19 +31,61 @@ describe("meter registry", () => {
 });
 
 describe("applyMeterDrift", () => {
-  it("applies signed per-hour drift scaled by elapsed minutes", () => {
+  const definition = (id: string): MeterDefinition => {
+    const found = meterById(id);
+    if (found === undefined) throw new Error(`no ${id} meter in the registry`);
+    return found;
+  };
+  const linearRatePerHour = (def: MeterDefinition): number => def.recoveryPerHour ?? Math.abs(def.perHour);
+  /** One drift step lands within the documented precision of its exact law. */
+  const expectWithin = (actual: number | undefined, expected: number, steps = 1) =>
+    expect(Math.abs((actual ?? Number.NaN) - expected)).toBeLessThanOrEqual(steps * METER_DRIFT_STEP_PRECISION);
+
+  it("moves a linear meter by its per-story-hour rate, scaled by elapsed minutes", () => {
     const next = applyMeterDrift({ hygiene: 0.9, stress: 0.5 }, 60);
-    expect(next.hygiene).toBeCloseTo(0.86, 10); // -0.04/h
-    expect(next.stress).toBeCloseTo(0.47, 10); // -0.03/h
+    expectWithin(next.hygiene, 0.9 - linearRatePerHour(definition("hygiene")));
+    expectWithin(next.stress, 0.5 - linearRatePerHour(definition("stress")));
+    expectWithin(applyMeterDrift({ hygiene: 0.9 }, 30).hygiene, 0.9 - linearRatePerHour(definition("hygiene")) / 2);
   });
 
-  it("scales fractionally for partial hours", () => {
-    const next = applyMeterDrift({ hygiene: 0.9 }, 30);
-    expect(next.hygiene).toBeCloseTo(0.88, 10);
+  it("moves nothing over zero elapsed time", () => {
+    expect(applyMeterDrift({ hygiene: 0.123456, energy: 0.654321 }, 0)).toEqual({ hygiene: 0.123456, energy: 0.654321 });
+  });
+
+  it("halves a proportional meter's distance to its baseline every half-life, from either side", () => {
+    const def: MeterDefinition = {
+      id: "calm",
+      label: "Calm",
+      description: "Synthetic proportional meter.",
+      initial: 0.5,
+      perHour: 0,
+      baseline: 0.5,
+      law: { kind: "proportional", halfLifeHours: 2 },
+      thresholds: [],
+    };
+    expectWithin(applyMeterDrift({ calm: 0.9 }, 120, [def]).calm, 0.7);
+    expectWithin(applyMeterDrift({ calm: 0.9 }, 240, [def]).calm, 0.6);
+    expectWithin(applyMeterDrift({ calm: 0.1 }, 120, [def]).calm, 0.3);
+  });
+
+  it("integrates an interval split into steps to the one-step result within the documented precision", () => {
+    // Every adopted meter, whichever law it declares: nine story hours one
+    // minute at a time (a busy conversation) against the same hours in one step.
+    const minutes = 540;
+    const start = Object.fromEntries(meterDefinitions.map((def) => [def.id, 0.9]));
+    let stepped = start;
+    for (let minute = 0; minute < minutes; minute += 1) stepped = applyMeterDrift(stepped, 1);
+    const whole = applyMeterDrift(start, minutes);
+    for (const def of meterDefinitions) {
+      expectWithin(stepped[def.id], whole[def.id] ?? Number.NaN, minutes);
+    }
+    expect(new Set(meterDefinitions.map((def) => def.law?.kind ?? "linear"))).toEqual(new Set(["linear", "proportional"]));
   });
 
   it("clamps at 0", () => {
-    const next = applyMeterDrift({ hygiene: 0.02 }, 120);
+    // A full story week is well past every adopted meter's zero crossing from a
+    // near-empty start, whatever its own rate — hygiene's is the slowest.
+    const next = applyMeterDrift({ hygiene: 0.02 }, 7 * 24 * 60);
     expect(next.hygiene).toBe(0);
   });
 
@@ -118,7 +161,7 @@ describe("crossedThresholdHints", () => {
 
   it("emits hints for every below-threshold the value has crossed", () => {
     const hints = crossedThresholdHints({ hygiene: 0.2 });
-    expect(hints).toEqual(hygieneHints); // crossed both 0.55 and 0.3
+    expect(hints).toEqual(hygieneHints); // crossed both the odor band (0.86) and unwashed (0.3)
   });
 
   it("emits only the thresholds actually crossed", () => {
@@ -132,7 +175,7 @@ describe("crossedThresholdHints", () => {
   });
 
   it("a value exactly at the threshold has not crossed it", () => {
-    expect(crossedThresholdHints({ hygiene: 0.55 })).toEqual([]);
+    expect(crossedThresholdHints({ hygiene: 0.86 })).toEqual([]);
     expect(crossedThresholdHints({ stress: 0.6 })).toEqual([]);
   });
 
@@ -162,7 +205,7 @@ describe("meterStateCue", () => {
   });
 
   it("handles below-thresholds (hygiene) with the deepest band", () => {
-    const cue = meterStateCue("hygiene", 0.2); // crosses 0.55 and 0.3 — deepest is 0.3
+    const cue = meterStateCue("hygiene", 0.2); // crosses 0.86 and 0.3 — deepest is 0.3
     expect(cue?.band).toBe("hygiene:0.3");
   });
 
@@ -208,7 +251,9 @@ describe("visibleEffects (issue #427)", () => {
     expect([...visibleEffectBands()].sort(byMeterThenBound)).toEqual(
       [
         { meterId: "hygiene", bound: 0.3 },
-        { meterId: "energy", bound: 0.2 },
+        // Energy's bands read its circadian balance (reads.ts): the ruled
+        // "exhausted" band is a read under −0.4, 0.3 on the band scale.
+        { meterId: "energy", bound: 0.3 },
         { meterId: "arousal", bound: 0.55 },
         { meterId: "intoxication", bound: 0.7 },
       ].sort(byMeterThenBound),

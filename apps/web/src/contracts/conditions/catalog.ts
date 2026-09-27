@@ -32,6 +32,19 @@ export const CONDITION_CATALOG: Readonly<Record<string, CatalogCondition>> = {
     attributeEffects: [{ attributeId: "presentation.grooming", value: "careless" }],
     promptHint: "Unwashed: sour and warm at close range, hair gone lank.",
   },
+  // #301: the pulse's own intimate-scene read always supplies its own promptHint at
+  // creation (mirroring the "flushed" action-chip condition), so this row only fires
+  // when an author types the label free-text via the manual condition editor with no
+  // hint of their own. No attribute effects — nothing mutable in the registry
+  // corresponds to either state.
+  heated: {
+    attributeEffects: [],
+    promptHint: "Heated: still caught up in it, appetite not spent yet.",
+  },
+  afterglow: {
+    attributeEffects: [],
+    promptHint: "Afterglow: settled and unhurried, loose-limbed in the quiet after.",
+  },
 };
 
 /** The catalog entry for a label (case/space-insensitive), or undefined if unrecognised. */

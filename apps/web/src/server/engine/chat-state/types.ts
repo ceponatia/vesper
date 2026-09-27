@@ -123,6 +123,24 @@ export interface ChatScenario {
 /** The in-memory state for ONE roster character, drifted/seeded/pulsed and persisted as a row. */
 export interface ChatState {
   meters: Record<string, number>;
+  /**
+   * The story minute `meters` hold at: the origin `driftChatState` integrates
+   * elapsed story time from, moved to the clock it integrates to, so a second
+   * read at one clock changes nothing. `null` ⇒ the values hold at the first
+   * clock they meet — a fresh seed, an author's meter edit, or a rollback anchor
+   * written before the stamp existed; persisting one stamps the chat's current
+   * clock.
+   */
+  metersAtMinutes: number | null;
+  /**
+   * The story minute the character last actually came out of sleep — the end
+   * of an `asleep` condition or of a routine sleep window their catch-up
+   * crossed. It is what tells real sleep apart from merely reaching a scheduled
+   * wake time: sleep pressure escalates from it once they stay up past their
+   * normal waking span. `null` ⇒ no sleep on record; the pressure curve then
+   * assumes the routine was kept, and collapse cannot trigger.
+   */
+  lastSleepEndedAtMinutes: number | null;
   /** The feeling axis (was `affinity`) — volatile, moved by the reaction pulse. −100..100. */
   regard: number;
   /** The knowledge axis — a slow ratchet, 0..100, never down. */
@@ -233,9 +251,10 @@ export interface ChatState {
   bodySurface: BodySurfaceState;
   /**
    * Narrative presence: "present" shares the player's scene; "away" is offstage
-   * — meters freeze, no memory legs, only salience-gated relationship lines
-   * reach the prompt. Roster panel = manual override; the archivist confirms
-   * transitions.
+   * — no memory legs, only salience-gated relationship lines reach the prompt.
+   * Presence gates narration only: an away body's meters drift on the shared
+   * clock like everyone's. Roster panel = manual override; the archivist
+   * confirms transitions.
    */
   presence: ChatPresence;
   /**
@@ -251,7 +270,12 @@ export type ChatPresence = "present" | "away";
 
 /** The strip / state-tools / premise-bar projection returned by GET …/chat/state. */
 export interface ChatStateSnapshot {
+  /** The stored meters — what the Character sheet edits. */
   meters: Record<string, number>;
+  /** The same meters through the one derived-read path (`readChatMeters`) — what chips and cues read. */
+  meterReads: Record<string, number>;
+  /** When the character last came out of real sleep (`ChatState.lastSleepEndedAtMinutes`) — the read path's context. */
+  lastSleepEndedAtMinutes: number | null;
   regard: number;
   familiarity: number;
   /** The regard band (was `stage`) — the volatile axis's chip. */

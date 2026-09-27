@@ -314,7 +314,7 @@ export function buildCharacterChatPromptNodes(input: CharacterChatPromptInput): 
     ? `Scenario for this chat (the situation you are in — play inside it):\n${fenceUntrusted("scenario", premise)}`
     : "";
   // The dynamic "Current state" block; "" when nothing is notable.
-  const stateSection = input.state ? buildStateSection(input.state) : "";
+  const stateSection = input.state ? buildStateSection(input.state, minor) : "";
   // Soft social-card framing: what the character values, never the card severity.
   const socialFraming = buildSocialFramingSection(input.state?.activeSocialCards ?? []);
 

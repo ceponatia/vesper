@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DEFAULT_SPECIES_ID, emptyCharacterProfile, scheduleEntrySchema, authoredRelationshipRecordSchema, diag, canonicalTagId, dispositionTags, DRIVES_MAX, DRIVE_WANT_MAX_CHARS, DRIVE_WHY_MAX_CHARS, familiarityBandById, familiarityBands, interactionConceptIds, interactionFamilies, MICRO_EXEMPLARS_MAX, normalizeTag, axisRange, PLAYER_RELATIONSHIP_NOTE_MAX, RELATIONSHIP_HISTORY_TEXT_MAX, RELATIONSHIP_KIND_MAX, regardBandById, regardBands, scheduleDayPartById, traitRegistry, voiceAnchorsSchema, type CharacterProfile, type DiagnosticSink, type Drive, type MicroExemplar, type VoiceAnchors, type Preference, type ScheduleEntry, type SocialReactionCard, type TraitValue } from "@/contracts";
+import { DEFAULT_SPECIES_ID, emptyCharacterProfile, scheduleEntrySchema, scheduleKinds, authoredRelationshipRecordSchema, diag, canonicalTagId, dispositionTags, DRIVES_MAX, DRIVE_WANT_MAX_CHARS, DRIVE_WHY_MAX_CHARS, familiarityBandById, familiarityBands, interactionConceptIds, interactionFamilies, MICRO_EXEMPLARS_MAX, normalizeTag, axisRange, PLAYER_RELATIONSHIP_NOTE_MAX, RELATIONSHIP_HISTORY_TEXT_MAX, RELATIONSHIP_KIND_MAX, regardBandById, regardBands, scheduleDayPartById, traitRegistry, voiceAnchorsSchema, type CharacterProfile, type DiagnosticSink, type Drive, type MicroExemplar, type VoiceAnchors, type Preference, type ScheduleEntry, type SocialReactionCard, type TraitValue } from "@/contracts";
 import { characterSections, type CharacterSheetScope } from "@/lib/character-scopes";
 import { fnv1a32 } from "@/lib/hash";
 import { parseOrNull } from "@/lib/parse";
@@ -78,6 +78,9 @@ const profileSectionSchema = z.object({
         dayPart: z.enum(["morning", "afternoon", "evening", "night"]).catch("morning"),
         activity: z.string().default(""),
         locationName: z.string().default(""),
+        /** Optional typed kind (#320) — the vocabulary contracts/world/profile.ts owns; an
+         *  out-of-vocabulary draft value self-heals to no kind (leaf `.catch`), never rejected. */
+        kind: z.enum(scheduleKinds).optional().catch(undefined),
         /** Weekday indices 0=Sunday…6=Saturday; absent ⇒ daily. */
         days: z.array(z.number().int().min(0).max(6)).optional().catch(undefined),
       }),
@@ -280,7 +283,9 @@ const SCHEDULE_FORGE_MAX = 4;
  * Ground forge day-part schedule rows into
  * stored minute windows: the day-part vocabulary maps to its minutes, rows
  * missing an activity or place drop, duplicates (same day part + day mask)
- * drop, and the set caps at SCHEDULE_FORGE_MAX.
+ * drop, and the set caps at SCHEDULE_FORGE_MAX. An optional drafted `kind`
+ * (#320) carries straight through — the row schema's own leaf `.catch` has
+ * already reduced anything out-of-vocabulary to no kind.
  */
 export function groundSchedule(raw: ProfileSection["schedule"], sink?: DiagnosticSink): ScheduleEntry[] {
   const out: ScheduleEntry[] = [];
@@ -303,6 +308,7 @@ export function groundSchedule(raw: ProfileSection["schedule"], sink?: Diagnosti
       endMinute: part.endMinute,
       activity,
       locationName,
+      ...(row.kind ? { kind: row.kind } : {}),
       ...(days ? { days } : {}),
     });
   }
@@ -514,7 +520,8 @@ function profilePrompt(context: CharacterForgeContext): string {
     "  Wants should be pursuable in conversation and specific to this character (\"to reopen the gallery under her own name\", not \"to be happy\"). Omit drives the concept gives no basis for — sparse is correct.",
     "",
     "Then sketch the character's DAILY RHYTHM (where their ordinary days go — the game grounds \"what I've been up to\" beats and off-screen movement in it):",
-    `- schedule: 0-${SCHEDULE_FORGE_MAX} rows, each {dayPart: "morning" | "afternoon" | "evening" | "night", activity (short concrete phrase), locationName (a plain place name), days?}.`,
+    `- schedule: 0-${SCHEDULE_FORGE_MAX} rows, each {dayPart: "morning" | "afternoon" | "evening" | "night", activity (short concrete phrase), locationName (a plain place name), kind?, days?}.`,
+    `  kind (optional): one of ${scheduleKinds.join(", ")}, only when the row genuinely IS that — an actual sleep block, a wash/hygiene beat, a meal, a work shift, or leisure time. Omit it for anything else (a commute, an errand, socializing) rather than forcing a label; a row with no kind is completely normal.`,
     "  days (optional): weekday indices 0=Sunday…6=Saturday, only when the routine isn't daily (e.g. [1,2,3,4,5] for a weekday shift). Cover the parts of the day the concept actually speaks to — a work shift and one leisure anchor beat a filled grid. Omit rows the concept gives no basis for.",
     "",
     "ONLY IF the concept describes a relationship between this character and the player (the person they will talk to — often written as \"the player\" or \"you\"), set the STARTING RELATIONSHIP:",
@@ -541,7 +548,7 @@ function profilePrompt(context: CharacterForgeContext): string {
   if (context.scope) {
     lines.push("", `Section boundary: return ONLY ${characterSections[context.scope].profileOutput.join(", ")}. Instructions for other fields above do not apply to this request.`);
     if (context.scope === "profile") {
-      lines.push("For this rewrite, schedule uses exact startMinute/endMinute (0-1439), activity, locationName, optional days and outfitPresetId. Preserve custom windows, weekdays and outfit mappings unless a requested revision changes them. Do not reduce an authored schedule to a four-row sketch.");
+      lines.push(`For this rewrite, schedule uses exact startMinute/endMinute (0-1439), activity, locationName, optional kind (${scheduleKinds.join(", ")}), days and outfitPresetId. Preserve custom windows, weekdays, kinds and outfit mappings unless a requested revision changes them. Do not reduce an authored schedule to a four-row sketch.`);
     }
     if (context.scope === "relationships") {
       lines.push("For this rewrite, playerRelationship uses familiarity, regard, kind, history, optional presented: {lean: masks_warmth|masks_dislike, note}, looming and note (premise). Preserve the outward-mask note and premise; do not substitute the create-only mask field. Omit this object if there is nothing to change.");

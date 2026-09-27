@@ -1,8 +1,10 @@
+import { z } from "zod";
 import {
   type SocialReactionCard,
   type CharacterProfile,
   type DiagnosticSink,
   type ChatPulse,
+  chatIntimateSceneSchema,
   chatPulseSchema,
   degradedChatPulse,
   diag,
@@ -48,6 +50,76 @@ export interface ChatPulseInput {
   /** Failure telemetry only (agent-failure.ts) — never reaches the prompt. */
   trace?: AgentLegTrace;
   sink?: DiagnosticSink;
+  /**
+   * This character is an authored minor (age-derived life stage) — fences
+   * arousal/intimate-scene effects entirely (P1, #301 review): no arousal bump
+   * from any concept, and `intimateScene` (active/completed/heated/afterglow/
+   * hygiene) is never consumed. Every caller that has computed the prompt-side
+   * minor flag (`lifeStageForAge(profile.age)?.minor`) must pass it here too —
+   * this is the SAME determination, not a second one. Absent ⇒ false.
+   */
+  minor?: boolean;
+  /**
+   * The scenario's shared story clock, for stamping a `heated`/`afterglow`
+   * condition's start (review finding — `state.metersAtMinutes` is not a
+   * substitute: it can be null or lag). Required so no caller silently falls
+   * back to a wrong clock.
+   */
+  clockMinutes: number;
+}
+
+/**
+ * `chatPulseSchema`, but `intimateScene` is re-checked against its raw value
+ * first (#301 acceptance item 3). The field's own `.catch(null)` is correct
+ * resilience for the PERSISTED contract (docs/resilience.md §3) but makes an
+ * ABSENT value and a PRESENT-but-invalid one indistinguishable by the time the
+ * whole object parses — both silently become `null`. This LOCAL schema (used
+ * only here, for this one diagnostic; the persisted `ChatPulse` type is
+ * unchanged) overrides just that field to accept the raw value, then
+ * re-validates it against the same leaf schema in a `.transform()` so the
+ * caller can tell the two cases apart, while every other pulse field keeps
+ * its normal resilient parse and the resolved `intimateScene` still defaults
+ * to `null` in both cases — applying no new scene effect either way.
+ */
+export type ChatPulseWithIntimateSceneDiagnosis = ChatPulse & { intimateSceneUnreadable: boolean };
+
+export const chatPulseWithIntimateSceneDiagnosisSchema = chatPulseSchema
+  .extend({ intimateScene: z.unknown().optional() })
+  .transform((raw): ChatPulseWithIntimateSceneDiagnosis => {
+    const rawScene = raw.intimateScene;
+    const parsed = chatIntimateSceneSchema.safeParse(rawScene);
+    return {
+      ...raw,
+      intimateScene: parsed.success ? parsed.data : null,
+      // True ONLY when the model SENT a value for this field and it failed the
+      // leaf schema — a genuinely absent field, or an explicit `null` (a legal
+      // "no scene" value), both stay silent.
+      intimateSceneUnreadable: rawScene !== undefined && rawScene !== null && !parsed.success,
+    };
+  });
+
+/**
+ * Diagnostic code for a PRESENT-but-invalid `intimateScene` (#301 acceptance item 3) —
+ * distinct from `chat_state.pulse.degraded` (the whole pulse failed) and from silence
+ * (the field was genuinely absent, or explicitly `null`).
+ */
+export const INTIMATE_SCENE_UNREADABLE_DIAGNOSTIC = "chat_state.pulse.intimate_scene_unreadable";
+
+/**
+ * Push the diagnostic when (and only when) the raw model output sent an
+ * `intimateScene` value that failed its schema; a no-op for an absent/`null`/valid
+ * value. Every other pulse effect and the resolved `null` scene proceed exactly
+ * as they already would — this reports the anomaly, it never changes behavior.
+ */
+export function reportIntimateSceneIfUnreadable(value: ChatPulseWithIntimateSceneDiagnosis, sink?: DiagnosticSink): void {
+  if (!value.intimateSceneUnreadable) return;
+  sink?.push(
+    diag(
+      "warn",
+      INTIMATE_SCENE_UNREADABLE_DIAGNOSTIC,
+      "pulse's intimateScene value failed its schema; reading this exchange as no intimate-scene beat",
+    ),
+  );
 }
 
 /** Summary + detail of "what the pulse read" for the inspector's activity log / lightbox. PURE. */
@@ -110,8 +182,8 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     reasoningProfile: reasoning.profileId,
     reasoningEnabled: reasoning.enabled,
   };
-  const work = generateChecked<ChatPulse>({
-    schema: chatPulseSchema,
+  const work = generateChecked<ChatPulseWithIntimateSceneDiagnosis>({
+    schema: chatPulseWithIntimateSceneDiagnosisSchema,
     system: CHAT_PULSE_SYSTEM,
     prompt,
     modelId,
@@ -119,7 +191,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     maxOutputTokens: reasoning.maxOutputTokens,
     code: "chat_state.pulse",
     sink,
-    fallback: degradedChatPulse,
+    fallback: () => ({ ...degradedChatPulse(), intimateSceneUnreadable: false }),
     signal: controller.signal,
     disableReasoning: !reasoning.enabled,
     providerOptions: reasoning.providerOptions,
@@ -139,8 +211,15 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     describeChatPulse,
   );
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
+  reportIntimateSceneIfUnreadable(value, sink);
   if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };
-  return { state: applyChatPulse(state, value, profile, characterName, input.activeSocialCards).state, degraded: false };
+  return {
+    state: applyChatPulse(state, value, profile, characterName, input.activeSocialCards, {
+      minor: input.minor,
+      clockMinutes: input.clockMinutes,
+    }).state,
+    degraded: false,
+  };
 }
 
 /** Drift-only fallback: keep the drifted state, stamp a degraded trace + the mandated diagnostic. */
@@ -154,6 +233,8 @@ function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason
       regardDelta: 0,
       moodDelta: 0,
       arousalDelta: 0,
+      hygieneDelta: 0,
+      intimateScene: null,
       changed: [],
       feeling: state.feeling.current?.label ?? null,
       regardScale: 1,

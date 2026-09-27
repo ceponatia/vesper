@@ -1,8 +1,19 @@
 /** Public chat-state entry; lower-level owners import their focused siblings directly. */
 export type { ChatPresence, ChatScenario, ChatState, ChatStateSnapshot } from "./chat-state/types";
-export { chatStateSnapshot } from "./chat-state/readout";
+export { chatMeterReads, chatStateSnapshot } from "./chat-state/readout";
 export { seedChatScenario, seedChatState } from "./chat-state/seed";
-export { applyTimeSkip, applyTimeSkipToScenario, driftChatState, rhythmOutfitPatch } from "./chat-state/time";
+export {
+  applyTimeSkip,
+  applyTimeSkipToScenario,
+  decayExchangeFeeling,
+  driftChatState,
+  heatedHygieneDriftMultiplier,
+  integrateChatMeters,
+  rhythmOutfitPatch,
+  skipChatMember,
+  suspendsMeterDrift,
+} from "./chat-state/time";
+export { persistChatTimeSkip } from "./chat-state/store";
 export {
   applyChatAction,
   applyChatAttributeOverlays,

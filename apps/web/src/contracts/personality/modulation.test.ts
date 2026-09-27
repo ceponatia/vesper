@@ -182,6 +182,20 @@ describe("stateDispositionOverlays", () => {
     }
   });
 
+  it("arousal alone (even combined with sub-floor intoxication) never lowers guardedness or composure — only inhibition (#301)", () => {
+    // intoxication 0.2 is below the floor on its own; arousal maxed pushes the
+    // COMBINED inhibition drive (0.2 + 0.3*1) to 0.5, well past the floor.
+    const out = stateDispositionOverlays(traits, { intoxication: 0.2, arousal: 1 });
+    expect(out.map((o) => o.id)).toEqual(["intimate.inhibition"]);
+    const before = traits.find((t) => t.id === "intimate.inhibition")?.value ?? 0;
+    expect(out[0]?.value).toBeLessThan(before);
+  });
+
+  it("intoxication alone still lowers all three, unaffected by the arousal split", () => {
+    const out = stateDispositionOverlays(traits, { intoxication: 0.8 });
+    expect(out.map((o) => o.id).sort()).toEqual([...DISINHIBITION_TRAITS].sort());
+  });
+
   it("never fabricates a disposition the character did not author", () => {
     const out = stateDispositionOverlays([trait("intimate.inhibition", 50)], { intoxication: 0.9 });
     expect(out.map((o) => o.id)).toEqual(["intimate.inhibition"]); // guardedness/composure absent ⇒ not added

@@ -43,6 +43,17 @@ export type ChatActionId = (typeof CHAT_ACTIONS)[number]["id"];
 
 export const chatActionIdSchema = z.enum(["drink", "freshen", "rest", "fluster"]);
 
+/**
+ * The ONE scene-level intimate-activity read (#301 + #303 — resolved once, shared by
+ * both: arousal/afterglow physiology and the hygiene cost never run a second detector
+ * or model call off the same exchange). "active" ⇒ an intimate/sexual act is ongoing
+ * THIS exchange (sustains arousal, costs a little hygiene); "completed" ⇒ it resolved
+ * to climax this exchange (settles arousal into afterglow, the larger hygiene cost).
+ * null ⇒ no intimate scene this exchange (most turns) — never inferred from silence.
+ */
+export const chatIntimateSceneSchema = z.enum(["active", "completed"]);
+export type ChatIntimateScene = z.infer<typeof chatIntimateSceneSchema>;
+
 export const chatPulseSchema = z.object({
   /** The player's primary act toward the character, classified into a concept id; null ⇒ none. */
   playerAct: z.object({ concept: z.string().min(1) }).nullable().catch(null).default(null),
@@ -67,6 +78,13 @@ export const chatPulseSchema = z.object({
    * decide whether it actually queues a render — the pulse only reads the fiction.
    */
   sentPhoto: z.boolean().catch(false).default(false),
+  /**
+   * The one scene-level intimate-activity read shared by #301 (arousal/afterglow) and
+   * #303 (hygiene) — see `chatIntimateSceneSchema`. Malformed/missing ⇒ null, exactly
+   * like every other pulse field (docs/resilience.md §3): no inferred completion, no
+   * new scene effect, when the model gives no usable read.
+   */
+  intimateScene: chatIntimateSceneSchema.nullable().catch(null).default(null),
 });
 
 export type ChatPulse = z.infer<typeof chatPulseSchema>;
@@ -77,7 +95,7 @@ export type ChatPulse = z.infer<typeof chatPulseSchema>;
  * conversation-reactive that exchange.
  */
 export function degradedChatPulse(): ChatPulse {
-  return { playerAct: null, mindNote: "", feeling: null, sentPhoto: false };
+  return { playerAct: null, mindNote: "", feeling: null, sentPhoto: false, intimateScene: null };
 }
 
 /**
@@ -97,6 +115,10 @@ export const chatPulseTraceSchema = z.object({
   moodDelta: z.number().catch(0).default(0),
   /** Arousal-meter move from an intimate act this exchange (0–1 scale; slice 4). */
   arousalDelta: z.number().catch(0).default(0),
+  /** Hygiene-meter move from an intimate act this exchange (0–1 scale, signed negative; #303). */
+  hygieneDelta: z.number().catch(0).default(0),
+  /** The scene-level intimate-activity read this exchange resolved to (null ⇒ none; #301/#303). */
+  intimateScene: chatIntimateSceneSchema.nullable().catch(null).default(null),
   /** Which state fields the pulse changed (regard / mood / arousal / mindNote / feeling). */
   changed: z.array(z.string()).catch([]).default([]),
   /** The persistent feeling label applied this exchange (emotional-weather), null ⇒ none. */

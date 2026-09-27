@@ -47,6 +47,7 @@ export async function finalizeChatState(input: FinalizeChatStateInput): Promise<
     driftedState: input.driftedState,
     sink: input.sink,
     scenario: input.scenario,
+    profile: input.profile,
     assistantMessageId: input.assistantMessageId,
   }, archivist);
   const { sceneMemory, supportingCast, plans, planMerge, planAdvance } = foldFinalizationNarrative({

@@ -1,54 +1,406 @@
+import { deriveSleepCredit } from "@vesper/simulation-core/bodies";
+import {
+  bodyRhythmKindSchema,
+  COLLAPSE_SLEEP_SECONDS,
+  METER_FIXED_POINT_ONE,
+  rhythmSelfCareEffects,
+  type BodySourceOperation,
+} from "@vesper/simulation-core/contracts/bodies";
 import {
   applyMeterDrift,
   CHAT_DEFAULT_CALENDAR_START,
   chatGameTime,
+  conditionKey,
+  deriveChatEnergyRead,
   formatChatMoment,
   isConditionExpired,
+  meterBaselineOf,
   meterDefinitions,
   personalizeMeters,
   resolveOutfitPreset,
+  routineLandings,
+  scheduleKinds,
+  scheduleOccurrences,
   SKIP_HISTORY_CAP,
+  sleepRoutineOf,
+  type ActiveCondition,
   type CharacterProfile,
   type ChatSkipAmount,
+  type ScheduleKind,
+  type ScheduleOccurrence,
   type SkipRecord,
 } from "@/contracts";
 import { minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { CHAT_FEELING_SKIP_STEPS, decayFeelingState } from "../chat-feeling";
-import { CHAT_METER_DRIFT_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
+import { CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER, CHAT_METER_CATCH_UP_MAX_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
 import { chatSkipNote } from "../prompts/character-chat";
 import type { ChatScenario, ChatState } from "./types";
 
 /**
- * Advance the in-game state for one exchange. There is no between-visit
- * wall-clock recovery — no time passes between visits at all. PURE and idempotent
- * on read: without `advance` it is a pass-through projection, with it meters
- * decay CHAT_METER_DRIFT_MINUTES toward their *personalized* baselines (meter
- * pacing is exchange-keyed — deliberately NOT the 1-minute clock tick, see
- * constants.ts) and conditions past the clock expire.
+ * The condition that means a character is asleep, matched by its normalized
+ * label like every condition table. However it began — a collapse, the pulse,
+ * an author — an `asleep` condition holds the energy reserve and credits sleep.
+ */
+export const CHAT_ASLEEP_CONDITION_LABEL = "asleep";
+
+/** Collapse is forced sleep: the successor's eight story hours of what the body was denied. */
+export const CHAT_COLLAPSE_SLEEP_MINUTES = COLLAPSE_SLEEP_SECONDS / 60;
+
+/** The meter sleep holds and restores — the energy reserve. */
+const SLEEP_RESERVE_METER_ID = "energy";
+
+const isAsleepCondition = (condition: ActiveCondition): boolean =>
+  conditionKey(condition) === CHAT_ASLEEP_CONDITION_LABEL;
+
+/** A condition's end minute; null when it is open-ended. */
+const conditionEndMinutes = (condition: ActiveCondition): number | null =>
+  condition.durationMinutes === undefined ? null : condition.startedAtMinutes + condition.durationMinutes;
+
+/** Whether a condition stands through the whole of `[fromMinutes, toMinutes]`. */
+function standsThrough(condition: ActiveCondition, fromMinutes: number, toMinutes: number): boolean {
+  const end = conditionEndMinutes(condition);
+  return condition.startedAtMinutes <= fromMinutes && (end === null || end >= toMinutes);
+}
+
+/**
+ * Sleep credit for `minutes` asleep on a 0–1 reserve — simulation-core's
+ * `deriveSleepCredit` (+0.09 per story hour, never past 0.95, never lowering a
+ * reserve already above it). Credit accrues as the sleep is integrated, so a
+ * night integrated in one piece or several lands on the same reserve.
+ */
+function creditSleep(reserve: number, minutes: number): number {
+  const reserveFixedPoint = Math.round(Math.min(1, Math.max(0, reserve)) * METER_FIXED_POINT_ONE);
+  const credit = deriveSleepCredit({ sleptSeconds: Math.round(minutes * 60), reserveAtWakeFixedPoint: reserveFixedPoint });
+  return credit > 0 ? (reserveFixedPoint + credit) / METER_FIXED_POINT_ONE : reserve;
+}
+
+/**
+ * Whether a standing condition (from the set covering this WHOLE piece) holds
+ * `meterId`'s drift still — `heated` suspends `arousal` (#301), so an ongoing
+ * intimate scene does not visibly cool between exchanges or across one degraded
+ * pulse. `asleep`'s hold on the energy reserve is the separate sleep coupling in
+ * `integrateChatMeters`; a future standing suspension adds its own clause here.
+ */
+export function suspendsMeterDrift(conditions: readonly ActiveCondition[], meterId: string): boolean {
+  if (meterId !== "arousal") return false;
+  return conditions.some((c) => conditionKey(c) === "heated");
+}
+
+/**
+ * The per-minute half of an intimate scene's hygiene cost (#303, owner ruling
+ * 2026-09-27, replacing the original per-message charge): while `heated`
+ * stands, hygiene drifts at this small multiple of its own base rate instead
+ * of the usual one — a smooth cost for ongoing activity, through the same
+ * standing-condition seam `suspendsMeterDrift` uses. 1 (unscaled) for every
+ * other meter, and for hygiene itself whenever `heated` does not stand.
+ */
+export function heatedHygieneDriftMultiplier(conditions: readonly ActiveCondition[], meterId: string): number {
+  if (meterId !== "hygiene") return 1;
+  return conditions.some((c) => conditionKey(c) === "heated") ? CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER : 1;
+}
+
+/**
+ * Integrate a character's meters across ONE piece of story time,
+ * `[fromMinutes, toMinutes]`, under their personalized drift laws — the one
+ * elapsed-time meter step; nothing else moves meters with time. PURE and
+ * closed-form: meters depend only on the interval, never on how often it is
+ * read.
+ *
+ * `conditions` are the conditions standing through the WHOLE piece — the
+ * caller cuts the interval wherever a condition begins or ends. A standing
+ * `asleep` condition holds the energy reserve instead of letting it drain and
+ * credits the time slept. Only the latest `CHAT_METER_CATCH_UP_MAX_MINUTES` of
+ * a piece integrate. Any meter `suspendsMeterDrift` says a standing condition
+ * holds still (a `heated` scene's arousal) does not drift in that piece;
+ * `heatedHygieneDriftMultiplier` scales hygiene's own rate the same way while
+ * `heated` stands, rather than holding it still.
+ */
+export function integrateChatMeters(args: {
+  meters: Record<string, number>;
+  profile: CharacterProfile;
+  fromMinutes: number;
+  toMinutes: number;
+  conditions?: readonly ActiveCondition[];
+}): Record<string, number> {
+  const elapsed = Math.min(args.toMinutes - args.fromMinutes, CHAT_METER_CATCH_UP_MAX_MINUTES);
+  if (!(elapsed > 0)) return args.meters;
+  const conditions = args.conditions ?? [];
+  const definitions = personalizeMeters(meterDefinitions, args.profile.traits)
+    .filter((def) => !suspendsMeterDrift(conditions, def.id))
+    .map((def) => {
+      const multiplier = heatedHygieneDriftMultiplier(conditions, def.id);
+      if (multiplier === 1) return def;
+      return {
+        ...def,
+        perHour: def.perHour * multiplier,
+        ...(def.recoveryPerHour === undefined ? {} : { recoveryPerHour: def.recoveryPerHour * multiplier }),
+      };
+    });
+  const drifted = applyMeterDrift(args.meters, elapsed, definitions);
+  const reserve = args.meters[SLEEP_RESERVE_METER_ID];
+  if (reserve === undefined || !conditions.some(isAsleepCondition)) return drifted;
+  return { ...drifted, [SLEEP_RESERVE_METER_ID]: creditSleep(reserve, elapsed) };
+}
+
+/**
+ * The routine a catch-up crosses. Routine applies to time the character spends
+ * OFF the scene — a skipped interval, or any interval while away: the sleep
+ * windows of their sleep routine it spans (`sleepRoutineOf` — typed sleep rows,
+ * else the default 23:00–07:00 night), and the self-care points it passes
+ * (`routineLandings` — a typed row's window END, the way the successor's rhythm
+ * self-care lands, else the default morning wash once a day, as that day's main
+ * sleep window ends). A
+ * present character talking through bedtime crosses nothing: they stayed up.
+ */
+interface RoutineCrossings {
+  sleep: readonly ScheduleOccurrence[];
+  selfCare: readonly { atMinutes: number; kind: ScheduleKind }[];
+}
+
+const NO_CROSSINGS: RoutineCrossings = { sleep: [], selfCare: [] };
+
+/**
+ * The self-care a schedule kind carries — simulation-core's
+ * `rhythmSelfCareEffects` (a wash sets hygiene to 0.95), never a second table.
+ * Sleep is the separate sleep coupling; `meal` restores nothing here (the
+ * body-needs work owns it); `work`, `leisure` and an untyped row carry nothing.
+ */
+function selfCareOf(kind: ScheduleKind): { meterKey: string; operation: BodySourceOperation } | null {
+  const bodyKind = bodyRhythmKindSchema.safeParse(kind);
+  return bodyKind.success ? (rhythmSelfCareEffects[bodyKind.data] ?? null) : null;
+}
+
+function routineCrossings(
+  profile: CharacterProfile,
+  fromMinutes: number,
+  toMinutes: number,
+  calendarStart: CalendarStart,
+): RoutineCrossings {
+  const selfCare: { atMinutes: number; kind: ScheduleKind }[] = [];
+  for (const kind of scheduleKinds) {
+    if (selfCareOf(kind) === null) continue;
+    for (const atMinutes of routineLandings(profile.schedule, kind, fromMinutes, toMinutes, calendarStart)) {
+      selfCare.push({ atMinutes, kind });
+    }
+  }
+  return {
+    sleep: scheduleOccurrences(sleepRoutineOf(profile.schedule), "sleep", fromMinutes, toMinutes, calendarStart),
+    selfCare: selfCare.sort((left, right) => left.atMinutes - right.atMinutes),
+  };
+}
+
+/** A self-care operation's result on a 0–1 meter, before clamping. */
+function selfCareValue(
+  operation: BodySourceOperation,
+  current: number,
+  meterKey: string,
+  profile: CharacterProfile,
+): number {
+  switch (operation.kind) {
+    case "set":
+      return operation.valueFixedPoint / METER_FIXED_POINT_ONE;
+    case "add":
+      return current + operation.deltaFixedPoint / METER_FIXED_POINT_ONE;
+    case "reset_to_baseline": {
+      const def = personalizeMeters(meterDefinitions, profile.traits).find((d) => d.id === meterKey);
+      return def === undefined ? current : meterBaselineOf(def);
+    }
+  }
+}
+
+/** Land one self-care effect on the meters (clamped to [0,1]; a meter the character lacks is untouched). */
+function applySelfCare(meters: Record<string, number>, kind: ScheduleKind, profile: CharacterProfile): Record<string, number> {
+  const effect = selfCareOf(kind);
+  const current = effect === null ? undefined : meters[effect.meterKey];
+  if (effect === null || current === undefined) return meters;
+  const value = selfCareValue(effect.operation, current, effect.meterKey, profile);
+  return { ...meters, [effect.meterKey]: Math.min(1, Math.max(0, value)) };
+}
+
+/** A routine sleep window as the `asleep` condition it amounts to for one piece. */
+function routineSleepCondition(occurrence: ScheduleOccurrence): ActiveCondition {
+  return {
+    id: "routine-sleep",
+    label: CHAT_ASLEEP_CONDITION_LABEL,
+    startedAtMinutes: occurrence.startMinutes,
+    durationMinutes: occurrence.endMinutes - occurrence.startMinutes,
+    attributeEffects: [],
+  };
+}
+
+/**
+ * Integrate `[fromMinutes, toMinutes]` piece by piece, cutting wherever one of
+ * the state's conditions begins or ends and at every routine crossing, landing
+ * each self-care effect at its point, and record the latest real sleep — an
+ * `asleep` condition or a routine sleep window — that ended inside it. PURE.
+ */
+function integrateInterval(
+  state: ChatState,
+  profile: CharacterProfile,
+  fromMinutes: number,
+  toMinutes: number,
+  crossings: RoutineCrossings,
+): { meters: Record<string, number>; lastSleepEndedAtMinutes: number | null } {
+  const cuts = new Set<number>();
+  const points = [
+    ...state.conditions.flatMap((condition) => [condition.startedAtMinutes, conditionEndMinutes(condition)]),
+    ...crossings.sleep.flatMap((occurrence) => [occurrence.startMinutes, occurrence.endMinutes]),
+    ...crossings.selfCare.map((landing) => landing.atMinutes),
+  ];
+  for (const point of points) {
+    if (point !== null && point > fromMinutes && point < toMinutes) cuts.add(point);
+  }
+  let meters = state.meters;
+  let cursor = fromMinutes;
+  for (const boundary of [...[...cuts].sort((left, right) => left - right), toMinutes]) {
+    const conditions = state.conditions.filter((condition) => standsThrough(condition, cursor, boundary));
+    const routineSleep = crossings.sleep.find(
+      (occurrence) => occurrence.startMinutes <= cursor && occurrence.endMinutes >= boundary,
+    );
+    meters = integrateChatMeters({
+      meters,
+      profile,
+      fromMinutes: cursor,
+      toMinutes: boundary,
+      conditions: routineSleep === undefined ? conditions : [...conditions, routineSleepCondition(routineSleep)],
+    });
+    for (const landing of crossings.selfCare) {
+      if (landing.atMinutes === boundary) meters = applySelfCare(meters, landing.kind, profile);
+    }
+    cursor = boundary;
+  }
+  let lastSleepEndedAtMinutes = state.lastSleepEndedAtMinutes;
+  const sleepEnds = [
+    ...state.conditions.filter(isAsleepCondition).map(conditionEndMinutes),
+    ...crossings.sleep.map((occurrence) => occurrence.endMinutes),
+  ];
+  for (const end of sleepEnds) {
+    if (end === null || end <= fromMinutes || end > toMinutes) continue;
+    lastSleepEndedAtMinutes = Math.max(lastSleepEndedAtMinutes ?? end, end);
+  }
+  return { meters, lastSleepEndedAtMinutes };
+}
+
+/**
+ * Collapse — the energy read at its saturated floor (reserve − pressure ≤ −1)
+ * — is forced sleep: a self-expiring `asleep` condition from this minute for
+ * `CHAT_COLLAPSE_SLEEP_MINUTES`, which the next catch-up integrates like any
+ * sleep. Like the successor, it needs witnessed wakefulness: with no sleep on
+ * record the pressure curve assumes the routine was kept and never reaches
+ * the floor. Null when the character is already asleep or holds nowhere near it.
+ */
+function collapseCondition(
+  state: ChatState,
+  profile: CharacterProfile,
+  clockMinutes: number,
+  calendarStart: CalendarStart,
+): ActiveCondition | null {
+  const reserve = state.meters[SLEEP_RESERVE_METER_ID];
+  if (reserve === undefined || state.lastSleepEndedAtMinutes === null) return null;
+  if (state.conditions.some((condition) => isAsleepCondition(condition) && condition.startedAtMinutes <= clockMinutes)) {
+    return null;
+  }
+  const { read } = deriveChatEnergyRead(reserve, {
+    clockMinutes,
+    calendarStart,
+    schedule: profile.schedule,
+    lastSleepEndedAtMinutes: state.lastSleepEndedAtMinutes,
+    conditions: state.conditions,
+  });
+  if (read.signedFixedPoint > -METER_FIXED_POINT_ONE) return null;
+  return {
+    // Deterministic, so re-reading the same interval projects the same condition.
+    id: `collapse-${clockMinutes}`,
+    label: CHAT_ASLEEP_CONDITION_LABEL,
+    startedAtMinutes: clockMinutes,
+    durationMinutes: CHAT_COLLAPSE_SLEEP_MINUTES,
+    attributeEffects: [],
+    promptHint: "Asleep: exhaustion finally won — dead to the world where they dropped; only something real rouses them.",
+  };
+}
+
+/**
+ * Catch a character's state up to the shared story clock. PURE. Their meters
+ * integrate from the minute they hold at (`metersAtMinutes`) to `clockMinutes`
+ * — cut wherever a condition begins or ends, so time asleep holds and restores
+ * the energy reserve — and are re-stamped there; real sleep that ended inside
+ * the interval updates `lastSleepEndedAtMinutes`; a character whose energy read
+ * has hit its floor collapses into sleep; and conditions past the clock expire
+ * (after their interval has been integrated, so an `asleep` condition read
+ * after it ended still credits its sleep exactly once). Physiology is
+ * presence-independent — an away character catches up exactly as a present one
+ * does, whether on an exchange, a skip, or a read.
+ *
+ * Routine follows time spent off the scene: with `skipped` (a time skip), or for
+ * a character who is away, the catch-up also crosses their routine — sleep
+ * windows credited as sleep, a wash landing at its window's end — so an away
+ * member catching up and a present member skipping the same interval reach the
+ * same meters. A present member on an ordinary exchange crosses nothing. A skip
+ * lands with the scene's members awake: a present member whose sleep window the
+ * landing interrupts wakes there.
+ *
+ * Idempotent: a second call at the same clock returns its input unchanged, so a
+ * read, a retake, or a repeated projection never moves meters twice. A stamp
+ * ahead of the clock (a state that settled but whose clock tick did not) never
+ * integrates backwards. An unstamped state (`null`) holds at the clock it meets.
+ * Emotional weather is NOT elapsed-time physiology: it decays per exchange
+ * (`decayExchangeFeeling`) and over skips (`applyTimeSkip`).
  */
 export function driftChatState(
   state: ChatState,
   profile: CharacterProfile,
-  options: { advance?: boolean; clockMinutes: number },
+  options: { clockMinutes: number; calendarStart: CalendarStart; skipped?: boolean },
 ): ChatState {
-  // Conditions expire against the SHARED story clock even when this member's
-  // meters are frozen — one timeline for the roster.
-  const conditions = state.conditions.filter((c) => !isConditionExpired(c, options.clockMinutes));
-  if (!options.advance) return conditions.length === state.conditions.length ? state : { ...state, conditions };
-  const meters = applyMeterDrift({ ...state.meters }, CHAT_METER_DRIFT_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
-  // Emotional weather decays per EXCHANGE, not clock minutes: one advance =
-  // one beat of the feeling fading and the bruise healing.
-  return { ...state, meters, conditions, feeling: decayFeelingState(state.feeling) };
+  const { clockMinutes, calendarStart } = options;
+  // Conditions expire against the SHARED story clock — one timeline for the roster.
+  const live = state.conditions.filter((c) => !isConditionExpired(c, clockMinutes));
+  const stamp = state.metersAtMinutes ?? clockMinutes;
+  if (stamp >= clockMinutes) {
+    if (state.metersAtMinutes !== null && live.length === state.conditions.length) return state;
+    return { ...state, conditions: live, metersAtMinutes: state.metersAtMinutes ?? clockMinutes };
+  }
+  const fromMinutes = Math.max(stamp, clockMinutes - CHAT_METER_CATCH_UP_MAX_MINUTES);
+  const skipped = options.skipped === true;
+  const crossings =
+    skipped || state.presence === "away"
+      ? routineCrossings(profile, fromMinutes, clockMinutes, calendarStart)
+      : NO_CROSSINGS;
+  const body = integrateInterval(state, profile, fromMinutes, clockMinutes, crossings);
+  // The clock lands inside a routine sleep window: an away character sleeps on;
+  // a present member of a skip is woken by the scene resuming.
+  const landsAsleep = crossings.sleep.some(
+    (occurrence) => occurrence.startMinutes < clockMinutes && clockMinutes < occurrence.endMinutes,
+  );
+  const woken = landsAsleep && skipped && state.presence === "present";
+  const lastSleepEndedAtMinutes = woken
+    ? Math.max(body.lastSleepEndedAtMinutes ?? clockMinutes, clockMinutes)
+    : body.lastSleepEndedAtMinutes;
+  const caughtUp: ChatState = {
+    ...state,
+    meters: body.meters,
+    lastSleepEndedAtMinutes,
+    metersAtMinutes: clockMinutes,
+    conditions: live,
+  };
+  const collapse = landsAsleep && !woken ? null : collapseCondition(caughtUp, profile, clockMinutes, calendarStart);
+  return collapse === null ? caughtUp : { ...caughtUp, conditions: [...live, collapse] };
 }
 
 /**
- * Apply a player time skip (flavor-only). PURE. Exactly three
- * effects: the clock advances (which lets already-running timed conditions expire
- * through the existing clock-keyed filter — no new wiring), the one-shot skip note
- * is stamped (worded by the CURRENT stage band), and the skip records itself into
- * the capped history ring. **Meters do not change** — whether twelve skipped hours
- * mean recovery or deterioration is circumstance, and the time-effects system that
- * could know stays scaffolded, not wired.
+ * One exchange's emotional-weather beat: the standing feeling fades and the
+ * bruise heals per EXCHANGE, never per story minute. Kept apart from the
+ * elapsed-time meter path on purpose; a character in the exchange takes it.
+ */
+export function decayExchangeFeeling(state: ChatState): ChatState {
+  return { ...state, feeling: decayFeelingState(state.feeling) };
+}
+
+/**
+ * Apply a player time skip to the SCENARIO. PURE. The clock advances (which
+ * lets already-running timed conditions expire through the existing clock-keyed
+ * filter), the one-shot skip note is stamped (worded by the CURRENT stage band),
+ * and the skip records itself into the capped history ring. Each member's meters
+ * then follow the skipped minutes through `skipChatMember`.
  */
 export function applyTimeSkipToScenario(
   scenario: ChatScenario,
@@ -116,7 +468,12 @@ export function rhythmOutfitPatch(
     : {};
 }
 
-/** The per-character half of a time skip: expiry vs the advanced shared clock + scene-boundary resets (+ rhythm dress when `profile` given). */
+/**
+ * The scene-boundary half of a time skip for a member in the scene: expiry vs
+ * the advanced shared clock, the familiarity scene-budget reset, feeling
+ * softening over the skipped time (+ rhythm dress when `profile` given). Moves
+ * no meter — `skipChatMember` integrates those first.
+ */
 export function applyTimeSkip(
   state: ChatState,
   amount: ChatSkipAmount,
@@ -135,4 +492,25 @@ export function applyTimeSkip(
     feeling: decayFeelingState(state.feeling, CHAT_FEELING_SKIP_STEPS[amount]),
     ...(profile ? rhythmOutfitPatch(profile, clockMinutes, calendarStart) : {}),
   };
+}
+
+/**
+ * One roster member's half of a time skip. PURE. Every member's meters — away
+ * members included, because physiology is presence-independent — integrate
+ * across the skipped minutes on the one elapsed-time path (`driftChatState`).
+ * The scene-boundary effects (`applyTimeSkip`) belong to the scene, so only a
+ * PRESENT member takes them; an away member's feeling, scene budget and
+ * wardrobe carry on untouched.
+ */
+export function skipChatMember(
+  state: ChatState,
+  amount: ChatSkipAmount,
+  clockMinutes: number,
+  profile: CharacterProfile,
+  calendarStart: CalendarStart = CHAT_DEFAULT_CALENDAR_START,
+): ChatState {
+  const caughtUp = driftChatState(state, profile, { clockMinutes, calendarStart, skipped: true });
+  return caughtUp.presence === "present"
+    ? applyTimeSkip(caughtUp, amount, clockMinutes, profile, calendarStart)
+    : caughtUp;
 }

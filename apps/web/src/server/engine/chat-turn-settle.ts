@@ -6,6 +6,7 @@ import {
   type AffordanceSubjectId,
   type DiagnosticSink,
 } from "@/contracts";
+import { lifeStageForAge } from "@/contracts/world/life-stage";
 import { log } from "../log";
 import type { ChatRecognitionRead } from "./chat-recognition-adapter";
 import { saveChatVisualMemory } from "./visual-memory-store";
@@ -125,6 +126,10 @@ export async function settleChatTurnMembers(args: {
                 activeSocialCards: scenario.activeSocialCards,
                 trace: { chatId, messageId: assistantMessageId },
                 sink,
+                // P1 minor fence (#301 review): each member's OWN age, mirroring
+                // the primary's determination in finalize-agents.ts.
+                minor: lifeStageForAge(member.profile.age)?.minor ?? false,
+                clockMinutes: scenario.clockMinutes,
               })
             : Promise.resolve(null),
           member.state.presence === "present"

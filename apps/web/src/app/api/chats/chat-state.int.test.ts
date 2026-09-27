@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { stageMidpoint } from "@/contracts";
+import { applyMeterDrift, CHAT_SKIP_MINUTES, METER_DRIFT_STEP_PRECISION, stageMidpoint } from "@/contracts";
 import { characterChatMessages, characterChats, characterChatState, characters, db } from "@/server/db";
 
 // Conversation light-state integration suite (re-keyed per participant): the POST
@@ -188,7 +188,7 @@ describe.runIf(ready)("POST seeds a state row from the authored stage", () => {
   });
 });
 
-describe.runIf(ready)("POST …/time-skip (flavor-only v1, D14)", () => {
+describe.runIf(ready)("POST …/time-skip", () => {
   const skipReq = (chatId: string, amount: string): NextRequest =>
     apiRequest(`/api/chats/${chatId}/time-skip`, { body: { amount } });
 
@@ -204,7 +204,7 @@ describe.runIf(ready)("POST …/time-skip (flavor-only v1, D14)", () => {
     expect(scenario?.pendingSkipNote).not.toBe("");
   });
 
-  it("expires timed conditions, leaves meters untouched, records the ring, and the next exchange clears the note", async () => {
+  it("expires timed conditions, drifts meters across the skipped minutes, records the ring, and the next exchange clears the note", async () => {
     // Plant a timed condition + distinctive meters on the row the previous test seeded.
     await db()
       .update(characterChatState)
@@ -220,7 +220,19 @@ describe.runIf(ready)("POST …/time-skip (flavor-only v1, D14)", () => {
     const scenario = await scenarioRow(ids.skipper.chatId);
     expect(scenario?.clockMinutes).toBe(180 + 540);
     expect(row?.conditions).toEqual([]); // 180+90 < 720 ⇒ expired through the clock filter
-    expect(row?.meters).toEqual({ hygiene: 0.33, energy: 0.44 }); // D14: meters untouched
+    // The seed was stamped at the first skip's clock (180), so the overnight skip
+    // integrates exactly its own minutes and re-stamps the row at the new clock.
+    // The trait-less profile drifts at the registry's plain rates; the skip lands
+    // at 20:00, short of any sleep window or wash, and the tipsy condition's
+    // expiry splits it into two pieces — so it agrees with one step to within two
+    // documented step precisions.
+    const expected = applyMeterDrift({ hygiene: 0.33, energy: 0.44 }, CHAT_SKIP_MINUTES.overnight);
+    const meters = row?.meters as Record<string, number>;
+    for (const id of ["hygiene", "energy"]) {
+      expect(Math.abs((meters[id] ?? Number.NaN) - (expected[id] ?? 0))).toBeLessThanOrEqual(2 * METER_DRIFT_STEP_PRECISION);
+    }
+    expect(meters.energy).toBeLessThan(0.44);
+    expect(row?.metersAtMinutes).toBe(180 + 540);
     const ring = scenario?.skipHistory as { amount: string }[];
     expect(ring.map((r) => r.amount)).toEqual(["hours", "overnight"]);
 

@@ -1,8 +1,10 @@
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
+import { conditionKey } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
-import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
+import { deriveChatArousalRead } from "@/contracts/meters/arousal-signs";
+import { deriveMoodDescriptor, meterDefinitions, splitStateCues } from "@/contracts/meters/registry";
 import { currentScenePlace, isEmptyChatSceneMemory, type ChatSceneMemory } from "@/contracts/turns/chat-scene-memory";
 import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
 import { planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
@@ -209,8 +211,18 @@ export function feelingPhrase(feeling: ChatFeelingState | undefined): string {
  * once, then rides as coloring). The change-gate (`splitStateCues`) diffs current bands
  * against `state.surfacedCues` (last turn's). "" when nothing is notable ⇒ no block.
  */
-export function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>): string {
-  const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {});
+/**
+ * Every meter EXCEPT arousal, for the standing/foreground cue split below.
+ * Arousal keeps its own registry threshold (unchanged — the image lane's
+ * `projectMeterFeatures` reads it directly for the #427 `visibleEffects`
+ * band, so it must stay exactly as authored there); the state section's OWN
+ * arousal line instead comes from the graded physiology read (#301) just
+ * below, replacing what would otherwise be a second, conflicting line.
+ */
+const STATE_SECTION_METER_DEFINITIONS = meterDefinitions.filter((def) => def.id !== "arousal");
+
+export function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>, minor = false): string {
+  const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {}, STATE_SECTION_METER_DEFINITIONS);
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
   // The persistent feeling composes with the meter descriptor (ruled):
@@ -220,6 +232,34 @@ export function buildStateSection(state: NonNullable<CharacterChatPromptInput["s
   else if (mood) lines.push(`- You are feeling ${mood} right now.`);
   else if (feeling) lines.push(`- Underneath everything, ${feeling}.`);
   for (const cue of standing) lines.push(`- ${cue.hint}`);
+  // The graded arousal physiology read (#301) — replaces the flat single-threshold
+  // hint this section used to render for arousal (still authored in the registry
+  // for the image lane, excluded above). This projection is built only for the
+  // co-present primary (presence lives outside it, dropped by design), so full
+  // engaged-attention perception always applies here — NOT YET perception-gated
+  // by anything narrower (detailTier is fixed at 3); a richer gate is a linked
+  // follow-up issue, not built here.
+  //
+  // Minor fence (P1, #301 review): a minor NEVER gets an arousal line, whatever
+  // the meter or conditions say — the pulse-side fence (`applyChatPulse`) should
+  // already keep a minor's arousal at rest and heated/afterglow off their row,
+  // but this is the narration's own belt-and-suspenders check, matching every
+  // other minor fence in this file (disposition, intimate notes, disinhibition).
+  //
+  // Owner ruling 2026-09-27: arousal narration (every phase, not just the
+  // shallow ones) renders ONLY while an intimate scene is standing — the
+  // `heated` or `afterglow` condition — never from ordinary affection/attraction
+  // reading on the meter alone. The broader trigger/curve rethink is a separate
+  // follow-up issue; this only gates the NARRATION line, not the meter itself.
+  const inIntimateScene = state.conditions.some((c) => conditionKey(c) === "heated" || conditionKey(c) === "afterglow");
+  if (!minor && inIntimateScene && state.meters.arousal !== undefined) {
+    const arousalRead = deriveChatArousalRead({
+      arousalMeter: state.meters.arousal,
+      conditions: state.conditions,
+      detailTier: 3,
+    });
+    if (arousalRead.hint) lines.push(`- ${arousalRead.hint}`);
+  }
   // (The old per-stage warmth steer moved into the prefix's Relationship-law block.)
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   const mindNote = state.mindNote?.trim();

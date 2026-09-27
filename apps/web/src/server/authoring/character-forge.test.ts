@@ -470,6 +470,18 @@ describe("groundSchedule (chat-initiative slice 4)", () => {
     expect(rows).toHaveLength(4);
     expect(sink.items.some((d) => d.code === "forge.character.profile.schedule_capped")).toBe(true);
   });
+
+  it("carries a drafted kind through to the stored row, and omits it when absent (#320)", () => {
+    const rows = groundSchedule([
+      { dayPart: "morning", activity: "sleeping in", locationName: "her flat", kind: "sleep" },
+      { dayPart: "afternoon", activity: "waiting tables", locationName: "the Dockside Café" },
+    ]);
+    expect(rows).toEqual([
+      { startMinute: 360, endMinute: 720, activity: "sleeping in", locationName: "her flat", kind: "sleep" },
+      { startMinute: 720, endMinute: 1080, activity: "waiting tables", locationName: "the Dockside Café" },
+    ]);
+    expect(rows[1]).not.toHaveProperty("kind");
+  });
 });
 
 describe("groundAttributeRanges", () => {

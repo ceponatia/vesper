@@ -36,22 +36,24 @@ export const CHARACTER_CHAT_VERBATIM_KEEP = 15;
  * visit each exchange advances it CHAT_TICK_MINUTES; between visits no time
  * passes at all — a player away for a week returns to a scene where nothing
  * moved. Player-chosen time skips (CHAT_SKIP_MINUTES) are the one between-scene
- * lever, and in v1 they are narrative flavor only: clock + condition expiry +
- * the skip note — meters untouched. (Affinity never decays.)
+ * lever: they advance the clock, and meters follow the minutes that actually
+ * elapsed. (Affinity never decays.)
  *
  * 4 → 1 (owner ruling 2026-07-15): one exchange ≈ one
  * story minute, so ordinary conversation barely moves the visible clock and skips
- * are the primary time mover. Meter pacing did NOT follow the tick — see
- * CHAT_METER_DRIFT_MINUTES.
+ * are the primary time mover. Meters drift by that same elapsed story time
+ * (`driftChatState`), so a busy conversation barely moves a slow need while a
+ * skip moves it by the hours it covers; the feeling alone decays per exchange.
  */
 export const CHAT_TICK_MINUTES = 1;
 /**
- * Story-minutes of meter decay applied per exchange (the drift sweep):
- * meter pacing is exchange-keyed in spirit — like the feeling's per-exchange decay
- * — so when the clock tick dropped 4 → 1 this kept the shipped per-exchange meter
- * feel instead of slowing it 4×. Deliberately decoupled from CHAT_TICK_MINUTES.
+ * The elapsed-time catch-up bound: one meter integration covers at most the
+ * latest seven story days of its interval. Every adopted drift law has long
+ * settled by then, so the bound changes no current result; it keeps the work a
+ * segmented interval does (one piece per crossed boundary) finite however long
+ * a character went unread.
  */
-export const CHAT_METER_DRIFT_MINUTES = 4;
+export const CHAT_METER_CATCH_UP_MAX_MINUTES = 7 * 24 * 60;
 /**
  * In-game minutes per player skip amount — moved to the contract so the clock
  * card can preview landings client-side; re-exported
@@ -156,6 +158,39 @@ export const CHAT_MEANWHILE_TIMEOUT_MS = 25_000;
 export const CHAT_AROUSAL_INTIMATE = 0.18;
 /** Duration (chat-clock minutes) of a condition added by an action chip before it self-expires. */
 export const CHAT_ACTION_CONDITION_MINUTES = 90;
+/**
+ * Duration (chat-clock minutes) of the `heated` condition a pulse-classified "active"
+ * intimate scene renews each exchange (#301): long enough to survive one degraded
+ * pulse (a missed classification doesn't falsely read as the scene having cooled —
+ * `integrateChatMeters`'s `conditions` param feeds `suspendsMeterDrift`/
+ * `heatedHygieneDriftMultiplier`, which key off it), short enough that a scene that
+ * genuinely ended lets ambient arousal drift resume within a few exchanges.
+ */
+export const CHAT_HEATED_CONDITION_MINUTES = 5;
+/**
+ * Where completion (#301) settles arousal: `Math.min(current, this)`, so it only ever
+ * moves arousal DOWN, never up. Comfortably below simulation-core's "flushed" floor
+ * (4_500 / METER_FIXED_POINT_ONE = 0.45) so completion reads as resolved even for a
+ * high-libido profile whose arousal was cresting the moment before.
+ */
+export const CHAT_AROUSAL_AFTERGLOW_SETTLE = 0.3;
+/** Mood lift / stress ease completion (#301) adds on top of the exchange's ordinary curve outcome. */
+export const CHAT_AFTERGLOW_MOOD_LIFT = 0.1;
+export const CHAT_AFTERGLOW_STRESS_EASE = 0.15;
+/**
+ * Hygiene cost of an intimate scene (#303, owner ruling 2026-09-27 — real-life timing,
+ * replacing the original per-exchange charges): while `heated` stands, hygiene simply
+ * drifts at this small multiple of its own base rate (`time.ts`'s
+ * `heatedHygieneDriftMultiplier`, through the same `integrateChatMeters` condition seam
+ * as `suspendsMeterDrift`) — a few exchanges of activity cost only a little more than
+ * the ambient drift they'd have cost anyway. `CHAT_HYGIENE_COMPLETION_COST` is a small
+ * ADDITIONAL one-time charge the pulse applies directly when the scene resolves (a
+ * completion is a bigger, discrete event the smooth per-minute rate alone underscores).
+ * Together, one ordinary scene (a handful of exchanges plus its completion) moves
+ * hygiene nowhere near a full band (~0.09 at the shallowest, the odor band).
+ */
+export const CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER = 3;
+export const CHAT_HYGIENE_COMPLETION_COST = 0.02;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 

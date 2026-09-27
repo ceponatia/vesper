@@ -100,22 +100,25 @@ exchange:
    enqueued fire-and-forget.
 4. **State drift.** The pipeline loads the shared **scenario** once, ticks its clock
    once for the whole exchange (`CHAT_TICK_MINUTES` = 1 story minute —
-   ONE story timeline, never per member), then `driftChatState`
-   (pure) drifts each member against it — meters decay toward personalized baselines
-   by `CHAT_METER_DRIFT_MINUTES` (= 4; meter pacing is exchange-keyed, deliberately
-   decoupled from the 1-minute clock tick) for present members only (the away-freeze);
-   conditions expire against the shared clock for everyone. **No time passes between visits**
+   ONE story timeline, never per member), then `driftChatState` (pure) catches every
+   member up to it, present or away alike: meters integrate by the story minutes since
+   they were stamped, sleep holds and restores the energy reserve, an energy read at
+   its floor collapses into sleep, an away member's routine (sleep windows, washes)
+   plays out as they catch up, and conditions expire against the shared clock
+   ([state.md](state.md) §Elapsed-time meter drift). Only present members take the
+   exchange's feeling beat (`decayExchangeFeeling`). **No time passes between visits**
    — there is no wall-clock model, and the only between-scene
    lever is a player **time skip** (`POST …/time-skip`), which advances the scenario
    clock, stamps its one-shot `pending_skip_note` (worded by the primary's regard band,
    `chatSkipNote`, with a "a life meanwhile" license **and the calendar landing** —
-   "It is now Friday evening") and `skip_history` ring, then
-   gives each PRESENT member the per-character half (condition expiry, scene-budget
-   reset, feeling decay, and **rhythm auto-dress** — a `profile.schedule` row covering
-   the skipped-to clock that names an outfit preset re-dresses the member for that
-   window, `rhythmOutfitPatch`) — **meters untouched**
-   (a skip is flavor, not a meter mover). Lazily seeds from the authored defaults when no
-   row exists.
+   "It is now Friday evening") and `skip_history` ring, then catches every member's
+   meters up across the skipped minutes — crossing each one's routine, so a skip past
+   bedtime sleeps and a skip past the morning wash washes — and gives each PRESENT member the
+   scene-boundary half (`skipChatMember`: condition expiry, scene-budget reset, feeling
+   softening, and **rhythm auto-dress** — a `profile.schedule` row covering the
+   skipped-to clock that names an outfit preset re-dresses the member for that window,
+   `rhythmOutfitPatch`). The advanced clock and every member row commit in one
+   transaction. Lazily seeds from the authored defaults when no row exists.
    A qualifying skip (cumulative ≥ one story day since the last pass) also fires the
    detached **meanwhile pass** (`chat_meanwhile` job): one call proposing the
    cast's off-screen developments, folded into facts / drives / cast / plans /

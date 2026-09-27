@@ -53,9 +53,9 @@ import { selfieHistorySchema } from "../chat-selfie";
  * state-aware quick chat by reusing the pure contracts — meters, affinity stages,
  * conditions, and the social-reaction curve — with one new table and at most
  * one cheap structured pulse per exchange.
- * In-game time is the ONLY clock: a per-exchange tick decays meters within a visit,
- * player time skips (`applyTimeSkip`) are the one between-scene lever, and no time
- * passes between visits at all. The pulse classifies the player's act and refreshes
+ * In-game time is the ONLY clock: meters drift by the story minutes it advances
+ * (a per-exchange tick within a visit; a player time skip between scenes), and no
+ * time passes between visits at all. The pulse classifies the player's act and refreshes
  * the mindNote; the deterministic curve turns that into affinity + mood deltas.
  * Degrades to drift-only on any pulse failure (resilience.md §3) — never blocks or
  * fails a reply.
@@ -277,6 +277,8 @@ export async function loadChatState(
   const [row] = await db()
     .select({
       meters: characterChatState.meters,
+      metersAtMinutes: characterChatState.metersAtMinutes,
+      lastSleepEndedAtMinutes: characterChatState.lastSleepEndedAtMinutes,
       regard: characterChatState.regard,
       familiarity: characterChatState.familiarity,
       familiaritySceneGain: characterChatState.familiaritySceneGain,
@@ -312,6 +314,9 @@ export async function loadChatState(
   if (!row) return null;
   return {
     meters: parseOr(metersSchema, row.meters, initialMeters(), sink, "character_chat_state.meters"),
+    // NULL only on a row a pre-stamp writer inserted: it holds at the first clock it meets.
+    metersAtMinutes: row.metersAtMinutes,
+    lastSleepEndedAtMinutes: row.lastSleepEndedAtMinutes,
     regard: clampRegard(row.regard),
     familiarity: clampFamiliarity(row.familiarity),
     familiaritySceneGain: Math.max(0, row.familiaritySceneGain),
@@ -412,14 +417,20 @@ export async function upsertChatState(
   const guard = guardMessageId
     ? sql`exists (select 1 from ${characterChatMessages} where id = ${guardMessageId})`
     : sql`true`;
+  // An unstamped state (a fresh seed, an author's meter edit) holds at the chat's
+  // clock as of THIS write — read in the same statement, so a caller's
+  // transaction sees its own advanced clock.
+  const metersAtMinutes = sql`coalesce(${state.metersAtMinutes}::integer, (select clock_minutes from ${characterChats} where id = ${chatId}), 0)`;
   await writer.execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, body_surface, presence, whereabouts, quiet_exchanges, updated_at)
-    select ${chatId}, ${characterId}, ${meters}::jsonb, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
+      (chat_id, character_id, meters, meters_at_minutes, last_sleep_ended_at_minutes, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, body_surface, presence, whereabouts, quiet_exchanges, updated_at)
+    select ${chatId}, ${characterId}, ${meters}::jsonb, ${metersAtMinutes}, ${state.lastSleepEndedAtMinutes}::integer, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
            ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${bodySurface}::jsonb, ${state.presence}, ${state.whereabouts}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
+      meters_at_minutes = excluded.meters_at_minutes,
+      last_sleep_ended_at_minutes = excluded.last_sleep_ended_at_minutes,
       regard = excluded.regard,
       familiarity = excluded.familiarity,
       familiarity_scene_gain = excluded.familiarity_scene_gain,
@@ -486,4 +497,25 @@ export async function persistChatState(
   writer: DbWriter = db(),
 ): Promise<void> {
   await upsertChatState(chatId, characterId, state, undefined, writer);
+}
+
+/**
+ * Commit a time skip's durable halves as ONE transaction: the advanced scenario
+ * (clock, skip note, history ring) and every roster member's post-skip row land
+ * together or not at all. A member write that fails therefore rolls the clock
+ * back with it, so the shared clock can never stand past a member — present or
+ * away, primary or not — whose meters, conditions and scene resets still sit at
+ * the old boundary. Throws on failure; nothing is written then.
+ */
+export async function persistChatTimeSkip(
+  chatId: string,
+  scenario: ChatScenario,
+  members: readonly { characterId: string; state: ChatState }[],
+): Promise<void> {
+  await db().transaction(async (tx) => {
+    await saveChatScenario(chatId, scenario, undefined, tx);
+    for (const member of members) {
+      await upsertChatState(chatId, member.characterId, member.state, undefined, tx);
+    }
+  });
 }

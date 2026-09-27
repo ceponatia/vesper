@@ -2,17 +2,24 @@ import { foldPrimaryProgression } from "./chat-state/character-fold";
 import { settleEnsembleMember } from "./chat-state/ensemble";
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { initialMeters } from "@/contracts/meters/registry";
+import { applyMeterDrift, initialMeters, meterById, METER_DRIFT_STEP_PRECISION } from "@/contracts/meters/registry";
 import { stageMidpoint } from "@/contracts/relationships/stages";
 import { familiarityBandMidpoint, regardBandForValue, regardBandMidpoint } from "@/contracts/relationships/bands";
-import type { ActiveCondition } from "@/contracts/conditions/condition";
+import { conditionKey, type ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPersonalNotes } from "@/contracts/turns/chat-archivist";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
-import { characterProfileSchema } from "@/contracts/world/profile";
+import { characterProfileSchema, type CharacterProfile, type ScheduleEntry } from "@/contracts/world/profile";
 import { makeProfile } from "@/server/test-support";
 import { SKIP_HISTORY_CAP } from "@/contracts/turns/chat-skip";
-import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES, CHAT_TICK_MINUTES } from "./constants";
+import { CHAT_DEFAULT_CALENDAR_START as CAL } from "@/contracts/turns/chat-clock";
+import {
+  CHAT_AROUSAL_INTIMATE,
+  CHAT_HEATED_CONDITION_MINUTES,
+  CHAT_HYGIENE_COMPLETION_COST,
+  CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER,
+  CHAT_SKIP_MINUTES,
+} from "./constants";
 import {
   applyChatAction,
   applyChatAttributeOverlays,
@@ -21,11 +28,14 @@ import {
   applyOpenerPulse,
   applyTimeSkip,
   applyTimeSkipToScenario,
+  chatMeterReads,
   chatStateSnapshot,
+  decayExchangeFeeling,
   driftChatState,
   rhythmOutfitPatch,
   seedChatScenario,
   seedChatState,
+  skipChatMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
@@ -33,6 +43,7 @@ import { matchOutfitPresetInText, outfitChangeEvidenceValidated } from "./chat-s
 import { resolveSeededOutfit } from "./chat-state/outfit-fold";
 import { runChatPulse } from "./chat-state/pulse-agent";
 import { rollbackScenario } from "./chat-state/snapshots";
+import { CHAT_ASLEEP_CONDITION_LABEL, CHAT_COLLAPSE_SLEEP_MINUTES } from "./chat-state/time";
 import { seededOutfitMarker } from "./chat-wardrobe";
 
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
@@ -265,42 +276,297 @@ describe("rollbackScenario ('another take' — the supporting cast never rolls b
   });
 });
 
-describe("driftChatState (D8 — in-game time only, clock on the shared scenario)", () => {
-  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
+describe("driftChatState — meters follow elapsed story time on the shared clock", () => {
+  /** A seeded state whose meters hold at story minute `at`. */
+  const stamped = (at: number, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(makeProfile()),
+    metersAtMinutes: at,
+    ...overrides,
+  });
+  const hygieneRatePerHour = (): number => {
+    const def = meterById("hygiene");
+    if (def === undefined) throw new Error("no hygiene meter in the registry");
+    return def.recoveryPerHour ?? Math.abs(def.perHour);
+  };
 
-  it("within-visit tick decays meters toward their baseline (the clock lives on the scenario)", () => {
-    const drifted = driftChatState(base(), makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
-    expect(drifted.meters.hygiene).toBeLessThan(0.9); // drifts toward the grime pole
-    expect(drifted.meters.energy).toBeLessThan(0.9);
+  it("changes nothing when no story time elapsed, and a re-read at one clock is a no-op", () => {
+    const tired = stamped(100, { meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 100, calendarStart: CAL })).toBe(tired);
+    const caughtUp = driftChatState(tired, makeProfile(), { clockMinutes: 640, calendarStart: CAL });
+    expect(caughtUp.metersAtMinutes).toBe(640);
+    expect(caughtUp.meters.hygiene).toBeLessThan(0.2);
+    // Re-reading the caught-up state at the same clock moves nothing ...
+    expect(driftChatState(caughtUp, makeProfile(), { clockMinutes: 640, calendarStart: CAL })).toBe(caughtUp);
+    // ... and re-reading the stored state is the same projection every time.
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 640, calendarStart: CAL })).toEqual(caughtUp);
   });
 
-  it("a read without advance is a pure pass-through — no wall-clock recovery exists (D8)", () => {
-    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
-    // However long the player was away, nothing moves: no second clock.
-    expect(driftChatState(tired, makeProfile(), { advance: false, clockMinutes: 0 })).toBe(tired);
-    expect(driftChatState(tired, makeProfile(), { clockMinutes: 0 })).toBe(tired);
+  it("a busy conversation barely moves hygiene and lands where one catch-up over the same minutes does", () => {
+    const start = stamped(0);
+    // Sixty exchanges, one story minute each, every one caught up and re-stamped.
+    let busy = start;
+    for (let clock = 1; clock <= 60; clock += 1) busy = driftChatState(busy, makeProfile(), { clockMinutes: clock, calendarStart: CAL });
+    const oneStep = driftChatState(start, makeProfile(), { clockMinutes: 60, calendarStart: CAL });
+    const moved = (start.meters.hygiene ?? Number.NaN) - (busy.meters.hygiene ?? Number.NaN);
+    expect(moved).toBeGreaterThan(0);
+    expect(moved).toBeLessThanOrEqual(hygieneRatePerHour() + 60 * METER_DRIFT_STEP_PRECISION); // one story hour's drift
+    for (const [id, value] of Object.entries(oneStep.meters)) {
+      expect(Math.abs((busy.meters[id] ?? Number.NaN) - value)).toBeLessThanOrEqual(60 * METER_DRIFT_STEP_PRECISION);
+    }
   });
 
-  it("never decays affinity (no between-visit decay)", () => {
-    const warm = base({ regard: 57 });
-    expect(driftChatState(warm, makeProfile(), { advance: false, clockMinutes: 0 }).regard).toBe(57);
-    expect(driftChatState(warm, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES }).regard).toBe(57);
+  it("an away character catches up when read — through a daytime interval exactly as a present one does", () => {
+    const present = stamped(0);
+    const away = stamped(0, { presence: "away" });
+    const readPresent = driftChatState(present, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight, calendarStart: CAL });
+    const readAway = driftChatState(away, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight, calendarStart: CAL });
+    expect(readAway.meters).toEqual(readPresent.meters);
+    expect(readAway.meters).not.toEqual(away.meters);
+    expect(readAway.metersAtMinutes).toBe(CHAT_SKIP_MINUTES.overnight);
   });
 
-  it("expires conditions past the SHARED clock — even for a frozen (no-advance) member", () => {
+  it("holds an unstamped state at the clock it meets, and never integrates backwards", () => {
+    const seeded = seedChatState(makeProfile());
+    const met = driftChatState(seeded, makeProfile(), { clockMinutes: 900, calendarStart: CAL });
+    expect(met.meters).toEqual(seeded.meters);
+    expect(met.metersAtMinutes).toBe(900);
+    // A stamp ahead of the clock (the state settled, the tick did not) waits for it.
+    const ahead = stamped(901);
+    expect(driftChatState(ahead, makeProfile(), { clockMinutes: 900, calendarStart: CAL })).toBe(ahead);
+  });
+
+  it("never decays regard", () => {
+    const warm = stamped(0, { regard: 57 });
+    expect(driftChatState(warm, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.days, calendarStart: CAL }).regard).toBe(57);
+  });
+
+  it("expires conditions past the SHARED clock for every member", () => {
     const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
-    const withCondition = base({ conditions: [condition] });
-    // A clock past started + duration (2) ⇒ expired.
-    expect(driftChatState(withCondition, makeProfile(), { advance: true, clockMinutes: 3 }).conditions).toHaveLength(0);
-    // Away members share the ONE story timeline (ruling 8): only meter decay is
-    // skipped — their conditions still expire against the shared clock.
-    expect(driftChatState(withCondition, makeProfile(), { advance: false, clockMinutes: 3 }).conditions).toHaveLength(0);
+    const withCondition = stamped(0, { conditions: [condition], presence: "away" });
+    // A clock past started + duration (2) ⇒ expired, one story timeline for the roster.
+    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 3, calendarStart: CAL }).conditions).toHaveLength(0);
     // A read with the clock still at 0 keeps the condition running.
-    expect(driftChatState(withCondition, makeProfile(), { advance: false, clockMinutes: 0 }).conditions).toHaveLength(1);
+    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 0, calendarStart: CAL }).conditions).toHaveLength(1);
   });
 });
 
-describe("time skips (flavor-only v1, D14; split across scenario + member halves)", () => {
+describe("the energy reserve: sleep and collapse on the story clock", () => {
+  /** Chat minute of `hour:minute` on calendar day `day` (default anchor: day 0, 8:00am = minute 0). */
+  const at = (day: number, hour: number, minute = 0): number => day * 1_440 + hour * 60 + minute - 8 * 60;
+  const asleep = (startedAtMinutes: number, durationMinutes: number): ActiveCondition => ({
+    id: `sleep-${startedAtMinutes}`,
+    label: CHAT_ASLEEP_CONDITION_LABEL,
+    startedAtMinutes,
+    durationMinutes,
+    attributeEffects: [],
+  });
+  const withEnergy = (energy: number, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(makeProfile()),
+    metersAtMinutes: 0,
+    meters: { ...initialMeters(), energy },
+    ...overrides,
+  });
+  const drift = (state: ChatState, clockMinutes: number): ChatState =>
+    driftChatState(state, makeProfile(), { clockMinutes, calendarStart: CAL });
+  const energyRead = (state: ChatState): number =>
+    chatMeterReads(state, { clockMinutes: state.metersAtMinutes ?? 0, calendarStart: CAL }, makeProfile()).energy ??
+    Number.NaN;
+
+  it("sleep holds the reserve and credits it exactly once, even read after the sleep ended", () => {
+    const tired = withEnergy(0.3, { conditions: [asleep(60, 480)] });
+    const woke = drift(tired, 600);
+    // An hour's drain, eight hours asleep (+0.72 — past the 0.95 cap), an hour's drain.
+    expect(woke.meters.energy).toBe(applyMeterDrift({ energy: 0.95 }, 60).energy);
+    expect(woke.lastSleepEndedAtMinutes).toBe(540);
+    expect(woke.conditions).toEqual([]);
+    expect(drift(woke, 600)).toBe(woke);
+    expect(drift(tired, 600)).toEqual(woke);
+    // Caught up one story minute at a time, the same night credits the same sleep.
+    let stepped = tired;
+    for (let clock = 1; clock <= 600; clock += 1) stepped = drift(stepped, clock);
+    expect(Math.abs((stepped.meters.energy ?? Number.NaN) - (woke.meters.energy ?? Number.NaN))).toBeLessThanOrEqual(
+      600 * METER_DRIFT_STEP_PRECISION,
+    );
+    expect(stepped.lastSleepEndedAtMinutes).toBe(540);
+  });
+
+  it("a nap lifts the evening read and records the sleep that just ended", () => {
+    const day = withEnergy(0.9, { lastSleepEndedAtMinutes: at(0, 7) });
+    const napped = { ...day, conditions: [asleep(at(0, 14), 90)] };
+    const evening = at(0, 21);
+    const withNap = drift(napped, evening);
+    expect(energyRead(withNap)).toBeGreaterThan(energyRead(drift(day, evening)));
+    expect(withNap.lastSleepEndedAtMinutes).toBe(at(0, 15, 30));
+  });
+
+  it("collapse at the read's floor is forced sleep that restores the reserve once", () => {
+    // Up since 07:00 the day before yesterday, caught at 4am with little left.
+    const worn = withEnergy(0.2, { metersAtMinutes: at(1, 4) - 1, lastSleepEndedAtMinutes: at(-1, 7) });
+    const collapsed = drift(worn, at(1, 4));
+    const sleep = collapsed.conditions.find((c) => conditionKey(c) === CHAT_ASLEEP_CONDITION_LABEL);
+    expect(sleep?.startedAtMinutes).toBe(at(1, 4));
+    expect(sleep?.durationMinutes).toBe(CHAT_COLLAPSE_SLEEP_MINUTES);
+    expect(collapsed.meters.energy).toBeGreaterThanOrEqual(0);
+    // Read two hours after the collapse sleep ended: restored, woken, and the condition gone.
+    const later = drift(collapsed, at(1, 4) + CHAT_COLLAPSE_SLEEP_MINUTES + 120);
+    expect(later.meters.energy ?? 0).toBeGreaterThan((collapsed.meters.energy ?? 1) + 0.5);
+    expect(later.lastSleepEndedAtMinutes).toBe(at(1, 4) + CHAT_COLLAPSE_SLEEP_MINUTES);
+    expect(later.conditions.some((c) => conditionKey(c) === CHAT_ASLEEP_CONDITION_LABEL)).toBe(false);
+    expect(drift(later, at(1, 4) + CHAT_COLLAPSE_SLEEP_MINUTES + 120)).toBe(later);
+  });
+
+  it("never collapses a character with no sleep on record", () => {
+    const worn = withEnergy(0.2, { metersAtMinutes: at(1, 4) - 1 });
+    expect(drift(worn, at(1, 4)).conditions).toEqual([]);
+  });
+});
+
+describe("routine crossings on skipped and away time", () => {
+  /** Chat minute of `hour:minute` on calendar day `day` (default anchor: day 0, 8:00am = minute 0). */
+  const at = (day: number, hour: number, minute = 0): number => day * 1_440 + hour * 60 + minute - 8 * 60;
+  const row = (kind: ScheduleEntry["kind"], startMinute: number, endMinute: number): ScheduleEntry => ({
+    startMinute,
+    endMinute,
+    locationName: "home",
+    activity: kind ?? "errands",
+    ...(kind === undefined ? {} : { kind }),
+  });
+  /** No typed sleep or wash row: the default 23:00–07:00 night and the default wash as it ends. */
+  const untyped = makeProfile();
+  const evening = (profile: CharacterProfile, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(profile),
+    metersAtMinutes: at(0, 22),
+    meters: { ...initialMeters(), hygiene: 0.8, energy: 0.9 },
+    ...overrides,
+  });
+  /** A seeded state whose meters hold at story minute `atMinutes` (mirrors the `driftChatState` describe's helper). */
+  const stamped = (atMinutes: number, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(untyped),
+    metersAtMinutes: atMinutes,
+    ...overrides,
+  });
+  const skipTo = (state: ChatState, profile: CharacterProfile, clockMinutes: number): ChatState =>
+    driftChatState(state, profile, { clockMinutes, calendarStart: CAL, skipped: true });
+  const readAt = (state: ChatState, profile: CharacterProfile, clockMinutes: number): ChatState =>
+    driftChatState(state, profile, { clockMinutes, calendarStart: CAL });
+  /** Hygiene drifted `minutes` with no wash, to the documented step precision. */
+  const expectUnwashed = (state: ChatState, minutes: number, steps: number) =>
+    expect(
+      Math.abs((state.meters.hygiene ?? Number.NaN) - (applyMeterDrift({ hygiene: 0.8 }, minutes).hygiene ?? 0)),
+    ).toBeLessThanOrEqual(steps * METER_DRIFT_STEP_PRECISION);
+
+  it("a skip to 08:00 across the default 07:00 wash gets it; one ending at 06:00 does not", () => {
+    const washed = skipTo(evening(untyped), untyped, at(1, 8));
+    // Drift after the wash counts only the hour since it — and a re-read credits nothing more.
+    expect(washed.meters.hygiene).toBe(applyMeterDrift({ hygiene: 0.95 }, 60).hygiene);
+    expect(skipTo(washed, untyped, at(1, 8))).toBe(washed);
+    expectUnwashed(skipTo(evening(untyped), untyped, at(1, 6)), 480, 2);
+  });
+
+  it("a typed wash row replaces the default morning wash and lands at its own window's end", () => {
+    const eveningBather = makeProfile({ schedule: [row("wash", 1_140, 1_170)] }); // 19:00–19:30
+    expectUnwashed(skipTo(evening(eveningBather), eveningBather, at(1, 8)), 600, 3);
+    const bathed = skipTo(evening(eveningBather, { metersAtMinutes: at(0, 18) }), eveningBather, at(0, 20));
+    expect(bathed.meters.hygiene).toBe(applyMeterDrift({ hygiene: 0.95 }, 30).hygiene);
+  });
+
+  it("an away member's catch-up credits the default night exactly as a present member's skip does, however it is read", () => {
+    const skipped = skipTo(evening(untyped), untyped, at(1, 8));
+    const away = readAt(evening(untyped, { presence: "away" }), untyped, at(1, 8));
+    expect(away.meters).toEqual(skipped.meters);
+    expect(away.meters.energy ?? 0).toBeGreaterThan(0.85); // slept: held and credited
+    expect(away.lastSleepEndedAtMinutes).toBe(at(1, 7));
+    expect(skipped.lastSleepEndedAtMinutes).toBe(at(1, 7));
+    // One story minute at a time (an away member through a night of exchanges):
+    // the same night and the same wash, each credited once.
+    let stepped = evening(untyped, { presence: "away" });
+    for (let clock = at(0, 22) + 1; clock <= at(1, 8); clock += 1) stepped = readAt(stepped, untyped, clock);
+    for (const [id, value] of Object.entries(away.meters)) {
+      expect(Math.abs((stepped.meters[id] ?? Number.NaN) - value)).toBeLessThanOrEqual(600 * METER_DRIFT_STEP_PRECISION);
+    }
+    expect(stepped.lastSleepEndedAtMinutes).toBe(at(1, 7));
+  });
+
+  it("a present character talking through bedtime crosses nothing — no sleep, no wash", () => {
+    const stayedUp = readAt(evening(untyped), untyped, at(1, 8));
+    const slept = skipTo(evening(untyped), untyped, at(1, 8));
+    expect(stayedUp.meters.energy ?? 1).toBeLessThan(slept.meters.energy ?? 0);
+    expectUnwashed(stayedUp, 600, 1);
+    expect(stayedUp.lastSleepEndedAtMinutes).toBeNull();
+  });
+
+  it("a meal row restores nothing and a kind-less row does nothing", () => {
+    const busyDay = makeProfile({ schedule: [row("meal", 720, 780), row(undefined, 840, 900)] });
+    const start = (profile: CharacterProfile) => evening(profile, { metersAtMinutes: at(0, 8) });
+    expect(skipTo(start(busyDay), busyDay, at(0, 18)).meters).toEqual(skipTo(start(untyped), untyped, at(0, 18)).meters);
+  });
+
+  it("a typed sleep row replaces the default night; a skip landing inside it wakes a present member only", () => {
+    const lateSleeper = makeProfile({ schedule: [row("sleep", 60, 540)] }); // 01:00–09:00
+    const skipped = skipTo(evening(lateSleeper), lateSleeper, at(1, 8));
+    const away = readAt(evening(lateSleeper, { presence: "away" }), lateSleeper, at(1, 8));
+    expect(away.meters).toEqual(skipped.meters);
+    expect(skipped.lastSleepEndedAtMinutes).toBe(at(1, 8)); // the scene resumed: awake
+    expect(away.lastSleepEndedAtMinutes).toBeNull(); // still asleep off-scene
+  });
+
+  it("a standing `heated` condition suspends ambient arousal drift, and drift resumes once it expires (#301)", () => {
+    const heated: ActiveCondition = {
+      id: "heated",
+      label: "Heated",
+      startedAtMinutes: 0,
+      durationMinutes: CHAT_HEATED_CONDITION_MINUTES,
+      attributeEffects: [],
+    };
+    const withHeated = stamped(0, {
+      meters: { ...initialMeters(), arousal: 0.5, hygiene: 0.5 },
+      conditions: [heated],
+    });
+    // Within the condition's window: arousal holds still while hygiene keeps moving
+    // (accelerated, not suspended — see the dedicated multiplier test below).
+    const withinWindow = driftChatState(withHeated, makeProfile(), { clockMinutes: CHAT_HEATED_CONDITION_MINUTES - 1, calendarStart: CAL });
+    expect(withinWindow.meters.arousal).toBe(0.5);
+    expect(withinWindow.meters.hygiene).toBeLessThan(0.5);
+    expect(withinWindow.conditions).toHaveLength(1);
+    // Once `heated` expires unrenewed, ambient arousal drift resumes — the backstop
+    // for a completion the pulse never classified (#301 acceptance item 3).
+    const afterExpiry = driftChatState(withHeated, makeProfile(), { clockMinutes: CHAT_HEATED_CONDITION_MINUTES + 60, calendarStart: CAL });
+    expect(afterExpiry.meters.arousal).toBeLessThan(0.5);
+    expect(afterExpiry.conditions).toHaveLength(0);
+  });
+
+  it("`heated` accelerates hygiene's drift to a small multiple of its base rate (#303 owner ruling 2026-09-27), and it resumes the base rate once heated expires", () => {
+    const heated: ActiveCondition = {
+      id: "heated",
+      label: "Heated",
+      startedAtMinutes: 0,
+      durationMinutes: CHAT_HEATED_CONDITION_MINUTES,
+      attributeEffects: [],
+    };
+    const withHeated = stamped(0, { meters: { ...initialMeters(), hygiene: 0.8 }, conditions: [heated] });
+    const withoutHeated = stamped(0, { meters: { ...initialMeters(), hygiene: 0.8 } });
+    const drift = (state: ChatState, clockMinutes: number) =>
+      driftChatState(state, makeProfile(), { clockMinutes, calendarStart: CAL }).meters.hygiene ?? Number.NaN;
+
+    const windowEnd = CHAT_HEATED_CONDITION_MINUTES - 1; // stays within heated's window
+    const heatedLoss = 0.8 - drift(withHeated, windowEnd);
+    const ordinaryLoss = 0.8 - drift(withoutHeated, windowEnd);
+    expect(heatedLoss).toBeGreaterThan(ordinaryLoss);
+    expect(Math.abs(heatedLoss - ordinaryLoss * CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER)).toBeLessThanOrEqual(
+      2 * METER_DRIFT_STEP_PRECISION,
+    );
+
+    // Once heated expires unrenewed, hygiene drifts at its ordinary base rate again: the
+    // gap it opened during the accelerated window should FREEZE, not keep widening — if
+    // acceleration outlived the condition, the gap would keep growing past this point.
+    const later = CHAT_HEATED_CONDITION_MINUTES + 60;
+    const gapAtWindowEnd = drift(withoutHeated, windowEnd) - drift(withHeated, windowEnd);
+    const gapLater = drift(withoutHeated, later) - drift(withHeated, later);
+    expect(Math.abs(gapLater - gapAtWindowEnd)).toBeLessThanOrEqual(4 * METER_DRIFT_STEP_PRECISION);
+  });
+});
+
+describe("time skips (split across scenario + member halves)", () => {
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
   const scen = (overrides: Partial<ChatScenario> = {}): ChatScenario => ({ ...seedChatScenario(makeProfile()), ...overrides });
   const now = new Date("2026-07-02T12:00:00Z");
@@ -313,11 +579,31 @@ describe("time skips (flavor-only v1, D14; split across scenario + member halves
     expect(skipped.pendingSkipNote).toMatch(/once/);
   });
 
-  it("meters do NOT change (D14 — narrative flavor, never a flat recovery rule)", () => {
-    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.1, intoxication: 0.8 } });
-    const skipped = applyTimeSkip(tired, "days", CHAT_SKIP_MINUTES.days);
-    expect(skipped.meters).toEqual(tired.meters);
-    expect(skipped.regard).toBe(tired.regard);
+  it("every member's meters follow the skipped minutes; only a present member takes the scene-boundary half", () => {
+    const felt = { current: { label: "angry" as const, intensity: 0.9, cause: "the lie" }, bruise: { remaining: 4 } };
+    const tired = base({
+      metersAtMinutes: 0,
+      meters: { ...initialMeters(), hygiene: 0.2, energy: 0.1, intoxication: 0.8 },
+      familiaritySceneGain: 3,
+      feeling: felt,
+    });
+    const clock = CHAT_SKIP_MINUTES.overnight;
+    const drifted = driftChatState(tired, makeProfile(), { clockMinutes: clock, calendarStart: CAL });
+    const present = skipChatMember(tired, "overnight", clock, makeProfile());
+    const away = skipChatMember({ ...tired, presence: "away" }, "overnight", clock, makeProfile());
+    // Physiology is presence-independent: both integrate the same interval ...
+    expect(present.meters).toEqual(drifted.meters);
+    expect(away.meters).toEqual(drifted.meters);
+    expect(away.metersAtMinutes).toBe(clock);
+    // ... and a skip is never a flat recovery: nothing moved back toward rested.
+    expect(present.meters.hygiene).toBeLessThanOrEqual(0.2);
+    expect(present.meters.energy).toBeLessThanOrEqual(0.1);
+    // The scene-boundary half belongs to the scene.
+    expect(present.familiaritySceneGain).toBe(0);
+    expect(present.feeling).not.toEqual(felt);
+    expect(away.familiaritySceneGain).toBe(3);
+    expect(away.feeling).toEqual(felt);
+    expect(present.regard).toBe(tired.regard);
   });
 
   it("lets already-running timed conditions expire through the existing clock-keyed filter", () => {
@@ -359,6 +645,7 @@ describe("applyChatPulse (the deterministic reaction curve)", () => {
     mindNote,
     feeling: null,
     sentPhoto: false,
+    intimateScene: null,
   });
 
   it("a liked act raises affinity (clamped) and lifts mood, and records the trace", () => {
@@ -424,6 +711,7 @@ describe("applyChatPulse (the deterministic reaction curve)", () => {
       mindNote: "she's glad she reached out first",
       feeling: { label: "neutral", cause: "" },
       sentPhoto: true,
+      intimateScene: null,
     });
     expect(trace.sentPhoto).toBe(true);
     expect(trace.concept).toBeNull();
@@ -434,7 +722,13 @@ describe("applyChatPulse (the deterministic reaction curve)", () => {
     expect(next.mindNote).toBe("she's glad she reached out first");
     expect(trace.changed).toEqual(["mindNote"]);
     // An empty note keeps the prior one and reports no change.
-    const quiet = applyOpenerPulse(standing, { playerAct: null, mindNote: "", feeling: null, sentPhoto: false });
+    const quiet = applyOpenerPulse(standing, {
+      playerAct: null,
+      mindNote: "",
+      feeling: null,
+      sentPhoto: false,
+      intimateScene: null,
+    });
     expect(quiet.state.mindNote).toBe("prior");
     expect(quiet.trace.changed).toEqual([]);
   });
@@ -456,6 +750,118 @@ describe("applyChatPulse (the deterministic reaction curve)", () => {
     const { state: next, trace } = applyChatPulse(state(), pulse("proposition"), prude, "Mara", []);
     expect(trace.arousalDelta).toBe(0);
     expect(next.meters.arousal).toBe(0);
+  });
+
+  describe("the one scene-level intimate-activity read (#301 arousal/afterglow + #303 hygiene)", () => {
+    it("completion settles arousal below the flushed band even for a high-libido profile, never re-adding this exchange's concept bump", () => {
+      const highLibido = makeProfile({ traits: [{ id: "intimate.libido", value: 100, source: "creation" }] });
+      const cresting: ChatState = { ...state(), meters: { ...state().meters, arousal: 0.95 } };
+      const { state: next, trace } = applyChatPulse(
+        cresting,
+        { ...pulse("proposition"), intimateScene: "completed" },
+        highLibido,
+        "Mara",
+        [],
+      );
+      // simulation-core's "flushed" floor is 4_500 / METER_FIXED_POINT_ONE (10_000) = 0.45.
+      expect(next.meters.arousal).toBeLessThan(0.45);
+      // A net SETTLE DOWN, never the ordinary +CHAT_AROUSAL_INTIMATE bump landing on top.
+      expect(trace.arousalDelta).toBeLessThanOrEqual(0);
+      expect(next.conditions.some((c) => c.label === "Afterglow")).toBe(true);
+      expect(next.conditions.some((c) => c.label === "Heated")).toBe(false);
+    });
+
+    it("an 'active' read sustains the ordinary concept-driven arousal bump and renews `heated`", () => {
+      const { state: next, trace } = applyChatPulse(
+        state(),
+        { ...pulse("proposition"), intimateScene: "active" },
+        makeProfile(),
+        "Mara",
+        [],
+      );
+      expect(trace.arousalDelta).toBeCloseTo(CHAT_AROUSAL_INTIMATE, 5);
+      const heated = next.conditions.find((c) => c.label === "Heated");
+      expect(heated?.durationMinutes).toBe(CHAT_HEATED_CONDITION_MINUTES);
+    });
+
+    it("a missing/malformed intimateScene leaves the ordinary pulse effects intact (the backstop is ambient drift, not this fold)", () => {
+      const before = state();
+      const { state: next, trace } = applyChatPulse(before, pulse("compliment"), likeProfile, "Mara", []);
+      expect(trace.intimateScene).toBeNull();
+      expect(trace.hygieneDelta).toBe(0);
+      expect(next.meters.hygiene).toBe(before.meters.hygiene);
+      expect(trace.regardDelta).toBeGreaterThan(0); // the ordinary concept-reaction curve still ran
+    });
+
+    it("an 'active' read no longer costs hygiene directly (#303 owner ruling 2026-09-27 — the cost moved to ambient drift)", () => {
+      const before = state();
+      const { state: next, trace } = applyChatPulse(before, { ...pulse(null), intimateScene: "active" }, makeProfile(), "Mara", []);
+      expect(trace.hygieneDelta).toBe(0);
+      expect(next.meters.hygiene).toBe(before.meters.hygiene);
+      expect(trace.changed).not.toContain("hygiene");
+    });
+
+    it("only a 'completed' read charges hygiene directly, a small standalone one-time cost", () => {
+      const activeRun = applyChatPulse(state(), { ...pulse(null), intimateScene: "active" }, makeProfile(), "Mara", []);
+      const completedRun = applyChatPulse(state(), { ...pulse(null), intimateScene: "completed" }, makeProfile(), "Mara", []);
+      expect(activeRun.trace.hygieneDelta).toBe(0);
+      expect(completedRun.trace.hygieneDelta).toBe(-CHAT_HYGIENE_COMPLETION_COST);
+      expect(completedRun.trace.changed).toContain("hygiene");
+      // Comfortably under even the shallowest hygiene band (the odor band is ~0.09 wide).
+      expect(Math.abs(completedRun.trace.hygieneDelta)).toBeLessThan(0.09);
+    });
+
+    it("a missing/degraded intimateScene read leaves hygiene untouched by the pulse (apart from elapsed-time drift, handled elsewhere)", () => {
+      const before = state();
+      const { state: next, trace } = applyChatPulse(before, pulse("compliment"), likeProfile, "Mara", []);
+      expect(trace.hygieneDelta).toBe(0);
+      expect(next.meters.hygiene).toBe(before.meters.hygiene);
+    });
+
+    describe("the minor fence (P1, #301 review) — arousal/intimate-scene effects never apply to an authored minor", () => {
+      it("applies no arousal bump from any concept, minor or not otherwise identical", () => {
+        const { trace } = applyChatPulse(state(), pulse("proposition"), makeProfile(), "Mara", [], { minor: true });
+        expect(trace.arousalDelta).toBe(0);
+      });
+
+      it("ignores intimateScene entirely — no heated condition, no arousal move, no hygiene cost", () => {
+        const before = state();
+        const { state: next, trace } = applyChatPulse(
+          before,
+          { ...pulse("proposition"), intimateScene: "active" },
+          makeProfile(),
+          "Mara",
+          [],
+          { minor: true },
+        );
+        expect(trace.arousalDelta).toBe(0);
+        expect(trace.hygieneDelta).toBe(0);
+        expect(next.meters.arousal).toBe(before.meters.arousal);
+        expect(next.meters.hygiene).toBe(before.meters.hygiene);
+        expect(next.conditions.some((c) => c.label === "Heated")).toBe(false);
+      });
+
+      it("ignores a 'completed' read too — no afterglow, no settle, no mood/stress shift, no hygiene cost", () => {
+        // No concept (pulse(null)) isolates the scene effect: the ordinary concept-reaction
+        // curve contributes nothing of its own to mood/stress here, so any change to them
+        // could only have come from the afterglow effect this fence must suppress.
+        const cresting: ChatState = { ...state(), meters: { ...state().meters, arousal: 0.95 } };
+        const { state: next, trace } = applyChatPulse(
+          cresting,
+          { ...pulse(null), intimateScene: "completed" },
+          makeProfile(),
+          "Mara",
+          [],
+          { minor: true },
+        );
+        expect(trace.arousalDelta).toBe(0);
+        expect(trace.hygieneDelta).toBe(0);
+        expect(next.meters.arousal).toBe(0.95); // untouched — no settle
+        expect(next.conditions.some((c) => c.label === "Afterglow")).toBe(false);
+        expect(next.meters.mood).toBe(cresting.meters.mood);
+        expect(next.meters.stress).toBe(cresting.meters.stress);
+      });
+    });
   });
 
   it("resolves a reaction against the SCENARIO's setting-wide cards (followups ruling 9)", () => {
@@ -913,6 +1319,7 @@ describe("runChatPulse (demo ⇒ drift-only degrade)", () => {
       exchange: { player: "hi", assistant: "[Mara] \"hi\"" },
       activeSocialCards: [],
       sink,
+      clockMinutes: 0,
     });
     expect(degraded).toBe(true);
     expect(state.regard).toBe(12); // unchanged — drift-only
@@ -1064,6 +1471,7 @@ describe("emotional weather wiring", () => {
     mindNote: "",
     feeling: null,
     sentPhoto: false,
+    intimateScene: null,
     ...overrides,
   });
 
@@ -1104,14 +1512,17 @@ describe("emotional weather wiring", () => {
     expect(damped.trace.regardScale).toBeLessThan(1);
   });
 
-  it("drift decays the feeling per exchange; a days skip clears it", () => {
+  it("the exchange beat decays the feeling (elapsed time alone does not); a days skip clears it", () => {
     const felt = {
       ...seedChatState(makeProfile()),
+      metersAtMinutes: 0,
       feeling: { current: { label: "angry" as const, intensity: 0.9, cause: "the lie" }, bruise: { remaining: 4 } },
     };
-    const drifted = driftChatState(felt, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
-    expect(drifted.feeling.current?.intensity).toBeCloseTo(0.75);
-    expect(drifted.feeling.bruise?.remaining).toBe(3);
+    const beat = decayExchangeFeeling(felt);
+    expect(beat.feeling.current?.intensity).toBeCloseTo(0.75);
+    expect(beat.feeling.bruise?.remaining).toBe(3);
+    // Feeling is not elapsed-time physiology: the meter catch-up leaves it standing.
+    expect(driftChatState(felt, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.hours, calendarStart: CAL }).feeling).toEqual(felt.feeling);
     const skipped = applyTimeSkip(felt, "days", CHAT_SKIP_MINUTES.days);
     expect(skipped.feeling.current).toBeNull();
     expect(skipped.feeling.bruise).toBeNull();

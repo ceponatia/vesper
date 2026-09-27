@@ -17,12 +17,14 @@ import type { ChatExtractionResult } from "../chat-memory";
 import type { FinalizeChatStateInput } from "./finalize-types";
 import type { FinalizationAgents } from "./finalize-agents";
 import type { FinalizationNarrative } from "./narrative-fold";
+import { chatMeterReads } from "./readout";
 
 type FoldPrimaryPersonalFieldsInput = Pick<
   FinalizeChatStateInput,
   "driftedState"
   | "sink"
   | "scenario"
+  | "profile"
   | "assistantMessageId"
 >;
 
@@ -35,7 +37,11 @@ export function foldPrimaryPersonalFields(
   // Carry the archivist's memory queries for the
   // next turn's RAG recall (drop them on a degraded archivist so stale queries don't linger),
   // and fold any proposed attribute change into the evolving narrative overlays.
-  const surfacedCues = splitStateCues(input.driftedState.meters, input.driftedState.surfacedCues).nextBands;
+  // The bands come from the same meter reads the prompt saw (`chatMeterReads`).
+  const surfacedCues = splitStateCues(
+    chatMeterReads(input.driftedState, input.scenario, input.profile),
+    input.driftedState.surfacedCues,
+  ).nextBands;
   const attributeOverlays = archivist.value
     ? applyChatAttributeOverlays(input.driftedState.attributeOverlays, archivist.value.attributeChanges, input.sink)
     : input.driftedState.attributeOverlays;

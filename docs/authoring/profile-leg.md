@@ -92,8 +92,10 @@ coherent to land on.
 
 ## Daily rhythm
 
-Up to 4 `{dayPart: morning|afternoon|evening|night, activity, locationName, days?}` rows, grounded
-by `groundSchedule` into `profile.schedule`'s stored minute windows. The day-part vocabulary lives
+Up to 4 `{dayPart: morning|afternoon|evening|night, activity, locationName, days?, kind?}` rows,
+grounded by `groundSchedule` into `profile.schedule`'s stored minute windows. `kind` is the optional
+typed routine (`scheduleKinds`: sleep, wash, meal, work, leisure); the prompt asks for it only when
+one fits, and an unrecognized value reads as no kind. The day-part vocabulary lives
 in `contracts/world/profile.ts` (`SCHEDULE_DAY_PARTS`); rows missing an activity or a place drop,
 duplicate windows drop, and over-cap rows drop with `forge.character.profile.schedule_capped`.
 

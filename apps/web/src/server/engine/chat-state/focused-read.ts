@@ -29,11 +29,15 @@ export function participantStateView(args: {
   scenario: ChatScenario;
   profile: CharacterProfile;
   persisted: boolean;
+  /** The meters are another engine's (a world-routed primary's successor meters): they read as stored. */
+  worldMeters?: boolean;
 }) {
   const snapshot = chatStateSnapshot(args.state, args.scenario, {
     dominance: effectiveTraitValue(args.profile.traits, "social.dominance"),
     intimateContext: true,
     persisted: args.persisted,
+    profile: args.profile,
+    worldMeters: args.worldMeters ?? false,
   });
   return {
     characterId: args.characterId,
