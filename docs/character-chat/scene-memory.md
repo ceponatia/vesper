@@ -20,7 +20,9 @@ The memory is maintained **deterministic-first**, then reconciled by the archivi
      first function word ("to her desk and lean against it" reads `desk`, "to the table by the
      window" reads `table`), or an adverbial destination ("outside", "upstairs"). A preposition
      with no determiner after it ends the read ("walk over to talk", "go to bed", "walk over to
-     Wren").
+     Wren"). A verbless coordinated segment that opens on a path word continues the same verb's
+     motion to its own destination ("I walk past her and into the kitchen", "…, then through to
+     the kitchen"); a coordinated clause with its own subject or verb gets its own read.
    - **Kind** — a place; a position WITHIN the current place — furniture or a fixture, which never
      mints a stub (owner ruling 2026-09-27: "I walk over to the desk" is not a place change); or no
      destination at all — a body part, garment, or abstraction ("my hand to her thigh", "into my

@@ -178,6 +178,9 @@ export function chatCueInviteLine(cue: ChatCueHint, name: string): string {
 //    first function word ("to her desk and lean against it" → `desk`, "to the table by the
 //    window" → `table`), or an adverbial destination ("outside"). A preposition that no
 //    determiner follows ends the read: "walk over to talk", "go to bed", "walk over to Wren".
+//    A verbless coordinated segment that opens on a path word continues the SAME verb's
+//    motion to its own destination ("walk past her and into the kitchen", "…, then through
+//    to the kitchen"); a coordinated clause with its own subject or verb never does.
 // 2. WHAT KIND — a place; a position WITHIN the current place (furniture, a fixture — owner
 //    ruling on #330, 2026-09-27); or no destination at all: a body part, a garment, or an
 //    abstraction ("my hand to her thigh", "into my dress", "to an agreement") is a gesture
@@ -241,6 +244,16 @@ const SCENE_DEST_PREPOSITIONS = sceneWordSet("to into onto toward towards");
 const SCENE_DEST_DETERMINERS = sceneWordSet("the a an my your his her their our");
 /** Adverbial destinations ("we head outside", "let's go upstairs"); "out back"/"out front" too. */
 const SCENE_BARE_DESTINATIONS = sceneWordSet("outside inside indoors outdoors upstairs downstairs");
+/**
+ * First words of a verbless segment that continues the previous verb's path ("… and INTO the
+ * kitchen", "… and OUT to the patio", "…, then THROUGH to the kitchen").
+ */
+const SCENE_PATH_WORDS = sceneWordSet(`
+  to into onto toward towards out back over down up through past across along around away in
+  inside outside indoors outdoors upstairs downstairs straight right
+`);
+/** What may join a path continuation to its verb: a comma or dash, "and", "then". */
+const SCENE_CONTINUATION_JOINS = sceneWordSet(", \u2013 \u2014 - and then");
 /** Clause boundaries (with clause punctuation): no read crosses one forward. */
 const SCENE_CLAUSE_CONJUNCTIONS = sceneWordSet(`
   and but or nor yet so then while whereas as when once because since though although where
@@ -743,6 +756,56 @@ function sceneChosenDestination(
   return null;
 }
 
+/** The index of the first clause boundary at or after `from`: where that segment ends. */
+function sceneSegmentEnd(tokens: readonly SceneToken[], from: number): number {
+  let k = from;
+  while (k < tokens.length) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token)) break;
+    k += 1;
+  }
+  return k;
+}
+
+/**
+ * Where the verbless segment continuing a verb's path begins, past the boundary at `at`
+ * ("I walk past her AND INTO the kitchen", "…, THEN THROUGH to the kitchen"), or null. Only a
+ * comma or dash, "and", or "then" joins one, and the segment must open on a path word — so a
+ * coordinated clause with its own subject ("and we head outside") or its own verb ("and lean
+ * against it") is never read as the same motion; it gets its own read.
+ */
+function scenePathContinuationAt(tokens: readonly SceneToken[], at: number): number | null {
+  let k = at;
+  while (k < tokens.length) {
+    const token = tokens[k];
+    if (token === undefined) return null;
+    if (!sceneIsBoundary(token)) break;
+    if (!SCENE_CONTINUATION_JOINS.has(token.text)) return null;
+    k += 1;
+  }
+  const first = tokens[k];
+  return first !== undefined && SCENE_PATH_WORDS.has(first.text) ? k : null;
+}
+
+/**
+ * Every destination one verb's motion reaches, in order: its own segment's, then each path
+ * continuation's ("I walk over to her desk and into the back room" → `desk`, `back room`).
+ */
+function sceneVerbDestinations(
+  tokens: readonly SceneToken[],
+  from: number,
+  read: SceneReadContext,
+): readonly { readonly name: string; readonly withinPlace: boolean }[] {
+  const destinations: { readonly name: string; readonly withinPlace: boolean }[] = [];
+  let start: number | null = from;
+  while (start !== null) {
+    const destination = sceneChosenDestination(sceneDestinationAfter(tokens, start), read);
+    if (destination !== null) destinations.push(destination);
+    start = scenePathContinuationAt(tokens, sceneSegmentEnd(tokens, start));
+  }
+  return destinations;
+}
+
 interface SceneMoveCandidate {
   readonly destination: string;
   readonly withinPlace: boolean;
@@ -750,31 +813,36 @@ interface SceneMoveCandidate {
   readonly playerMoves: boolean;
 }
 
-function sceneMoveCandidateAt(
+function sceneMoveCandidatesAt(
   sentence: string,
   tokens: readonly SceneToken[],
   v: number,
   firstWord: number,
   read: SceneReadContext,
-): SceneMoveCandidate | null {
+): readonly SceneMoveCandidate[] {
   const verb = tokens[v];
-  if (verb === undefined) return null;
+  if (verb === undefined) return [];
   const makesWay =
     SCENE_MAKE_WAY_VERBS.has(verb.text) &&
     SCENE_POSSESSIVES.has(tokens[v + 1]?.text ?? "") &&
     tokens[v + 2]?.text === "way";
-  if (!SCENE_MOVE_VERBS.has(verb.text) && !makesWay) return null;
+  if (!SCENE_MOVE_VERBS.has(verb.text) && !makesWay) return [];
   const flags = chatEvidenceCandidateFlags(sentence, verb.index);
-  if (flags.question || flags.negated || flags.irrealis || flags.historical) return null;
+  if (flags.question || flags.negated || flags.irrealis || flags.historical) return [];
   const objectAt = makesWay ? null : v + 1;
-  if (objectAt !== null && sceneObjectIsGesture(tokens, objectAt)) return null;
+  if (objectAt !== null && sceneObjectIsGesture(tokens, objectAt)) return [];
 
-  const destination = sceneChosenDestination(sceneDestinationAfter(tokens, makesWay ? v + 3 : v + 1), read);
-  if (destination === null) return null;
+  const destinations = sceneVerbDestinations(tokens, makesWay ? v + 3 : v + 1, read);
+  if (destinations.length === 0) return [];
 
+  // One mover for the verb's whole path, continuations included.
   const playerMoves =
     (objectAt !== null && sceneObjectIsPlayer(tokens, objectAt, read)) || sceneSubjectIsPlayer(tokens, v, firstWord, read);
-  return { destination: destination.name, withinPlace: destination.withinPlace, playerMoves };
+  return destinations.map((destination) => ({
+    destination: destination.name,
+    withinPlace: destination.withinPlace,
+    playerMoves,
+  }));
 }
 
 /**
@@ -797,12 +865,12 @@ function sceneMovementRead(
     const tokens = sceneTokens(text);
     const firstWord = tokens.findIndex((token) => token.word);
     for (let v = 0; v < tokens.length; v += 1) {
-      const candidate = sceneMoveCandidateAt(text, tokens, v, firstWord, read);
-      if (candidate === null) continue;
-      if (candidate.withinPlace) {
-        if (candidate.playerMoves) withinPlace = candidate.destination;
-      } else if (candidate.playerMoves || read.narratorInput) {
-        place = candidate.destination;
+      for (const candidate of sceneMoveCandidatesAt(text, tokens, v, firstWord, read)) {
+        if (candidate.withinPlace) {
+          if (candidate.playerMoves) withinPlace = candidate.destination;
+        } else if (candidate.playerMoves || read.narratorInput) {
+          place = candidate.destination;
+        }
       }
     }
   }

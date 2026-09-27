@@ -256,6 +256,19 @@ describe("detectSceneMovement (chat scene memory)", () => {
     );
   });
 
+  it("carries a verb's motion through a verbless coordinated continuation, never a new clause (#330)", () => {
+    expect(movement("I walk past her and into the kitchen.")).toEqual(placeChange("kitchen"));
+    expect(movement("I walk past the bar and out to the patio.")).toEqual(placeChange("patio"));
+    expect(movement("I walk down the hall, then through to the kitchen.")).toEqual(placeChange("kitchen"));
+    // The continuation's place change is the last one, so the desk's within-place move yields to it.
+    expect(movement("I walk over to her desk and into the back room.")).toEqual(placeChange("back room"));
+    // The continuation shares the verb's mover: a third party's path stays theirs in player input.
+    expect(movement("The bartender walks past me and into the kitchen.")).toEqual(NO_MOVE);
+    expect(detectSceneMovement("The bartender walks past me and into the kitchen.", { narratorInput: true })).toBe(
+      "kitchen",
+    );
+  });
+
   it("never reads a gesture, a garment, or an idiom as locomotion", () => {
     expect(movement("I move my hand to her thigh.")).toEqual(NO_MOVE);
     expect(movement("I bring the glass to my lips.")).toEqual(NO_MOVE);
