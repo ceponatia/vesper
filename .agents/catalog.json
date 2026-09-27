@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "namespace": "vesper",
-  "notes": "Canonical Vesper agent roles. rolesync renders .claude/agents, .codex/agents and .claude/skills from these sources; edit them here, then run `rolesync sync`. AGENTS.md owns the routing policy and model tables. Tiers mirror across platforms: Sonnet <-> Terra, Opus <-> Sol. Claude `tools: [\"*\"]` inherits every tool; read-only roles list an explicit set. The Claude orchestrator is the main-session agent through `.claude/settings.json` `agent`.",
+  "notes": "Canonical Vesper agent roles. rolesync renders .claude/agents, .codex/agents and .claude/skills from these sources; edit them here, then run `rolesync sync`. AGENTS.md owns the routing policy and model tables. Tiers mirror across platforms: Sonnet <-> Terra, Opus <-> Sol. Claude `tools: [\"*\"]` inherits every tool; read-only roles list an explicit set. Codex writer roles that work in `.codex/worktrees/` use `danger-full-access`, the mode they inherited before rolesync, because `workspace-write` leaves `.codex/` and `.git` read-only. The Claude orchestrator is the main-session agent through `.claude/settings.json` `agent`.",
   "roles": [
     {
       "id": "orchestrator",
@@ -9,7 +9,7 @@
       "description": "Top-level Vesper session agent and the project's default Claude agent: plans from the issue, delegates bounded slices to the pinned vesper-* roles, reviews and integrates their work, and owns delivery through vesper-board and vesper-pr-review. Main-session only; never a delegation target.",
       "source": ".agents/roles/orchestrator.md",
       "skill": "vesper-agent-build",
-      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "high", "sandbox_mode": "workspace-write"},
+      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "high", "sandbox_mode": "danger-full-access"},
       "claude": {"model": "claude-opus-5-5", "effort": null, "maxTurns": 400, "tools": ["*"], "permissionMode": "default", "isolation": null}
     },
     {
@@ -18,16 +18,16 @@
       "description": "Default implementation worker for one bounded Vesper slice with a brief. Use for well-specified issues, ordinary fixes, tests, contained refactors and mechanical work. Edits only its owned paths, runs no local gates, commits by pathspec, never pushes, and escalates instead of retrying.",
       "source": ".agents/roles/builder.md",
       "skill": "vesper-agent-build",
-      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "workspace-write"},
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "danger-full-access"},
       "claude": {"model": "sonnet", "effort": null, "maxTurns": 200, "tools": ["*"], "permissionMode": "default", "isolation": null}
     },
     {
       "id": "escalation",
       "name": "vesper-escalation",
-      "description": "Escalation for a Vesper slice: takes over from a builder's escalation record once its correction round is exhausted, or owns from the start a slice touching kernel or simulation-core logic, migrations, authorization, persistence or replay correctness. Reconsiders the approach rather than repairing the previous patch.",
+      "description": "Escalation for a Vesper slice: takes over from a builder's escalation record when AGENTS.md's escalation triggers are met, or owns from the start a slice touching kernel or simulation-core logic, migrations, authorization, persistence or replay correctness. Reconsiders the approach rather than repairing the previous patch.",
       "source": ".agents/roles/escalation.md",
       "skill": "vesper-agent-build",
-      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "high", "sandbox_mode": "workspace-write"},
+      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "high", "sandbox_mode": "danger-full-access"},
       "claude": {"model": "opus", "effort": null, "maxTurns": 200, "tools": ["*"], "permissionMode": "default", "isolation": null}
     },
     {

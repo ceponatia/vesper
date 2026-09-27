@@ -1,6 +1,6 @@
 # Call the live API
 
-Use `../fly-api.sh` from this skill directory for authenticated JSON calls. It obtains the QA password without printing it, maintains a mode-600 cookie jar, adds the required `Origin`, retries once after a 401, prints only the final response body to stdout, and fails on non-2xx responses by default.
+Use `.agents/skills/verify/fly-api.sh` for authenticated JSON calls. It obtains the QA password without printing it, maintains a mode-600 cookie jar, adds the required `Origin`, retries once after a 401, prints only the final response body to stdout, and fails on non-2xx responses by default.
 
 From the repository root:
 

@@ -3,8 +3,9 @@
 ## Discovery and runtime changes
 
 - Confirm the active host's discovery locations and actual loaded skill catalog.
-  Vesper's canonical sources are real directories in `.agents/skills`; legacy
-  `.claude/skills` entries link to them. A valid link alone is not runtime proof.
+  Vesper's canonical sources are real directories in `.agents/skills`; rolesync
+  renders the `.claude/skills` copies from them. A current copy alone is not
+  runtime proof.
 - Use the native `openai-docs` workflow for current Codex capability questions.
   Inspect local configuration and available tool schemas first. Do not replace
   a product name while retaining another host's API.
@@ -33,7 +34,7 @@ Choose relevant cases rather than running this entire list after every edit:
   missing fields, readback mismatch, and upstream command errors.
 - Worktree helpers: preexisting paths/branches, unrelated dirty state, legacy
   paths, moving refs, and failures without destructive fallback.
-- Structure helper: missing resources, broken compatibility links, scoped checks,
+- Structure helper: missing resources, non-directory canonical skills, scoped checks,
   and the CLI JSON/exit-status contract. Separately inspect local links and bare
   command paths in changed Markdown; resolve them from the containing file or
   documented working directory, excluding illustrative placeholders.

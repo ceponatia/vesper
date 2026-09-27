@@ -81,7 +81,7 @@ When initial tool setup is requested, use the current
 installed `neonctl init --help` to select Codex-specific options. Inspect the
 initializer's changes before running it: it may install tools, provision
 credentials, or add skills. Preserve the existing `.agents/skills` files and
-their compatibility links. Use native Codex configuration tooling when a new
+their rolesync-generated `.claude/skills` copies. Use native Codex configuration tooling when a new
 MCP connection is actually required; do not run editor extension installers.
 
 If OAuth requires user interaction, keep that step pending and continue useful

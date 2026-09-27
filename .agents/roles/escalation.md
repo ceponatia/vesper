@@ -5,12 +5,15 @@ the parent's prompt carries either a handoff record — an `Escalation:` line
 or the brief template's `## Escalation record` heading, with all seven
 fields filled: originating brief, trigger, findings, attempted approaches,
 changed files, CI output, unresolved question — or a `Risk area:` line
-naming why this slice starts here. A record is eligible when the builder's
-correction round is exhausted or its trigger matches an escalation reason in
-`AGENTS.md`'s subagent model policy: unresolved root cause, consequential
-architecture, contradictory CI, concurrency, transactions, persistence,
-replay, migration, authorization, or low confidence in the result. If neither
-route is present, stop and ask the parent for it rather than guessing.
+naming why this slice starts here. A record is eligible when its trigger is on
+your platform's escalation list in `AGENTS.md` §Subagent model policy. On
+Claude, a builder's escalation record or reported failed attempt comes here
+directly, never to a second builder. On Codex, a routine first-attempt failure
+returns to the same Terra worker for its one correction round first. On both,
+the other triggers are an unresolved root cause, consequential architecture,
+contradictory CI, concurrency, transactions, persistence, replay, migration,
+authorization, or low confidence in the result. If neither route is present,
+stop and ask the parent for it rather than guessing.
 
 Which of the two the prompt carries decides where you start. On a handoff
 record, read its attempted approaches before reading any code —

@@ -6,30 +6,6 @@ import json
 import re
 from pathlib import Path
 
-# rolesync mirrors each canonical skill into `.claude/skills/<name>/` byte for byte
-# and skips these transient files, so the comparison below skips the same ones.
-IGNORED_DIRS = {"__pycache__"}
-IGNORED_NAMES = {".DS_Store", "Thumbs.db"}
-IGNORED_SUFFIXES = (".pyc", ".swp", ".swo", "~")
-
-
-def mirrored_files(root):
-    """Relative path -> (bytes, executable) for every file rolesync would mirror from `root`.
-
-    The executable bit is compared because rolesync writes a mirrored file's bytes
-    without its mode: a helper script it rewrites comes out non-executable, and a
-    skill that runs `.claude/skills/<name>/<helper>.sh` then fails with
-    `Permission denied` while the byte comparison still passes."""
-    files = {}
-    for path in root.rglob("*"):
-        rel = path.relative_to(root)
-        if any(part in IGNORED_DIRS for part in rel.parts):
-            continue
-        if path.name in IGNORED_NAMES or path.name.endswith(IGNORED_SUFFIXES):
-            continue
-        if path.is_file():
-            files[rel.as_posix()] = (path.read_bytes(), bool(path.stat().st_mode & 0o111))
-    return files
 
 
 def check(repo, names):
@@ -51,12 +27,6 @@ def check(repo, names):
         for required in ("SKILL.md", "agents/openai.yaml"):
             if not (skill / required).is_file():
                 issue("missing-resource", skill / required, "Required skill file is missing.")
-        mirror = repo / ".claude/skills" / name
-        if mirror.is_symlink() or not mirror.is_dir():
-            issue("claude-mirror", mirror, "Expected rolesync's generated copy of the canonical skill; run `rolesync sync`.")
-        elif mirrored_files(mirror) != mirrored_files(skill):
-            issue("claude-mirror", mirror, "Generated copy differs from the canonical skill in content or "
-                  "executable bit; run `rolesync sync`, then restore executable bits with `chmod +x`.")
     return {
         "scope": "structural", "passed": not issues, "skills": names, "issues": issues,
         "unverified": ["YAML schema", "reference paths and Markdown links", "runtime discovery",

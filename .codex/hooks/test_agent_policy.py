@@ -1623,6 +1623,16 @@ class CodexModelPolicyTests(unittest.TestCase):
             )
         self.assertEqual(found, self.EXPECTED_ROLES)
 
+    def test_codex_worktree_writers_keep_full_access(self):
+        """Vesper worktrees live under `.codex/worktrees/`, and `workspace-write` leaves
+        `.codex/` and `.git` read-only, so a writer pinned to it could not edit or commit its
+        slice (#643 review, P1). These roles inherited `danger-full-access` before rolesync
+        required an explicit value."""
+        for name in ("vesper-builder", "vesper-escalation", "vesper-orchestrator"):
+            with self.subTest(role=name):
+                role = tomllib.loads((CODEX_ROLE_DIR / f"{name}.toml").read_text(encoding="utf-8"))
+                self.assertEqual(role.get("sandbox_mode"), "danger-full-access")
+
     def test_codex_config_does_not_define_unsupported_agent_defaults(self):
         config = tomllib.loads(CODEX_CONFIG.read_text(encoding="utf-8"))
         self.assertNotIn("agents", config)

@@ -12,7 +12,7 @@ Choose a focused project role when it materially helps the task:
 | `vesper-test-keeper` | Bring every test that owns a finished change up to date and report the CI evidence. |
 | `vesper-reviewer` | Review one diff semantically before integration or a PR, without editing. |
 | `vesper-escalation` | Reconsider a slice after its Terra correction cap or a documented consequential trigger, using its escalation record or named risk area. |
-| `vesper-orchestrator` | Coordinate a whole task when a session selects it; never spawned as a worker. |
+| `vesper-orchestrator` | Exists for parity with the Claude main-session agent; never spawned. |
 
 Codex project profiles pin their model and reasoning effort. Routine roles use
 Terra; the Sol routes mirror the roles Claude pins to Opus — semantic and

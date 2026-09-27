@@ -12,8 +12,8 @@ this skill owns repository compatibility and evidence of correct use.
 ## Establish scope
 
 Read the root instructions and affected entrypoints. Identify the symptom or
-change, affected callers, canonical sources, compatibility links, and current
-host. Inspect only the supporting references needed for that route.
+change, affected callers, canonical sources, the rolesync-generated copies, and
+current host. Inspect only the supporting references needed for that route.
 
 An audit begins read-only. Repair within the user's existing scope; do not
 install tools, change runtime configuration, publish changes, or expand to
@@ -29,11 +29,8 @@ python3 .agents/skills/vesper-skill-maintenance/scripts/check_structure.py vespe
 ```
 
 Omit names to check all repository skills. It verifies real canonical directories
-under `.agents/skills`, required files, and that each `.claude/skills` copy
-matches its canonical skill byte for byte, as `rolesync sync` generates it, with
-the same executable bits. rolesync does not carry a file's mode into the copy, so
-after a sync that rewrote a helper script, restore it with `chmod +x`. Its JSON
-report and exit status describe
+under `.agents/skills` and required files; `rolesync check` verifies the
+generated `.claude/skills` copies. Its JSON report and exit status describe
 **structure only**. It does not validate YAML, reference paths, Markdown links,
 runtime discovery, tool availability, or behavior.
 

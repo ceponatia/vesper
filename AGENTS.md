@@ -29,7 +29,7 @@ independently. Custom Codex roles pin their own model and effort:
 | `vesper-reviewer` | Sol / medium | Read-only semantic review of a diff before integration or a PR. |
 | `vesper-scenario-reviewer` | Sol / medium | Adversarial state-transition, authorization, and recovery analysis. |
 | `vesper-escalation` | Sol / high | An exhausted Terra correction round or a documented consequential trigger that needs a new model of the problem. |
-| `vesper-orchestrator` | Sol / high | Top-level coordination when a session selects it; Codex has no project default-agent setting. |
+| `vesper-orchestrator` | Sol / high | Parity with the Claude main-session agent only; Codex runs custom roles solely as spawned subagents, so it is never spawned. |
 
 For ad-hoc/default Codex roles, target Terra / medium through the spawn
 interface when it supports an explicit override; this is repository policy,
@@ -125,10 +125,9 @@ Subagents never run on the session's own model when that model is Fable.
 - Canonical skills live under `.agents/skills/`; agent roles live in `.agents/catalog.json`,
   `.agents/common.md`, and `.agents/roles/`. rolesync renders `.claude/agents/`, `.codex/agents/`, and the
   byte-for-byte skill copies in `.claude/skills/` from them. Edit only the canonical sources, then run
-  `rolesync sync` and `rolesync check`; never hand-edit a generated file. rolesync does not copy a file's
-  executable bit, so after a sync that rewrote a helper script, restore it with `chmod +x` and confirm with
-  `.agents/skills/vesper-skill-maintenance/scripts/check_structure.py`. Follow a matching skill when its
-  trigger applies.
+  `rolesync sync`; never hand-edit a generated file. CI's `rolesync check` fails a change whose generated
+  files are stale or hand-edited. The copies exist for Claude's skill discovery: run skill helpers from
+  `.agents/skills/`, never from `.claude/skills/`. Follow a matching skill when its trigger applies.
 - `vesper-docs` owns issue text and durable docs; `vesper-board` owns issue creation and lifecycle mechanics.
 - `vesper-agent-build` owns delegated implementation; `vesper-testing` test placement and CI selection;
   `vesper-pr-review` CI/review/merge; and `verify` authorized Fly evidence.
