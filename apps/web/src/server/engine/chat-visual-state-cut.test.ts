@@ -37,7 +37,7 @@ describe("chatVisualStateShadowInput — meters through the derived-read path", 
     });
 
     const expectedReads = chatMeterReads(state, scenario, profile);
-    expect(shadow.meters.energy).toBe(expectedReads.energy);
-    expect(shadow.meters.energy).toBeLessThan(state.meters.energy as number);
+    expect(shadow.meters?.energy).toBe(expectedReads.energy);
+    expect(shadow.meters?.energy).toBeLessThan(state.meters.energy as number);
   });
 });
