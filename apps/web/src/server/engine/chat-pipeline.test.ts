@@ -234,10 +234,11 @@ describe("withStreamTimeouts", () => {
 });
 
 // resolveReplyFailure (reply-failure surfacing) — the PURE verdict behind the
-// client's "didn't reply" popup: only a zero-text exchange records a failure,
-// the watchdog outranks the stop flag it shares an AbortController with, and a
-// clean empty stream is its own class. The persistence half (saveReplyFailure)
-// rides the exchange path covered by chat.int.test.ts.
+// client's "didn't reply" popup, and behind whether a reply settles at all: only a
+// zero-text exchange or a one-token `length` stub records a failure, the watchdog
+// outranks the stop flag it shares an AbortController with, and a clean empty
+// stream is its own class. The persistence half (saveReplyFailure) rides the
+// exchange path covered by chat.int.test.ts.
 
 describe("resolveReplyFailure", () => {
   const none = { hasText: false, stopped: false, streamError: null, timedOut: null } as const;
@@ -341,6 +342,51 @@ describe("resolveReplyFailure", () => {
 
     it("still records nothing for a genuine player Stop", () => {
       expect(resolveReplyFailure({ ...none, stopped: true, completion: completion({}) })).toBeNull();
+    });
+
+    // The one verdict an exchange WITH text can earn: a generation that ran to its own
+    // end reporting `length` after a single token of a far larger budget. Its fragment
+    // already streamed, and it must not settle into the transcript as a reply.
+    describe("the one-token length stub", () => {
+      const stub = completion({
+        finishReason: "length",
+        outputTokens: 1,
+        maxOutputTokens: 1024,
+        rawTextLength: 1,
+        visibleTextLength: 1,
+        visibleTextChars: 1,
+      });
+
+      it("records a streamed stub as a withheld reply rather than clearing the record", () => {
+        expect(resolveReplyFailure({ ...none, hasText: true, completion: stub })).toMatchObject({
+          code: "empty_reply",
+          cause: "length_stub",
+        });
+      });
+
+      it("still clears the record for a one-character reply that finished normally", () => {
+        expect(
+          resolveReplyFailure({ ...none, hasText: true, completion: { ...stub, finishReason: "stop" } }),
+        ).toBeNull();
+      });
+
+      // A partial the player chose to keep (Stop), or one a watchdog or a thrown
+      // stream error cut short, is kept exactly as before — the stub rule needs the
+      // generation to have finished on its own.
+      it("keeps a stopped, timed-out or errored partial whatever its metadata says", () => {
+        expect(resolveReplyFailure({ ...none, hasText: true, stopped: true, completion: stub })).toBeNull();
+        expect(
+          resolveReplyFailure({ ...none, hasText: true, stopped: true, timedOut: "overall", completion: stub }),
+        ).toBeNull();
+        expect(
+          resolveReplyFailure({
+            ...none,
+            hasText: true,
+            streamError: { code: "network", detail: "socket hang up" },
+            completion: stub,
+          }),
+        ).toBeNull();
+      });
     });
   });
 });

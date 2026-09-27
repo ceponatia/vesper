@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { chatReplyFailureCauses, chatReplyFailureCodes, type ChatReplyFailure } from "@/contracts";
-import { replyFailureToast } from "./reply-failure";
+import { replyFailureToast, replyWithdrawnAfterStreaming } from "./reply-failure";
 
 const FABLE = "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP";
 
@@ -112,7 +112,7 @@ describe("replyFailureToast", () => {
       const reasoning = replyFailureToast("Wren", failure({ code: "empty_reply", cause: "reasoning_spent" }), NOW);
       expect(reasoning.description).toContain("internal reasoning");
       expect(reasoning.description).not.toContain("without saying anything");
-      for (const cause of ["length_capped", "hidden_output"] as const) {
+      for (const cause of ["length_capped", "hidden_output", "length_stub"] as const) {
         const { description } = replyFailureToast("Wren", failure({ code: "empty_reply", cause }), NOW);
         expect(description).not.toMatch(/reasoning|thinking/i);
         expect(description).not.toContain("without saying anything");
@@ -129,5 +129,35 @@ describe("replyFailureToast", () => {
       const { description } = replyFailureToast("Wren", failure({ code: "empty_reply" }), NOW);
       expect(description).toContain("without saying anything");
     });
+  });
+});
+
+// The one verdict recorded for an exchange whose text DID stream: the server withheld a
+// one-token `length` stub instead of settling it. After a stream that delivered text,
+// the popup fires only on that verdict — every other record explains a zero-token
+// exchange and must not turn a reply the player can see into a "didn't reply".
+describe("replyWithdrawnAfterStreaming", () => {
+  it("is true only for a fresh withheld-stub record", () => {
+    expect(replyWithdrawnAfterStreaming(failure({ code: "empty_reply", cause: "length_stub" }), NOW)).toBe(true);
+    for (const cause of chatReplyFailureCauses.filter((c) => c !== "length_stub")) {
+      expect(replyWithdrawnAfterStreaming(failure({ code: "empty_reply", cause }), NOW), cause).toBe(false);
+    }
+    for (const code of chatReplyFailureCodes) {
+      expect(replyWithdrawnAfterStreaming(failure({ code }), NOW), code).toBe(false);
+    }
+  });
+
+  it("ignores a missing or stale record — streamed text stays a reply unless the server said otherwise", () => {
+    expect(replyWithdrawnAfterStreaming(null, NOW)).toBe(false);
+    expect(replyWithdrawnAfterStreaming(undefined, NOW)).toBe(false);
+    const stale = failure({ code: "empty_reply", cause: "length_stub", at: new Date(NOW - 3_600_000).toISOString() });
+    expect(replyWithdrawnAfterStreaming(stale, NOW)).toBe(false);
+  });
+
+  it("explains the withdrawal without claiming the model said nothing", () => {
+    const { title, description } = replyFailureToast("Wren", failure({ code: "empty_reply", cause: "length_stub" }), NOW);
+    expect(title).toBe("Wren didn't reply");
+    expect(description).toContain("discarded");
+    expect(description).not.toContain("without saying anything");
   });
 });

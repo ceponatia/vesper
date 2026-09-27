@@ -53,6 +53,13 @@ export interface NarratorCompletion {
   /** Model attempts spent on this exchange, including any exact-model hidden retry. */
   attempts: number;
   /**
+   * The output-token cap the request actually carried, after the lane default, the
+   * exact model's profile and any per-call layer were merged at the model gateway.
+   * Absent when the request carried none, so the host's own default governed — an
+   * unknown budget, which is never read as a small one.
+   */
+  maxOutputTokens?: number;
+  /**
    * The classified provider failure behind an `error` finish, when the generation
    * reported one.
    *
@@ -258,6 +265,92 @@ export function narratorEmptyWasSilentStop(completion: NarratorCompletion): bool
   );
 }
 
+/**
+ * The most output a `length` finish may report and still be the pathological stub
+ * rather than a reply that ran into its cap. One token is the observed signature: a
+ * completion that claims it exhausted its budget after a single token, on a request
+ * whose budget was far larger.
+ */
+const LENGTH_STUB_MAX_OUTPUT_TOKENS = 1;
+
+/**
+ * How many tokens the generation reported producing, from whichever counter the
+ * provider sent: the total, else the text/reasoning split. Undefined when it sent
+ * neither — unknown, never zero.
+ */
+function reportedOutputTokens(completion: NarratorCompletion): number | undefined {
+  if (completion.outputTokens !== undefined) return completion.outputTokens;
+  if (completion.textTokens === undefined && completion.reasoningTokens === undefined) return undefined;
+  return (completion.textTokens ?? 0) + (completion.reasoningTokens ?? 0);
+}
+
+/**
+ * Whether a completion is the pathological one-token `length` stub (PURE, and
+ * model-agnostic — no exact-model gate, because the shape is a contradiction in the
+ * generation's own metadata rather than a trait of one model).
+ *
+ * The signature is three facts together, and each is load-bearing:
+ *
+ * - the finish is `length` — the generation says it stopped because it ran out of
+ *   room, not because it finished its turn;
+ * - it reports one output token or fewer — by the total count, else by the
+ *   text/reasoning split, and only when the provider reported neither, by exactly one
+ *   character of raw text arriving (the smallest fragment a single token can be);
+ * - the request's budget was larger than that — an explicit cap above one token, or
+ *   no explicit cap at all, which leaves the host's own default (thousands of tokens)
+ *   in force. A request deliberately capped at one token that stops at one token did
+ *   exactly what it was asked, and is not a stub.
+ *
+ * This is NOT a minimum reply length. A one-word or one-character reply that ends on
+ * `stop` is a legitimate turn and never matches; neither does a long reply that ran
+ * into a real cap. Only the contradiction — "I hit my limit" after one token of a
+ * budget many times that — is the failure.
+ */
+export function isNarratorLengthStub(completion: NarratorCompletion): boolean {
+  if (completion.finishReason !== "length") return false;
+  const budget = completion.maxOutputTokens;
+  if (budget !== undefined && budget <= LENGTH_STUB_MAX_OUTPUT_TOKENS) return false;
+  const generated = reportedOutputTokens(completion);
+  if (generated !== undefined) return generated <= LENGTH_STUB_MAX_OUTPUT_TOKENS;
+  return completion.rawTextLength === 1;
+}
+
+/**
+ * The reply-failure record for a completion that streamed text but is the
+ * pathological `length` stub (PURE); null for every other completion.
+ *
+ * This is the one verdict that can apply to an exchange WITH visible text, which is
+ * why it is separate from `classifyEmptyNarratorCompletion`: the fragment already
+ * reached the player's stream, and the exchange withholds it from settlement instead
+ * of persisting it as a reply. It stays inside the `empty_reply` class — like a
+ * normalizer erasure, no reply was kept — and its cause lets the client tell that
+ * text it already showed was withdrawn.
+ */
+export function narratorLengthStubFailure(completion: NarratorCompletion): {
+  code: ChatReplyFailureCode;
+  detail: string;
+  cause: ChatReplyFailureCause;
+} | null {
+  if (!isNarratorLengthStub(completion)) return null;
+  const generated = reportedOutputTokens(completion);
+  const output =
+    generated === undefined
+      ? "a single character of text (no token count reported)"
+      : `${generated} output token${generated === 1 ? "" : "s"}`;
+  const budget =
+    completion.maxOutputTokens === undefined
+      ? "the host's default output budget"
+      : `an output budget of ${completion.maxOutputTokens} tokens`;
+  return {
+    code: "empty_reply",
+    cause: "length_stub",
+    detail:
+      `the model reported reaching its output limit after ${output}, with ${budget}, so the ` +
+      `${completion.visibleTextLength}-character fragment it streamed was not kept as a reply ` +
+      `(finish: ${describeFinish(completion)})`,
+  };
+}
+
 /** `"stop"` / `"length (eos)"` — the unified reason, with the provider's own word when it differs. */
 function describeFinish(completion: NarratorCompletion): string {
   const raw = completion.rawFinishReason;
@@ -281,7 +374,8 @@ function describeOutput(completion: NarratorCompletion): string {
 
 /**
  * The completion as a flat log payload — the structured server diagnostic behind
- * every zero-visible-text exchange. Counts and finish state only, and nothing
+ * every zero-visible-text exchange and every withheld `length` stub. Counts, the
+ * request's output cap and finish state only, and nothing
  * undefined: a field the provider did not report is simply absent from the line
  * rather than logged as a zero somebody would later read as measured.
  */
@@ -304,5 +398,6 @@ export function narratorCompletionLogFields(completion: NarratorCompletion): Rec
   if (completion.outputTokens !== undefined) fields.outputTokens = completion.outputTokens;
   if (completion.textTokens !== undefined) fields.textTokens = completion.textTokens;
   if (completion.reasoningTokens !== undefined) fields.reasoningTokens = completion.reasoningTokens;
+  if (completion.maxOutputTokens !== undefined) fields.maxOutputTokens = completion.maxOutputTokens;
   return fields;
 }

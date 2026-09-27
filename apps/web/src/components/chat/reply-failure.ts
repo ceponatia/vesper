@@ -3,7 +3,7 @@ import { NARRATIVE_MODELS, narrativeModelProvider } from "@/lib/narrative-models
 
 /**
  * Cause-specific popup copy for a reply that never arrived (reply-failure
- * surfacing — docs/character-chat/pipeline.md §Reply failures). The server
+ * surfacing — docs/character-chat/reply-failures.md). The server
  * classifies the failure into the closed ChatReplyFailureCode vocabulary and
  * persists it on the chat row; the post-exchange transcript refetch hands the
  * record here. A missing or stale record falls back to honest we-don't-know
@@ -70,7 +70,16 @@ const EMPTY_CAUSES: Record<ChatReplyFailureCause, string> = {
   length_capped: `The narrator model hit its output limit before it wrote any of the reply. ${RETRY_OR_SWITCH_ADVICE}`,
   hidden_output: `The narrator model generated a response that never arrived — the provider counted the output, but no text reached the server. ${RETRY_OR_SWITCH_ADVICE}`,
   normalizer_erased: `The narrator model did write a reply, but it was all discarded as repetition or stray formatting before it reached you. ${RETRY_ADVICE}`,
+  length_stub: `The narrator model broke off after a single token and reported that it had hit its output limit, so that fragment was discarded rather than kept as a reply. ${RETRY_OR_SWITCH_ADVICE}`,
 };
+
+/**
+ * The causes recorded for an exchange whose text DID stream to the player before the
+ * server withheld it. Every other failure means nothing streamed, so it can only
+ * explain a zero-token exchange; these are the verdicts that retract text the player
+ * already watched arrive.
+ */
+const WITHDRAWN_AFTER_STREAMING: ReadonlySet<ChatReplyFailureCause> = new Set(["length_stub"]);
 
 /** Failure classes where the provider's own words add signal beyond the class copy. */
 const QUOTE_DETAIL: ReadonlySet<ChatReplyFailureCode> = new Set([
@@ -119,6 +128,23 @@ export function replyFailureToast(
     description = `${description} (Provider said: “${detail}”)`;
   }
   return { title, description };
+}
+
+/**
+ * Whether the exchange that just finished withdrew text the player saw stream in
+ * (PURE; `now` is injectable for tests). The chat lane writes or clears the record on
+ * every exchange before its stream closes, so a fresh record carrying one of these
+ * causes is this exchange's verdict — its fragment was never persisted, the
+ * transcript refetch has already dropped the bubble, and the popup explains why. A
+ * missing, stale or zero-token verdict answers false: a reply that streamed text is a
+ * reply unless the server said otherwise.
+ */
+export function replyWithdrawnAfterStreaming(
+  failure: ChatReplyFailure | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!failure || isStale(failure, now)) return false;
+  return failure.code === "empty_reply" && failure.cause !== undefined && WITHDRAWN_AFTER_STREAMING.has(failure.cause);
 }
 
 function isStale(failure: ChatReplyFailure, now: number): boolean {

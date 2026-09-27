@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { NarratorCompletion } from "@/server/ai";
 import { saveReplyFailure } from "./chat-reply-store";
 import { stopChatReply, streamExchange } from "./chat-reply-stream";
 
@@ -74,5 +75,82 @@ describe("reply stream lifecycle", () => {
     expect(settle).not.toHaveBeenCalled();
     expect(release).toHaveBeenCalledTimes(1);
     expect(stopChatReply("empty")).toBe(false);
+  });
+});
+
+/**
+ * The one-token `length` stub reaches the stream before its finish is known — the
+ * fragment is yielded like any delta — and is then withheld from settlement exactly
+ * like an empty reply, with its verdict recorded before the lock releases so the
+ * client's refetch reads it and retracts what it displayed.
+ */
+describe("the one-token length stub", () => {
+  const ASMODEUS = "DarkArtsForge/Asmodeus-24B-v3";
+  const stub: NarratorCompletion = {
+    provider: "featherless",
+    modelId: ASMODEUS,
+    finishReason: "length",
+    outputTokens: 1,
+    maxOutputTokens: 1024,
+    rawTextLength: 1,
+    visibleTextLength: 1,
+    visibleTextChars: 1,
+    attempts: 1,
+  };
+
+  it("streams the fragment, never settles it, and records why before releasing", async () => {
+    const settle = vi.fn();
+    const release = vi.fn(() => {
+      expect(saveReplyFailure).toHaveBeenCalledWith(
+        "stub",
+        expect.objectContaining({ code: "empty_reply", cause: "length_stub" }),
+        ASMODEUS,
+      );
+    });
+    async function* source() {
+      yield "I";
+    }
+    const stream = streamExchange(source(), {
+      chatId: "stub", abortController: new AbortController(), settle, release,
+      completion: () => stub, modelId: "requested-model",
+    });
+    const tokens: string[] = [];
+    for await (const token of stream) tokens.push(token);
+    expect(tokens).toEqual(["I"]);
+    expect(settle).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(stopChatReply("stub")).toBe(false);
+  });
+
+  it("settles a one-character reply that finished normally", async () => {
+    const settle = vi.fn(async () => {});
+    async function* source() {
+      yield "I";
+    }
+    const stream = streamExchange(source(), {
+      chatId: "one-char", abortController: new AbortController(), settle, release: vi.fn(),
+      completion: () => ({ ...stub, finishReason: "stop" }), modelId: "requested-model",
+    });
+    for await (const token of stream) void token;
+    expect(settle).toHaveBeenCalledWith("I", false);
+    expect(saveReplyFailure).toHaveBeenCalledWith("one-char", null, ASMODEUS);
+  });
+
+  // Stop means "keep what I have": a partial the player stopped persists with
+  // `meta.stopped` even when the generation's metadata reads as a stub.
+  it("keeps a player Stop's partial whatever the metadata says", async () => {
+    const controller = new AbortController();
+    const settle = vi.fn(async () => {});
+    async function* source() {
+      yield "I";
+      controller.abort();
+    }
+    const stream = streamExchange(source(), {
+      chatId: "stub-stopped", abortController: controller, settle, release: vi.fn(),
+      completion: () => stub, modelId: "requested-model",
+    });
+    for await (const token of stream) void token;
+    expect(settle).toHaveBeenCalledWith("I", true);
+    expect(saveReplyFailure).toHaveBeenCalledWith("stub-stopped", null, ASMODEUS);
   });
 });
