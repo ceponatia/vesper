@@ -87,4 +87,8 @@ player-initiated exchange resets to the newest page and re-pins.
 
 A stream that settles cleanly but delivered **zero tokens** — the server's first-token watchdog
 tripping on a stalled provider, so no reply row persists — surfaces an explicit error toast
-("<name> didn't reply") instead of the pending bubble silently vanishing.
+("<name> didn't reply") instead of the pending bubble silently vanishing. The one exception
+that delivers text first is a withheld one-token `length` stub: its fragment streams into the
+bubble, is never settled, and the post-exchange refetch replaces the bubble while the same toast
+explains ([reply failures](../character-chat/reply-failures.md)). Every other stream that
+delivered text is a reply and raises no toast.

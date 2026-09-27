@@ -201,11 +201,16 @@ exchange:
    through the same stop path as a player Stop (any partial persists with `meta.stopped`,
    the lock releases) — so a wedged provider can never hold the per-chat lock
    indefinitely. [reply-failures.md](reply-failures.md) covers how a zero-token
-   settle is classified and surfaced.
+   settle is classified and surfaced, and the one exception that streams text first: a
+   withheld one-token `length` stub.
 9. **Settle (post-flush).** When the stream finishes — the route's shared
    `drainingStreamResponse` keeps consuming after a client disconnect
    ([resilience.md](../resilience.md) §5) — the reply persists and the post-turn fan-out
    runs ([post-turn.md](post-turn.md)). All of it is off the perceived-latency path.
+   The one reply with text that does not settle is a withheld `length` stub: its
+   fragment has already streamed, nothing persists, and the client's refetch replaces
+   the bubble while the failure popup explains
+   ([reply-failures.md](reply-failures.md) §The one-token `length` stub).
 10. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
    makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; other people —
    flavor NPCs and named side characters alike — speak in narration prose with plain
