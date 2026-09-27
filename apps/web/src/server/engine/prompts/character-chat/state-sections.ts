@@ -1,6 +1,7 @@
 import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
+import { conditionKey } from "@/contracts/conditions/condition";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
 import { deriveChatArousalRead } from "@/contracts/meters/arousal-signs";
 import { deriveMoodDescriptor, meterDefinitions, splitStateCues } from "@/contracts/meters/registry";
@@ -220,7 +221,7 @@ export function feelingPhrase(feeling: ChatFeelingState | undefined): string {
  */
 const STATE_SECTION_METER_DEFINITIONS = meterDefinitions.filter((def) => def.id !== "arousal");
 
-export function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>): string {
+export function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>, minor = false): string {
   const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {}, STATE_SECTION_METER_DEFINITIONS);
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
@@ -235,8 +236,23 @@ export function buildStateSection(state: NonNullable<CharacterChatPromptInput["s
   // hint this section used to render for arousal (still authored in the registry
   // for the image lane, excluded above). This projection is built only for the
   // co-present primary (presence lives outside it, dropped by design), so full
-  // engaged-attention perception always applies here.
-  if (state.meters.arousal !== undefined) {
+  // engaged-attention perception always applies here — NOT YET perception-gated
+  // by anything narrower (detailTier is fixed at 3); a richer gate is a linked
+  // follow-up issue, not built here.
+  //
+  // Minor fence (P1, #301 review): a minor NEVER gets an arousal line, whatever
+  // the meter or conditions say — the pulse-side fence (`applyChatPulse`) should
+  // already keep a minor's arousal at rest and heated/afterglow off their row,
+  // but this is the narration's own belt-and-suspenders check, matching every
+  // other minor fence in this file (disposition, intimate notes, disinhibition).
+  //
+  // Owner ruling 2026-09-27: arousal narration (every phase, not just the
+  // shallow ones) renders ONLY while an intimate scene is standing — the
+  // `heated` or `afterglow` condition — never from ordinary affection/attraction
+  // reading on the meter alone. The broader trigger/curve rethink is a separate
+  // follow-up issue; this only gates the NARRATION line, not the meter itself.
+  const inIntimateScene = state.conditions.some((c) => conditionKey(c) === "heated" || conditionKey(c) === "afterglow");
+  if (!minor && inIntimateScene && state.meters.arousal !== undefined) {
     const arousalRead = deriveChatArousalRead({
       arousalMeter: state.meters.arousal,
       conditions: state.conditions,

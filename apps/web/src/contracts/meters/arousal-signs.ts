@@ -61,7 +61,7 @@ export interface ChatArousalRead {
 
 const PHASE_HINTS: Readonly<Record<Exclude<IntimacyPhase, "quiescent">, string>> = {
   kindled: "A flicker of interest — attention warming, breath just a touch quicker.",
-  flushed: "Visibly stirred: warmth rising, breath shortening, attention narrowing to you.",
+  flushed: "Visibly stirred: warmth rising, breath catching, pulse quickening.",
   wound_tight: "Wound tight with wanting — breath short, focus fixed, barely holding still.",
   cresting: "Right at the edge — trembling with it, every touch a live wire.",
   afterglow: "Loose-limbed and settled, unhurried in the quiet after.",

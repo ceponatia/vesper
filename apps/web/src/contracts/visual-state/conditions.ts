@@ -52,6 +52,19 @@ function compareStrings(left: string, right: string): number {
 }
 
 /**
+ * Conditions the reaction pulse itself owns (`chat-state/pulse-rules.ts`) that
+ * must never reach an image prompt as a bare word (#427's failure class): the
+ * arousal physiology they mark (`heated`, `afterglow`) already has its own
+ * flush/blush-free image-lane path — the meter registry's `visibleEffects`
+ * (`contracts/meters/registry.ts`) — so projecting the condition label too
+ * would hand the composer "heated"/"afterglow" verbatim, exactly the
+ * cosmetic-word leak that ruling exists to prevent. A named exclusion at this
+ * one projection point, not a change to `imageEligible` (still true — the
+ * narrator and every OTHER condition still need it) or to any image effect.
+ */
+const CONDITIONS_EXCLUDED_FROM_IMAGES: ReadonlySet<string> = new Set(["heated", "afterglow"]);
+
+/**
  * The condition key as a key-safe aspect segment: the injective escape, then
  * whitespace to `%20` (already escaped away by the first step, so the result
  * stays injective — "hung over" and "hung%20over" cannot collide).
@@ -89,6 +102,7 @@ export function projectActiveConditionFeatures(
 
   const active = input.conditions
     .filter((condition) => !isConditionExpired(condition, input.atMinutes))
+    .filter((condition) => !CONDITIONS_EXCLUDED_FROM_IMAGES.has(conditionKey(condition)))
     .sort((left, right) => {
       const byKey = compareStrings(conditionKey(left), conditionKey(right));
       if (byKey !== 0) return byKey;

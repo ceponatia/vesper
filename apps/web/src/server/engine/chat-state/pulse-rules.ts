@@ -42,8 +42,7 @@ import {
   CHAT_AROUSAL_AFTERGLOW_SETTLE,
   CHAT_AROUSAL_INTIMATE,
   CHAT_HEATED_CONDITION_MINUTES,
-  CHAT_HYGIENE_INTIMATE_ACTIVE,
-  CHAT_HYGIENE_INTIMATE_COMPLETED,
+  CHAT_HYGIENE_COMPLETION_COST,
 } from "../constants";
 import type { ChatState } from "./types";
 
@@ -65,7 +64,27 @@ export function applyChatPulse(
   profile: CharacterProfile,
   characterName: string,
   activeSocialCards: readonly SocialReactionCard[],
+  options: {
+    /**
+     * The character is an authored minor (age-derived life stage) — fences
+     * arousal/intimate-scene effects entirely (P1, #301 review): no arousal
+     * bump from any concept, and the scene-level `intimateScene` read (active /
+     * completed / heated / afterglow / hygiene) is never consumed. Mirrors the
+     * prompt-builder's own minor fence (`single.ts`'s `minor`). Absent ⇒ false.
+     */
+    minor?: boolean;
+    /**
+     * The scenario's shared story clock — stamps a `heated`/`afterglow`
+     * condition's `startedAtMinutes`. `state.metersAtMinutes` is NOT a
+     * substitute (review finding): it can be null or lag the live clock: the
+     * caller must pass the real one. Absent only for callers that never reach
+     * the intimate-scene branch (e.g. a bare unit test).
+     */
+    clockMinutes?: number;
+  } = {},
 ): { state: ChatState; trace: ChatPulseTrace } {
+  const minor = options.minor ?? false;
+  const clockMinutes = options.clockMinutes ?? state.metersAtMinutes ?? 0;
   const next: ChatState = { ...state, meters: { ...state.meters } };
   const concept = pulse.playerAct?.concept ?? null;
   let valence: "like" | "dislike" | null = null;
@@ -126,9 +145,12 @@ export function applyChatPulse(
 
   // Arousal-from-intimate-acts: an intimate concept raises arousal — full
   // for a flagged-intimate act (a proposition), half for courtship/physical
-  // affection — unless the character disliked it. Possibly overridden below by
-  // the scene-level intimate read (#301/#303).
-  let arousalDelta = concept && valence !== "dislike" ? arousalBumpForConcept(concept) : 0;
+  // affection — unless the character disliked it. NEVER for a minor (P1 minor
+  // fence, review finding): a minor's arousal meter never moves from any
+  // concept, so it can never carry a graded narration phase or reach a scene
+  // threshold. Possibly overridden below by the scene-level intimate read
+  // (#301/#303) — which itself never runs for a minor either.
+  let arousalDelta = !minor && concept && valence !== "dislike" ? arousalBumpForConcept(concept) : 0;
   let hygieneDelta = 0;
 
   // #301 + #303 — the ONE scene-level intimate-activity read, resolved once and
@@ -136,34 +158,44 @@ export function applyChatPulse(
   // detector or model call off the same exchange. Missing/malformed ⇒ null (the
   // schema already degrades it there), so neither branch below runs and nothing
   // about this exchange changes beyond the ordinary concept-driven effects above.
-  if (pulse.intimateScene === "active") {
+  // A minor NEVER reaches either branch (P1 minor fence, review finding): no
+  // heated/afterglow condition, no completion settle, no intimate hygiene cost —
+  // whatever the pulse read, a minor's turn ignores `intimateScene` entirely.
+  if (!minor && pulse.intimateScene === "active") {
     // Ongoing activity: the ordinary concept-driven arousal bump above still
-    // applies (sustaining arousal), a little hygiene is spent, and the standing
-    // `heated` condition renews so ambient drift doesn't visibly cool the
-    // character between exchanges of continuous activity — the suspension hook
-    // lives in `chat-state/time.ts`'s `integrateChatMeters`.
-    hygieneDelta = -CHAT_HYGIENE_INTIMATE_ACTIVE;
+    // applies (sustaining arousal), and the standing `heated` condition renews
+    // so ambient drift doesn't visibly cool the character between exchanges of
+    // continuous activity — the suspension hook lives in `chat-state/time.ts`'s
+    // `integrateChatMeters`. Hygiene's cost (#303, owner ruling 2026-09-27) is
+    // NOT charged here per exchange any more: while `heated` stands, that same
+    // `integrateChatMeters` seam also drifts hygiene at a small accelerated
+    // rate (`heatedHygieneDriftMultiplier`) — a smooth per-minute cost instead
+    // of a per-message one. No condition `promptHint` here — the graded
+    // arousal-phase hint (`arousal-signs.ts`, rendered only while `heated`/
+    // `afterglow` stands) already says what's happening; a second, static line
+    // would just repeat it (review finding).
     conditions = upsertCondition(conditions, {
       id: "heated",
       label: "Heated",
-      startedAtMinutes: state.metersAtMinutes ?? 0,
+      startedAtMinutes: clockMinutes,
       durationMinutes: CHAT_HEATED_CONDITION_MINUTES,
-      promptHint: "Heated: still caught up in it, appetite not spent yet.",
       attributeEffects: [],
     });
     changed.push("conditions");
-  } else if (pulse.intimateScene === "completed") {
+  } else if (!minor && pulse.intimateScene === "completed") {
     // Completion resolves to afterglow: arousal SETTLES below the flushed band
     // regardless of how high it was a moment before (even for a high-libido
     // profile) — this REPLACES, never adds to, this exchange's ordinary concept
     // bump, so completion never re-adds the same exchange's arousal back. Mood
-    // lifts and stress eases (the afterglow's defining effect), hygiene takes
-    // the larger one-time cost (deliberately NOT stacked with the active cost —
-    // the two branches are mutually exclusive reads of one field), and the
-    // standing `heated` condition gives way to `afterglow`.
+    // lifts and stress eases (the afterglow's defining effect), a small
+    // one-time hygiene cost lands (on top of whatever the per-minute `heated`
+    // drift already cost — a completion is a bigger, discrete event the smooth
+    // rate alone underscores; #303 owner ruling caps a whole scene well under
+    // one hygiene band), and the standing `heated` condition gives way to
+    // `afterglow`.
     const currentArousal = next.meters.arousal;
     arousalDelta = currentArousal === undefined ? 0 : Math.min(currentArousal, CHAT_AROUSAL_AFTERGLOW_SETTLE) - currentArousal;
-    hygieneDelta = -CHAT_HYGIENE_INTIMATE_COMPLETED;
+    hygieneDelta = -CHAT_HYGIENE_COMPLETION_COST;
     moodDelta += CHAT_AFTERGLOW_MOOD_LIFT;
     stressDelta -= CHAT_AFTERGLOW_STRESS_EASE;
     conditions = upsertCondition(
@@ -171,9 +203,8 @@ export function applyChatPulse(
       {
         id: "afterglow",
         label: "Afterglow",
-        startedAtMinutes: state.metersAtMinutes ?? 0,
+        startedAtMinutes: clockMinutes,
         durationMinutes: CHAT_AFTERGLOW_DURATION_MINUTES,
-        promptHint: "Afterglow: settled and unhurried, loose-limbed in the quiet after.",
         attributeEffects: [],
       },
     );

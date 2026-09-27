@@ -83,7 +83,9 @@ describe("applyMeterDrift", () => {
   });
 
   it("clamps at 0", () => {
-    const next = applyMeterDrift({ hygiene: 0.02 }, 120);
+    // A full story week is well past every adopted meter's zero crossing from a
+    // near-empty start, whatever its own rate — hygiene's is the slowest.
+    const next = applyMeterDrift({ hygiene: 0.02 }, 7 * 24 * 60);
     expect(next.hygiene).toBe(0);
   });
 
@@ -159,7 +161,7 @@ describe("crossedThresholdHints", () => {
 
   it("emits hints for every below-threshold the value has crossed", () => {
     const hints = crossedThresholdHints({ hygiene: 0.2 });
-    expect(hints).toEqual(hygieneHints); // crossed both 0.55 and 0.3
+    expect(hints).toEqual(hygieneHints); // crossed both the odor band (0.86) and unwashed (0.3)
   });
 
   it("emits only the thresholds actually crossed", () => {
@@ -173,7 +175,7 @@ describe("crossedThresholdHints", () => {
   });
 
   it("a value exactly at the threshold has not crossed it", () => {
-    expect(crossedThresholdHints({ hygiene: 0.55 })).toEqual([]);
+    expect(crossedThresholdHints({ hygiene: 0.86 })).toEqual([]);
     expect(crossedThresholdHints({ stress: 0.6 })).toEqual([]);
   });
 
@@ -203,7 +205,7 @@ describe("meterStateCue", () => {
   });
 
   it("handles below-thresholds (hygiene) with the deepest band", () => {
-    const cue = meterStateCue("hygiene", 0.2); // crosses 0.55 and 0.3 — deepest is 0.3
+    const cue = meterStateCue("hygiene", 0.2); // crosses 0.86 and 0.3 — deepest is 0.3
     expect(cue?.band).toBe("hygiene:0.3");
   });
 

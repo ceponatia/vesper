@@ -79,17 +79,30 @@ export const meterDefinitionSchema = z.object({
 export type MeterDefinition = z.infer<typeof meterDefinitionSchema>;
 
 /**
+ * Hygiene's real-life-timing derivation (owner ruling 2026-09-27, #303 review;
+ * see the `hygiene` definition below and docs/contracts/meters.md). Named
+ * constants so the numbers on the definition ARE the derivation, not a
+ * decimal a reader has to take on faith.
+ */
+const HYGIENE_WASHED = 0.95;
+const HYGIENE_UNWASHED_THRESHOLD = 0.3;
+const HYGIENE_HOURS_WASHED_TO_UNWASHED = 72;
+const HYGIENE_PER_HOUR = -(HYGIENE_WASHED - HYGIENE_UNWASHED_THRESHOLD) / HYGIENE_HOURS_WASHED_TO_UNWASHED;
+/** ≈ HYGIENE_WASHED + 10 × HYGIENE_PER_HOUR ≈ 0.8597, rounded — crosses at ≈9.97h, inside the owner's 8–12h window. */
+const HYGIENE_ODOR_THRESHOLD = 0.86;
+
+/**
  * Starter meters. Worlds may override fields or disable a meter entirely via
  * WorldStyle.meterOverrides (null disables). The old app's hygiene vectors
  * collapse into `hygiene` + conditions.
  *
- * Every rate is per STORY hour on the chat's shared clock, and each law and
- * value matches the successor's body registry (`bodyMeterRegistryV1` in
+ * Every rate is per STORY hour on the chat's shared clock, and — HYGIENE ALONE
+ * EXCEPTED (see its own derivation below, owner ruling 2026-09-27) — each law
+ * and value matches the successor's body registry (`bodyMeterRegistryV1` in
  * `@vesper/simulation-core`), which ported this economy to story time: the
  * same meter drifts the same way in both lanes. From the 0.9 rested seed that
- * means lived-in after about a day without washing and unwashed after about
- * two; tired after about eleven waking hours and exhausted after about a day; a
- * flushed 0.8 cools below the flushed band in about 75 minutes.
+ * means tired after about eleven waking hours and exhausted after about a day;
+ * a flushed 0.8 cools below the flushed band in about 75 minutes.
  */
 export const meterDefinitions: readonly MeterDefinition[] = [
   {
@@ -97,11 +110,27 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     label: "Hygiene",
     description: "Freshness from 1 (just bathed) to 0 (badly unwashed). Bathing restores it via the simulant.",
     initial: 0.9,
-    perHour: -0.015,
+    // Real-life timing (owner ruling 2026-09-27, #303 review) — DIVERGES from
+    // `@vesper/simulation-core`'s own (faster) hygiene rate on purpose; that
+    // package is untouched. Washed to HYGIENE_WASHED (0.95 — the "freshen" chip
+    // and the daily-rhythm wash both set this), a noticeable-but-mild odor
+    // shows at ~10 story hours (not filthy yet), and the unwashed/filthy band
+    // only after ~3 story days (72h) — one linear rate anchored to both:
+    // (0.95 − 0.3) / 72 ≈ 0.00903/hour. At that rate the 10-hour mark sits at
+    // 0.95 − 10 × 0.00903 ≈ 0.86 (inside the owner's stated 8–12h window); the
+    // unwashed floor (0.3, unchanged from before this ruling) lands at exactly
+    // 72h by construction. A character on the DEFAULT daily wash (once per
+    // sleep cycle, `routineLandings`) reads mildly lived-in by evening and
+    // never approaches unwashed — still realistic, never filthy between washes.
+    perHour: HYGIENE_PER_HOUR,
     thresholds: [
-      { below: 0.55, promptHint: "Noticeably lived-in at close range: faint sweat and warm skin.", pipLabel: "lived-in" },
       {
-        below: 0.3,
+        below: HYGIENE_ODOR_THRESHOLD,
+        promptHint: "Noticeably lived-in at close range: faint sweat and warm skin.",
+        pipLabel: "lived-in",
+      },
+      {
+        below: HYGIENE_UNWASHED_THRESHOLD,
         promptHint: "Clearly unwashed: damp fabric, sour sweat, hair gone lank.",
         pipLabel: "unwashed",
         visibleEffects: ["lank, greasy hair", "grimy skin"],

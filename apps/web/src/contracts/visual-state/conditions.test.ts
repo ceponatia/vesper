@@ -89,6 +89,26 @@ describe("projectActiveConditionFeatures", () => {
     expectDiagnostic(sink, VISUAL_STATE_VALUE_INVALID, { times: 1 });
   });
 
+  it("excludes the pulse's own heated/afterglow conditions from the image projection (#427 failure class)", () => {
+    const sink = new DiagnosticCollector();
+    const features = project(
+      [
+        condition({ id: "c_heated", label: "Heated", durationMinutes: undefined }),
+        condition({ id: "c_afterglow", label: "Afterglow", durationMinutes: undefined }),
+        condition({ id: "c_blindfolded", label: "Blindfolded", durationMinutes: undefined }),
+      ],
+      30,
+      sink,
+    );
+    expect(features.map((f) => (f.value as { condition: string }).condition)).toEqual(["blindfolded"]);
+    expectCleanSink(sink);
+  });
+
+  it("matches the exclusion by normalized label (case/space-insensitive), same as every other condition match", () => {
+    const features = project([condition({ id: "c_h", label: "  HEATED ", durationMinutes: undefined })]);
+    expect(features).toEqual([]);
+  });
+
   it("produces byte-equal output from the same conditions", () => {
     const rows = [condition(), condition({ id: "c9", label: "soaked", durationMinutes: undefined })];
     expect(JSON.stringify(project(rows))).toBe(JSON.stringify(project(rows)));

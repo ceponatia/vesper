@@ -131,6 +131,10 @@ export async function runFinalizationAgents(
           commitmentsDue,
           trace: { chatId: input.chatId, messageId: input.assistantMessageId },
           sink: input.sink,
+          // P1 minor fence (#301 review): the SAME determination already made
+          // above for the archivist's trait/intimate fencing, not a second one.
+          minor,
+          clockMinutes: input.scenario.clockMinutes,
         }),
     runChatExtraction({
       characterName: input.characterName,

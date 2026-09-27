@@ -32,7 +32,7 @@ import {
 } from "@/contracts";
 import { minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { CHAT_FEELING_SKIP_STEPS, decayFeelingState } from "../chat-feeling";
-import { CHAT_METER_CATCH_UP_MAX_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
+import { CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER, CHAT_METER_CATCH_UP_MAX_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
 import { chatSkipNote } from "../prompts/character-chat";
 import type { ChatScenario, ChatState } from "./types";
 
@@ -87,6 +87,19 @@ export function suspendsMeterDrift(conditions: readonly ActiveCondition[], meter
 }
 
 /**
+ * The per-minute half of an intimate scene's hygiene cost (#303, owner ruling
+ * 2026-09-27, replacing the original per-message charge): while `heated`
+ * stands, hygiene drifts at this small multiple of its own base rate instead
+ * of the usual one — a smooth cost for ongoing activity, through the same
+ * standing-condition seam `suspendsMeterDrift` uses. 1 (unscaled) for every
+ * other meter, and for hygiene itself whenever `heated` does not stand.
+ */
+export function heatedHygieneDriftMultiplier(conditions: readonly ActiveCondition[], meterId: string): number {
+  if (meterId !== "hygiene") return 1;
+  return conditions.some((c) => conditionKey(c) === "heated") ? CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER : 1;
+}
+
+/**
  * Integrate a character's meters across ONE piece of story time,
  * `[fromMinutes, toMinutes]`, under their personalized drift laws — the one
  * elapsed-time meter step; nothing else moves meters with time. PURE and
@@ -98,7 +111,9 @@ export function suspendsMeterDrift(conditions: readonly ActiveCondition[], meter
  * `asleep` condition holds the energy reserve instead of letting it drain and
  * credits the time slept. Only the latest `CHAT_METER_CATCH_UP_MAX_MINUTES` of
  * a piece integrate. Any meter `suspendsMeterDrift` says a standing condition
- * holds still (a `heated` scene's arousal) does not drift in that piece.
+ * holds still (a `heated` scene's arousal) does not drift in that piece;
+ * `heatedHygieneDriftMultiplier` scales hygiene's own rate the same way while
+ * `heated` stands, rather than holding it still.
  */
 export function integrateChatMeters(args: {
   meters: Record<string, number>;
@@ -110,9 +125,17 @@ export function integrateChatMeters(args: {
   const elapsed = Math.min(args.toMinutes - args.fromMinutes, CHAT_METER_CATCH_UP_MAX_MINUTES);
   if (!(elapsed > 0)) return args.meters;
   const conditions = args.conditions ?? [];
-  const definitions = personalizeMeters(meterDefinitions, args.profile.traits).filter(
-    (def) => !suspendsMeterDrift(conditions, def.id),
-  );
+  const definitions = personalizeMeters(meterDefinitions, args.profile.traits)
+    .filter((def) => !suspendsMeterDrift(conditions, def.id))
+    .map((def) => {
+      const multiplier = heatedHygieneDriftMultiplier(conditions, def.id);
+      if (multiplier === 1) return def;
+      return {
+        ...def,
+        perHour: def.perHour * multiplier,
+        ...(def.recoveryPerHour === undefined ? {} : { recoveryPerHour: def.recoveryPerHour * multiplier }),
+      };
+    });
   const drifted = applyMeterDrift(args.meters, elapsed, definitions);
   const reserve = args.meters[SLEEP_RESERVE_METER_ID];
   if (reserve === undefined || !conditions.some(isAsleepCondition)) return drifted;
