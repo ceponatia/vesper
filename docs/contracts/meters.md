@@ -122,7 +122,11 @@ model call off the same exchange:
 - **`null`** (most turns, and every missing/malformed read — the schema `.catch()`s it like
   every other pulse field) — neither branch runs. Ambient clock drift remains the backstop
   for a completion the pulse never classified: arousal keeps decaying toward baseline on its
-  own once nothing is renewing `heated`.
+  own once nothing is renewing `heated`. A genuinely ABSENT `intimateScene` degrades silently,
+  same as any other pulse field; a PRESENT value that fails its leaf schema instead pushes
+  `chat_state.pulse.intimate_scene_unreadable` through the sink (`pulse-agent.ts`'s
+  `reportIntimateSceneIfUnreadable`) — distinguishable from silence, and from the whole-pulse
+  `chat_state.pulse.degraded` — while still resolving to `null` and applying no new effect.
 
 #### Hygiene cost of an intimate scene
 
