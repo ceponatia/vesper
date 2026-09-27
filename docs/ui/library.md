@@ -284,7 +284,9 @@ pre-filtered to that slot's categories **and the character's wearer target** (fr
 long clothing library arrives as "the tops that fit her". Empty slots read "Nothing worn." A
 trailing "+ Add from the whole wardrobe…" opens the unscoped picker.
 
-The Profile tab's Daily-rhythm rows gain a **Wearing** preset pick — rhythm auto-dress, so a
+The Profile tab's Daily-rhythm rows carry an optional **Kind** pick — sleep, wash, meal, work or
+leisure — the typed vocabulary body/location systems key an effect on; blank is the default and
+causes none. Rows also gain a **Wearing** preset pick — rhythm auto-dress, so a
 pickup skip landing in that window dresses the character for it. The chat Character sheet carries
 a **structured Wardrobe editor** (`components/characters/chat-wardrobe-editor.tsx`) reusing this
 same slot and picker design over the conversation's worn item ids

@@ -4,7 +4,9 @@ import {
   matchScheduleDayPart,
   SCHEDULE_DAY_PARTS,
   scheduleDayPartById,
+  scheduleKinds,
   type ScheduleEntry,
+  type ScheduleKind,
 } from "@/contracts";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
@@ -20,6 +22,9 @@ export interface ScheduleEditorProps {
 }
 
 const WEEKDAY_CHIPS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/** "sleep" → "Sleep" — the kind select's option labels; the stored value stays lowercase. */
+const kindLabel = (kind: ScheduleKind): string => kind.charAt(0).toUpperCase() + kind.slice(1);
 
 /** Minute-of-day ↔ the `<input type="time">` wire value ("HH:MM"). */
 const toTimeValue = (minute: number) =>
@@ -88,7 +93,14 @@ export function ScheduleEditor({ schedule, onChange, outfitPresets = [] }: Sched
             const part = matchScheduleDayPart(entry);
             return (
               <li key={index} className="flex flex-col gap-2 rounded-card border border-ink-700 bg-ink-850 p-3">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[9rem_1fr_1fr_auto] sm:items-end">
+                <div
+                  className={cx(
+                    "grid grid-cols-1 gap-2 sm:items-end",
+                    outfitPresets.length > 0
+                      ? "sm:grid-cols-[9rem_1fr_1fr_8rem_1fr_auto]"
+                      : "sm:grid-cols-[9rem_1fr_1fr_8rem_auto]",
+                  )}
+                >
                   <Field label="When">
                     {(id) => (
                       <Select id={id} value={part ?? "custom"} onChange={(e) => setWhen(index, e.target.value)}>
@@ -122,6 +134,25 @@ export function ScheduleEditor({ schedule, onChange, outfitPresets = [] }: Sched
                         placeholder="the Dockside Café…"
                         onChange={(e) => update(index, { locationName: e.target.value })}
                       />
+                    )}
+                  </Field>
+                  <Field label="Kind" hint="Optional — sleep, wash, meal, work or leisure; leave blank when none fit.">
+                    {(id) => (
+                      <Select
+                        id={id}
+                        value={entry.kind ?? ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          update(index, { kind: value === "" ? undefined : (value as ScheduleKind) });
+                        }}
+                      >
+                        <option value="">— (none)</option>
+                        {scheduleKinds.map((kind) => (
+                          <option key={kind} value={kind}>
+                            {kindLabel(kind)}
+                          </option>
+                        ))}
+                      </Select>
                     )}
                   </Field>
                   {outfitPresets.length > 0 ? (

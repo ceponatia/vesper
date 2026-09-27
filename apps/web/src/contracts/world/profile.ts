@@ -28,11 +28,30 @@ export function boundCharacterCreationBrief(value: string): string {
     + marker + brief.slice(-tailLength).trimStart();
 }
 
+/**
+ * The typed schedule-row vocabulary (#320, owner ruling 2026-09-27): exactly
+ * these five kinds — no commute or errand kind. This is the one exported
+ * vocabulary the routine-driven body/location consumers (#300 energy from
+ * typed sleep rows, #302 self-care on time skips) key their effects on
+ * instead of ever inferring one from `activity` prose. Deliberately closed:
+ * there is no "unknown" member — a row with no kind, or an unrecognized
+ * stored value, both read as no-kind (see `kind` below), never a guess.
+ */
+export const scheduleKinds = ["sleep", "wash", "meal", "work", "leisure"] as const;
+export type ScheduleKind = (typeof scheduleKinds)[number];
+
 export const scheduleEntrySchema = z.object({
   startMinute: z.number().int().min(0).max(1439),
   endMinute: z.number().int().min(0).max(1439),
   locationName: z.string().min(1),
   activity: z.string().min(1),
+  /**
+   * Optional typed kind (#320) — the five-value vocabulary above. Absent
+   * (every legacy row) causes no body or location effect, by design. Leaf
+   * `.catch` (docs/resilience.md §3): an unrecognized stored value self-heals
+   * to the same no-kind state rather than dropping the whole row.
+   */
+  kind: z.enum(scheduleKinds).optional().catch(undefined),
   /** Weekday mask, 0 = Sunday … 6 = Saturday. Absent ⇒ every day (old entries parse unchanged). */
   days: z.array(z.number().int().min(0).max(6)).optional(),
   /**

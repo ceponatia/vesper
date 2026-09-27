@@ -67,16 +67,26 @@ describe("scoped generation contract", () => {
 
 
 describe("scoped authored field round trips", () => {
-  it("preserves custom and overnight windows, weekdays and outfit mappings beyond the create sketch cap", () => {
+  it("preserves custom and overnight windows, weekdays, kind and outfit mappings beyond the create sketch cap", () => {
     const routine = Array.from({ length: 5 }, (_, index) => ({
       startMinute: 1337 + index,
       endMinute: 137 + index,
       activity: `Night watch ${index}`,
       locationName: "Lighthouse",
+      kind: "work" as const,
       days: [1, 3, 5],
       outfitPresetId: "storm-watch",
     }));
     const parsed = buildProfileSectionSchema("profile").parse({ bio: "Keeper", schedule: routine });
+    expect(groundScopedSchedule(parsed.schedule, [])).toEqual(routine);
+  });
+
+  it("a scoped rewrite's unrecognized kind self-heals to no kind instead of rejecting the row (#320 owner ruling)", () => {
+    const routine = [{ startMinute: 1300, endMinute: 200, activity: "Watch", locationName: "Tower" }];
+    const parsed = buildProfileSectionSchema("profile").parse({
+      bio: "Keeper",
+      schedule: [{ ...routine[0], kind: "commute" }],
+    });
     expect(groundScopedSchedule(parsed.schedule, [])).toEqual(routine);
   });
 
