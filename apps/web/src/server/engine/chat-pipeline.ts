@@ -35,7 +35,7 @@ import {
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
-import type { NarratorCompletion } from "../ai";
+import { chatNarrativeModelId, type NarratorCompletion } from "../ai";
 import { characterChats, characterChatMessages, db } from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatUploads } from "../images";
 import { log } from "../log";
@@ -769,6 +769,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const commitRecognitionMemory = () => commitChatTurnRecognition({ memoryGroupId, owner, characterId, exchangeGuardMessageId, recognition });
     const commitVisualStateCues = () => commitChatTurnVisualCues({ memoryGroupId, owner, characterId, exchangeGuardMessageId, visualStateNarrationOn, visualStateBuild });
 
+    // Resolved ONCE, before the prompt builds, and reused verbatim for the stream call
+    // below (never re-derived from `input.model`) so the opening-directive table the
+    // prompt reads from and the model the exchange actually runs on cannot diverge
+    // (#479). `chatNarrativeModelId` is the same curated + provider-key-gated resolver
+    // `streamCharacterChat` already applies; re-applying it there to an already-resolved
+    // id is a documented no-op, so this changes no other model's resolved id.
+    const narratorModelId = chatNarrativeModelId(input.model);
+
     const promptInput: CharacterChatPromptInput = {
       // The exchange's frozen narrator instructions.
       // This object reaches ONLY the three prose-narrator builds below —
@@ -782,6 +790,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       player: playerPromptSlice(player, playerWardrobe),
       state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, bodyCues, visualStateLines),
       opening,
+      // The resolved narrator id (above) — narrow, exact-model threading so the opening
+      // beat can select a per-model directive variant (#479). Unprofiled ids render
+      // today's directive verbatim; see prompts/character-chat/single.ts.
+      narratorModelId,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
       // which flips the Scene block's directive from "don't re-establish" to "establish once".
@@ -908,7 +920,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         speakers: input.roster?.length ? input.roster.map((r) => r.name) : [characterName],
         plain: [player.name, ...scenario.supportingCast.map((m) => m.name)],
       },
-      model: input.model,
+      // The SAME resolved id the prompt above keyed its opening directive on (#479) —
+      // passed pre-resolved rather than `input.model` so the two cannot diverge.
+      // `chatNarrativeModelId` re-applies as a documented no-op on an already-resolved id.
+      model: narratorModelId,
       signal: abortController.signal,
     });
 
