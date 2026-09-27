@@ -110,7 +110,9 @@ jobs:
   docs:
     name: documentation checks
     needs: changes
-    if: needs.changes.outputs.docs == 'true'
+    # Also on code changes: the rolesync step guards agent roles and skill copies,
+    # and a catalog, TOML or helper-script edit alone never sets `docs`.
+    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -120,6 +122,11 @@ jobs:
           node-version: 22
       - name: Links, section citations, retired-document references
         run: node scripts/check-docs.mjs
+      # `.claude/agents`, `.codex/agents` and `.claude/skills` are rendered from
+      # `.agents/` by rolesync; this fails when a canonical edit was not synced or a
+      # generated file was hand-edited. Bump the pin together with a re-sync.
+      - name: Generated agent roles and skill copies are current (rolesync)
+        run: pipx run --spec rolesync==1.0.1 rolesync check
 
   lint:
     name: lint

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Vesper Agent Build"
+  short_description: "Build Vesper issues with delegated Codex agents"
+  default_prompt: "Use $vesper-agent-build to implement this Vesper issue with scoped Codex agents and safe integration."
+
+policy:
+  allow_implicit_invocation: true

@@ -422,7 +422,10 @@ NEGATED_RISK_AREA_PROMPTS = (
 
 
 def role_frontmatter(path: Path) -> dict:
-    """Read a role file's YAML frontmatter without a YAML dependency: flat `key: value` lines."""
+    """Read a role file's YAML frontmatter without a YAML dependency: flat `key: value` lines.
+
+    rolesync writes every value as JSON (`name: "vesper-builder"`, `tools: ["*"]`),
+    which is also valid YAML; a bare hand-written value is kept as its text."""
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0].strip() != "---":
         return {}
@@ -432,7 +435,11 @@ def role_frontmatter(path: Path) -> dict:
             break
         key, sep, value = line.partition(":")
         if sep and key == key.strip():
-            fields[key] = value.strip()
+            value = value.strip()
+            try:
+                fields[key] = json.loads(value)
+            except ValueError:
+                fields[key] = value
     return fields
 
 
@@ -457,13 +464,31 @@ class CheckFunctionTests(unittest.TestCase):
 
     def test_every_pinned_role_denies_an_explicit_model_and_names_its_own_pin(self):
         """A PINNED role missing from PINNED_MODEL raises here, where the hook itself would
-        fail open and silently let the override through."""
-        for role in sorted(HOOK.PINNED):
+        fail open and silently let the override through. A main-session role is refused
+        before its model is read, so it is covered by the main-session tests instead."""
+        for role in sorted(HOOK.PINNED - HOOK.MAIN_SESSION_ONLY):
             with self.subTest(role=role):
                 reason = HOOK.check({"subagent_type": role, "model": "haiku", "prompt": ""})
                 self.assertIsNotNone(reason)
                 self.assertIn(role, reason)
                 self.assertIn(f"({HOOK.PINNED_MODEL[role]})", reason)
+
+    def test_main_session_role_is_never_spawned(self):
+        """`vesper-orchestrator` is what the session runs as; a spawned copy would be a second
+        coordinator nested under the first, with or without a model or a brief."""
+        for tool_input in (
+            {"subagent_type": "vesper-orchestrator", "prompt": "coordinate #643"},
+            {"subagent_type": "vesper-orchestrator", "prompt": BRIEF_PROMPT},
+            {"subagent_type": "vesper-orchestrator", "model": "opus", "prompt": ""},
+        ):
+            with self.subTest(tool_input=tool_input):
+                reason = HOOK.check(tool_input)
+                self.assertIsNotNone(reason)
+                self.assertIn("main-session agent", reason)
+
+    def test_every_main_session_role_is_a_pinned_role(self):
+        self.assertTrue(HOOK.MAIN_SESSION_ONLY)
+        self.assertLessEqual(HOOK.MAIN_SESSION_ONLY, HOOK.PINNED)
 
     def test_explicit_model_on_an_unpinned_role_is_allowed(self):
         """The deny message sends ad-hoc work to `general-purpose` with a model; keep that route open."""
@@ -1537,9 +1562,14 @@ class PinnedRoleTableTests(unittest.TestCase):
 
     EXPECTED_ROLES = {
         "vesper-builder": "sonnet",
+        "vesper-context-scout": "sonnet",
         "vesper-escalation": "opus",
+        "vesper-orchestrator": "claude-opus-5-5",
         "vesper-reviewer": "opus",
+        "vesper-scenario-reviewer": "opus",
         "vesper-test-keeper": "sonnet",
+        "vesper-ui-reviewer": "sonnet",
+        "vesper-ux-reviewer": "sonnet",
     }
 
     def roles(self) -> dict:
@@ -1567,12 +1597,16 @@ class PinnedRoleTableTests(unittest.TestCase):
 
 class CodexModelPolicyTests(unittest.TestCase):
     """Keep Codex custom-role pins aligned with policy without encoding unsupported
-    project-wide agent defaults; Sol is reserved for the two deeper-reasoning routes."""
+    project-wide agent defaults; Sol is reserved for the roles whose Claude counterpart
+    pins Opus (owner ruling 2026-09-27, #643): orchestration, escalation, semantic and
+    scenario review."""
 
     EXPECTED_ROLES = {
         "vesper-builder": ("gpt-5.6-terra", "medium"),
         "vesper-context-scout": ("gpt-5.6-terra", "low"),
         "vesper-escalation": ("gpt-5.6-sol", "high"),
+        "vesper-orchestrator": ("gpt-5.6-sol", "high"),
+        "vesper-reviewer": ("gpt-5.6-sol", "medium"),
         "vesper-scenario-reviewer": ("gpt-5.6-sol", "medium"),
         "vesper-test-keeper": ("gpt-5.6-terra", "medium"),
         "vesper-ui-reviewer": ("gpt-5.6-terra", "medium"),
@@ -1589,9 +1623,68 @@ class CodexModelPolicyTests(unittest.TestCase):
             )
         self.assertEqual(found, self.EXPECTED_ROLES)
 
+    def test_codex_worktree_writers_keep_full_access(self):
+        """Vesper worktrees live under `.codex/worktrees/`, and `workspace-write` leaves
+        `.codex/` and `.git` read-only, so a writer pinned to it could not edit or commit its
+        slice (#643 review, P1). These roles inherited `danger-full-access` before rolesync
+        required an explicit value."""
+        for name in ("vesper-builder", "vesper-escalation", "vesper-orchestrator"):
+            with self.subTest(role=name):
+                role = tomllib.loads((CODEX_ROLE_DIR / f"{name}.toml").read_text(encoding="utf-8"))
+                self.assertEqual(role.get("sandbox_mode"), "danger-full-access")
+
     def test_codex_config_does_not_define_unsupported_agent_defaults(self):
         config = tomllib.loads(CODEX_CONFIG.read_text(encoding="utf-8"))
         self.assertNotIn("agents", config)
+
+
+class RoleParityTests(unittest.TestCase):
+    """rolesync renders both platforms from one catalog, so a role that exists on only one
+    side is drift — the defect #643 fixed, where four roles were Codex-only and
+    `vesper-reviewer` Claude-only. The pin tiers mirror: Sonnet <-> Terra, Opus <-> Sol."""
+
+    TIER = {"sonnet": "gpt-5.6-terra", "opus": "gpt-5.6-sol", "claude-opus-5-5": "gpt-5.6-sol"}
+
+    def claude_roles(self) -> dict:
+        return {
+            fields["name"]: fields.get("model")
+            for fields in (role_frontmatter(path) for path in sorted(ROLE_DIR.glob("*.md")))
+            if "name" in fields
+        }
+
+    def codex_roles(self) -> dict:
+        found = {}
+        for path in sorted(CODEX_ROLE_DIR.glob("*.toml")):
+            role = tomllib.loads(path.read_text(encoding="utf-8"))
+            found[role["name"]] = role.get("model")
+        return found
+
+    def test_both_platforms_define_the_same_roles(self):
+        self.assertEqual(set(self.claude_roles()), set(self.codex_roles()))
+
+    def test_each_role_runs_on_the_same_tier_on_both_platforms(self):
+        codex = self.codex_roles()
+        for name, model in self.claude_roles().items():
+            with self.subTest(role=name):
+                self.assertEqual(codex.get(name), self.TIER.get(model))
+
+
+class MainSessionAgentTests(unittest.TestCase):
+    """`.claude/settings.json` starts every session as a project role; that role has to
+    exist, pin Opus 5.5, and be one the hook refuses to spawn underneath itself."""
+
+    SETTINGS = Path(__file__).resolve().parents[2] / ".claude/settings.json"
+
+    def test_settings_start_every_session_as_the_orchestrator(self):
+        settings = json.loads(self.SETTINGS.read_text(encoding="utf-8"))
+        self.assertEqual(settings.get("agent"), "vesper-orchestrator")
+        self.assertIn(settings["agent"], HOOK.MAIN_SESSION_ONLY)
+
+    def test_the_orchestrator_role_file_pins_opus_5_5(self):
+        fields = role_frontmatter(ROLE_DIR / "vesper-orchestrator.md")
+        self.assertEqual(fields.get("name"), "vesper-orchestrator")
+        self.assertEqual(fields.get("model"), "claude-opus-5-5")
+        self.assertEqual(fields.get("tools"), ["*"])
 
 
 if __name__ == "__main__":

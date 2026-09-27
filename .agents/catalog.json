@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "namespace": "vesper",
+  "notes": "Canonical Vesper agent roles. rolesync renders .claude/agents, .codex/agents and .claude/skills from these sources; edit them here, then run `rolesync sync`. AGENTS.md owns the routing policy and model tables. Tiers mirror across platforms: Sonnet <-> Terra, Opus <-> Sol. Claude `tools: [\"*\"]` inherits every tool; read-only roles list an explicit set. Codex writer roles that work in `.codex/worktrees/` use `danger-full-access`, the mode they inherited before rolesync, because `workspace-write` leaves `.codex/` and `.git` read-only. The Claude orchestrator is the main-session agent through `.claude/settings.json` `agent`.",
+  "roles": [
+    {
+      "id": "orchestrator",
+      "name": "vesper-orchestrator",
+      "description": "Top-level Vesper session agent and the project's default Claude agent: plans from the issue, delegates bounded slices to the pinned vesper-* roles, reviews and integrates their work, and owns delivery through vesper-board and vesper-pr-review. Main-session only; never a delegation target.",
+      "source": ".agents/roles/orchestrator.md",
+      "skill": "vesper-agent-build",
+      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "high", "sandbox_mode": "danger-full-access"},
+      "claude": {"model": "claude-opus-5-5", "effort": null, "maxTurns": 400, "tools": ["*"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "builder",
+      "name": "vesper-builder",
+      "description": "Default implementation worker for one bounded Vesper slice with a brief. Use for well-specified issues, ordinary fixes, tests, contained refactors and mechanical work. Edits only its owned paths, runs no local gates, commits by pathspec, never pushes, and escalates instead of retrying.",
+      "source": ".agents/roles/builder.md",
+      "skill": "vesper-agent-build",
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "danger-full-access"},
+      "claude": {"model": "sonnet", "effort": null, "maxTurns": 200, "tools": ["*"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "escalation",
+      "name": "vesper-escalation",
+      "description": "Escalation for a Vesper slice: takes over from a builder's escalation record when AGENTS.md's escalation triggers are met, or owns from the start a slice touching kernel or simulation-core logic, migrations, authorization, persistence or replay correctness. Reconsiders the approach rather than repairing the previous patch.",
+      "source": ".agents/roles/escalation.md",
+      "skill": "vesper-agent-build",
+      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "high", "sandbox_mode": "danger-full-access"},
+      "claude": {"model": "opus", "effort": null, "maxTurns": 200, "tools": ["*"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "reviewer",
+      "name": "vesper-reviewer",
+      "description": "Read-only semantic review of a Vesper diff before integration or a PR: promised behavior present and extra work absent, schema-legal failures degrade with diagnostics, tests at the owning layer, docs and client/server seam rules. Reports findings with paths; edits nothing.",
+      "source": ".agents/roles/reviewer.md",
+      "skill": "vesper-agent-build",
+      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "medium", "sandbox_mode": "read-only"},
+      "claude": {"model": "opus", "effort": null, "maxTurns": 120, "tools": ["Read", "Grep", "Glob", "Bash", "Skill", "ToolSearch", "WebFetch", "WebSearch", "LSP"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "test-keeper",
+      "name": "vesper-test-keeper",
+      "description": "Use this agent whenever a coding task finishes. It brings every test that owns the changed or new code up to date (missing regression tests, stale pins, unnamed new suites) and reports what CI verified. It edits tests only, never production code, and never runs application gates locally.",
+      "source": ".agents/roles/test-keeper.md",
+      "skill": "vesper-testing",
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "workspace-write"},
+      "claude": {"model": "sonnet", "effort": null, "maxTurns": 150, "tools": ["*"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "context-scout",
+      "name": "vesper-context-scout",
+      "description": "Read-only Vesper scout that prepares a compact, verified context brief for a fresh agent, a resumed session, or a bounded handoff. Edits nothing and implements nothing.",
+      "source": ".agents/roles/context-scout.md",
+      "skill": "vesper-task-context",
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "low", "sandbox_mode": "read-only"},
+      "claude": {"model": "sonnet", "effort": null, "maxTurns": 60, "tools": ["Read", "Grep", "Glob", "Bash", "Skill", "ToolSearch", "LSP"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "scenario-reviewer",
+      "name": "vesper-scenario-reviewer",
+      "description": "Read-only adversarial reviewer for substantial Vesper user flows: state transitions, authorization, retries, partial failures and recovery. Reports material findings with paths and user impact; edits nothing.",
+      "source": ".agents/roles/scenario-reviewer.md",
+      "skill": "vesper-scenario-review",
+      "codex": {"model": "gpt-5.6-sol", "model_reasoning_effort": "medium", "sandbox_mode": "read-only"},
+      "claude": {"model": "opus", "effort": null, "maxTurns": 120, "tools": ["Read", "Grep", "Glob", "Bash", "Skill", "ToolSearch", "LSP"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "ui-reviewer",
+      "name": "vesper-ui-reviewer",
+      "description": "Rendered Vesper UI reviewer for the deployed app: desktop and mobile layout, accessibility, and resilient visual states. Writes review artifacts only under eval-images/; never edits application code.",
+      "source": ".agents/roles/ui-reviewer.md",
+      "skill": "vesper-ui-quality",
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "workspace-write"},
+      "claude": {"model": "sonnet", "effort": null, "maxTurns": 150, "tools": ["*"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "ux-reviewer",
+      "name": "vesper-ux-reviewer",
+      "description": "Read-only UX reviewer for substantial Vesper workflows: friction, defaults, disclosure, unnecessary steps and recovery costs, with smaller alternatives. Edits nothing.",
+      "source": ".agents/roles/ux-reviewer.md",
+      "skill": "vesper-ux-review",
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "read-only"},
+      "claude": {"model": "sonnet", "effort": null, "maxTurns": 100, "tools": ["Read", "Grep", "Glob", "Bash", "Skill", "ToolSearch", "WebFetch", "LSP"], "permissionMode": "default", "isolation": null}
+    }
+  ]
+}

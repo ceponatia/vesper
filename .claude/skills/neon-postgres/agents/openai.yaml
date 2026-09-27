@@ -1,0 +1,7 @@
+interface:
+  display_name: "Neon Postgres"
+  short_description: "Configure and troubleshoot Neon Postgres"
+  default_prompt: "Use $neon-postgres to inspect and troubleshoot this project's Neon database configuration."
+
+policy:
+  allow_implicit_invocation: true

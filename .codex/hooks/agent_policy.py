@@ -3,15 +3,20 @@
 
 The owner's ruling: delegated Claude-side Vesper roles pin their own model so
 the choice survives a missed `AGENTS.md` read — Sonnet for bounded
-implementation and test-keeping (`vesper-builder`, `vesper-test-keeper`), and
-Opus for escalation and semantic review (`vesper-escalation`,
-`vesper-reviewer`). This hook keeps a spawn from working around that:
+implementation, test-keeping, context and UI/UX review (`vesper-builder`,
+`vesper-test-keeper`, `vesper-context-scout`, `vesper-ui-reviewer`,
+`vesper-ux-reviewer`), and Opus for escalation, semantic and scenario review
+(`vesper-escalation`, `vesper-reviewer`, `vesper-scenario-reviewer`). The role
+files are rendered by rolesync from `.agents/catalog.json`. This hook keeps a
+spawn from working around that:
 an explicit `model` on a pinned role, an implementation brief handed to
 anything else, or an escalation spawn whose record does not actually say
 what it is escalating from — either every handoff field filled with this
 slice's facts, or a `Risk area:` line naming both a category and the
 reason when the slice starts on escalation instead of taking over a
-failed attempt.
+failed attempt. It also refuses any spawn of `vesper-orchestrator`: that role
+is the main-session agent (`agent` in `.claude/settings.json`), and a copy of
+it spawned underneath would be a second coordinator inside the first.
 
 Reading a prompt as an implementation assignment is a heuristic, not a
 parse: the brief template's own markers, an instruction to commit, or a
@@ -43,13 +48,22 @@ import json
 import re
 import sys
 
-PINNED = {"vesper-builder", "vesper-escalation", "vesper-reviewer", "vesper-test-keeper"}
 PINNED_MODEL = {
     "vesper-builder": "sonnet",
+    "vesper-context-scout": "sonnet",
     "vesper-escalation": "opus",
+    "vesper-orchestrator": "claude-opus-5-5",
     "vesper-reviewer": "opus",
+    "vesper-scenario-reviewer": "opus",
     "vesper-test-keeper": "sonnet",
+    "vesper-ui-reviewer": "sonnet",
+    "vesper-ux-reviewer": "sonnet",
 }
+PINNED = set(PINNED_MODEL)
+# The roles a session runs as and nothing spawns. `.claude/settings.json` starts
+# every session in this project as `vesper-orchestrator`; spawned as a subagent it
+# would be an Opus coordinator nested under the one already running.
+MAIN_SESSION_ONLY = {"vesper-orchestrator"}
 BRIEF_MARKERS = ("## Checkout and ownership", "Owned writable paths", "# Brief:")
 # The built-in agent types that hold no edit or commit tools. A brief-shaped
 # prompt to one of them is a research assignment, not a way around the pinned
@@ -567,6 +581,15 @@ def check(tool_input: dict) -> str | None:
     subagent_type = tool_input.get("subagent_type") or ""
     model = tool_input.get("model") or ""
     prompt = tool_input.get("prompt") or ""
+
+    if subagent_type in MAIN_SESSION_ONLY:
+        return (
+            f"[vesper agent policy] `{subagent_type}` is the main-session agent — "
+            "`.claude/settings.json` starts every Vesper session as it — and is never "
+            "spawned as a subagent.\n"
+            "Coordinate from this session instead: send a bounded slice to `vesper-builder`, "
+            "a review to `vesper-reviewer`, or research to `Explore` or `Plan`."
+        )
 
     if subagent_type in PINNED and model:
         return (

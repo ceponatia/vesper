@@ -1,4 +1,5 @@
 {
+  "agent": "vesper-orchestrator",
   "permissions": {
     "deny": [
       "Bash(pnpm test)",
