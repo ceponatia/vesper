@@ -577,6 +577,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // builds, so THIS turn's Scene injection is right (a stub place is minted on first
     // mention); the archivist reconciles the rest post-turn. "Just changed" = a new current
     // place this turn, or a pending time skip (both call for re-establishing the setting once).
+    // `detectSceneMovement` now also requires the move to be grounded in the player, not an
+    // unrelated third party's own errand (#330).
     const movedTo = playerContent ? detectSceneMovement(playerContent) : null;
     const preSceneCurrent = baseScenario.sceneMemory.current;
     const nextSceneMemory = movedTo ? switchScenePlace(baseScenario.sceneMemory, movedTo) : baseScenario.sceneMemory;

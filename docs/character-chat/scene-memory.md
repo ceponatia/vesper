@@ -14,8 +14,11 @@ The memory is maintained **deterministic-first**, then reconciled by the archivi
 1. **Pre-prompt (movement).** `detectSceneMovement` (`engine/chat-intent.ts`, regex-first) reads a
    movement/arrival in the player's input ("I follow her to the kitchen", "we head outside") and
    the route calls `switchScenePlace` to switch `current` (minting a stub place on first mention)
-   **before** the prompt builds, so this turn's Scene injection is right. "Just changed" = a new
-   current place this turn, or a pending time skip.
+   **before** the prompt builds, so this turn's Scene injection is right. The move must be grounded
+   in the player — they are going, or a first/second-person object shows they are the one being
+   taken there — so an unrelated third party's own errand narrated in passing ("the bartender walks
+   back to the back room") cannot relocate the shared scene. "Just changed" = a new current place
+   this turn, or a pending time skip.
 2. **Injection.** The prompt builder renders the compact **Scene** block in the volatile tail
    (current place + details + connections + a directive that flips on "just changed"
    — see [narrator-craft.md](narrator-craft.md) §Character-chat reply discipline & scene

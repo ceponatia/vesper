@@ -177,26 +177,65 @@ const MOVE_VERB =
 const DEST_PREP = "(?:in ?to|to|toward|towards|onto|out to|over to|back to|down to|up to|through to)";
 
 /**
- * A movement verb → preposition → a `the/a/…` + up-to-3-word place noun ("head to the
- * living room", "follow her into the kitchen"). The article requirement keeps
- * "want to talk" / "listen to the radio" from misfiring as movement.
+ * A movement verb → (captured filler) → preposition → a `the/a/…` + up-to-3-word place
+ * noun ("head to the living room", "follow her into the kitchen"). The article requirement
+ * keeps "want to talk" / "listen to the radio" from misfiring as movement. The filler
+ * between the verb and the preposition is captured (group 1) so `sceneMoveIsGrounded` can
+ * read who/what the verb is delivering there; the destination noun is group 2.
  */
 const MOVE_DEST_RE = new RegExp(
-  `\\b${MOVE_VERB}\\b[^.?!,;:]*?\\b${DEST_PREP}\\s+(?:the|a|an|his|her|their|your|my|our)\\s+([a-z][a-z'’-]+(?:\\s+[a-z][a-z'’-]+){0,2})\\b`,
+  `\\b${MOVE_VERB}\\b([^.?!,;:]*?)\\b${DEST_PREP}\\s+(?:the|a|an|his|her|their|your|my|our)\\s+([a-z][a-z'’-]+(?:\\s+[a-z][a-z'’-]+){0,2})\\b`,
   "i",
 );
 /** A movement verb followed by an adverbial destination ("we head outside", "let's go upstairs"). */
 const MOVE_BARE_RE = new RegExp(
-  `\\b${MOVE_VERB}\\b[^.?!,;:]*?\\b(outside|inside|indoors|outdoors|upstairs|downstairs|out back|out front)\\b`,
+  `\\b${MOVE_VERB}\\b([^.?!,;:]*?)\\b(outside|inside|indoors|outdoors|upstairs|downstairs|out back|out front)\\b`,
   "i",
 );
+
+/** A first-person subject, including the "let's" ("let us") imperative contraction. */
+const FIRST_PERSON_SUBJECT_RE = /\b(?:i|we|my|our|let['’]s)\b/iu;
+/** The player is who the verb is delivering there, whether moving themself or being taken. */
+const PLAYER_OBJECT_RE = /\b(?:me|you|us)\b/iu;
+
+/**
+ * True when the clause carrying this movement candidate is grounded in the player: a
+ * first-person subject (I/we/my/our/let's) precedes the verb, the clause has no explicit
+ * subject at all (an imperative movement line, "head to the kitchen", reads as the
+ * player's own beat like it always has), or the player is who the verb is delivering there
+ * — a first/second-person `objectSpan` between the verb and the destination ("she leads
+ * ME to the back garden", "he carries YOU to the bedroom"). Otherwise the clause is an
+ * unrelated third party's OWN errand ("the bartender walks back to the back room") that
+ * must not relocate the shared scene just because it was narrated in passing. Mirrors
+ * `playerPerformsSenseAction`'s clause-local subject read.
+ *
+ * This is narrower than the full furniture/fixture question #330 also raises ("I walk
+ * over to the desk" still reads as a place change here — see the escalation note on
+ * `detectSceneMovement` below): it only closes the "someone else's business" gap, which
+ * does not touch the pinned `chat-contact.int.test.ts` desk cases (both are the player's
+ * own first-person move and stay grounded either way).
+ */
+function sceneMoveIsGrounded(sentence: string, matchIndex: number, objectSpan: string): boolean {
+  const before = sentence.slice(0, matchIndex);
+  const clause = before.split(/[,;:]|\b(?:and|but|while|whereas|as|then)\b/iu).at(-1) ?? before;
+  if (!clause.trim()) return true;
+  if (FIRST_PERSON_SUBJECT_RE.test(clause)) return true;
+  return PLAYER_OBJECT_RE.test(objectSpan);
+}
 
 /**
  * Deterministic movement/arrival read of the player's input (chat scene memory): the
  * destination place ("kitchen", "outside", "back garden") the beat moves the scene to, or
  * null. Regex-first and pure like `detectChatCue`; the route feeds the result to
- * `switchScenePlace` BEFORE the prompt builds so this turn's Scene injection is right. A
- * false positive only mints a stub place the archivist then reconciles — a soft error.
+ * `switchScenePlace` BEFORE the prompt builds so this turn's Scene injection is right.
+ * `sceneMoveIsGrounded` keeps an unrelated third party's own errand from settling as scene
+ * truth before the narrator ever runs (#330). A remaining miss — most notably, a
+ * player-grounded move onto furniture/a fixture within the current place ("I walk over to
+ * the desk") — is still read as a place change; that is a deliberate, pinned choice
+ * elsewhere (`chat-contact.int.test.ts`, "walking over to her desk ends the held touch
+ * through the place change" — owner ruling 2026-08-04), not an oversight here, and changing
+ * it needs that ruling revisited rather than a silent flip in this detector. See the #330
+ * build report for the furniture-veto option this rules out for now.
  */
 export function detectSceneMovement(input: string): string | null {
   for (const { text } of chatEvidenceSentences(input, ["narration"])) {
@@ -204,13 +243,14 @@ export function detectSceneMovement(input: string): string | null {
       .flatMap((pattern) => {
         const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
         return [...text.matchAll(new RegExp(pattern.source, flags))]
-          .filter((match) => match.index !== undefined && Boolean(match[1]))
-          .map((match) => ({ index: match.index ?? 0, destination: match[1] ?? "" }));
+          .filter((match) => match.index !== undefined && Boolean(match[2]))
+          .map((match) => ({ index: match.index ?? 0, objectSpan: match[1] ?? "", destination: match[2] ?? "" }));
       })
       .sort((a, b) => a.index - b.index);
     for (const candidate of candidates) {
       const flags = chatEvidenceCandidateFlags(text, candidate.index);
       if (flags.question || flags.negated || flags.irrealis || flags.historical) continue;
+      if (!sceneMoveIsGrounded(text, candidate.index, candidate.objectSpan)) continue;
       return candidate.destination.trim().replace(/\s+/g, " ").toLowerCase();
     }
   }

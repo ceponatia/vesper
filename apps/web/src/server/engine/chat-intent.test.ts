@@ -141,6 +141,34 @@ describe("detectSceneMovement (chat scene memory)", () => {
     expect(detectSceneMovement("I have moved to the kitchen before.")).toBeNull();
     expect(detectSceneMovement("I moved to the kitchen.")).toBe("kitchen");
   });
+
+  // #330: an unrelated third party's own errand, narrated in passing, must not teleport
+  // the shared scene — only the player actually going (or being taken) somewhere may
+  // switch the current place. (The reported "back room" shape: a background mention, not
+  // the player moving.)
+  it("does not move the scene for an unrelated third party's own errand (#330)", () => {
+    expect(detectSceneMovement("The bartender walks back to the back room for napkins.")).toBeNull();
+    expect(detectSceneMovement("Mara heads to the kitchen to grab a drink.")).toBeNull();
+  });
+
+  it("still allows legitimate movement into a brand-new place (leading/being led)", () => {
+    expect(detectSceneMovement("She leads me to the back room.")).toBe("back room");
+    expect(detectSceneMovement("I lead her to the back room.")).toBe("back room");
+    expect(detectSceneMovement("He carries you to the bedroom.")).toBe("bedroom");
+  });
+
+  it("a mere mention of a place, with no movement verb, never changes the scene", () => {
+    expect(detectSceneMovement("The desk in the back room is old.")).toBeNull();
+    expect(detectSceneMovement("I love this kitchen.")).toBeNull();
+  });
+
+  // Not fixed here — see the #330 build report: a player-grounded move onto furniture
+  // ("I walk over to the desk") still reads as a place change, matching the pinned
+  // `chat-contact.int.test.ts` "walking over to her desk" case (owner ruling 2026-08-04).
+  it("still reads a player's own move onto furniture as a place change (unchanged; see report)", () => {
+    expect(detectSceneMovement("I walk over to the desk.")).toBe("desk");
+    expect(detectSceneMovement("I carry my drink over to the desk.")).toBe("desk");
+  });
 });
 
 describe("detectSensoryFocus (scope guard)", () => {
