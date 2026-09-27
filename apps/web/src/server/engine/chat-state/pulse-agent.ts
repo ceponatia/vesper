@@ -50,6 +50,22 @@ export interface ChatPulseInput {
   /** Failure telemetry only (agent-failure.ts) — never reaches the prompt. */
   trace?: AgentLegTrace;
   sink?: DiagnosticSink;
+  /**
+   * This character is an authored minor (age-derived life stage) — fences
+   * arousal/intimate-scene effects entirely (P1, #301 review): no arousal bump
+   * from any concept, and `intimateScene` (active/completed/heated/afterglow/
+   * hygiene) is never consumed. Every caller that has computed the prompt-side
+   * minor flag (`lifeStageForAge(profile.age)?.minor`) must pass it here too —
+   * this is the SAME determination, not a second one. Absent ⇒ false.
+   */
+  minor?: boolean;
+  /**
+   * The scenario's shared story clock, for stamping a `heated`/`afterglow`
+   * condition's start (review finding — `state.metersAtMinutes` is not a
+   * substitute: it can be null or lag). Required so no caller silently falls
+   * back to a wrong clock.
+   */
+  clockMinutes: number;
 }
 
 /**
@@ -197,7 +213,13 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
   if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
   reportIntimateSceneIfUnreadable(value, sink);
   if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };
-  return { state: applyChatPulse(state, value, profile, characterName, input.activeSocialCards).state, degraded: false };
+  return {
+    state: applyChatPulse(state, value, profile, characterName, input.activeSocialCards, {
+      minor: input.minor,
+      clockMinutes: input.clockMinutes,
+    }).state,
+    degraded: false,
+  };
 }
 
 /** Drift-only fallback: keep the drifted state, stamp a degraded trace + the mandated diagnostic. */

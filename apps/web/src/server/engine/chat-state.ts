@@ -7,6 +7,7 @@ export {
   applyTimeSkipToScenario,
   decayExchangeFeeling,
   driftChatState,
+  heatedHygieneDriftMultiplier,
   integrateChatMeters,
   rhythmOutfitPatch,
   skipChatMember,

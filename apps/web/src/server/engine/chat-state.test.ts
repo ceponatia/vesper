@@ -16,8 +16,8 @@ import { CHAT_DEFAULT_CALENDAR_START as CAL } from "@/contracts/turns/chat-clock
 import {
   CHAT_AROUSAL_INTIMATE,
   CHAT_HEATED_CONDITION_MINUTES,
-  CHAT_HYGIENE_INTIMATE_ACTIVE,
-  CHAT_HYGIENE_INTIMATE_COMPLETED,
+  CHAT_HYGIENE_COMPLETION_COST,
+  CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER,
   CHAT_SKIP_MINUTES,
 } from "./constants";
 import {
@@ -516,7 +516,8 @@ describe("routine crossings on skipped and away time", () => {
       meters: { ...initialMeters(), arousal: 0.5, hygiene: 0.5 },
       conditions: [heated],
     });
-    // Within the condition's window: arousal holds still while an unrelated meter still drifts.
+    // Within the condition's window: arousal holds still while hygiene keeps moving
+    // (accelerated, not suspended — see the dedicated multiplier test below).
     const withinWindow = driftChatState(withHeated, makeProfile(), { clockMinutes: CHAT_HEATED_CONDITION_MINUTES - 1, calendarStart: CAL });
     expect(withinWindow.meters.arousal).toBe(0.5);
     expect(withinWindow.meters.hygiene).toBeLessThan(0.5);
@@ -526,6 +527,36 @@ describe("routine crossings on skipped and away time", () => {
     const afterExpiry = driftChatState(withHeated, makeProfile(), { clockMinutes: CHAT_HEATED_CONDITION_MINUTES + 60, calendarStart: CAL });
     expect(afterExpiry.meters.arousal).toBeLessThan(0.5);
     expect(afterExpiry.conditions).toHaveLength(0);
+  });
+
+  it("`heated` accelerates hygiene's drift to a small multiple of its base rate (#303 owner ruling 2026-09-27), and it resumes the base rate once heated expires", () => {
+    const heated: ActiveCondition = {
+      id: "heated",
+      label: "Heated",
+      startedAtMinutes: 0,
+      durationMinutes: CHAT_HEATED_CONDITION_MINUTES,
+      attributeEffects: [],
+    };
+    const withHeated = stamped(0, { meters: { ...initialMeters(), hygiene: 0.8 }, conditions: [heated] });
+    const withoutHeated = stamped(0, { meters: { ...initialMeters(), hygiene: 0.8 } });
+    const drift = (state: ChatState, clockMinutes: number) =>
+      driftChatState(state, makeProfile(), { clockMinutes, calendarStart: CAL }).meters.hygiene ?? Number.NaN;
+
+    const windowEnd = CHAT_HEATED_CONDITION_MINUTES - 1; // stays within heated's window
+    const heatedLoss = 0.8 - drift(withHeated, windowEnd);
+    const ordinaryLoss = 0.8 - drift(withoutHeated, windowEnd);
+    expect(heatedLoss).toBeGreaterThan(ordinaryLoss);
+    expect(Math.abs(heatedLoss - ordinaryLoss * CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER)).toBeLessThanOrEqual(
+      2 * METER_DRIFT_STEP_PRECISION,
+    );
+
+    // Once heated expires unrenewed, hygiene drifts at its ordinary base rate again: the
+    // gap it opened during the accelerated window should FREEZE, not keep widening — if
+    // acceleration outlived the condition, the gap would keep growing past this point.
+    const later = CHAT_HEATED_CONDITION_MINUTES + 60;
+    const gapAtWindowEnd = drift(withoutHeated, windowEnd) - drift(withHeated, windowEnd);
+    const gapLater = drift(withoutHeated, later) - drift(withHeated, later);
+    expect(Math.abs(gapLater - gapAtWindowEnd)).toBeLessThanOrEqual(4 * METER_DRIFT_STEP_PRECISION);
   });
 });
 
@@ -756,21 +787,22 @@ describe("applyChatPulse (the deterministic reaction curve)", () => {
       expect(trace.regardDelta).toBeGreaterThan(0); // the ordinary concept-reaction curve still ran
     });
 
-    it("an 'active' read costs a little hygiene each exchange (#303)", () => {
+    it("an 'active' read no longer costs hygiene directly (#303 owner ruling 2026-09-27 — the cost moved to ambient drift)", () => {
       const before = state();
       const { state: next, trace } = applyChatPulse(before, { ...pulse(null), intimateScene: "active" }, makeProfile(), "Mara", []);
-      expect(trace.hygieneDelta).toBeLessThan(0);
-      expect(next.meters.hygiene).toBeLessThan(before.meters.hygiene ?? 1);
-      expect(trace.changed).toContain("hygiene");
+      expect(trace.hygieneDelta).toBe(0);
+      expect(next.meters.hygiene).toBe(before.meters.hygiene);
+      expect(trace.changed).not.toContain("hygiene");
     });
 
-    it("a 'completed' read costs MORE hygiene than 'active', and never stacks the active cost on top", () => {
+    it("only a 'completed' read charges hygiene directly, a small standalone one-time cost", () => {
       const activeRun = applyChatPulse(state(), { ...pulse(null), intimateScene: "active" }, makeProfile(), "Mara", []);
       const completedRun = applyChatPulse(state(), { ...pulse(null), intimateScene: "completed" }, makeProfile(), "Mara", []);
-      expect(Math.abs(completedRun.trace.hygieneDelta)).toBeGreaterThan(Math.abs(activeRun.trace.hygieneDelta));
-      expect(activeRun.trace.hygieneDelta).toBe(-CHAT_HYGIENE_INTIMATE_ACTIVE);
-      // Completion's cost is standalone — not the active cost plus a bigger one on top.
-      expect(completedRun.trace.hygieneDelta).toBe(-CHAT_HYGIENE_INTIMATE_COMPLETED);
+      expect(activeRun.trace.hygieneDelta).toBe(0);
+      expect(completedRun.trace.hygieneDelta).toBe(-CHAT_HYGIENE_COMPLETION_COST);
+      expect(completedRun.trace.changed).toContain("hygiene");
+      // Comfortably under even the shallowest hygiene band (the odor band is ~0.09 wide).
+      expect(Math.abs(completedRun.trace.hygieneDelta)).toBeLessThan(0.09);
     });
 
     it("a missing/degraded intimateScene read leaves hygiene untouched by the pulse (apart from elapsed-time drift, handled elsewhere)", () => {
@@ -778,6 +810,51 @@ describe("applyChatPulse (the deterministic reaction curve)", () => {
       const { state: next, trace } = applyChatPulse(before, pulse("compliment"), likeProfile, "Mara", []);
       expect(trace.hygieneDelta).toBe(0);
       expect(next.meters.hygiene).toBe(before.meters.hygiene);
+    });
+
+    describe("the minor fence (P1, #301 review) — arousal/intimate-scene effects never apply to an authored minor", () => {
+      it("applies no arousal bump from any concept, minor or not otherwise identical", () => {
+        const { trace } = applyChatPulse(state(), pulse("proposition"), makeProfile(), "Mara", [], { minor: true });
+        expect(trace.arousalDelta).toBe(0);
+      });
+
+      it("ignores intimateScene entirely — no heated condition, no arousal move, no hygiene cost", () => {
+        const before = state();
+        const { state: next, trace } = applyChatPulse(
+          before,
+          { ...pulse("proposition"), intimateScene: "active" },
+          makeProfile(),
+          "Mara",
+          [],
+          { minor: true },
+        );
+        expect(trace.arousalDelta).toBe(0);
+        expect(trace.hygieneDelta).toBe(0);
+        expect(next.meters.arousal).toBe(before.meters.arousal);
+        expect(next.meters.hygiene).toBe(before.meters.hygiene);
+        expect(next.conditions.some((c) => c.label === "Heated")).toBe(false);
+      });
+
+      it("ignores a 'completed' read too — no afterglow, no settle, no mood/stress shift, no hygiene cost", () => {
+        // No concept (pulse(null)) isolates the scene effect: the ordinary concept-reaction
+        // curve contributes nothing of its own to mood/stress here, so any change to them
+        // could only have come from the afterglow effect this fence must suppress.
+        const cresting: ChatState = { ...state(), meters: { ...state().meters, arousal: 0.95 } };
+        const { state: next, trace } = applyChatPulse(
+          cresting,
+          { ...pulse(null), intimateScene: "completed" },
+          makeProfile(),
+          "Mara",
+          [],
+          { minor: true },
+        );
+        expect(trace.arousalDelta).toBe(0);
+        expect(trace.hygieneDelta).toBe(0);
+        expect(next.meters.arousal).toBe(0.95); // untouched — no settle
+        expect(next.conditions.some((c) => c.label === "Afterglow")).toBe(false);
+        expect(next.meters.mood).toBe(cresting.meters.mood);
+        expect(next.meters.stress).toBe(cresting.meters.stress);
+      });
     });
   });
 
@@ -1236,6 +1313,7 @@ describe("runChatPulse (demo ⇒ drift-only degrade)", () => {
       exchange: { player: "hi", assistant: "[Mara] \"hi\"" },
       activeSocialCards: [],
       sink,
+      clockMinutes: 0,
     });
     expect(degraded).toBe(true);
     expect(state.regard).toBe(12); // unchanged — drift-only

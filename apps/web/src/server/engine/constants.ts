@@ -162,8 +162,9 @@ export const CHAT_ACTION_CONDITION_MINUTES = 90;
  * Duration (chat-clock minutes) of the `heated` condition a pulse-classified "active"
  * intimate scene renews each exchange (#301): long enough to survive one degraded
  * pulse (a missed classification doesn't falsely read as the scene having cooled —
- * `integrateChatMeters`'s `suspendedMeterIds` hook keys off it), short enough that a
- * scene that genuinely ended lets ambient arousal drift resume within a few exchanges.
+ * `integrateChatMeters`'s `conditions` param feeds `suspendsMeterDrift`/
+ * `heatedHygieneDriftMultiplier`, which key off it), short enough that a scene that
+ * genuinely ended lets ambient arousal drift resume within a few exchanges.
  */
 export const CHAT_HEATED_CONDITION_MINUTES = 5;
 /**
@@ -177,13 +178,19 @@ export const CHAT_AROUSAL_AFTERGLOW_SETTLE = 0.3;
 export const CHAT_AFTERGLOW_MOOD_LIFT = 0.1;
 export const CHAT_AFTERGLOW_STRESS_EASE = 0.15;
 /**
- * Hygiene cost (#303) of a pulse-classified intimate scene this exchange — "active"
- * costs a little each exchange it continues; "completed" is the larger one-time cost
- * and does NOT also add the active cost the same exchange (they're mutually exclusive
- * reads of the one `intimateScene` field, never both in one exchange).
+ * Hygiene cost of an intimate scene (#303, owner ruling 2026-09-27 — real-life timing,
+ * replacing the original per-exchange charges): while `heated` stands, hygiene simply
+ * drifts at this small multiple of its own base rate (`time.ts`'s
+ * `heatedHygieneDriftMultiplier`, through the same `integrateChatMeters` condition seam
+ * as `suspendsMeterDrift`) — a few exchanges of activity cost only a little more than
+ * the ambient drift they'd have cost anyway. `CHAT_HYGIENE_COMPLETION_COST` is a small
+ * ADDITIONAL one-time charge the pulse applies directly when the scene resolves (a
+ * completion is a bigger, discrete event the smooth per-minute rate alone underscores).
+ * Together, one ordinary scene (a handful of exchanges plus its completion) moves
+ * hygiene nowhere near a full band (~0.09 at the shallowest, the odor band).
  */
-export const CHAT_HYGIENE_INTIMATE_ACTIVE = 0.02;
-export const CHAT_HYGIENE_INTIMATE_COMPLETED = 0.05;
+export const CHAT_HYGIENE_HEATED_DRIFT_MULTIPLIER = 3;
+export const CHAT_HYGIENE_COMPLETION_COST = 0.02;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 
