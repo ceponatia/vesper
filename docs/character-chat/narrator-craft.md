@@ -56,14 +56,15 @@ lives in the scenario's `scene_memory` (see [scene-memory.md](scene-memory.md)).
   (`input.opening`) the response-shape line above is replaced with a one-shot narrator
   instruction: begin the scene in character, grounded in the scenario and current state,
   ending on a present moment that invites the player in, never narrating for them.
-  `DarkArtsForge/Asmodeus-24B-v3` receives an explicit third-person camera instruction
-  ("describing {name} acting and speaking in the third person — never as 'I'") in place
-  of "open the scene in character": in a controlled run the default phrasing produced
-  first-person narration from this model, and the explicit camera instruction held third
+  `DarkArtsForge/Asmodeus-24B-v3` receives an explicit narrator instruction ("open the
+  scene as its narrator: {name} acts and speaks first, written in the third person") in
+  place of "open the scene in character": in a controlled run the default phrasing
+  produced first-person narration from this model, and this instruction held third
   person. Overrides are keyed by the exact catalog id in `OPENING_DIRECTIVE_OVERRIDES`
   (`prompts/character-chat/single.ts`); a narrator with no entry receives the default
-  text. The pipeline resolves the narrator id once and passes that same id to the
-  stream call, so the directive and the model that answers it cannot diverge.
+  text. The pipeline resolves the narrator id once and uses that same id for the stream
+  call and the reply's provenance, so the directive and the model that answers it cannot
+  diverge.
 - **Reply-discipline gates (volatile tail).** Pure reads over the window's last 1–2
   assistant replies (`buildChatReplyGates`, `chat-intent.ts`): a **hook-cadence** note when
   the last two replies both ended their final dialogue line with "?"

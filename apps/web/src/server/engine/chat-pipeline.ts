@@ -950,7 +950,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // is the one the generation actually ran, not the id the request asked for.
       const narratorRun = buildNarratorRunProvenance({
         lane: "legacy_chat",
-        modelId: narratorCompletion?.modelId ?? input.model ?? "",
+        modelId: narratorCompletion?.modelId ?? narratorModelId,
         source: instructionSource,
         nodes: narratorPromptNodes(),
         assembled: assembledNarratorPrompt,
@@ -1467,7 +1467,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         settle,
         abortController,
         completion: () => narratorCompletion,
-        modelId: input.model ?? "",
+        modelId: narratorModelId,
         // The coordinator owns the lock; the stream releases it on every terminal path.
         release: releaseChatLock,
       }),
