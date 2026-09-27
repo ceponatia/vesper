@@ -43,14 +43,14 @@ type MeterDefinition = {
 
 ### Starter meters
 
-| Meter          | Behavior                                                                                |
-| -------------- | --------------------------------------------------------------------------------------- |
-| `hygiene`      | 1 → 0 at −0.04/h; thresholds prompt scent/grime hints.                                  |
-| `energy`       | 1 → 0 waking drain; restored by sleep.                                                  |
-| `stress`       | 0-seeking.                                                                              |
-| `arousal`      | 0-seeking; graded physiology + intimate-scene effects — see [§Graded arousal physiology](#graded-arousal-physiology-intimate-scenes-afterglow). |
-| `intoxication` | 0-seeking, fast decay.                                                                  |
-| `mood`         | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel. |
+| Meter          | Behavior                                                                                                                                      |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hygiene`      | 1 → 0 at −0.04/h; thresholds prompt scent/grime hints.                                                                                        |
+| `energy`       | 1 → 0 waking drain; restored by sleep.                                                                                                        |
+| `stress`       | 0-seeking.                                                                                                                                    |
+| `arousal`      | 0-seeking; graded physiology + intimate-scene reads — see [§Graded arousal physiology](#graded-arousal-physiology-intimate-scenes-afterglow). |
+| `intoxication` | 0-seeking, fast decay.                                                                                                                        |
+| `mood`         | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel.                                                       |
 
 ### Visible effects in images
 
