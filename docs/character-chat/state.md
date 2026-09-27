@@ -159,16 +159,24 @@ meters from `metersAtMinutes` to the clock it is handed and re-stamps them there
   it is never credited twice. A present member on an ordinary exchange crosses nothing:
   talking through bedtime earns no sleep. A skip landing inside a present member's sleep
   window wakes them there; an away member sleeps on.
-- **Routine defaults** (owner ruling 2026-09-27). A schedule with no typed `sleep` row
-  sleeps 23:00–07:00 — the same window its sleep pressure assumes. A schedule with no
-  typed `wash` row washes once a day, as each window of its sleep routine ends. A typed
-  row of that kind replaces the default; a row with no kind never has an effect; `meal`
-  has no default and restores nothing (meals belong to the body-needs work).
+- **Routine defaults** (owner ruling 2026-09-27). A schedule with no typed `sleep`
+  window sleeps 23:00–07:00 — the same window its sleep pressure assumes. A schedule
+  with no typed `wash` window washes once per story day, as that day's main sleep
+  window ends: of the sleep windows beginning that day, the longest (ties: the
+  earliest), so a night and a nap earn one wash, after the night. A typed window of
+  that kind replaces the default; a row whose start equals its end is no window at all
+  and neither yields a crossing nor replaces a default; a row with no kind never has an
+  effect; `meal` has no default and restores nothing (meals belong to the body-needs
+  work).
 - **Energy read.** The reserve is read against the character's circadian sleep pressure
   through the one derived-read path (`readChatMeters`, [../contracts/meters.md](../contracts/meters.md)
-  §Reads); `chatMeterReads(state, scenario, profile)` is the chat helper every consumer
-  calls — the prompt state slice (primary and ensemble members), the surfaced-cue bands,
-  the snapshot's `meterReads` and emotion chip, the chat list's emotion, the image cut.
+  §Reads). The server consumers holding a `ChatState` call it through
+  `chatMeterReads(state, scenario, profile)` — the prompt state slice (primary and
+  ensemble members), the surfaced-cue bands (the finalize fold and the opening beat),
+  the snapshot's `meterReads` and emotion chip, the image cut. Two call
+  `readChatMeters` directly with the same context: the chat list, which reads raw
+  state rows, and the state tools, which re-read the author's edited meters in the
+  browser.
   Pressure is derived at the read's clock and never stored; it escalates from
   `lastSleepEndedAtMinutes` once the character stays up past their normal waking span,
   and with no sleep on record assumes the routine was kept.

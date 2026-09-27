@@ -125,7 +125,8 @@ export function integrateChatMeters(args: {
  * windows of their sleep routine it spans (`sleepRoutineOf` — typed sleep rows,
  * else the default 23:00–07:00 night), and the self-care points it passes
  * (`routineLandings` — a typed row's window END, the way the successor's rhythm
- * self-care lands, else the default morning wash as each sleep window ends). A
+ * self-care lands, else the default morning wash once a day, as that day's main
+ * sleep window ends). A
  * present character talking through bedtime crosses nothing: they stayed up.
  */
 interface RoutineCrossings {
