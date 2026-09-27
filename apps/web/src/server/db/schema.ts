@@ -846,6 +846,15 @@ export const characterChatState = pgTable(
     /** Record<string,number> — the full meter registry, carried verbatim (seeded from initialMeters()). */
     meters: jsonb("meters").notNull().default({}),
     /**
+     * The story minute (`character_chats.clock_minutes`) the stored `meters`
+     * hold at — the origin elapsed-time drift integrates from, so a read at one
+     * clock never moves them twice. Every writer stamps it; NULL is only a row
+     * written by a writer that predates the column, and it holds at the first
+     * clock it meets. The migration that added it backfilled each existing row
+     * from its chat's clock.
+     */
+    metersAtMinutes: integer("meters_at_minutes"),
+    /**
      * −100…100, the FEELING axis toward the player persona (was `affinity`) —
      * volatile, moved by the reaction pulse. Seeded from the authored
      * `playerRelationship` record at band midpoints.

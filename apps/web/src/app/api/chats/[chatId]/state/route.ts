@@ -127,7 +127,9 @@ export const GET = withOwnedChat<Params, OwnedChat>(
     const stored = await loadChatState(chatId, target.characterId, sink);
     const base = await resolveSeededOutfit(stored ?? seedChatState(profile), user.id, profile, sink);
     const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
-    const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+    // A read catches the stored meters up to the clock WITHOUT persisting, so an
+    // away character reads as caught up and a re-read at one clock is identical.
+    const drifted = stored ? driftChatState(base, profile, { clockMinutes: scenario.clockMinutes }) : base;
     const isPrimaryTarget = target.characterId === owned.participant.characterId;
     const [simMeters, simRelationship] = isPrimaryTarget
       ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])

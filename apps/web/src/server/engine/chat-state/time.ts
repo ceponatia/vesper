@@ -14,41 +14,80 @@ import {
 } from "@/contracts";
 import { minuteOfDay, type CalendarStart } from "@/lib/clock";
 import { CHAT_FEELING_SKIP_STEPS, decayFeelingState } from "../chat-feeling";
-import { CHAT_METER_DRIFT_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
+import { CHAT_METER_CATCH_UP_MAX_MINUTES, CHAT_SKIP_MINUTES } from "../constants";
 import { chatSkipNote } from "../prompts/character-chat";
 import type { ChatScenario, ChatState } from "./types";
 
 /**
- * Advance the in-game state for one exchange. There is no between-visit
- * wall-clock recovery — no time passes between visits at all. PURE and idempotent
- * on read: without `advance` it is a pass-through projection, with it meters
- * decay CHAT_METER_DRIFT_MINUTES toward their *personalized* baselines (meter
- * pacing is exchange-keyed — deliberately NOT the 1-minute clock tick, see
- * constants.ts) and conditions past the clock expire.
+ * Integrate a character's meters across the story interval `[fromMinutes,
+ * toMinutes]` under their personalized drift laws — the ONE elapsed-time meter
+ * path; nothing else moves meters with time. PURE and closed-form: meters depend
+ * only on the interval, never on how often it is read.
+ *
+ * Only the latest `CHAT_METER_CATCH_UP_MAX_MINUTES` of the interval integrate.
+ * The interval is one piece today; a caller that must stop at a boundary inside
+ * it (a crossed routine window, a standing condition that suspends a meter's
+ * drift) integrates each piece with this function and applies the boundary's
+ * effect between them.
+ */
+export function integrateChatMeters(args: {
+  meters: Record<string, number>;
+  profile: CharacterProfile;
+  fromMinutes: number;
+  toMinutes: number;
+}): Record<string, number> {
+  const elapsed = Math.min(args.toMinutes - args.fromMinutes, CHAT_METER_CATCH_UP_MAX_MINUTES);
+  if (!(elapsed > 0)) return args.meters;
+  return applyMeterDrift(args.meters, elapsed, personalizeMeters(meterDefinitions, args.profile.traits));
+}
+
+/**
+ * Catch a character's state up to the shared story clock. PURE. Their meters
+ * integrate from the minute they hold at (`metersAtMinutes`) to `clockMinutes`
+ * and are re-stamped there, and conditions past the clock expire. Physiology is
+ * presence-independent — an away character catches up exactly as a present one
+ * does, whether on an exchange, a skip, or a read.
+ *
+ * Idempotent: a second call at the same clock returns its input unchanged, so a
+ * read, a retake, or a repeated projection never moves meters twice. A stamp
+ * ahead of the clock (a state that settled but whose clock tick did not) never
+ * integrates backwards. An unstamped state (`null`) holds at the clock it meets.
+ * Emotional weather is NOT elapsed-time physiology: it decays per exchange
+ * (`decayExchangeFeeling`) and over skips (`applyTimeSkip`).
  */
 export function driftChatState(
   state: ChatState,
   profile: CharacterProfile,
-  options: { advance?: boolean; clockMinutes: number },
+  options: { clockMinutes: number },
 ): ChatState {
-  // Conditions expire against the SHARED story clock even when this member's
-  // meters are frozen — one timeline for the roster.
-  const conditions = state.conditions.filter((c) => !isConditionExpired(c, options.clockMinutes));
-  if (!options.advance) return conditions.length === state.conditions.length ? state : { ...state, conditions };
-  const meters = applyMeterDrift({ ...state.meters }, CHAT_METER_DRIFT_MINUTES, personalizeMeters(meterDefinitions, profile.traits));
-  // Emotional weather decays per EXCHANGE, not clock minutes: one advance =
-  // one beat of the feeling fading and the bruise healing.
-  return { ...state, meters, conditions, feeling: decayFeelingState(state.feeling) };
+  const { clockMinutes } = options;
+  // Conditions expire against the SHARED story clock — one timeline for the roster.
+  const conditions = state.conditions.filter((c) => !isConditionExpired(c, clockMinutes));
+  const expired = conditions.length !== state.conditions.length;
+  const from = state.metersAtMinutes ?? clockMinutes;
+  if (from >= clockMinutes) {
+    if (state.metersAtMinutes !== null && !expired) return state;
+    return { ...state, conditions, metersAtMinutes: state.metersAtMinutes ?? clockMinutes };
+  }
+  const meters = integrateChatMeters({ meters: state.meters, profile, fromMinutes: from, toMinutes: clockMinutes });
+  return { ...state, meters, metersAtMinutes: clockMinutes, conditions };
 }
 
 /**
- * Apply a player time skip (flavor-only). PURE. Exactly three
- * effects: the clock advances (which lets already-running timed conditions expire
- * through the existing clock-keyed filter — no new wiring), the one-shot skip note
- * is stamped (worded by the CURRENT stage band), and the skip records itself into
- * the capped history ring. **Meters do not change** — whether twelve skipped hours
- * mean recovery or deterioration is circumstance, and the time-effects system that
- * could know stays scaffolded, not wired.
+ * One exchange's emotional-weather beat: the standing feeling fades and the
+ * bruise heals per EXCHANGE, never per story minute. Kept apart from the
+ * elapsed-time meter path on purpose; a character in the exchange takes it.
+ */
+export function decayExchangeFeeling(state: ChatState): ChatState {
+  return { ...state, feeling: decayFeelingState(state.feeling) };
+}
+
+/**
+ * Apply a player time skip to the SCENARIO. PURE. The clock advances (which
+ * lets already-running timed conditions expire through the existing clock-keyed
+ * filter), the one-shot skip note is stamped (worded by the CURRENT stage band),
+ * and the skip records itself into the capped history ring. Each member's meters
+ * then follow the skipped minutes through `skipChatMember`.
  */
 export function applyTimeSkipToScenario(
   scenario: ChatScenario,
@@ -116,7 +155,12 @@ export function rhythmOutfitPatch(
     : {};
 }
 
-/** The per-character half of a time skip: expiry vs the advanced shared clock + scene-boundary resets (+ rhythm dress when `profile` given). */
+/**
+ * The scene-boundary half of a time skip for a member in the scene: expiry vs
+ * the advanced shared clock, the familiarity scene-budget reset, feeling
+ * softening over the skipped time (+ rhythm dress when `profile` given). Moves
+ * no meter — `skipChatMember` integrates those first.
+ */
 export function applyTimeSkip(
   state: ChatState,
   amount: ChatSkipAmount,
@@ -135,4 +179,25 @@ export function applyTimeSkip(
     feeling: decayFeelingState(state.feeling, CHAT_FEELING_SKIP_STEPS[amount]),
     ...(profile ? rhythmOutfitPatch(profile, clockMinutes, calendarStart) : {}),
   };
+}
+
+/**
+ * One roster member's half of a time skip. PURE. Every member's meters — away
+ * members included, because physiology is presence-independent — integrate
+ * across the skipped minutes on the one elapsed-time path (`driftChatState`).
+ * The scene-boundary effects (`applyTimeSkip`) belong to the scene, so only a
+ * PRESENT member takes them; an away member's feeling, scene budget and
+ * wardrobe carry on untouched.
+ */
+export function skipChatMember(
+  state: ChatState,
+  amount: ChatSkipAmount,
+  clockMinutes: number,
+  profile: CharacterProfile,
+  calendarStart: CalendarStart = CHAT_DEFAULT_CALENDAR_START,
+): ChatState {
+  const caughtUp = driftChatState(state, profile, { clockMinutes });
+  return caughtUp.presence === "present"
+    ? applyTimeSkip(caughtUp, amount, clockMinutes, profile, calendarStart)
+    : caughtUp;
 }

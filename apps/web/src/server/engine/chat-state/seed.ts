@@ -34,6 +34,8 @@ export function seedChatState(profile: CharacterProfile): ChatState {
   const live = authoredRecordToLive(authored ?? { familiarity: "strangers", regard: "neutral", kind: "", history: "", presented: undefined, looming: false });
   return {
     meters: initialMeters(),
+    // Rested as of whatever clock the seed first meets: no history to integrate.
+    metersAtMinutes: null,
     regard: live.regard,
     familiarity: live.familiarity,
     familiaritySceneGain: 0,

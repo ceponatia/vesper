@@ -14,7 +14,6 @@ import {
 import { parseOr } from "@/lib/parse";
 import { jsonError, jsonOk, readBody, withUser } from "@/server/api";
 import {
-  applyTimeSkip,
   applyTimeSkipToScenario,
   armMeanwhilePass,
   chatStateSnapshot,
@@ -23,29 +22,33 @@ import {
   loadChatScenario,
   loadChatState,
   mirrorShadowTimeSkip,
-  persistChatState,
+  persistChatTimeSkip,
   readSimChatClock,
   reconcileActorWardrobes,
   resolveSeededOutfit,
   saveChatScenario,
   seedChatScenario,
   seedChatState,
+  skipChatMember,
   type ChatGarmentWardrobeChange,
+  type ChatState,
 } from "@/server/engine";
+import { log } from "@/server/log";
 import { chatBusyResponse, loadOwnedChat } from "../../owned";
 
 type Params = { chatId: string };
 
 /**
- * Player time skip (D3/D8/D14): the ONE
- * between-scene time mechanism. Flavor-only v1 — the SHARED scenario clock advances
- * once (one story timeline for the whole roster), the one-shot
- * skip note is stamped on the scenario (worded by the primary's regard band), and
- * the skip records itself into the scenario's scaffolding ring. Each PRESENT
- * member then takes the per-character half — timed-condition expiry against the
- * advanced clock, the familiarity scene-budget reset, and feeling decay over the
- * skipped time. **Meters do not change.** A chat with no state row yet degrades to
- * seed + skip — never a failed action.
+ * Player time skip (D3/D8): the ONE between-scene time mechanism. The SHARED
+ * scenario clock advances once (one story timeline for the whole roster), the
+ * one-shot skip note is stamped on the scenario (worded by the primary's regard
+ * band), and the skip records itself into the scenario's ring. Every member's
+ * meters then integrate across the skipped minutes — away members too, because
+ * physiology is presence-independent — and each PRESENT member also takes the
+ * scene-boundary half: timed-condition expiry, the familiarity scene-budget
+ * reset, feeling softening, rhythm dress. The clock and every member row commit
+ * in ONE transaction, so a failed skip changes nothing. A chat with no state row
+ * yet degrades to seed + skip — never a failed action.
  */
 
 const skipBodySchema = z.object({ amount: chatSkipAmountSchema });
@@ -93,8 +96,63 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     regardBandForValue(primaryBase.regard).id,
     new Date(),
   );
-  await saveChatScenario(chatId, nextScenario);
 
+  // Every roster member's post-skip state, computed BEFORE anything is written
+  // (the primary reuses its already-resolved state). `skipChatMember` integrates
+  // each member's meters across the skipped minutes — present or away — and gives
+  // only PRESENT members the scene-boundary half; a present member's rhythm dress
+  // (a schedule row at the new clock naming a preset) re-dresses them for the
+  // window.
+  let primaryNext = primaryBase;
+  const memberWrites: { characterId: string; state: ChatState }[] = [];
+  // Rhythm auto-dress is a PRESET application, so it compiles to garment
+  // transfers like every other worn-list write.
+  // Collected here and reconciled in one pass after the commit — the store is one
+  // jsonb field, so it takes one write, not one per member.
+  const wardrobeChanges: ChatGarmentWardrobeChange[] = [];
+  for (const member of owned.roster) {
+    const isPrimary = member.characterId === owned.participant.characterId;
+    const profile = isPrimary
+      ? primaryProfile
+      : parseOr(characterProfileSchema, member.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
+    const base = isPrimary
+      ? primaryBase
+      : await resolveSeededOutfit(
+          (await loadChatState(chatId, member.characterId, sink)) ?? seedChatState(profile),
+          user.id,
+          profile,
+          sink,
+        );
+    const next = await resolveSeededOutfit(
+      skipChatMember(base, body.value.amount, nextScenario.clockMinutes, profile, nextScenario.calendarStart),
+      user.id,
+      profile,
+      sink,
+    );
+    memberWrites.push({ characterId: member.characterId, state: next });
+    if (next.wornItemIds.join(",") !== base.wornItemIds.join(",")) {
+      wardrobeChanges.push({
+        actorId: garmentActorForCharacter(member.characterId),
+        preWornItemIds: base.wornItemIds,
+        wornItemIds: next.wornItemIds,
+      });
+    }
+    if (isPrimary) primaryNext = next;
+  }
+
+  // The clock and every member row commit together or not at all: a failed skip
+  // can never leave the shared clock past a member still at the old boundary.
+  try {
+    await persistChatTimeSkip(chatId, nextScenario, memberWrites);
+  } catch (error) {
+    log.error("engine.chat", "time skip did not commit", {
+      chatId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return jsonError("time_skip_failed", "the time skip could not be saved; nothing changed — try again", 500);
+  }
+
+  // Detached follow-ups run only once the skip has landed.
   // R4 shadow: mirror the same minutes onto a shadow chat's branch (bounded
   // drain, detached) so the two clocks keep comparable deltas. No-op for
   // every other lane.
@@ -112,48 +170,6 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
       clockMinutes: nextScenario.clockMinutes,
       skipNote: nextScenario.pendingSkipNote,
     });
-  }
-
-  // The per-character half for every PRESENT roster member (the primary reuses
-  // its already-resolved state; away members stay frozen — their conditions
-  // expire against the shared clock on their next drift anyway).
-  let primaryNext = primaryBase;
-  // Rhythm auto-dress is a PRESET application, so it compiles to garment
-  // transfers like every other worn-list write.
-  // Collected here and reconciled in one pass after the loop — the store is one
-  // jsonb field, so it takes one write, not one per member.
-  const wardrobeChanges: ChatGarmentWardrobeChange[] = [];
-  for (const member of owned.roster) {
-    const isPrimary = member.characterId === owned.participant.characterId;
-    const profile = isPrimary
-      ? primaryProfile
-      : parseOr(characterProfileSchema, member.character.profile ?? {}, emptyCharacterProfile(), sink, "characters.profile");
-    const base = isPrimary
-      ? primaryBase
-      : await resolveSeededOutfit(
-          (await loadChatState(chatId, member.characterId, sink)) ?? seedChatState(profile),
-          user.id,
-          profile,
-          sink,
-        );
-    if (base.presence !== "present") continue;
-    // Profile in ⇒ rhythm auto-dress: a schedule row at the new clock naming a
-    // preset re-dresses this member for the window.
-    const next = await resolveSeededOutfit(
-      applyTimeSkip(base, body.value.amount, nextScenario.clockMinutes, profile, nextScenario.calendarStart),
-      user.id,
-      profile,
-      sink,
-    );
-    await persistChatState(chatId, member.characterId, next);
-    if (next.wornItemIds.join(",") !== base.wornItemIds.join(",")) {
-      wardrobeChanges.push({
-        actorId: garmentActorForCharacter(member.characterId),
-        preWornItemIds: base.wornItemIds,
-        wornItemIds: next.wornItemIds,
-      });
-    }
-    if (isPrimary) primaryNext = next;
   }
 
   // Fenced: a failed reconcile costs the store's freshness for these members,

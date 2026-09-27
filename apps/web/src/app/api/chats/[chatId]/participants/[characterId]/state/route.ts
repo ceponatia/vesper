@@ -52,7 +52,8 @@ async function readView(chatId: string, owned: OwnedChat, characterId: string) {
   const stored = await loadChatState(chatId, characterId);
   const scenario = (await loadChatScenario(chatId)) ?? seedChatScenario(profile);
   const base = stored ?? seedChatState(profile);
-  const drifted = stored ? driftChatState(base, profile, { advance: false, clockMinutes: scenario.clockMinutes }) : base;
+  // The same non-persisting catch-up projection as the aggregate state read.
+  const drifted = stored ? driftChatState(base, profile, { clockMinutes: scenario.clockMinutes }) : base;
   const primary = characterId === owned.participant.characterId;
   const [simMeters, simRelationship] = primary
     ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])

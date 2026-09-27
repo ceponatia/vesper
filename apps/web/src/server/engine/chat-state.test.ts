@@ -2,7 +2,7 @@ import { foldPrimaryProgression } from "./chat-state/character-fold";
 import { settleEnsembleMember } from "./chat-state/ensemble";
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { initialMeters } from "@/contracts/meters/registry";
+import { initialMeters, meterById, METER_DRIFT_STEP_PRECISION } from "@/contracts/meters/registry";
 import { stageMidpoint } from "@/contracts/relationships/stages";
 import { familiarityBandMidpoint, regardBandForValue, regardBandMidpoint } from "@/contracts/relationships/bands";
 import type { ActiveCondition } from "@/contracts/conditions/condition";
@@ -12,7 +12,7 @@ import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { characterProfileSchema } from "@/contracts/world/profile";
 import { makeProfile } from "@/server/test-support";
 import { SKIP_HISTORY_CAP } from "@/contracts/turns/chat-skip";
-import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES, CHAT_TICK_MINUTES } from "./constants";
+import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES } from "./constants";
 import {
   applyChatAction,
   applyChatAttributeOverlays,
@@ -22,10 +22,12 @@ import {
   applyTimeSkip,
   applyTimeSkipToScenario,
   chatStateSnapshot,
+  decayExchangeFeeling,
   driftChatState,
   rhythmOutfitPatch,
   seedChatScenario,
   seedChatState,
+  skipChatMember,
   type ChatScenario,
   type ChatState,
 } from "./chat-state";
@@ -265,42 +267,81 @@ describe("rollbackScenario ('another take' — the supporting cast never rolls b
   });
 });
 
-describe("driftChatState (D8 — in-game time only, clock on the shared scenario)", () => {
-  const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
+describe("driftChatState — meters follow elapsed story time on the shared clock", () => {
+  /** A seeded state whose meters hold at story minute `at`. */
+  const stamped = (at: number, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(makeProfile()),
+    metersAtMinutes: at,
+    ...overrides,
+  });
+  const hygieneRatePerHour = (): number => {
+    const def = meterById("hygiene");
+    if (def === undefined) throw new Error("no hygiene meter in the registry");
+    return def.recoveryPerHour ?? Math.abs(def.perHour);
+  };
 
-  it("within-visit tick decays meters toward their baseline (the clock lives on the scenario)", () => {
-    const drifted = driftChatState(base(), makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
-    expect(drifted.meters.hygiene).toBeLessThan(0.9); // drifts toward the grime pole
-    expect(drifted.meters.energy).toBeLessThan(0.9);
+  it("changes nothing when no story time elapsed, and a re-read at one clock is a no-op", () => {
+    const tired = stamped(100, { meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 100 })).toBe(tired);
+    const caughtUp = driftChatState(tired, makeProfile(), { clockMinutes: 640 });
+    expect(caughtUp.metersAtMinutes).toBe(640);
+    expect(caughtUp.meters.hygiene).toBeLessThan(0.2);
+    // Re-reading the caught-up state at the same clock moves nothing ...
+    expect(driftChatState(caughtUp, makeProfile(), { clockMinutes: 640 })).toBe(caughtUp);
+    // ... and re-reading the stored state is the same projection every time.
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 640 })).toEqual(caughtUp);
   });
 
-  it("a read without advance is a pure pass-through — no wall-clock recovery exists (D8)", () => {
-    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
-    // However long the player was away, nothing moves: no second clock.
-    expect(driftChatState(tired, makeProfile(), { advance: false, clockMinutes: 0 })).toBe(tired);
-    expect(driftChatState(tired, makeProfile(), { clockMinutes: 0 })).toBe(tired);
+  it("a busy conversation barely moves hygiene and lands where one catch-up over the same minutes does", () => {
+    const start = stamped(0);
+    // Sixty exchanges, one story minute each, every one caught up and re-stamped.
+    let busy = start;
+    for (let clock = 1; clock <= 60; clock += 1) busy = driftChatState(busy, makeProfile(), { clockMinutes: clock });
+    const oneStep = driftChatState(start, makeProfile(), { clockMinutes: 60 });
+    const moved = (start.meters.hygiene ?? Number.NaN) - (busy.meters.hygiene ?? Number.NaN);
+    expect(moved).toBeGreaterThan(0);
+    expect(moved).toBeLessThanOrEqual(hygieneRatePerHour() + 60 * METER_DRIFT_STEP_PRECISION); // one story hour's drift
+    for (const [id, value] of Object.entries(oneStep.meters)) {
+      expect(Math.abs((busy.meters[id] ?? Number.NaN) - value)).toBeLessThanOrEqual(60 * METER_DRIFT_STEP_PRECISION);
+    }
   });
 
-  it("never decays affinity (no between-visit decay)", () => {
-    const warm = base({ regard: 57 });
-    expect(driftChatState(warm, makeProfile(), { advance: false, clockMinutes: 0 }).regard).toBe(57);
-    expect(driftChatState(warm, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES }).regard).toBe(57);
+  it("an away character catches up when read, exactly as a present one does", () => {
+    const present = stamped(0);
+    const away = stamped(0, { presence: "away" });
+    const readPresent = driftChatState(present, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight });
+    const readAway = driftChatState(away, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight });
+    expect(readAway.meters).toEqual(readPresent.meters);
+    expect(readAway.meters).not.toEqual(away.meters);
+    expect(readAway.metersAtMinutes).toBe(CHAT_SKIP_MINUTES.overnight);
   });
 
-  it("expires conditions past the SHARED clock — even for a frozen (no-advance) member", () => {
+  it("holds an unstamped state at the clock it meets, and never integrates backwards", () => {
+    const seeded = seedChatState(makeProfile());
+    const met = driftChatState(seeded, makeProfile(), { clockMinutes: 900 });
+    expect(met.meters).toEqual(seeded.meters);
+    expect(met.metersAtMinutes).toBe(900);
+    // A stamp ahead of the clock (the state settled, the tick did not) waits for it.
+    const ahead = stamped(901);
+    expect(driftChatState(ahead, makeProfile(), { clockMinutes: 900 })).toBe(ahead);
+  });
+
+  it("never decays regard", () => {
+    const warm = stamped(0, { regard: 57 });
+    expect(driftChatState(warm, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.days }).regard).toBe(57);
+  });
+
+  it("expires conditions past the SHARED clock for every member", () => {
     const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
-    const withCondition = base({ conditions: [condition] });
-    // A clock past started + duration (2) ⇒ expired.
-    expect(driftChatState(withCondition, makeProfile(), { advance: true, clockMinutes: 3 }).conditions).toHaveLength(0);
-    // Away members share the ONE story timeline (ruling 8): only meter decay is
-    // skipped — their conditions still expire against the shared clock.
-    expect(driftChatState(withCondition, makeProfile(), { advance: false, clockMinutes: 3 }).conditions).toHaveLength(0);
+    const withCondition = stamped(0, { conditions: [condition], presence: "away" });
+    // A clock past started + duration (2) ⇒ expired, one story timeline for the roster.
+    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 3 }).conditions).toHaveLength(0);
     // A read with the clock still at 0 keeps the condition running.
-    expect(driftChatState(withCondition, makeProfile(), { advance: false, clockMinutes: 0 }).conditions).toHaveLength(1);
+    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 0 }).conditions).toHaveLength(1);
   });
 });
 
-describe("time skips (flavor-only v1, D14; split across scenario + member halves)", () => {
+describe("time skips (split across scenario + member halves)", () => {
   const base = (overrides: Partial<ChatState> = {}): ChatState => ({ ...seedChatState(makeProfile()), ...overrides });
   const scen = (overrides: Partial<ChatScenario> = {}): ChatScenario => ({ ...seedChatScenario(makeProfile()), ...overrides });
   const now = new Date("2026-07-02T12:00:00Z");
@@ -313,11 +354,31 @@ describe("time skips (flavor-only v1, D14; split across scenario + member halves
     expect(skipped.pendingSkipNote).toMatch(/once/);
   });
 
-  it("meters do NOT change (D14 — narrative flavor, never a flat recovery rule)", () => {
-    const tired = base({ meters: { ...initialMeters(), hygiene: 0.2, energy: 0.1, intoxication: 0.8 } });
-    const skipped = applyTimeSkip(tired, "days", CHAT_SKIP_MINUTES.days);
-    expect(skipped.meters).toEqual(tired.meters);
-    expect(skipped.regard).toBe(tired.regard);
+  it("every member's meters follow the skipped minutes; only a present member takes the scene-boundary half", () => {
+    const felt = { current: { label: "angry" as const, intensity: 0.9, cause: "the lie" }, bruise: { remaining: 4 } };
+    const tired = base({
+      metersAtMinutes: 0,
+      meters: { ...initialMeters(), hygiene: 0.2, energy: 0.1, intoxication: 0.8 },
+      familiaritySceneGain: 3,
+      feeling: felt,
+    });
+    const clock = CHAT_SKIP_MINUTES.overnight;
+    const drifted = driftChatState(tired, makeProfile(), { clockMinutes: clock });
+    const present = skipChatMember(tired, "overnight", clock, makeProfile());
+    const away = skipChatMember({ ...tired, presence: "away" }, "overnight", clock, makeProfile());
+    // Physiology is presence-independent: both integrate the same interval ...
+    expect(present.meters).toEqual(drifted.meters);
+    expect(away.meters).toEqual(drifted.meters);
+    expect(away.metersAtMinutes).toBe(clock);
+    // ... and a skip is never a flat recovery: nothing moved back toward rested.
+    expect(present.meters.hygiene).toBeLessThanOrEqual(0.2);
+    expect(present.meters.energy).toBeLessThanOrEqual(0.1);
+    // The scene-boundary half belongs to the scene.
+    expect(present.familiaritySceneGain).toBe(0);
+    expect(present.feeling).not.toEqual(felt);
+    expect(away.familiaritySceneGain).toBe(3);
+    expect(away.feeling).toEqual(felt);
+    expect(present.regard).toBe(tired.regard);
   });
 
   it("lets already-running timed conditions expire through the existing clock-keyed filter", () => {
@@ -1104,14 +1165,17 @@ describe("emotional weather wiring", () => {
     expect(damped.trace.regardScale).toBeLessThan(1);
   });
 
-  it("drift decays the feeling per exchange; a days skip clears it", () => {
+  it("the exchange beat decays the feeling (elapsed time alone does not); a days skip clears it", () => {
     const felt = {
       ...seedChatState(makeProfile()),
+      metersAtMinutes: 0,
       feeling: { current: { label: "angry" as const, intensity: 0.9, cause: "the lie" }, bruise: { remaining: 4 } },
     };
-    const drifted = driftChatState(felt, makeProfile(), { advance: true, clockMinutes: CHAT_TICK_MINUTES });
-    expect(drifted.feeling.current?.intensity).toBeCloseTo(0.75);
-    expect(drifted.feeling.bruise?.remaining).toBe(3);
+    const beat = decayExchangeFeeling(felt);
+    expect(beat.feeling.current?.intensity).toBeCloseTo(0.75);
+    expect(beat.feeling.bruise?.remaining).toBe(3);
+    // Feeling is not elapsed-time physiology: the meter catch-up leaves it standing.
+    expect(driftChatState(felt, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.hours }).feeling).toEqual(felt.feeling);
     const skipped = applyTimeSkip(felt, "days", CHAT_SKIP_MINUTES.days);
     expect(skipped.feeling.current).toBeNull();
     expect(skipped.feeling.bruise).toBeNull();

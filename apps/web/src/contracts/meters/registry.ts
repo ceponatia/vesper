@@ -1,4 +1,21 @@
 import { z } from "zod";
+import { FIXED_POINT_ONE, linearDriftStep, proportionalDecayStep } from "@/lib/fixed-point";
+
+/**
+ * How a meter moves with elapsed STORY time. Both laws are closed-form steps of
+ * the shared fixed-point kernel (`@/lib/fixed-point`) — the one the successor's
+ * body substrate integrates with — so the chat lane grows no formula of its own:
+ * - `linear` (the default when absent): a constant-rate approach toward the
+ *   resting target at `recoveryPerHour ?? |perHour|` per story hour, stopping
+ *   at it;
+ * - `proportional`: an exponential approach toward the resting target — the
+ *   distance left halves every `halfLifeHours` story hours.
+ */
+export const meterDriftLawSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("linear") }),
+  z.object({ kind: z.literal("proportional"), halfLifeHours: z.number().positive() }),
+]);
+export type MeterDriftLaw = z.infer<typeof meterDriftLawSchema>;
 
 export const meterThresholdSchema = z.object({
   below: z.number().optional(),
@@ -22,16 +39,21 @@ export const meterDefinitionSchema = z.object({
   label: z.string().min(1),
   description: z.string().min(1),
   initial: z.number().min(0).max(1),
-  /** Signed drift per game hour; clamped to [0,1] after application. */
+  /**
+   * Signed linear drift per STORY hour; its sign also names the default resting
+   * pole. A `proportional` meter states its target as `baseline` and leaves this 0.
+   */
   perHour: z.number(),
   /**
    * Resting target the meter drifts toward.
-   * Absent ⇒ today's implied pole (perHour < 0 ⇒ 0, else 1), so old defs are
-   * unchanged. Per-character traits shift this at drift time (`personalizeMeters`).
+   * Absent ⇒ the implied pole (perHour < 0 ⇒ 0, else 1). Per-character traits
+   * shift this at drift time (`personalizeMeters`).
    */
   baseline: z.number().min(0).max(1).optional(),
-  /** Rate of approach to `baseline` per hour; absent ⇒ |perHour| (today's speed). */
+  /** Linear rate of approach to `baseline` per story hour; absent ⇒ |perHour|. */
   recoveryPerHour: z.number().min(0).optional(),
+  /** The elapsed-time drift law; absent ⇒ `linear`. */
+  law: meterDriftLawSchema.optional(),
   thresholds: z.array(meterThresholdSchema).readonly().default([]),
 });
 
@@ -41,6 +63,14 @@ export type MeterDefinition = z.infer<typeof meterDefinitionSchema>;
  * Starter meters. Worlds may override fields or disable a meter entirely via
  * WorldStyle.meterOverrides (null disables). The old app's hygiene vectors
  * collapse into `hygiene` + conditions.
+ *
+ * Every rate is per STORY hour on the chat's shared clock, and each law and
+ * value matches the successor's body registry (`bodyMeterRegistryV1` in
+ * `@vesper/simulation-core`), which ported this economy to story time: the
+ * same meter drifts the same way in both lanes. From the 0.9 rested seed that
+ * means lived-in after about a day without washing and unwashed after about
+ * two; tired after about eleven waking hours and exhausted after about a day; a
+ * flushed 0.8 cools below the flushed band in about 75 minutes.
  */
 export const meterDefinitions: readonly MeterDefinition[] = [
   {
@@ -48,7 +78,7 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     label: "Hygiene",
     description: "Freshness from 1 (just bathed) to 0 (badly unwashed). Bathing restores it via the simulant.",
     initial: 0.9,
-    perHour: -0.04,
+    perHour: -0.015,
     thresholds: [
       { below: 0.55, promptHint: "Noticeably lived-in at close range: faint sweat and warm skin.", pipLabel: "lived-in" },
       {
@@ -64,7 +94,11 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     label: "Energy",
     description: "Wakefulness from 1 (rested) to 0 (exhausted). Sleep restores it via the simulant.",
     initial: 0.9,
-    perHour: -0.05,
+    // A reserve that drains in proportion to what is left: time constant 16
+    // story hours (half-life 16·ln2 ≈ 11.1 h, the successor's 39 925 s).
+    perHour: 0,
+    baseline: 0,
+    law: { kind: "proportional", halfLifeHours: 16 * Math.LN2 },
     thresholds: [
       { below: 0.45, promptHint: "Tired: slower replies, longer blinks, small stretches and yawns.", pipLabel: "tired" },
       {
@@ -91,7 +125,7 @@ export const meterDefinitions: readonly MeterDefinition[] = [
     label: "Arousal",
     description: "Physical arousal from 0 to 1. Decays toward baseline.",
     initial: 0,
-    perHour: -0.1,
+    perHour: -0.2,
     thresholds: [
       {
         above: 0.55,
@@ -147,30 +181,65 @@ export function meterBaselineOf(def: MeterDefinition): number {
 }
 
 /**
- * Drift one meter toward its baseline over `hours`, never overshooting the target,
- * clamped to [0,1]. With no `baseline`/`recoveryPerHour` this is exactly the old
- * `current + perHour*hours` pole-seeking (the cap at the pole == not overshooting 0/1).
+ * The documented precision of ONE drift step. The shared kernel works in whole
+ * 1/`FIXED_POINT_ONE` units, so a step lands within this of its exact law (the
+ * floor of a linear move; the floor and the deterministic exp2 rounding of a
+ * proportional one). An interval integrated in n steps therefore agrees with
+ * the same interval in one step to within n × this.
  */
-function driftToward(current: number, def: MeterDefinition, hours: number): number {
-  const target = meterBaselineOf(def);
-  const rate = def.recoveryPerHour ?? Math.abs(def.perHour);
-  const step = rate * hours;
-  const moved = current < target ? Math.min(target, current + step) : Math.max(target, current - step);
-  return Math.min(1, Math.max(0, moved));
+export const METER_DRIFT_STEP_PRECISION = 2 / FIXED_POINT_ONE;
+
+const SECONDS_PER_HOUR = 3_600;
+
+const clampUnit = (value: number): number => Math.min(1, Math.max(0, value));
+
+/** A 0–1 meter value in the shared kernel's fixed-point units. */
+const toFixedPoint = (value: number): number => Math.round(clampUnit(value) * FIXED_POINT_ONE);
+
+/**
+ * One meter's closed-form step over `elapsedSeconds` of story time, through the
+ * shared kernel. A step that moves less than one kernel unit leaves the value
+ * exactly as it was, so float noise never churns a settled meter.
+ */
+function driftStep(current: number, def: MeterDefinition, elapsedSeconds: number): number {
+  const value = toFixedPoint(current);
+  const target = toFixedPoint(meterBaselineOf(def));
+  const law: MeterDriftLaw = def.law ?? { kind: "linear" };
+  const next =
+    law.kind === "proportional"
+      ? proportionalDecayStep({
+          value,
+          target,
+          halfLife: Math.round(law.halfLifeHours * SECONDS_PER_HOUR),
+          elapsed: elapsedSeconds,
+        })
+      : linearDriftStep({
+          value,
+          target,
+          ratePerHourFixedPoint: Math.round((def.recoveryPerHour ?? Math.abs(def.perHour)) * FIXED_POINT_ONE),
+          elapsedSeconds,
+        });
+  return next === value ? clampUnit(current) : next / FIXED_POINT_ONE;
 }
 
-/** Apply per-hour drift toward each meter's baseline for elapsed game minutes, clamped to [0,1]. */
+/**
+ * Integrate each meter's drift law across `elapsedMinutes` of story time in ONE
+ * closed-form step (see `METER_DRIFT_STEP_PRECISION`), toward its baseline,
+ * never overshooting it, clamped to [0,1]. Zero or negative elapsed time moves
+ * nothing. Pure; returns a new record.
+ */
 export function applyMeterDrift(
   meters: Record<string, number>,
   elapsedMinutes: number,
   definitions: readonly MeterDefinition[] = meterDefinitions,
 ): Record<string, number> {
-  const hours = elapsedMinutes / 60;
   const next = { ...meters };
+  const elapsedSeconds = Math.round(elapsedMinutes * 60);
+  if (!(elapsedSeconds > 0)) return next;
   for (const def of definitions) {
     const current = next[def.id];
     if (current === undefined) continue;
-    next[def.id] = driftToward(current, def, hours);
+    next[def.id] = driftStep(current, def, elapsedSeconds);
   }
   return next;
 }
