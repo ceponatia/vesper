@@ -855,6 +855,14 @@ export const characterChatState = pgTable(
      */
     metersAtMinutes: integer("meters_at_minutes"),
     /**
+     * The story minute the character last actually came out of sleep (an
+     * `asleep` condition's end, or a routine sleep window a catch-up crossed).
+     * Sleep pressure escalates from it; NULL ⇒ no sleep on record, so the
+     * pressure curve assumes the routine was kept. Pressure itself is never
+     * stored.
+     */
+    lastSleepEndedAtMinutes: integer("last_sleep_ended_at_minutes"),
+    /**
      * −100…100, the FEELING axis toward the player persona (was `affinity`) —
      * volatile, moved by the reaction pulse. Seeded from the authored
      * `playerRelationship` record at band midpoints.
@@ -953,9 +961,10 @@ export const characterChatState = pgTable(
     milestones: jsonb("milestones").notNull().default([]),
     /**
      * Narrative presence: "present" = sharing the
-     * player's scene; "away" = offstage living their life (meters freeze, no
-     * memory legs). The ONLY location-like state chat tracks; the roster panel
-     * is the manual override, the archivist confirms transitions.
+     * player's scene; "away" = offstage living their life (no memory legs; their
+     * meters drift on the shared clock like everyone's, and their routine — sleep,
+     * wash — plays out as they catch up). The ONLY location-like state chat tracks; the
+     * roster panel is the manual override, the archivist confirms transitions.
      */
     presence: text("presence", { enum: ["present", "away"] }).notNull().default("present"),
     /**

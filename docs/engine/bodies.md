@@ -172,6 +172,8 @@ guesses:
   body-location registry engine embodiment places facts against.
 - [../contracts/meters.md](../contracts/meters.md) — the chat lane's parallel
   continuous-meter and mood model, and the shared meter-id vocabulary; its meters
-  drift on story time through this same kernel, under the same law and rate per meter.
+  drift on story time through this same kernel, under the same law and rate per meter,
+  its sleep credits through `deriveSleepCredit`, and its energy reads through the same
+  circadian pressure and energy read.
 - [../resilience.md](../resilience.md) — the degrade-over-fail discipline
   this doc's rhythm and read-layer rules follow.

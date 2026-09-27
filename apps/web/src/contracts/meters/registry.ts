@@ -17,6 +17,23 @@ export const meterDriftLawSchema = z.discriminatedUnion("kind", [
 ]);
 export type MeterDriftLaw = z.infer<typeof meterDriftLawSchema>;
 
+/**
+ * What a meter's band vocabulary (its thresholds, chips, image effects, and the
+ * mood phrase's reading of it) is evaluated against — the stored value is only
+ * where drift and sources act. `readChatMeters` (`./reads.ts`) is the one path
+ * that turns stored meters into these read values:
+ * - `stored` (the default when absent): the stored value itself;
+ * - `circadian_balance`: the stored value is a RESERVE, read as reserve minus
+ *   the character's circadian sleep pressure (simulation-core's signed energy
+ *   read, −1…1), carried onto the 0–1 band scale as (read + 1) / 2 — so 0.5 is
+ *   a read of zero, the character's own bedtime on a normal day.
+ */
+export const meterReadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("stored") }),
+  z.object({ kind: z.literal("circadian_balance") }),
+]);
+export type MeterRead = z.infer<typeof meterReadSchema>;
+
 export const meterThresholdSchema = z.object({
   below: z.number().optional(),
   above: z.number().optional(),
@@ -54,6 +71,8 @@ export const meterDefinitionSchema = z.object({
   recoveryPerHour: z.number().min(0).optional(),
   /** The elapsed-time drift law; absent ⇒ `linear`. */
   law: meterDriftLawSchema.optional(),
+  /** What the thresholds below are evaluated against; absent ⇒ `stored`. */
+  read: meterReadSchema.optional(),
   thresholds: z.array(meterThresholdSchema).readonly().default([]),
 });
 
@@ -92,17 +111,23 @@ export const meterDefinitions: readonly MeterDefinition[] = [
   {
     id: "energy",
     label: "Energy",
-    description: "Wakefulness from 1 (rested) to 0 (exhausted). Sleep restores it via the simulant.",
+    description: "The energy reserve from 1 (fully rested) to 0 (spent). Sleep restores it; how tired it feels reads it against the character's own sleep pressure.",
     initial: 0.9,
     // A reserve that drains in proportion to what is left: time constant 16
-    // story hours (half-life 16·ln2 ≈ 11.1 h, the successor's 39 925 s).
+    // story hours (half-life 16·ln2 ≈ 11.1 h, the successor's 39 925 s). Sleep
+    // holds it and credits +0.09 per story hour up to 0.95 (chat-state/time.ts).
     perHour: 0,
     baseline: 0,
     law: { kind: "proportional", halfLifeHours: 16 * Math.LN2 },
+    // The bands read the reserve against the character's own sleep pressure, on
+    // the 0–1 band scale: tired below 0.5 is a negative read (simulation-core's
+    // `dragging` and worse), exhausted below 0.3 is a read under −0.4 (`wrecked`
+    // and `collapsing` — the successor's visible exhaustion).
+    read: { kind: "circadian_balance" },
     thresholds: [
-      { below: 0.45, promptHint: "Tired: slower replies, longer blinks, small stretches and yawns.", pipLabel: "tired" },
+      { below: 0.5, promptHint: "Tired: slower replies, longer blinks, small stretches and yawns.", pipLabel: "tired" },
       {
-        below: 0.2,
+        below: 0.3,
         promptHint: "Exhausted: drifting attention, heavy eyes, leaning on furniture.",
         pipLabel: "exhausted",
         visibleEffects: ["heavy-lidded eyes", "dark circles under the eyes"],

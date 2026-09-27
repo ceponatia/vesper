@@ -7,6 +7,7 @@ import {
   familiarityBandForValue,
   meterDefinitions,
   regardBandForValue,
+  readChatMeters,
   splitStateCues,
   type ActiveCondition,
   type GarmentOperation,
@@ -143,7 +144,18 @@ function StateToolsDialog({
   // What the live (edited) state would surface to the narrator next turn: the
   // foreground "just shifted" beat vs the standing cues, diffed against the bands
   // surfaced last turn, plus the condition overlays.
-  const cueSplit = splitStateCues(meters, snapshot.surfacedCues);
+  // Through the one derived-read path, as the server reads them — energy against
+  // this character's own sleep pressure at the snapshot's clock.
+  const cueSplit = splitStateCues(
+    readChatMeters(meters, {
+      clockMinutes: snapshot.clockMinutes,
+      calendarStart: snapshot.calendarStart,
+      schedule: presetSource.data?.profile.schedule ?? [],
+      lastSleepEndedAtMinutes: snapshot.lastSleepEndedAtMinutes,
+      conditions,
+    }),
+    snapshot.surfacedCues,
+  );
   const overlays = conditionAttributeOverlays(conditions);
 
   const addCondition = () => {

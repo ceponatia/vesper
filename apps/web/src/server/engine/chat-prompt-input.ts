@@ -10,6 +10,7 @@ import { characterChats, db } from "../db";
 import type { PlayerPersona } from "../players";
 import type { ChatVisualStateLines } from "./chat-visual-state-cues";
 import type { ChatScenario, ChatState } from "./chat-state/types";
+import { chatMeterReads } from "./chat-state/readout";
 import type { ResolvedChatWardrobe, ResolvedPlayerWardrobe } from "./chat-wardrobe";
 import type { ChatGarmentNarration } from "./chat-garments";
 import type { CharacterChatPromptInput } from "./prompts/character-chat";
@@ -78,7 +79,9 @@ export function promptStateSlice(
     // build, and absent independently when the selection chose nothing.
     ...(visualState && visualState.constraints.length > 0 ? { visualConstraints: visualState.constraints } : {}),
     ...(visualState && visualState.cues.length > 0 ? { visualCues: visualState.cues } : {}),
-    meters: state.meters,
+    // The narrator reads meters through the one derived-read path — energy as the
+    // character's balance against their own sleep pressure, not the raw reserve.
+    meters: chatMeterReads(state, scenario, profile),
     regard: state.regard,
     familiarity: state.familiarity,
     relationship: state.relationship,

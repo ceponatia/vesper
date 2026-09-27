@@ -11,6 +11,7 @@ import {
   emptyCharacterProfile,
   milestoneSchema,
   planHubReason,
+  readChatMeters,
   NEUTRAL_MOOD_METER,
   regardBandForValue,
   regardBandToStageId,
@@ -85,6 +86,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
       profile: characters.profile,
       regard: characterChatState.regard,
       meters: characterChatState.meters,
+      lastSleepEndedAtMinutes: characterChatState.lastSleepEndedAtMinutes,
       conditions: characterChatState.conditions,
       openLoops: characterChatState.openLoops,
       milestones: characterChatState.milestones,
@@ -128,7 +130,7 @@ export const GET = withUser(async (user, req: NextRequest) => {
     .orderBy(desc(characterChats.lastMessageAt))
     .limit(LIST_LIMIT);
 
-  const chats = rows.map(({ profile, regard, meters, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, calendarStart, engineAuthority, ...rest }) => {
+  const chats = rows.map(({ profile, regard, meters, lastSleepEndedAtMinutes, conditions, openLoops, milestones, milestonesSeenAt, plans, clockMinutes, calendarStart, engineAuthority, ...rest }) => {
     // A successor chat owns a whole simulated world that dies with it (E20-1) —
     // one boolean so the hub's confirm dialog can say so.
     const isSuccessor = engineAuthority !== "legacy_chat";
@@ -139,12 +141,15 @@ export const GET = withUser(async (user, req: NextRequest) => {
     const loops = parseOr(listLoopsSchema, openLoops ?? [], [], undefined, "character_chat_state.open_loops");
     const parsedMilestones = parseOr(listMilestonesSchema, milestones ?? [], [], undefined, "character_chat_state.milestones");
     const parsedPlans = parseOr(chatPlansSchema, plans ?? [], [], undefined, "character_chats.plans");
+    const parsedCalendarStart = parseOr(
+      calendarStartSchema,
+      calendarStart,
+      CHAT_DEFAULT_CALENDAR_START,
+      undefined,
+      "character_chats.calendar_start",
+    );
     const say =
-      planHubReason(
-        parsedPlans,
-        clockMinutes ?? 0,
-        parseOr(calendarStartSchema, calendarStart, CHAT_DEFAULT_CALENDAR_START, undefined, "character_chats.calendar_start"),
-      ) ||
+      planHubReason(parsedPlans, clockMinutes ?? 0, parsedCalendarStart) ||
       loops[0]?.trim() ||
       (unseenMilestoneReason(parsedMilestones, milestonesSeenAt ?? new Date()) ?? "");
     if (regard === null) return { ...rest, regardBand: null, emotion: null, say, isSuccessor };
@@ -152,13 +157,21 @@ export const GET = withUser(async (user, req: NextRequest) => {
     const parsedConditions = parseOr(listConditionsSchema, conditions ?? [], [], undefined, "character_chat_state.conditions");
     const prof = parseOr(characterProfileSchema, profile ?? {}, emptyCharacterProfile(), undefined, "characters.profile");
     const band = regardBandForValue(regard);
-    // Mirrors chatStateSnapshot's mood-chip inputs: chat is an intimate-capable
-    // 1-on-1, dominance tilts a low-valence read angry vs sad.
+    // Mirrors chatStateSnapshot's mood-chip inputs: the meters through the one
+    // derived-read path (energy against the character's own sleep pressure); chat
+    // is an intimate-capable 1-on-1, dominance tilts a low-valence read angry vs sad.
+    const reads = readChatMeters(parsedMeters, {
+      clockMinutes: clockMinutes ?? 0,
+      calendarStart: parsedCalendarStart,
+      schedule: prof.schedule,
+      lastSleepEndedAtMinutes: lastSleepEndedAtMinutes ?? null,
+      conditions: parsedConditions,
+    });
     const emotion = deriveEmotionLabel({
-      mood: parsedMeters.mood ?? NEUTRAL_MOOD_METER,
-      arousal: parsedMeters.arousal ?? 0,
-      stress: parsedMeters.stress ?? 0,
-      energy: parsedMeters.energy ?? 1,
+      mood: reads.mood ?? NEUTRAL_MOOD_METER,
+      arousal: reads.arousal ?? 0,
+      stress: reads.stress ?? 0,
+      energy: reads.energy ?? 1,
       affinityStage: regardBandToStageId(band.id),
       conditions: parsedConditions,
       intimateContext: true,

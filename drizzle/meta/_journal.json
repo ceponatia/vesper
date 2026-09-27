@@ -1051,6 +1051,13 @@
       "when": 1790543400199,
       "tag": "0149_chat-meters-at-minutes",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1790546113047,
+      "tag": "0150_chat-last-sleep-ended",
+      "breakpoints": true
     }
   ]
 }

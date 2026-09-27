@@ -6,7 +6,7 @@
 
 ## Meters
 
-A meter is continuous 0–1 state that drifts with the clock, defined as data in `meters/registry.ts`:
+A meter is continuous 0–1 state that drifts with elapsed story time, defined as data in `meters/registry.ts`:
 
 ```ts
 type MeterDefinition = {
@@ -14,9 +14,11 @@ type MeterDefinition = {
   label: string;
   description: string;
   initial: number;
-  perHour: number;                  // signed drift per game hour
+  perHour: number;                  // signed linear drift per story hour
   baseline?: number;
   recoveryPerHour?: number;
+  law?: { kind: "linear" } | { kind: "proportional"; halfLifeHours: number };
+  read?: { kind: "stored" } | { kind: "circadian_balance" };
   thresholds: Array<{
     below?: number;
     above?: number;
@@ -32,25 +34,39 @@ type MeterDefinition = {
 | `id`                    | e.g. `hygiene`, `energy`, `arousal`, `stress`, `intoxication`, `mood`.                                                                                                                                                                                                                                                   |
 | `label` / `description` | Display text.                                                                                                                                                                                                                                                                                                            |
 | `initial`               | Starting value.                                                                                                                                                                                                                                                                                                          |
-| `perHour`               | Signed drift per game hour.                                                                                                                                                                                                                                                                                              |
+| `perHour`               | Signed linear drift per story hour; its sign names the default pole. A `proportional` meter leaves it 0.                                                                                                                                                                                                                 |
 | `baseline`              | The resting target. *Absent* ⇒ today's pole: `perHour < 0` ⇒ 0, else 1.                                                                                                                                                                                                                                                  |
-| `recoveryPerHour`       | Rate of movement toward `baseline`. *Absent* ⇒ `\|perHour\|`.                                                                                                                                                                                                                                                            |
+| `recoveryPerHour`       | Linear rate of movement toward `baseline` per story hour. *Absent* ⇒ `\|perHour\|`.                                                                                                                                                                                                                                      |
+| `law`                   | The drift law. *Absent* ⇒ `linear` (constant rate, stopping at `baseline`); `proportional` halves the distance to `baseline` every `halfLifeHours`.                                                                                                                                                                      |
+| `read`                  | What the thresholds are evaluated against. *Absent* ⇒ `stored`; `circadian_balance` reads the stored reserve against sleep pressure (§Reads).                                                                                                                                                                            |
 | `thresholds`            | Crossing one surfaces its `promptHint` to the narrator; `pipLabel` is the same band's short UI chip ("tipsy") — the chat status strip derives from it, so a band edit moves narration and UI together. `visibleEffects` is a third, independent consumer — see [§Visible effects in images](#visible-effects-in-images). |
 
-**Drift.** On every clock advance, `applyMeterDrift` moves each value toward its baseline at `recoveryPerHour` — never overshooting, clamped to `[0, 1]` — and surfaces any crossed-threshold `promptHint`s to the narrator. A consumer may override or disable individual meters in its config (`meterOverrides`).
+**Drift.** `applyMeterDrift` integrates each meter's law across an elapsed span of story time in one closed-form step of the shared fixed-point kernel (`@/lib/fixed-point` — the one the successor's body substrate integrates with), toward its baseline, never overshooting, clamped to `[0, 1]`. One step is exact to within `METER_DRIFT_STEP_PRECISION` (two 1/10 000 units), so an interval split into n steps agrees with one step to within n of it. The chat lane decides WHEN a span is integrated — per character, from the minute its meters hold at ([../character-chat/state.md](../character-chat/state.md) §Elapsed-time meter drift). A consumer may override or disable individual meters in its config (`meterOverrides`).
 
 **Drift is per-character.** At drift time the consuming lane resolves trait-shifted baseline/recovery via `personalizeMeters` ([relationships.md](relationships.md) §Modulation); the global value is the no-trait default. Absent `baseline` / `recoveryPerHour` ⇒ exactly the old pole-seeking drift.
 
 ### Starter meters
 
-| Meter          | Behavior                                                                                |
-| -------------- | --------------------------------------------------------------------------------------- |
-| `hygiene`      | 1 → 0 at −0.04/h; thresholds prompt scent/grime hints.                                  |
-| `energy`       | 1 → 0 waking drain; restored by sleep.                                                  |
-| `stress`       | 0-seeking.                                                                              |
-| `arousal`      | 0-seeking.                                                                              |
-| `intoxication` | 0-seeking, fast decay.                                                                  |
-| `mood`         | Emotional valence — 0 low / 0.5 even / 1 bright; baseline 0.5, returns to an even keel. |
+Every law and rate is per story hour and matches the successor's body registry (`bodyMeterRegistryV1`), so a meter drifts the same way in both lanes.
+
+| Meter          | Behavior                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| `hygiene`      | Linear 0.015/h toward 0; lived-in after a day without washing, unwashed after about two.               |
+| `energy`       | A reserve: proportional decay toward 0, half-life 16·ln2 h; sleep restores it; bands read its balance. |
+| `stress`       | Linear 0.03/h toward calm; composure speeds or slows it.                                               |
+| `arousal`      | Linear 0.2/h toward a libido-shifted resting point.                                                    |
+| `intoxication` | Linear 0.12/h toward sober.                                                                            |
+| `mood`         | Valence — 0 low / 0.5 even / 1 bright; linear 0.06/h back to an optimism-shifted keel.                 |
+
+### Reads
+
+Stored meters are where drift and sources act. Every consumer of their band vocabulary — the narrator's state cues and mood phrase, the anti-repetition bands, the chat strip's chips, the emotion chip, image visible effects — reads the values `readChatMeters` (`meters/reads.ts`) returns instead; it is the one derived-read path, and no surface special-cases a meter.
+
+- A meter reads as stored unless its `read` declares otherwise.
+- `energy` reads its **circadian balance**: the reserve minus the character's sleep pressure — simulation-core's `deriveCircadianPressure` and `deriveEnergyRead`, never a second formula — a signed read in −1…1 carried onto the band scale as (read + 1) / 2. Zero (0.5) is the character's own bedtime on a normal day; `tired` (below 0.5) is a negative read, `exhausted` (below 0.3) a read under −0.4.
+- Pressure is derived at read time, never stored, from the character's typed `sleep` schedule rows (weekday masks honored; the window that last began governs), falling back to 23:00–07:00, on the chat calendar (story second 0 is midnight of the `calendarStart` day). It escalates from the last real sleep on record; with none, it assumes the routine was kept.
+- `meterReadPips` gives the strip's chips from read values: each meter's deepest crossed band that names a chip, then mood's valence (`bright` at 0.65, `low` at 0.35).
+- A world-routed chat's meters are the successor's, already read by its own engine: they read as stored.
 
 ### Visible effects in images
 
@@ -66,12 +82,12 @@ use) and mints a `meter.visible_effect` current-layer visual-state fact only whe
 declares `visibleEffects`. A shallower band, a meter with no ruled band, or a raw scalar never
 reach an image prompt this way. The owner's ruling (issue #427) authors exactly four bands:
 
-| Meter          | Band (bound)            | `visibleEffects`                                   |
-| -------------- | ----------------------- | -------------------------------------------------- |
-| `intoxication` | `drunk` (above 0.7)     | "glassy, unfocused eyes"                           |
-| `hygiene`      | `unwashed` (below 0.3)  | "lank, greasy hair", "grimy skin"                  |
-| `energy`       | `exhausted` (below 0.2) | "heavy-lidded eyes", "dark circles under the eyes" |
-| `arousal`      | `flushed` (above 0.55)  | "parted lips"                                      |
+| Meter          | Band (bound)                 | `visibleEffects`                                   |
+| -------------- | ---------------------------- | -------------------------------------------------- |
+| `intoxication` | `drunk` (above 0.7)          | "glassy, unfocused eyes"                           |
+| `hygiene`      | `unwashed` (below 0.3)       | "lank, greasy hair", "grimy skin"                  |
+| `energy`       | `exhausted` (read below 0.3) | "heavy-lidded eyes", "dark circles under the eyes" |
+| `arousal`      | `flushed` (above 0.55)       | "parted lips"                                      |
 
 No `visibleEffects` phrase ever uses "flushed", "blush" or a colour synonym — the owner reports
 those render as stage makeup on several models, not a body state — even though the arousal

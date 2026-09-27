@@ -249,7 +249,9 @@ describe("visibleEffects (issue #427)", () => {
     expect([...visibleEffectBands()].sort(byMeterThenBound)).toEqual(
       [
         { meterId: "hygiene", bound: 0.3 },
-        { meterId: "energy", bound: 0.2 },
+        // Energy's bands read its circadian balance (reads.ts): the ruled
+        // "exhausted" band is a read under −0.4, 0.3 on the band scale.
+        { meterId: "energy", bound: 0.3 },
         { meterId: "arousal", bound: 0.55 },
         { meterId: "intoxication", bound: 0.7 },
       ].sort(byMeterThenBound),

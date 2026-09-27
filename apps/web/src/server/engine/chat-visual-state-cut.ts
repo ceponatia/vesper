@@ -7,6 +7,7 @@ import {
 import { buildChatAffordanceRead } from "./chat-affordances";
 import { CHAT_CONTACT_PLAYER_SUBJECT } from "./chat-contact/identity";
 import type { ChatScenario, ChatState } from "./chat-state/types";
+import { chatMeterReads } from "./chat-state/readout";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
@@ -105,10 +106,12 @@ export function chatVisualStateShadowInput(input: {
     attributes: cut.profile.attributes,
     attributeOverlays: cut.state.attributeOverlays,
     conditions: cut.state.conditions,
-    // `ChatState.meters` is always a record (never absent), but an empty one
-    // degrades to the same silence `projectMeterFeatures` already gives an
-    // empty input — no ternary needed, unlike the truly optional owners below.
-    meters: cut.state.meters,
+    // The meters through the one derived-read path, so an image states
+    // "exhausted" exactly when the narrator and the strip do (energy read against
+    // the character's own sleep pressure, never the raw reserve). Always a record;
+    // an empty one degrades to the same silence `projectMeterFeatures` already
+    // gives an empty input — no ternary needed, unlike the truly optional owners below.
+    meters: chatMeterReads(cut.state, cut.scenario, cut.profile),
     realize: {
       ...(cut.profile.speciesId === undefined ? {} : { speciesId: cut.profile.speciesId }),
       ...(cut.profile.heritageId === undefined ? {} : { heritageId: cut.profile.heritageId }),

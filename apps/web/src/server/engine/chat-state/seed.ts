@@ -36,6 +36,8 @@ export function seedChatState(profile: CharacterProfile): ChatState {
     meters: initialMeters(),
     // Rested as of whatever clock the seed first meets: no history to integrate.
     metersAtMinutes: null,
+    // No sleep on record yet: pressure assumes the routine was kept.
+    lastSleepEndedAtMinutes: null,
     regard: live.regard,
     familiarity: live.familiarity,
     familiaritySceneGain: 0,

@@ -185,6 +185,12 @@ export type GarmentReadout = z.infer<typeof garmentReadoutSchema>;
 /** Light chat-state snapshot for the strip, premise bar, and state tools. */
 export const chatStateSnapshotSchema = z.object({
   meters: z.record(z.string(), z.number()).catch({}),
+  // The meters through the one derived-read path (energy read against sleep
+  // pressure) — what the strip's chips read. The stored `meters` stay what the
+  // Character sheet edits.
+  meterReads: z.record(z.string(), z.number()).catch({}),
+  // The read path's sleep context, so the state tools can re-read edited meters.
+  lastSleepEndedAtMinutes: z.number().nullable().catch(null),
   regard: z.number().catch(0),
   familiarity: z.number().catch(0),
   regardBand: z

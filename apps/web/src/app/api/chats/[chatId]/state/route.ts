@@ -87,6 +87,7 @@ const editBodySchema = z.object({
 const snapshotOpts = (profile: CharacterProfile) => ({
   dominance: effectiveTraitValue(profile.traits, "social.dominance"),
   intimateContext: true,
+  profile,
 });
 
 function targetMember(owned: OwnedChat, req: NextRequest): { characterId: string; profile: unknown } | null {
@@ -129,7 +130,9 @@ export const GET = withOwnedChat<Params, OwnedChat>(
     const scenario = (await loadChatScenario(chatId, sink)) ?? seedChatScenario(profile);
     // A read catches the stored meters up to the clock WITHOUT persisting, so an
     // away character reads as caught up and a re-read at one clock is identical.
-    const drifted = stored ? driftChatState(base, profile, { clockMinutes: scenario.clockMinutes }) : base;
+    const drifted = stored
+      ? driftChatState(base, profile, { clockMinutes: scenario.clockMinutes, calendarStart: scenario.calendarStart })
+      : base;
     const isPrimaryTarget = target.characterId === owned.participant.characterId;
     const [simMeters, simRelationship] = isPrimaryTarget
       ? await Promise.all([readSimChatMeters(chatId), readSimChatRelationship(chatId)])
@@ -147,7 +150,12 @@ export const GET = withOwnedChat<Params, OwnedChat>(
     );
     const simOutfit = target.characterId === owned.participant.characterId ? await readSimChatOutfit(chatId) : null;
     return jsonOk({
-      ...chatStateSnapshot(state, scenario, { ...snapshotOpts(profile), persisted: stored !== null }),
+      // A world-routed primary's meters are the successor's: they read as stored.
+      ...chatStateSnapshot(state, scenario, {
+        ...snapshotOpts(profile),
+        persisted: stored !== null,
+        worldMeters: simMeters !== null,
+      }),
       outfitLabel: simOutfit ?? wardrobe.garments,
       garments: garmentReadoutsFor(
         scenario.garments,
