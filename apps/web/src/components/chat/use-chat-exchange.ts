@@ -6,7 +6,7 @@ import { chatsApi, sendChatMessage, type ChatStreamOutcome } from "@/lib/client/
 import { replyRevealHoldMs } from "@/lib/chat-pacing";
 import { useToast } from "@/components/ui/toast";
 import { PER_CHAT_DEFAULTS, type PerChatState } from "./chat-conversation-state";
-import { replyFailureToast } from "./reply-failure";
+import { replyFailureToast, replyWithdrawnAfterStreaming } from "./reply-failure";
 import type { useChatTranscript } from "./use-chat-transcript";
 
 type Setter<K extends keyof PerChatState> = Dispatch<SetStateAction<PerChatState[K]>>;
@@ -198,9 +198,16 @@ export function useChatExchange({ chatId, transcript, ready, archived, setArchiv
     // read it back — so the popup names the actual cause (timeout, out of credits,
     // moderation block, …) instead of guessing. The reload already dropped the
     // empty bubble.
-    if (!received) {
+    //
+    // Tokens DID arrive, but the server withheld them: a fragment the exchange
+    // refused to keep as a reply (a one-token `length` stub) streamed before the
+    // generation's finish was known. It was never persisted, so the same reload
+    // already replaced the bubble with the stored transcript — the popup says why
+    // the text the player watched arrive is gone.
+    const failure = fresh.ok ? fresh.data.chat.lastReplyFailure : null;
+    if (!received || replyWithdrawnAfterStreaming(failure)) {
       toast.push({
-        ...replyFailureToast(who, fresh.ok ? fresh.data.chat.lastReplyFailure : null),
+        ...replyFailureToast(who, failure),
         tone: "error",
       });
     }

@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 /**
- * Why the last chat exchange produced NO reply (docs/character-chat/pipeline.md
- * §Reply failures). Persisted on `character_chats.last_reply_failure` when an
- * exchange ends with zero streamed text, cleared by the next exchange that
- * settles — the client reads it back on its post-exchange transcript refetch
- * and shows cause-specific copy instead of guessing at the reason.
+ * Why the last chat exchange produced NO reply (docs/character-chat/reply-failures.md).
+ * Persisted on `character_chats.last_reply_failure` when an exchange ends with no
+ * reply kept — zero streamed text, or a streamed fragment the server withheld
+ * (`length_stub` below) — and cleared by the next exchange that settles. The client
+ * reads it back on its post-exchange transcript refetch and shows cause-specific
+ * copy instead of guessing at the reason.
  *
  * The vocabulary is a closed registry (the extension point): a new failure
  * class is a new literal here plus a copy entry in the client map — never a
@@ -54,6 +55,11 @@ export type ChatReplyFailureCode = (typeof chatReplyFailureCodes)[number];
  *   text, on a clean finish, with no reasoning split reported.
  * - `normalizer_erased` — the model DID write prose and Vesper's own output
  *   normalizers discarded all of it. This one is not the model's fault.
+ * - `length_stub` — the generation reported a `length` finish after one output
+ *   token or fewer, against a budget larger than that. Its fragment had already
+ *   streamed to the player, so this is the one cause recorded for an exchange that
+ *   DID show text: the server withheld the fragment instead of settling it as a
+ *   reply, and the client retracts what it displayed.
  *
  * The middle three were ONE cause (`reasoning_or_length`) whose copy asserted a
  * reasoning chain in all three cases. That is false wherever nothing is thinking: no
@@ -68,6 +74,7 @@ export const chatReplyFailureCauses = [
   "length_capped",
   "hidden_output",
   "normalizer_erased",
+  "length_stub",
 ] as const;
 
 export type ChatReplyFailureCause = (typeof chatReplyFailureCauses)[number];

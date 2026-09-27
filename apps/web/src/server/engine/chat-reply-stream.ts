@@ -3,6 +3,7 @@ import {
   classifyEmptyNarratorCompletion,
   classifyProviderError,
   narratorCompletionLogFields,
+  narratorLengthStubFailure,
   type NarratorCompletion,
 } from "../ai";
 import { log } from "../log";
@@ -106,6 +107,14 @@ export async function* withStreamTimeouts(
  * `meta.stopped`. An empty reply skips settle but records WHY it was empty
  * (`last_reply_failure` — the client's post-exchange refetch reads it for the
  * failure popup); the lock releases on every path.
+ *
+ * The exchange's verdict is resolved BEFORE settlement and decides it: a reply
+ * settles only when the verdict records no failure. For every exchange but one that
+ * is exactly "the reply has text"; the exception is the pathological `length` stub
+ * (`narratorLengthStubFailure`), whose fragment has already streamed but which
+ * skips settle exactly as an empty reply does — no assistant row, no take, no
+ * fan-out, nothing in history — and records its failure for the client to retract
+ * what it displayed.
  */
 export function streamExchange(
   source: AsyncGenerator<string>,
@@ -159,36 +168,35 @@ export function streamExchange(
         }
       }
       if (abortController.signal.aborted) stopped = true;
-      if (full.trim()) {
+      const hasText = Boolean(full.trim());
+      const narrator = completion();
+      const failure = resolveReplyFailure({ hasText, stopped, streamError, timedOut, completion: narrator });
+      // Only a reply the verdict accepts settles. With text that is every exchange
+      // except the `length` stub, which is withheld here exactly like an empty reply.
+      if (hasText && failure === null) {
         try {
           await settle(full, stopped);
         } catch (error) {
           log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
         }
       }
-      // A zero-visible-text exchange logs the generation's own numbers — the
+      // An exchange that kept no reply logs the generation's own numbers — the
       // structured half of the truthful story, and the only place the raw-versus-
       // visible split is recorded. Counts and finish state only.
-      const narrator = completion();
-      if (!full.trim() && narrator) {
+      if (narrator && !hasText) {
         log.warn("engine.chat", "narrator produced no visible text", {
+          chatId,
+          ...narratorCompletionLogFields(narrator),
+        });
+      } else if (narrator && failure !== null) {
+        log.warn("engine.chat", "narrator length stub withheld from the transcript", {
           chatId,
           ...narratorCompletionLogFields(narrator),
         });
       }
       // Record (or clear) the exchange's reply-failure verdict BEFORE the generator
       // returns — the route's drain, and so the client's refetch, wait on this.
-      await saveReplyFailure(
-        chatId,
-        resolveReplyFailure({
-          hasText: Boolean(full.trim()),
-          stopped,
-          streamError,
-          timedOut,
-          completion: narrator,
-        }),
-        narrator?.modelId ?? modelId,
-      );
+      await saveReplyFailure(chatId, failure, narrator?.modelId ?? modelId);
     } finally {
       inflightReplyAborts.delete(chatId);
       release();
@@ -197,11 +205,17 @@ export function streamExchange(
 }
 
 /**
- * Resolve what a settled exchange records as its reply failure (PURE). Only an
- * exchange that produced NO text records one — a partial that persisted is a
- * visible reply. A watchdog trip aborts the same controller as a player Stop, so
- * the timeout reason outranks the stop flag; a genuine player Stop is not a
- * failure. Null ⇒ clear any prior record.
+ * Resolve what a finished exchange records as its reply failure (PURE) — and, since
+ * `streamExchange` settles only on a null verdict, whether its text is kept as a
+ * reply at all. An exchange that produced text records nothing — a partial is a
+ * visible reply — with ONE exception: a completion that ran to its own end as the
+ * pathological `length` stub (`narratorLengthStubFailure`: a `length` finish after
+ * one output token or fewer, against a larger budget). That fragment is not a
+ * credible turn, so it is recorded as a failure and never settles. The exception
+ * needs the generation to have finished on its own: a player Stop, a watchdog trip
+ * or a thrown stream error keeps its partial exactly as before. A watchdog trip
+ * aborts the same controller as a player Stop, so the timeout reason outranks the
+ * stop flag; a genuine player Stop is not a failure. Null ⇒ clear any prior record.
  *
  * A zero-text exchange that neither threw, timed out, nor was stopped used to
  * record a bare `empty_reply` with no detail — which asserted "the model said
@@ -221,7 +235,10 @@ export function resolveReplyFailure(input: {
   timedOut: "first_token" | "overall" | null;
   completion?: NarratorCompletion | null;
 }): { code: ChatReplyFailureCode; detail: string; cause?: ChatReplyFailureCause } | null {
-  if (input.hasText) return null;
+  if (input.hasText) {
+    if (input.stopped || input.streamError || input.timedOut || !input.completion) return null;
+    return narratorLengthStubFailure(input.completion);
+  }
   if (input.streamError) return input.streamError;
   if (input.timedOut) {
     return {

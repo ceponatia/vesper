@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FABLE_FUSION_711_ID } from "@/server/ai";
+import { ASMODEUS_24B_V3_ID, FABLE_FUSION_711_ID, isNarratorLengthStub } from "@/server/ai";
 import type { NarratorCompletion } from "@/server/ai";
 
 /**
@@ -199,6 +199,22 @@ describe("narrator completion metadata", () => {
     expect(completion?.outputTokens).toBe(298);
     expect(completion?.rawTextLength).toBe(0);
   });
+
+  // The budget a `length` finish is judged against is the one the gateway actually
+  // merged for the call — Asmodeus's profile cap — and a request that carried none
+  // reports none rather than a guessed default.
+  it("reports the output cap the request carried, and none when it sent none", async () => {
+    const capped = await run({
+      model: ASMODEUS_24B_V3_ID,
+      attempts: [{ deltas: ["I"], finishReason: "length", usage: { outputTokens: 1 } }],
+    });
+    expect(script.requests[0]?.maxOutputTokens).toBe(1024);
+    expect(capped.completion?.maxOutputTokens).toBe(1024);
+    expect(capped.completion && isNarratorLengthStub(capped.completion)).toBe(true);
+
+    const uncapped = await run({ model: "aion-labs/aion-3.0", attempts: [{ deltas: ["She waits."] }] });
+    expect(uncapped.completion).not.toHaveProperty("maxOutputTokens");
+  });
 });
 
 describe("the hidden empty-reply retry", () => {
@@ -339,6 +355,22 @@ describe("the hidden empty-reply retry", () => {
     });
     expect(calls).toBe(1);
     expect(text).toBe("[Mira] She turns");
+  });
+
+  // A one-token `length` stub has already streamed its fragment, so a second attempt
+  // here would append a new answer after it. It is reported once, as a stub, and the
+  // exchange withholds it (`streamExchange`) instead of retrying.
+  it("never retries a streamed length stub, so nothing is appended to the fragment", async () => {
+    const { text, calls, completion } = await run({
+      model: FABLE_FUSION_711_ID,
+      attempts: [
+        { deltas: ["I"], finishReason: "length", usage: { outputTokens: 1 } },
+        { deltas: ["She speaks."], finishReason: "stop" },
+      ],
+    });
+    expect(calls).toBe(1);
+    expect(text).toBe("I");
+    expect(completion && isNarratorLengthStub(completion)).toBe(true);
   });
 
   // Whitespace is not a reply: the pipeline's own test is `full.trim()`, and the stream
