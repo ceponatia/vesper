@@ -87,15 +87,24 @@ export function latestScheduleOccurrence(
 }
 
 /**
- * The sleep routine a character keeps: their typed `sleep` rows, or — when the
- * schedule types none at all — the default 23:00–07:00 night, the same window
- * sleep pressure falls back to (simulation-core's `DEFAULT_SLEEP_WINDOW`). One
- * source, so the window pressure assumes is the window sleep is credited in.
- * Only a schedule with no typed sleep row falls back; a typed row with a
- * weekday mask is taken as written.
+ * The rows of `kind` that are real windows. A row whose start equals its end
+ * covers nothing, so it is not a window of its kind at all: it yields no
+ * occurrence and does not stand in for a default.
+ */
+function typedWindows(schedule: readonly ScheduleEntry[], kind: ScheduleKind): ScheduleEntry[] {
+  return schedule.filter((entry) => entry.kind === kind && entry.startMinute !== entry.endMinute);
+}
+
+/**
+ * The sleep routine a character keeps: their typed `sleep` windows, or — when
+ * the schedule types none at all — the default 23:00–07:00 night, the same
+ * window sleep pressure falls back to (simulation-core's `DEFAULT_SLEEP_WINDOW`).
+ * One source, so the window pressure assumes is the window sleep is credited
+ * in. Only a schedule with no typed sleep window falls back; a typed window
+ * with a weekday mask is taken as written.
  */
 export function sleepRoutineOf(schedule: readonly ScheduleEntry[]): ScheduleEntry[] {
-  const typed = schedule.filter((entry) => entry.kind === "sleep");
+  const typed = typedWindows(schedule, "sleep");
   if (typed.length > 0) return typed;
   return [
     {
@@ -108,13 +117,38 @@ export function sleepRoutineOf(schedule: readonly ScheduleEntry[]): ScheduleEntr
   ];
 }
 
+/**
+ * Each story day's MAIN sleep window: of the sleep-routine windows that begin
+ * on that day, the longest (ties: the earliest to begin). A night and a nap
+ * begun the same day are one main window — the night. Chosen per whole day,
+ * never per query interval, so the answer does not depend on how time is read.
+ */
+function mainSleepWindows(
+  schedule: readonly ScheduleEntry[],
+  fromMinutes: number,
+  toMinutes: number,
+  calendarStart: CalendarStart,
+): ScheduleOccurrence[] {
+  // Two days of margin either side cover every window that begins on a day
+  // whose main window could end inside `[fromMinutes, toMinutes]`.
+  const margin = 2 * MINUTES_PER_DAY;
+  const byDay = new Map<number, ScheduleOccurrence>();
+  const windows = scheduleOccurrences(sleepRoutineOf(schedule), "sleep", fromMinutes - margin, toMinutes + margin, calendarStart);
+  for (const occurrence of windows) {
+    const day = dayIndexAt(occurrence.startMinutes, calendarStart);
+    const main = byDay.get(day);
+    const length = occurrence.endMinutes - occurrence.startMinutes;
+    if (main === undefined || length > main.endMinutes - main.startMinutes) byDay.set(day, occurrence);
+  }
+  return [...byDay.values()].sort((left, right) => left.startMinutes - right.startMinutes);
+}
 
 /**
  * Where a routine of `kind` lands its effect inside `(fromMinutes, toMinutes]`,
- * earliest first: each typed row's window END. A character with no typed
- * `wash` row at all keeps the default morning wash — once a day, as each window
- * of their sleep routine (`sleepRoutineOf`) ends. Any typed wash row replaces
- * it; no other kind has a default.
+ * earliest first: each typed window's END. A character with no typed `wash`
+ * window keeps the default morning wash — once per story day, as that day's
+ * main sleep window ends (a nap never earns a second one). Any typed wash
+ * window replaces it; no other kind has a default.
  */
 export function routineLandings(
   schedule: readonly ScheduleEntry[],
@@ -123,11 +157,10 @@ export function routineLandings(
   toMinutes: number,
   calendarStart: CalendarStart,
 ): number[] {
-  const typed = schedule.some((entry) => entry.kind === kind);
   const occurrences =
-    typed || kind !== "wash"
+    typedWindows(schedule, kind).length > 0 || kind !== "wash"
       ? scheduleOccurrences(schedule, kind, fromMinutes, toMinutes, calendarStart)
-      : scheduleOccurrences(sleepRoutineOf(schedule), "sleep", fromMinutes, toMinutes, calendarStart);
+      : mainSleepWindows(schedule, fromMinutes, toMinutes, calendarStart);
   return occurrences
     .map((occurrence) => occurrence.endMinutes)
     .filter((atMinutes) => atMinutes > fromMinutes && atMinutes <= toMinutes);
