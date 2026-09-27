@@ -208,8 +208,8 @@ exchange:
    ([resilience.md](../resilience.md) §5) — the reply persists and the post-turn fan-out
    runs ([post-turn.md](post-turn.md)). All of it is off the perceived-latency path.
    The one reply with text that does not settle is a withheld `length` stub: its
-   fragment has already streamed, nothing persists, and the client's refetch replaces
-   the bubble while the failure popup explains
+   fragment has already streamed, nothing persists, and the client retracts the bubble
+   once its refetch returns the verdict, while the failure popup explains
    ([reply-failures.md](reply-failures.md) §The one-token `length` stub).
 10. **Render (dialogue-attribution).** The transcript owns dialogue presentation, so chat rule 3
    makes the `[Name]` tag **conditionally optional** (dialogue stays quoted; other people —

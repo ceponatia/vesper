@@ -11,6 +11,8 @@ import {
   postStreamNotice,
   replyFailureToast,
   replyUnconfirmedToast,
+  retractWithdrawnReply,
+  shouldRetractStreamedReply,
 } from "./reply-failure";
 import type { useChatTranscript } from "./use-chat-transcript";
 
@@ -117,8 +119,12 @@ export function useChatExchange({ chatId, transcript, ready, archived, setArchiv
     const holdUntil = Date.now() + replyRevealHoldMs(chatState ? { regard: chatState.regard, feeling: chatState.feeling.current } : null);
     let held = "";
     let holdTimer: ReturnType<typeof setTimeout> | null = null;
+    // Exactly the text this exchange put into its bubble — what a withdrawn
+    // fragment's retraction matches on, so it can never touch a newer exchange's line.
+    let shown = "";
     const append = (text: string) => {
       if (!isCurrent() || abortRef.current !== controller) return;
+      shown += text;
       setLines((prev) => prev.map((l) => (l.id === assistantId ? { ...l, content: l.content + text } : l)));
     };
     const flushHeld = () => {
@@ -194,10 +200,20 @@ export function useChatExchange({ chatId, transcript, ready, archived, setArchiv
       await new Promise<void>((resolve) => setTimeout(resolve, POST_STREAM_RELOAD_RETRY_MS));
       if (isCurrent()) fresh = await reloadTranscript();
     }
+    if (!isCurrent()) return outcome;
+    // A withdrawn fragment is retracted HERE, from the verdict, not left to the reload:
+    // `reloadTranscript` skips applying its lines while a newer exchange is sending,
+    // and the fragment must not stay on screen to be replied to (`retractWithdrawnReply`
+    // is a no-op when the applied reload already removed it).
+    const failure = fresh.ok ? fresh.data.chat.lastReplyFailure : null;
+    if (shouldRetractStreamedReply({ received, reloaded: fresh.ok, failure })) {
+      setLines((prev) =>
+        retractWithdrawnReply(prev, { assistantId, shown, ...(priorLine === undefined ? {} : { priorLine }) }),
+      );
+    }
     // The pulse + drift settle server-side as the stream finalizes; refetch the
     // strip so the disposition (and any stage change) shows after the exchange —
     // and the scene list, since a big moment may have auto-queued a render (slice 9).
-    if (!isCurrent()) return outcome;
     await refreshState();
     if (!isCurrent()) return outcome;
     refreshScenes();
@@ -217,7 +233,6 @@ export function useChatExchange({ chatId, transcript, ready, archived, setArchiv
     // the text the player watched arrive is gone. If the reload failed even after
     // its retry, the client cannot tell which it was: a neutral notice says so
     // rather than presenting the bubble as settled (`postStreamNotice`).
-    const failure = fresh.ok ? fresh.data.chat.lastReplyFailure : null;
     const notice = postStreamNotice({ received, reloaded: fresh.ok, failure });
     if (notice === "reply_failed") {
       toast.push({ ...replyFailureToast(who, failure), tone: "error" });

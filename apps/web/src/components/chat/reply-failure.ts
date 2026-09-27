@@ -179,6 +179,45 @@ export function postStreamNotice(input: {
 }
 
 /**
+ * Whether the client must retract the fragment this exchange streamed (PURE; `now`
+ * is injectable for tests). True exactly when text streamed and a SUCCESSFUL reload
+ * returned a fresh verdict withdrawing it — whether or not that reload's lines were
+ * applied. `reloadTranscript` skips applying a GET while a newer exchange is sending,
+ * so the refetch alone cannot be trusted to have removed the bubble; the verdict can.
+ * A confirmed reply is never retracted, and neither is one whose reload failed: with
+ * no verdict, the bubble may be a saved reply (`reply_unconfirmed` explains instead).
+ */
+export function shouldRetractStreamedReply(input: {
+  received: boolean;
+  reloaded: boolean;
+  failure: ChatReplyFailure | null | undefined;
+  now?: number;
+}): boolean {
+  return input.received && input.reloaded && replyWithdrawnAfterStreaming(input.failure, input.now);
+}
+
+/**
+ * Remove a withdrawn fragment from the transcript lines (PURE). On a regenerate
+ * (`priorLine`) the row goes back to the take it replaced; otherwise this exchange's
+ * own temp bubble is dropped. Only a line that still carries this exchange's id AND
+ * exactly the text it streamed (`shown`) is touched, which makes it:
+ *
+ * - idempotent — once an applied reload replaced the lines, the temp id is gone and
+ *   the persisted row shows its stored take, so nothing matches;
+ * - blind to a newer exchange — its bubbles carry their own temp ids, and a newer
+ *   regenerate of the same row restarted it from empty, so its content differs.
+ */
+export function retractWithdrawnReply<L extends { id: string; content: string }>(
+  lines: readonly L[],
+  exchange: { assistantId: string; shown: string; priorLine?: L },
+): L[] {
+  const ours = (line: L) => line.id === exchange.assistantId && line.content === exchange.shown;
+  const prior = exchange.priorLine;
+  if (prior !== undefined) return lines.map((line) => (ours(line) ? prior : line));
+  return lines.filter((line) => !ours(line));
+}
+
+/**
  * The neutral notice for `reply_unconfirmed`. It asserts neither success nor failure
  * — only that the client could not check — and says how to see what was saved.
  */

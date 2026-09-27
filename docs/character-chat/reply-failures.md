@@ -59,7 +59,12 @@ withholds instead of keeping as a reply.
    zero-tokens-received path always hands it to `replyFailureToast`; after a stream
    that DID deliver text, the popup fires only when `replyWithdrawnAfterStreaming`
    says the fresh record withdrew it (the `length_stub` cause), so no other record can
-   turn a visible reply into a "didn't reply". The refetch is retried once after a
+   turn a visible reply into a "didn't reply". A withdrawal also retracts the fragment
+   locally (`retractWithdrawnReply`: this exchange's bubble is dropped, or a regenerate's
+   prior take restored), because the refetch skips applying its lines while a newer
+   exchange is sending; the retraction matches only this exchange's id and streamed
+   text, so it is a no-op after an applied refetch and never touches a newer exchange.
+   The refetch is retried once after a
    short backoff; if it still fails after text streamed, the client has no verdict, so
    `postStreamNotice` shows a neutral "couldn't confirm the reply" notice pointing at a
    page reload, and the bubble is never presented as settled. `replyFailureToast`
@@ -112,8 +117,9 @@ is at the settle boundary rather than in the stream:
 - **It records `empty_reply` / `length_stub`**, with a detail naming the reported
   output, the budget and the fragment's length. Like a normalizer erasure, no reply
   was kept.
-- **The client retracts it.** The post-exchange refetch replaces the streamed bubble
-  with the stored transcript, and the popup explains the discarded fragment.
+- **The client retracts it.** The client removes the streamed bubble (or restores the
+  take a regenerate replaced) as soon as the post-exchange refetch returns the verdict,
+  and the popup explains the discarded fragment.
 - **A player Stop wins.** Stop, a watchdog trip and a thrown stream error keep their
   partial exactly as before; the stub rule applies only to a generation that finished
   on its own.
