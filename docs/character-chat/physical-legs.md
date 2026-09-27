@@ -34,11 +34,16 @@ matching contacts (`withdrawn`), detects a player **departure** ("I step back", 
 pull away from her", "I walk across the room") — see below — and reads the same line
 for a plainly affectionate hand-to-shoulder/arm/back/hand/head touch.
 
-Two hooks end contacts before detection runs: a pending story-clock skip ends every active
-contact (`separated`; owner ruling 2026-07-31), and a scene-place change ends them as
-`scene_changed` — which is also the door "I walk over to her desk" comes through,
-since the contact detectors read that as furniture while `detectSceneMovement` reads
-a move, and a held touch does not survive the mover either way.
+Three hooks end contacts before detection runs: a pending story-clock skip ends every
+active contact (`separated`; owner ruling 2026-07-31), a scene-place change ends them as
+`scene_changed`, and a grounded move onto furniture or a fixture WITHIN the current place
+ends them as `separated` too (`detectWithinPlaceMovement`, `engine/chat-intent.ts`; #330,
+owner ruling 2026-09-27) — the door "I walk over to her desk" comes through: the contact
+detectors read it as furniture and state nothing, `detectSceneMovement` also reads it as
+furniture and does not switch the scene, but the player's own body still crossed the room,
+so a held touch does not survive the mover either way. All three clear the pair's
+proximity to unknown (owner ruling 2026-08-04) even when, as with furniture, the place
+itself did not change.
 
 A detected act is resolved by the shared contact core against the scene's reach, support,
 and material reads — a dressed body whose wardrobe published no coverage capture resolves

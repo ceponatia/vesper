@@ -194,26 +194,21 @@ const MOVE_BARE_RE = new RegExp(
 );
 
 /** A first-person subject, including the "let's" ("let us") imperative contraction. */
-const FIRST_PERSON_SUBJECT_RE = /\b(?:i|we|my|our|let['’]s)\b/iu;
+const FIRST_PERSON_SUBJECT_RE = /\b(?:i|we|us|my|our|let['’]s)\b/iu;
 /** The player is who the verb is delivering there, whether moving themself or being taken. */
 const PLAYER_OBJECT_RE = /\b(?:me|you|us)\b/iu;
 
 /**
  * True when the clause carrying this movement candidate is grounded in the player: a
- * first-person subject (I/we/my/our/let's) precedes the verb, the clause has no explicit
- * subject at all (an imperative movement line, "head to the kitchen", reads as the
- * player's own beat like it always has), or the player is who the verb is delivering there
- * — a first/second-person `objectSpan` between the verb and the destination ("she leads
- * ME to the back garden", "he carries YOU to the bedroom"). Otherwise the clause is an
- * unrelated third party's OWN errand ("the bartender walks back to the back room") that
- * must not relocate the shared scene just because it was narrated in passing. Mirrors
- * `playerPerformsSenseAction`'s clause-local subject read.
- *
- * This is narrower than the full furniture/fixture question #330 also raises ("I walk
- * over to the desk" still reads as a place change here — see the escalation note on
- * `detectSceneMovement` below): it only closes the "someone else's business" gap, which
- * does not touch the pinned `chat-contact.int.test.ts` desk cases (both are the player's
- * own first-person move and stay grounded either way).
+ * first-person subject (I/we/us/my/our/let's — "the two of us head to the kitchen" reads
+ * the same as "we") precedes the verb, the clause has no explicit subject at all (an
+ * imperative movement line, "head to the kitchen", reads as the player's own beat like it
+ * always has), or the player is who the verb is delivering there — a first/second-person
+ * `objectSpan` between the verb and the destination ("she leads ME to the back garden",
+ * "he carries YOU to the bedroom"). Otherwise the clause is an unrelated third party's OWN
+ * errand ("the bartender walks back to the back room") that must not relocate the shared
+ * scene just because it was narrated in passing. Mirrors `playerPerformsSenseAction`'s
+ * clause-local subject read.
  */
 function sceneMoveIsGrounded(sentence: string, matchIndex: number, objectSpan: string): boolean {
   const before = sentence.slice(0, matchIndex);
@@ -224,20 +219,95 @@ function sceneMoveIsGrounded(sentence: string, matchIndex: number, objectSpan: s
 }
 
 /**
- * Deterministic movement/arrival read of the player's input (chat scene memory): the
- * destination place ("kitchen", "outside", "back garden") the beat moves the scene to, or
- * null. Regex-first and pure like `detectChatCue`; the route feeds the result to
- * `switchScenePlace` BEFORE the prompt builds so this turn's Scene injection is right.
- * `sceneMoveIsGrounded` keeps an unrelated third party's own errand from settling as scene
- * truth before the narrator ever runs (#330). A remaining miss — most notably, a
- * player-grounded move onto furniture/a fixture within the current place ("I walk over to
- * the desk") — is still read as a place change; that is a deliberate, pinned choice
- * elsewhere (`chat-contact.int.test.ts`, "walking over to her desk ends the held touch
- * through the place change" — owner ruling 2026-08-04), not an oversight here, and changing
- * it needs that ruling revisited rather than a silent flip in this detector. See the #330
- * build report for the furniture-veto option this rules out for now.
+ * Furniture, fixtures, and other within-place objects a beat can approach or set
+ * something on without leaving the current place ("walk over to the desk", "carry it to
+ * the counter"). A destination whose head noun (its last word) names one of these is a
+ * position WITHIN the current place, not a new one — UNLESS that exact phrase already
+ * names an established place (`SceneMovementContext.knownPlaceNames`; a fiction can still
+ * name a nook "the Reading Desk"). Kept conservative and to obvious furniture/fixtures on
+ * purpose: room-type nouns ("back room", "kitchen", "garden", "study") are never on this
+ * list, so a genuinely new place still establishes. Not exhaustive: a miss is the
+ * pre-existing soft error the archivist still reconciles post-turn.
  */
-export function detectSceneMovement(input: string): string | null {
+const SCENE_NON_PLACE_NOUN: ReadonlySet<string> = new Set([
+  "desk",
+  "chair",
+  "armchair",
+  "table",
+  "bed",
+  "couch",
+  "sofa",
+  "bench",
+  "stool",
+  "counter",
+  "sink",
+  "tub",
+  "bathtub",
+  "shower",
+  "toilet",
+  "stove",
+  "oven",
+  "fridge",
+  "refrigerator",
+  "shelf",
+  "shelves",
+  "cabinet",
+  "drawer",
+  "dresser",
+  "mirror",
+  "nightstand",
+  "ottoman",
+  "rug",
+  "carpet",
+  "cushion",
+  "pillow",
+  "blanket",
+  "window",
+  "door",
+  "doorway",
+  "wall",
+  "floor",
+  "ceiling",
+  "fireplace",
+  "mantel",
+  "mantle",
+  "wardrobe",
+  "vanity",
+]);
+
+export interface SceneMovementContext {
+  /**
+   * Place names already established in this chat's scene memory (`ChatSceneMemory.places`,
+   * current place included). A destination that already names one of these is a return to
+   * a known place, not a new stub, so it is exempt from the furniture/fixture read below —
+   * it switches the scene like any other known place, even if its name is also a common
+   * furniture word.
+   */
+  readonly knownPlaceNames?: readonly string[];
+}
+
+interface GroundedSceneMovementCandidate {
+  readonly destination: string;
+  /**
+   * True when `destination`'s head noun names furniture/a fixture within the current
+   * place (`SCENE_NON_PLACE_NOUN`) and it is not already an established place name — a
+   * within-place move, never a place change.
+   */
+  readonly isWithinPlaceFurniture: boolean;
+}
+
+/**
+ * The shared read both `detectSceneMovement` and `detectWithinPlaceMovement` derive from —
+ * one pass over the input so the two can never disagree about which candidate fired. Regex-
+ * first and pure like `detectChatCue`. `sceneMoveIsGrounded` keeps an unrelated third
+ * party's own errand from reading as anything at all (#330); the furniture/fixture read then
+ * splits a grounded move into a place change or a within-place move.
+ */
+function resolveGroundedSceneMovement(
+  input: string,
+  context: SceneMovementContext,
+): GroundedSceneMovementCandidate | null {
+  const known = new Set((context.knownPlaceNames ?? []).map((name) => name.trim().toLowerCase()));
   for (const { text } of chatEvidenceSentences(input, ["narration"])) {
     const candidates = [MOVE_DEST_RE, MOVE_BARE_RE]
       .flatMap((pattern) => {
@@ -251,10 +321,43 @@ export function detectSceneMovement(input: string): string | null {
       const flags = chatEvidenceCandidateFlags(text, candidate.index);
       if (flags.question || flags.negated || flags.irrealis || flags.historical) continue;
       if (!sceneMoveIsGrounded(text, candidate.index, candidate.objectSpan)) continue;
-      return candidate.destination.trim().replace(/\s+/g, " ").toLowerCase();
+      const destination = candidate.destination.trim().replace(/\s+/g, " ").toLowerCase();
+      const headNoun = destination.split(" ").at(-1) ?? destination;
+      const isWithinPlaceFurniture = SCENE_NON_PLACE_NOUN.has(headNoun) && !known.has(destination);
+      return { destination, isWithinPlaceFurniture };
     }
   }
   return null;
+}
+
+/**
+ * Deterministic movement/arrival read of the player's input (chat scene memory): the
+ * destination place ("kitchen", "outside", "back garden") the beat moves the scene to, or
+ * null. Regex-first and pure like `detectChatCue`; the route feeds the result to
+ * `switchScenePlace` BEFORE the prompt builds so this turn's Scene injection is right.
+ * `sceneMoveIsGrounded` keeps an unrelated third party's own errand from settling as scene
+ * truth before the narrator ever runs, and a player-grounded move onto furniture/a fixture
+ * within the current place ("I walk over to the desk") is NOT a place change (owner ruling
+ * on #330, 2026-09-27) — `detectWithinPlaceMovement` carries that signal instead.
+ */
+export function detectSceneMovement(input: string, context: SceneMovementContext = {}): string | null {
+  const candidate = resolveGroundedSceneMovement(input, context);
+  return candidate && !candidate.isWithinPlaceFurniture ? candidate.destination : null;
+}
+
+/**
+ * The sibling read for a player-grounded move that lands on furniture/a fixture within the
+ * current place ("I walk over to the desk", "I carry my drink over to the counter") — the
+ * furniture/fixture name, or null. The scene does NOT change (no stub place, no `current`
+ * switch — see `detectSceneMovement`), but the player's own body still crossed the room: the
+ * route uses this to end a held contact and clear the pair's proximity to unknown without a
+ * place change (owner ruling on #330, 2026-09-27; the 2026-08-04 rule that a real
+ * discontinuity clears proximity still applies — only the inference that this IS a place
+ * change is superseded).
+ */
+export function detectWithinPlaceMovement(input: string, context: SceneMovementContext = {}): string | null {
+  const candidate = resolveGroundedSceneMovement(input, context);
+  return candidate && candidate.isWithinPlaceFurniture ? candidate.destination : null;
 }
 
 // ---------------------------------------------------------------------------

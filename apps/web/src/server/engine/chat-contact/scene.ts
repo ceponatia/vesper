@@ -242,13 +242,16 @@ export function applyChatContactDeparture(input: {
 /**
  * End every active contact in the scene — the hook the lane's own transitions use.
  *
- * Two callers, both outside the turn plan because both are things that happen TO
- * a conversation rather than things the player wrote: a story-clock skip ends
- * everything as `separated` (owner ruling, 2026-07-31 — an hour later, nobody's
- * hand is still where it was), and leaving the scene ends everything as
- * `scene_changed`. The core's law 4 still applies per contact, so a sweep
- * asserted from before a contact's last update leaves that contact alone with a
- * `warn` rather than writing a time-travelling end.
+ * Called once per exchange for each discontinuity that fired, all outside the
+ * turn plan's own attempt resolution: a story-clock skip ends everything as
+ * `separated` (owner ruling, 2026-07-31 — an hour later, nobody's hand is still
+ * where it was); leaving the scene ends everything as `scene_changed`; and a
+ * grounded move onto furniture/a fixture WITHIN the current place ends
+ * everything as `separated` too (#330, owner ruling 2026-09-27 — the scene did
+ * not change, but the player's own body still crossed the room). The core's law
+ * 4 still applies per contact, so a sweep asserted from before a contact's last
+ * update leaves that contact alone with a `warn` rather than writing a
+ * time-travelling end.
  */
 export function endAllChatContacts(
   scene: SceneState,
@@ -274,11 +277,14 @@ export function endAllChatContacts(
  * relations from being about anything any more (owner ruling, 2026-08-04;
  * `withoutScenePairRelations`).
  *
- * Exactly three, and the ruling's own asymmetry decides the blast radius:
+ * Four triggers, folded into two fields, and the ruling's own asymmetry decides
+ * the blast radius:
  *
- * - `wholeScene` — the place changed, or the story clock explicitly skipped.
- *   The whole chat moved or time jumped, so EVERY pair's distance is a claim
- *   about a room or a moment that is gone.
+ * - `wholeScene` — the place changed, the story clock explicitly skipped, or a
+ *   grounded move landed on furniture/a fixture WITHIN the current place (#330,
+ *   owner ruling 2026-09-27: the player's own body still crossed the room, even
+ *   though the named place did not). Any of the three means EVERY pair's
+ *   distance is a claim about a room, a moment, or a position that is gone.
  * - `awaySubjects` — the members this cut says are offstage. Only the relations
  *   they are party to clear; the bodies still in the room did not move relative
  *   to each other because somebody else walked out.
@@ -289,7 +295,10 @@ export function endAllChatContacts(
  * permanently unknown.
  */
 export interface ChatSceneDiscontinuity {
-  /** A place change or an explicit story-clock skip — clears every pair. */
+  /**
+   * A place change, an explicit story-clock skip, or a grounded within-place
+   * furniture move (#330) — clears every pair.
+   */
   readonly wholeScene: boolean;
   /** Members this cut says are offstage — clears only their own relations. */
   readonly awaySubjects: readonly AffordanceSubjectId[];

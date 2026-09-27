@@ -81,6 +81,7 @@ import {
   buildChatReplyGates,
   deriveChatSensoryAllowance,
   detectSceneMovement,
+  detectWithinPlaceMovement,
   mentionsCharacter,
   spokeInReply,
 } from "./chat-intent";
@@ -577,9 +578,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // builds, so THIS turn's Scene injection is right (a stub place is minted on first
     // mention); the archivist reconciles the rest post-turn. "Just changed" = a new current
     // place this turn, or a pending time skip (both call for re-establishing the setting once).
-    // `detectSceneMovement` now also requires the move to be grounded in the player, not an
-    // unrelated third party's own errand (#330).
-    const movedTo = playerContent ? detectSceneMovement(playerContent) : null;
+    // Both detectors require the move to be grounded in the player, not an unrelated third
+    // party's own errand (#330). A grounded move onto furniture/a fixture within the current
+    // place is NOT a place change (owner ruling on #330, 2026-09-27) — `withinPlaceMove`
+    // carries that signal to the contact leg below instead of `movedTo`/`switchScenePlace`.
+    const sceneMovementContext = { knownPlaceNames: baseScenario.sceneMemory.places.map((place) => place.name) };
+    const movedTo = playerContent ? detectSceneMovement(playerContent, sceneMovementContext) : null;
+    const withinPlaceMove = playerContent ? detectWithinPlaceMovement(playerContent, sceneMovementContext) : null;
     const preSceneCurrent = baseScenario.sceneMemory.current;
     const nextSceneMemory = movedTo ? switchScenePlace(baseScenario.sceneMemory, movedTo) : baseScenario.sceneMemory;
     const sceneChanged =
@@ -732,6 +737,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       narratorInput,
       exchangeGuardMessageId,
       movedTo,
+      withinPlaceMove,
       wardrobe,
       memberWardrobe,
       physicalConstraintsEnabled,

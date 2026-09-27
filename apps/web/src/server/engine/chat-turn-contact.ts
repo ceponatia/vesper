@@ -32,7 +32,7 @@ import type { ChatContactPolicySource } from "./chat-contact/resolution";
 import type { ChatContactRosterMember } from "./chat-contact/input-evidence";
 import { appendChatContactEventsWithScene, CHAT_CONTACT_LEDGER_MISMATCH } from "./chat-contact-events";
 import { foldChatPermissionProjection, listChatPermissionEvents } from "./chat-permission-events";
-import type { detectSceneMovement } from "./chat-intent";
+import type { detectSceneMovement, detectWithinPlaceMovement } from "./chat-intent";
 import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
 import {
@@ -59,6 +59,7 @@ export async function prepareChatTurnContact(args: {
   narratorInput: boolean;
   exchangeGuardMessageId: string;
   movedTo: ReturnType<typeof detectSceneMovement>;
+  withinPlaceMove: ReturnType<typeof detectWithinPlaceMovement>;
   wardrobe: ResolvedChatWardrobe;
   memberWardrobe: (member: ChatTurnMember) => Promise<ResolvedChatWardrobe>;
   physicalConstraintsEnabled: boolean;
@@ -78,6 +79,7 @@ export async function prepareChatTurnContact(args: {
     narratorInput,
     exchangeGuardMessageId,
     movedTo,
+    withinPlaceMove,
     wardrobe,
     memberWardrobe,
     physicalConstraintsEnabled,
@@ -207,9 +209,9 @@ export async function prepareChatTurnContact(args: {
       });
       contactCoverageCaptures = coverageCaptures;
 
-      // --- The two ends this exchange asserts, BEFORE anything is detected ---
-      // A contact is a claim that two surfaces are in contact NOW, and both of these
-      // are the world saying they are not:
+      // --- The three ends this exchange asserts, BEFORE anything is detected ---
+      // A contact is a claim that two surfaces are in contact NOW, and all three of
+      // these are the world saying they are not:
       //
       // 1. A story-clock SKIP (owner ruling, 2026-07-31): any skip ends every active
       //    contact, reason `separated`. Hours do not pass with a hand left resting
@@ -220,18 +222,27 @@ export async function prepareChatTurnContact(args: {
       //    the one that sees it, and `saveChatScenario` clears it at settle).
       // 2. A place CHANGE this exchange (`movedTo`, the same detection that switched
       //    the scene memory above), reason `scene_changed`. Walking into another room
-      //    is leaving the body you were touching behind. This is also the door a
-      //    line like "I walk over to her desk" comes through — the contact detectors
-      //    read it as furniture and state nothing, while the scene memory reads a
-      //    move, and a held touch does not survive the mover either way.
+      //    is leaving the body you were touching behind.
+      // 3. A grounded move onto furniture/a fixture WITHIN the current place
+      //    (`withinPlaceMove`, #330 — "I walk over to her desk"), reason `separated`.
+      //    The scene does not change (no stub place, `movedTo` is null for this
+      //    candidate), but the player's own body still crossed the room, and a held
+      //    touch does not survive that any more than a `scene_changed` mover — the
+      //    same `separated` a departure already uses, for the same reason: nobody
+      //    took their hand back, the distance simply stopped allowing it (owner
+      //    ruling on #330, 2026-09-27, superseding the desk case's prior reading as
+      //    a place change).
       //
       // Order matters only in that a skip is the stronger, more specific truth: if
-      // both fire, the skip empties the projection and the place change finds nothing
-      // left to end. Ends are STATE, not attempted actions — they produce no narrator
-      // outcome this pass — but they do advance the scene that rides the scenario.
+      // more than one fires, the skip empties the projection and the rest find
+      // nothing left to end. `movedTo` and `withinPlaceMove` are mutually exclusive
+      // (one grounded candidate resolves to exactly one of the two). Ends are STATE,
+      // not attempted actions — they produce no narrator outcome this pass — but
+      // they do advance the scene that rides the scenario.
       const endReasons: readonly ContactEndReason[] = [
         ...(scenario.pendingSkipNote.trim().length > 0 ? (["separated"] as const) : []),
         ...(movedTo ? (["scene_changed"] as const) : []),
+        ...(withinPlaceMove ? (["separated"] as const) : []),
       ];
       let endedScene = scenario.scene;
       const endedCommits: ContactLifecycleCommit[] = [];
@@ -242,11 +253,13 @@ export async function prepareChatTurnContact(args: {
       }
       // --- The same discontinuities clear the pair relations -----------------
       // Owner ruling 2026-08-04: proximity and facing are valid only during
-      // CONTINUOUS CO-PRESENCE in one place. Ending the contacts above while
-      // keeping the distance is internally contradictory — it says the hand
-      // came off AND that the two bodies are still within reach, with nothing
-      // having moved. So the skip and the place change clear every pair, and a
-      // member this cut says is offstage takes their own relations with them.
+      // CONTINUOUS CO-PRESENCE in one place, UNLESS the player's own body moved —
+      // which a within-place furniture move (#330) is, even though the place did
+      // not. Ending the contacts above while keeping the distance is internally
+      // contradictory — it says the hand came off AND that the two bodies are
+      // still within reach, with nothing having moved. So all three ends above
+      // clear every pair, and a member this cut says is offstage takes their own
+      // relations with them.
       //
       // Cleared is UNKNOWN, never a substituted band, and returning restores
       // nothing: a new distance needs explicit movement or placement evidence,
