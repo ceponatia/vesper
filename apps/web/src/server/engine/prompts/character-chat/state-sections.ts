@@ -2,7 +2,8 @@ import { attributeRegistry } from "@/contracts/attributes";
 import { resolveAttributes, type AttributeValue } from "@/contracts/attributes/value";
 import { isIntimateAttributeCategory } from "@/contracts/body/locations";
 import { conditionAttributeOverlays } from "@/contracts/conditions/overlays";
-import { deriveMoodDescriptor, splitStateCues } from "@/contracts/meters/registry";
+import { deriveChatArousalRead } from "@/contracts/meters/arousal-signs";
+import { deriveMoodDescriptor, meterDefinitions, splitStateCues } from "@/contracts/meters/registry";
 import { currentScenePlace, isEmptyChatSceneMemory, type ChatSceneMemory } from "@/contracts/turns/chat-scene-memory";
 import type { SupportingCast } from "@/contracts/turns/chat-supporting-cast";
 import { planOthersLabel, type SalientPlan } from "@/contracts/turns/chat-plans";
@@ -209,8 +210,18 @@ export function feelingPhrase(feeling: ChatFeelingState | undefined): string {
  * once, then rides as coloring). The change-gate (`splitStateCues`) diffs current bands
  * against `state.surfacedCues` (last turn's). "" when nothing is notable ⇒ no block.
  */
+/**
+ * Every meter EXCEPT arousal, for the standing/foreground cue split below.
+ * Arousal keeps its own registry threshold (unchanged — the image lane's
+ * `projectMeterFeatures` reads it directly for the #427 `visibleEffects`
+ * band, so it must stay exactly as authored there); the state section's OWN
+ * arousal line instead comes from the graded physiology read (#301) just
+ * below, replacing what would otherwise be a second, conflicting line.
+ */
+const STATE_SECTION_METER_DEFINITIONS = meterDefinitions.filter((def) => def.id !== "arousal");
+
 export function buildStateSection(state: NonNullable<CharacterChatPromptInput["state"]>): string {
-  const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {});
+  const { foreground, standing } = splitStateCues(state.meters, state.surfacedCues ?? {}, STATE_SECTION_METER_DEFINITIONS);
   const lines: string[] = [];
   const mood = deriveMoodDescriptor(state.meters);
   // The persistent feeling composes with the meter descriptor (ruled):
@@ -220,6 +231,19 @@ export function buildStateSection(state: NonNullable<CharacterChatPromptInput["s
   else if (mood) lines.push(`- You are feeling ${mood} right now.`);
   else if (feeling) lines.push(`- Underneath everything, ${feeling}.`);
   for (const cue of standing) lines.push(`- ${cue.hint}`);
+  // The graded arousal physiology read (#301) — replaces the flat single-threshold
+  // hint this section used to render for arousal (still authored in the registry
+  // for the image lane, excluded above). This projection is built only for the
+  // co-present primary (presence lives outside it, dropped by design), so full
+  // engaged-attention perception always applies here.
+  if (state.meters.arousal !== undefined) {
+    const arousalRead = deriveChatArousalRead({
+      arousalMeter: state.meters.arousal,
+      conditions: state.conditions,
+      detailTier: 3,
+    });
+    if (arousalRead.hint) lines.push(`- ${arousalRead.hint}`);
+  }
   // (The old per-stage warmth steer moved into the prefix's Relationship-law block.)
   for (const condition of state.conditions) if (condition.promptHint) lines.push(`- ${condition.promptHint}`);
   const mindNote = state.mindNote?.trim();

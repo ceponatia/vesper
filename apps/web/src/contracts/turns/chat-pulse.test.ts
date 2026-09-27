@@ -37,6 +37,14 @@ describe("chatPulseSchema (parsed-empty IS the degraded fallback)", () => {
     expect(chatPulseSchema.parse({ feeling: "sad" }).feeling).toBeNull();
     expect(chatPulseSchema.parse({}).feeling).toBeNull();
   });
+
+  it("keeps a valid intimateScene read and self-heals a malformed one to null (#301/#303)", () => {
+    expect(chatPulseSchema.parse({ intimateScene: "active" }).intimateScene).toBe("active");
+    expect(chatPulseSchema.parse({ intimateScene: "completed" }).intimateScene).toBe("completed");
+    expect(chatPulseSchema.parse({ intimateScene: "workout" }).intimateScene).toBeNull();
+    expect(chatPulseSchema.parse({ intimateScene: 1 }).intimateScene).toBeNull();
+    expect(chatPulseSchema.parse({}).intimateScene).toBeNull();
+  });
 });
 
 describe("chatPulseTraceSchema", () => {
@@ -47,6 +55,8 @@ describe("chatPulseTraceSchema", () => {
       regardDelta: 0,
       moodDelta: 0,
       arousalDelta: 0,
+      hygieneDelta: 0,
+      intimateScene: null,
       changed: [],
       feeling: null,
       regardScale: 1,
@@ -56,11 +66,20 @@ describe("chatPulseTraceSchema", () => {
   });
 
   it("tolerates a malformed jsonb blob (every field catches)", () => {
-    const parsed = chatPulseTraceSchema.parse({ concept: 5, valence: "??", regardDelta: "nope", changed: "bad" });
+    const parsed = chatPulseTraceSchema.parse({
+      concept: 5,
+      valence: "??",
+      regardDelta: "nope",
+      changed: "bad",
+      hygieneDelta: "nope",
+      intimateScene: "workout",
+    });
     expect(parsed.concept).toBeNull();
     expect(parsed.valence).toBeNull();
     expect(parsed.regardDelta).toBe(0);
     expect(parsed.arousalDelta).toBe(0);
+    expect(parsed.hygieneDelta).toBe(0);
+    expect(parsed.intimateScene).toBeNull();
     expect(parsed.changed).toEqual([]);
   });
 });

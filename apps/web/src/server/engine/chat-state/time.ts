@@ -75,6 +75,18 @@ function creditSleep(reserve: number, minutes: number): number {
 }
 
 /**
+ * Whether a standing condition (from the set covering this WHOLE piece) holds
+ * `meterId`'s drift still — `heated` suspends `arousal` (#301), so an ongoing
+ * intimate scene does not visibly cool between exchanges or across one degraded
+ * pulse. `asleep`'s hold on the energy reserve is the separate sleep coupling in
+ * `integrateChatMeters`; a future standing suspension adds its own clause here.
+ */
+export function suspendsMeterDrift(conditions: readonly ActiveCondition[], meterId: string): boolean {
+  if (meterId !== "arousal") return false;
+  return conditions.some((c) => conditionKey(c) === "heated");
+}
+
+/**
  * Integrate a character's meters across ONE piece of story time,
  * `[fromMinutes, toMinutes]`, under their personalized drift laws — the one
  * elapsed-time meter step; nothing else moves meters with time. PURE and
@@ -85,7 +97,8 @@ function creditSleep(reserve: number, minutes: number): number {
  * caller cuts the interval wherever a condition begins or ends. A standing
  * `asleep` condition holds the energy reserve instead of letting it drain and
  * credits the time slept. Only the latest `CHAT_METER_CATCH_UP_MAX_MINUTES` of
- * a piece integrate.
+ * a piece integrate. Any meter `suspendsMeterDrift` says a standing condition
+ * holds still (a `heated` scene's arousal) does not drift in that piece.
  */
 export function integrateChatMeters(args: {
   meters: Record<string, number>;
@@ -96,9 +109,13 @@ export function integrateChatMeters(args: {
 }): Record<string, number> {
   const elapsed = Math.min(args.toMinutes - args.fromMinutes, CHAT_METER_CATCH_UP_MAX_MINUTES);
   if (!(elapsed > 0)) return args.meters;
-  const drifted = applyMeterDrift(args.meters, elapsed, personalizeMeters(meterDefinitions, args.profile.traits));
+  const conditions = args.conditions ?? [];
+  const definitions = personalizeMeters(meterDefinitions, args.profile.traits).filter(
+    (def) => !suspendsMeterDrift(conditions, def.id),
+  );
+  const drifted = applyMeterDrift(args.meters, elapsed, definitions);
   const reserve = args.meters[SLEEP_RESERVE_METER_ID];
-  if (reserve === undefined || !(args.conditions ?? []).some(isAsleepCondition)) return drifted;
+  if (reserve === undefined || !conditions.some(isAsleepCondition)) return drifted;
   return { ...drifted, [SLEEP_RESERVE_METER_ID]: creditSleep(reserve, elapsed) };
 }
 

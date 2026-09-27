@@ -158,6 +158,32 @@ export const CHAT_MEANWHILE_TIMEOUT_MS = 25_000;
 export const CHAT_AROUSAL_INTIMATE = 0.18;
 /** Duration (chat-clock minutes) of a condition added by an action chip before it self-expires. */
 export const CHAT_ACTION_CONDITION_MINUTES = 90;
+/**
+ * Duration (chat-clock minutes) of the `heated` condition a pulse-classified "active"
+ * intimate scene renews each exchange (#301): long enough to survive one degraded
+ * pulse (a missed classification doesn't falsely read as the scene having cooled —
+ * `integrateChatMeters`'s `suspendedMeterIds` hook keys off it), short enough that a
+ * scene that genuinely ended lets ambient arousal drift resume within a few exchanges.
+ */
+export const CHAT_HEATED_CONDITION_MINUTES = 5;
+/**
+ * Where completion (#301) settles arousal: `Math.min(current, this)`, so it only ever
+ * moves arousal DOWN, never up. Comfortably below simulation-core's "flushed" floor
+ * (4_500 / METER_FIXED_POINT_ONE = 0.45) so completion reads as resolved even for a
+ * high-libido profile whose arousal was cresting the moment before.
+ */
+export const CHAT_AROUSAL_AFTERGLOW_SETTLE = 0.3;
+/** Mood lift / stress ease completion (#301) adds on top of the exchange's ordinary curve outcome. */
+export const CHAT_AFTERGLOW_MOOD_LIFT = 0.1;
+export const CHAT_AFTERGLOW_STRESS_EASE = 0.15;
+/**
+ * Hygiene cost (#303) of a pulse-classified intimate scene this exchange — "active"
+ * costs a little each exchange it continues; "completed" is the larger one-time cost
+ * and does NOT also add the active cost the same exchange (they're mutually exclusive
+ * reads of the one `intimateScene` field, never both in one exchange).
+ */
+export const CHAT_HYGIENE_INTIMATE_ACTIVE = 0.02;
+export const CHAT_HYGIENE_INTIMATE_COMPLETED = 0.05;
 /** Most recent episode summaries always present in the turn context. */
 export const EPISODE_WINDOW = 4;
 

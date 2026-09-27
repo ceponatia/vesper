@@ -21,7 +21,9 @@ record — both in §Elapsed-time meter drift), the two relationship axes
 `familiarity_scene_gain` budget — trickle capped at `acquainted`, archivist facts push
 past it, reset on a time skip) plus the authored `relationship_record` texture
 (kind/history/`presented` mask/looming — `contracts/relationships/record.ts`),
-self-expiring conditions, the `mindNote`, the **structured wardrobe**
+self-expiring conditions (`heated`/`afterglow` are the pulse's own — see
+[../contracts/meters.md](../contracts/meters.md) §Graded arousal physiology),
+the `mindNote`, the **structured wardrobe**
 (`worn_item_ids` — the worn item-definition ids seeded from the active preset; `outfit_preset_id`
 — which named look is on; `outfit` as the free-text overlay/legacy fallback;
 `outfit_exposed` retained but authoritative only on the free-text path — computed from coverage
@@ -184,6 +186,13 @@ meters from `metersAtMinutes` to the clock it is handed and re-stamps them there
 - **Feeling stays per exchange.** Emotional weather is not elapsed-time physiology: it
   decays per exchange (`decayExchangeFeeling`, for members in the exchange) and over
   skips by its own steps (§Emotional weather).
+- **A standing condition can suspend one meter's drift.** `integrateChatMeters` takes the
+  conditions covering the interval and holds still whatever `suspendsMeterDrift` says they
+  cover — today just the pulse's own `heated` condition holding `arousal`, so an ongoing
+  intimate scene doesn't visibly cool mid-scene (see
+  [../contracts/meters.md](../contracts/meters.md) §Graded arousal physiology). A small,
+  named predicate rather than a general framework: a future standing suspension adds its
+  own clause there, not a second mechanism.
 - **The skip is one write.** The advanced scenario and every member's post-skip row
   commit in one transaction (`persistChatTimeSkip`); a failure changes nothing, so the
   clock never stands past a member left at the old boundary. The garment reconcile for

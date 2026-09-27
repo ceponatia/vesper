@@ -13,6 +13,11 @@ describe("condition catalog", () => {
     expect(catalogConditionForLabel("nope")).toBeUndefined();
   });
 
+  it("recognizes the pulse's own `heated`/`afterglow` labels (#301), so an author-typed one gets a default hint too", () => {
+    expect(catalogConditionForLabel("Heated")).toBe(CONDITION_CATALOG.heated);
+    expect(catalogConditionForLabel("Afterglow")).toBe(CONDITION_CATALOG.afterglow);
+  });
+
   it("every catalog effect targets a known attribute", () => {
     expectRefsResolve(
       catalogEntries,

@@ -10,6 +10,7 @@ export {
   integrateChatMeters,
   rhythmOutfitPatch,
   skipChatMember,
+  suspendsMeterDrift,
 } from "./chat-state/time";
 export { persistChatTimeSkip } from "./chat-state/store";
 export {

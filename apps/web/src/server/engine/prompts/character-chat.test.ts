@@ -756,6 +756,42 @@ describe("buildCharacterChatSystemPrompt — state as a narration system", () =>
     expect(drunk).toContain("Disposition");
     expect(drunk).not.toEqual(sober); // the guardedness band reads lower when drunk
   });
+
+  describe("the graded arousal physiology read (#301) — replaces the old single arousal threshold", () => {
+    it("renders the graded phase hint instead of the old flat 'Visibly affected' hint", () => {
+      const prompt = systemPrompt({ state: { meters: { arousal: 0.7 }, regard: 0, conditions: [] } });
+      expect(prompt).toContain("Your current state");
+      expect(prompt).toContain("Wound tight with wanting");
+      expect(prompt).not.toContain("Visibly affected");
+    });
+
+    it("renders nothing for arousal below the quiescent floor", () => {
+      const prompt = systemPrompt({ state: { meters: { arousal: 0.05 }, regard: 0, conditions: [] } });
+      expect(prompt).not.toContain("Wound tight");
+      expect(prompt).not.toContain("flicker of interest");
+    });
+
+    it("an active `afterglow` condition renders the afterglow phase regardless of the raw meter", () => {
+      const prompt = systemPrompt({
+        state: {
+          meters: { arousal: 0.9 },
+          regard: 0,
+          conditions: [{ id: "a1", label: "Afterglow", startedAtMinutes: 0, durationMinutes: 30, attributeEffects: [] }],
+        },
+      });
+      expect(prompt).toContain("Loose-limbed and settled");
+    });
+
+    it("never states a flush/blush word anywhere in the rendered state block, at any arousal level (owner ruling, #427)", () => {
+      const FLUSH_WORDS = /flush\w*|blush\w*|reddened|rosy|crimson/i;
+      for (const arousal of [0.3, 0.5, 0.7, 0.9]) {
+        const prompt = systemPrompt({ state: { meters: { arousal }, regard: 0, conditions: [] } });
+        expect(prompt, `arousal=${arousal}`).toContain("Your current state");
+        const stateBlock = prompt.slice(prompt.indexOf("Your current state"));
+        expect(stateBlock, `arousal=${arousal}`).not.toMatch(FLUSH_WORDS);
+      }
+    });
+  });
 });
 
 describe("hair occlusion — fully covered hair is withheld from the narrator", () => {

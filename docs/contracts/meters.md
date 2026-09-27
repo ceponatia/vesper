@@ -54,7 +54,7 @@ Every law and rate is per story hour and matches the successor's body registry (
 | `hygiene`      | Linear 0.015/h toward 0; lived-in after a day without washing, unwashed after about two.               |
 | `energy`       | A reserve: proportional decay toward 0, half-life 16·ln2 h; sleep restores it; bands read its balance. |
 | `stress`       | Linear 0.03/h toward calm; composure speeds or slows it.                                               |
-| `arousal`      | Linear 0.2/h toward a libido-shifted resting point.                                                    |
+| `arousal`      | Linear 0.2/h toward a libido-shifted resting point; held still while `heated` stands (see below).      |
 | `intoxication` | Linear 0.12/h toward sober.                                                                            |
 | `mood`         | Valence — 0 low / 0.5 even / 1 bright; linear 0.06/h back to an optimism-shifted keel.                 |
 
@@ -90,12 +90,69 @@ reach an image prompt this way. The owner's ruling (issue #427) authors exactly 
 | `arousal`      | `flushed` (above 0.55)       | "parted lips"                                      |
 
 No `visibleEffects` phrase ever uses "flushed", "blush" or a colour synonym — the owner reports
-those render as stage makeup on several models, not a body state — even though the arousal
-meter's own narrator `promptHint` keeps "flushed skin": that phrase is narrator prose only and
-never reaches `visibleEffects`. The projected fact is `current`-layer, so it is scene-current
-state, not the stable chat-look identity anchor: the chat-look pack suppresses
+those render as stage makeup on several models, not a body state. The arousal meter's own
+registered `promptHint` ("Visibly affected: flushed skin…") still names that band for the UI
+strip's pip chip (`chat-status.tsx`, keyed off `pipLabel`) and this `visibleEffects` row alone;
+the 1-on-1 lane's OWN narration no longer reads it — see
+[§Graded arousal physiology](#graded-arousal-physiology-intimate-scenes-afterglow), which
+replaces it with a richer, flush/blush-free read. The projected fact is `current`-layer, so it is
+scene-current state, not the stable chat-look identity anchor: the chat-look pack suppresses
 `subject.current_state` the same way it suppresses a wet cut or an active condition
 ([../images/pipelines/chat-images.md](../images/pipelines/chat-images.md) §The look anchor).
+
+### Graded arousal physiology (intimate scenes, afterglow)
+
+The single flat arousal threshold above still drives the UI pip and the image
+`visibleEffects` row, but the 1-on-1 lane's own "Current state" narration section instead
+reads a graded physiology (`contracts/meters/arousal-signs.ts`, `deriveChatArousalRead`) — a
+thin adapter over the successor simulation's intimacy read
+([../engine/bodies.md](../engine/bodies.md)): `quiescent → kindled → flushed → wound_tight →
+cresting`, with an active `afterglow` condition overriding the scale outright. Units convert
+at the boundary (the chat meter is 0..1; the shared read is fixed-point 0..10 000), so both
+lanes share one set of phase boundaries and one afterglow duration
+(`CHAT_AFTERGLOW_DURATION_MINUTES` = 30 story minutes, mirroring the successor's
+`AFTERGLOW_DURATION_SECONDS` — owner ruling 2026-09-27: one shared value, never a second
+chat-only number). The read is perception-gated by a `detailTier` (0 = nothing perceived, 2 =
+plain sight, 3 = engaged attention); the 1-on-1 lane always passes 3 for its co-present
+primary. None of its own narration prose uses "flush"/"blush" or a colour synonym, even
+though the shared read's internal band id happens to be spelled "flushed".
+
+**The one scene-level intimate-activity read.** The reaction pulse (`chat-pulse.ts`) reports
+ONE optional field, `intimateScene: "active" | "completed" | null`, resolved once and shared
+with the [hygiene cost](#hygiene-cost-of-an-intimate-scene) below — never a second detector or
+model call off the same exchange:
+
+- **`"active"`** — an intimate/sexual act is ongoing this exchange. The ordinary
+  concept-driven arousal bump (an intimate act raises arousal, courtship/physical affection
+  half as much) still applies, and a self-expiring `heated` condition renews
+  (`CHAT_HEATED_CONDITION_MINUTES`): while it stands, `integrateChatMeters`'s
+  `suspendsMeterDrift` hook holds arousal's ambient drift still, so a scene spanning several
+  exchanges — or one degraded pulse in the middle of it — doesn't read as visibly cooling
+  between beats.
+- **`"completed"`** — the exchange resolves the scene to climax. Arousal SETTLES to at most
+  `CHAT_AROUSAL_AFTERGLOW_SETTLE` (comfortably below the flushed floor, even for a
+  high-libido profile cresting a moment before) — this REPLACES, never adds to, that same
+  exchange's ordinary concept bump. Mood lifts and stress eases
+  (`CHAT_AFTERGLOW_MOOD_LIFT` / `CHAT_AFTERGLOW_STRESS_EASE`), and the standing `heated`
+  condition gives way to `afterglow`.
+- **`null`** (most turns, and every missing/malformed read — the schema `.catch()`s it like
+  every other pulse field) — neither branch runs. Ambient clock drift remains the backstop
+  for a completion the pulse never classified: arousal keeps decaying toward baseline on its
+  own once nothing is renewing `heated`.
+
+#### Hygiene cost of an intimate scene
+
+The same `intimateScene` read costs a little hygiene (#303): `"active"` costs
+`CHAT_HYGIENE_INTIMATE_ACTIVE` each exchange it continues, `"completed"` costs the larger
+`CHAT_HYGIENE_INTIMATE_COMPLETED` — a standalone cost, deliberately **not** stacked with the
+active cost the same exchange (the two are mutually exclusive reads of one field). A
+missing/degraded read leaves hygiene untouched apart from the elapsed-time drift already due.
+The update rides the same `ChatState.meters` object every other pulse effect does, so it
+shares the same persistence and "another take" retake boundary automatically.
+
+Arousal's render-time disinhibition is narrower than intoxication's: it lowers only
+`intimate.inhibition`, never `social.guardedness` or `temperament.composure` (see
+[relationships.md](relationships.md) §Modulation, `stateDispositionOverlays`).
 
 ### Mood
 
