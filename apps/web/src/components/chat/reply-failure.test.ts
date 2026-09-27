@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { chatReplyFailureCauses, chatReplyFailureCodes, type ChatReplyFailure } from "@/contracts";
-import { replyFailureToast, replyWithdrawnAfterStreaming } from "./reply-failure";
+import {
+  postStreamNotice,
+  replyFailureToast,
+  replyUnconfirmedToast,
+  replyWithdrawnAfterStreaming,
+} from "./reply-failure";
 
 const FABLE = "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP";
 
@@ -159,5 +164,40 @@ describe("replyWithdrawnAfterStreaming", () => {
     expect(title).toBe("Wren didn't reply");
     expect(description).toContain("discarded");
     expect(description).not.toContain("without saying anything");
+  });
+});
+
+// What the player is told once the stream closes. The case this exists for: a
+// withheld stub streamed its fragment, then the transcript reload failed (after its
+// retry), so the client has no verdict — the fragment must not sit there presented
+// as a settled reply, and a genuine reply must not be called a failure either.
+describe("postStreamNotice", () => {
+  const stub = failure({ code: "empty_reply", cause: "length_stub" });
+
+  it("reports a failure whenever nothing streamed, reload or not", () => {
+    expect(postStreamNotice({ received: false, reloaded: true, failure: null, now: NOW })).toBe("reply_failed");
+    expect(postStreamNotice({ received: false, reloaded: false, failure: null, now: NOW })).toBe("reply_failed");
+  });
+
+  it("stays silent for a streamed reply the reload confirmed", () => {
+    for (const record of [null, failure({ code: "timeout" }), failure({ code: "empty_reply", cause: "model_silent" })]) {
+      expect(postStreamNotice({ received: true, reloaded: true, failure: record, now: NOW })).toBe("none");
+    }
+  });
+
+  it("reports the withdrawal when the reload shows the fragment was withheld", () => {
+    expect(postStreamNotice({ received: true, reloaded: true, failure: stub, now: NOW })).toBe("reply_failed");
+  });
+
+  it("flags a streamed reply as unconfirmed when the reload failed", () => {
+    expect(postStreamNotice({ received: true, reloaded: false, failure: null, now: NOW })).toBe("reply_unconfirmed");
+  });
+
+  it("words the unconfirmed notice neutrally and says how to see what was saved", () => {
+    const { title, description } = replyUnconfirmedToast("Wren");
+    expect(title).toContain("Wren");
+    expect(title).not.toContain("didn't reply");
+    expect(description).toContain("Reload the page");
+    expect(description).not.toMatch(/fail|error/i);
   });
 });

@@ -91,4 +91,5 @@ tripping on a stalled provider, so no reply row persists — surfaces an explici
 that delivers text first is a withheld one-token `length` stub: its fragment streams into the
 bubble, is never settled, and the post-exchange refetch replaces the bubble while the same toast
 explains ([reply failures](../character-chat/reply-failures.md)). Every other stream that
-delivered text is a reply and raises no toast.
+delivered text is a reply and raises no toast — unless the post-exchange reload fails even
+after its retry, when a neutral notice says the reply could not be confirmed.
