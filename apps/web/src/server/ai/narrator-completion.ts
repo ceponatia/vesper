@@ -274,6 +274,16 @@ export function narratorEmptyWasSilentStop(completion: NarratorCompletion): bool
 const LENGTH_STUB_MAX_OUTPUT_TOKENS = 1;
 
 /**
+ * The most raw text a reported one-token count is believed for. Both providers' SDK
+ * usage converters turn a usage block that omits `completion_tokens` into a measured
+ * `0`, so a genuine reply that ran into its cap could arrive reporting `length` and
+ * zero output tokens. One token's text is a few characters; 32 is generous for any
+ * single token and far below any real reply. When the count and the raw text
+ * contradict each other, the text wins and the completion is not a stub.
+ */
+const LENGTH_STUB_MAX_RAW_CHARS = 32;
+
+/**
  * How many tokens the generation reported producing, from whichever counter the
  * provider sent: the total, else the text/reasoning split. Undefined when it sent
  * neither — unknown, never zero.
@@ -295,7 +305,10 @@ function reportedOutputTokens(completion: NarratorCompletion): number | undefine
  *   room, not because it finished its turn;
  * - it reports one output token or fewer — by the total count, else by the
  *   text/reasoning split, and only when the provider reported neither, by exactly one
- *   character of raw text arriving (the smallest fragment a single token can be);
+ *   character of raw text arriving (the smallest fragment a single token can be). A
+ *   reported count is believed only when the raw text is consistent with it (at most
+ *   `LENGTH_STUB_MAX_RAW_CHARS`): an SDK can report a missing count as zero, and a
+ *   long reply that hit its cap must never be withdrawn on the strength of that zero;
  * - the request's budget was larger than that — an explicit cap above one token, or
  *   no explicit cap at all, which leaves the host's own default (thousands of tokens)
  *   in force. A request deliberately capped at one token that stops at one token did
@@ -311,7 +324,9 @@ export function isNarratorLengthStub(completion: NarratorCompletion): boolean {
   const budget = completion.maxOutputTokens;
   if (budget !== undefined && budget <= LENGTH_STUB_MAX_OUTPUT_TOKENS) return false;
   const generated = reportedOutputTokens(completion);
-  if (generated !== undefined) return generated <= LENGTH_STUB_MAX_OUTPUT_TOKENS;
+  if (generated !== undefined) {
+    return generated <= LENGTH_STUB_MAX_OUTPUT_TOKENS && completion.rawTextLength <= LENGTH_STUB_MAX_RAW_CHARS;
+  }
   return completion.rawTextLength === 1;
 }
 
