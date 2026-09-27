@@ -89,7 +89,10 @@ are required:
 - the finish is `length`;
 - the generation reported one output token or fewer — by the total count, else by the
   text/reasoning split, and only when the provider reported neither, by exactly one
-  character of raw text arriving;
+  character of raw text arriving. A reported count is believed only when the raw text
+  is consistent with it (at most 32 characters): the SDK usage converters report a
+  missing count as zero, and a long reply that hit its cap is never withdrawn on the
+  strength of that zero;
 - the request's cap was above one token, or the request carried no cap and the host's
   own default governed. A request deliberately capped at one token that stops there
   did what it was asked.

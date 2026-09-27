@@ -262,6 +262,15 @@ describe("the one-token length stub", () => {
     expect(narratorLengthStubFailure(uncounted)?.detail).toContain("no token count reported");
     expect(isNarratorLengthStub(stub({ outputTokens: undefined, rawTextLength: 7, visibleTextLength: 7 }))).toBe(false);
   });
+
+  // The SDK usage converters report a usage block that omits `completion_tokens` as
+  // a measured 0. A real reply that ran into its cap would then read as "length after
+  // zero tokens" — the text contradicts the count, and the text wins.
+  it("does not believe a tiny count that the raw text contradicts", () => {
+    const capped = stub({ outputTokens: 0, rawTextLength: 4_100, visibleTextLength: 4_100, visibleTextChars: 3_400 });
+    expect(isNarratorLengthStub(capped)).toBe(false);
+    expect(narratorLengthStubFailure(capped)).toBeNull();
+  });
 });
 
 describe("narratorCompletionLogFields", () => {
