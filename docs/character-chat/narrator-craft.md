@@ -55,14 +55,15 @@ lives in the scenario's `scene_memory` (see [scene-memory.md](scene-memory.md)).
 - **Opening-beat directive (volatile tail).** On the character's first line of a chat
   (`input.opening`) the response-shape line above is replaced with a one-shot narrator
   instruction: begin the scene in character, grounded in the scenario and current state,
-  ending on a present moment that invites the player in, never narrating for them. One
-  exact narrator id currently overrides this text: `DarkArtsForge/Asmodeus-24B-v3` gets
-  an explicit third-person camera instruction ("describing {name} acting and speaking in
-  the third person — never as 'I'") in place of "open the scene in character" — a
-  controlled run found the default phrasing produced first-person narration from this
-  model, while the explicit camera instruction held third person. Keyed by the exact
-  catalog id in `OPENING_DIRECTIVE_OVERRIDES` (`prompts/character-chat/single.ts`); every
-  other narrator's opening beat is byte-identical to before.
+  ending on a present moment that invites the player in, never narrating for them.
+  `DarkArtsForge/Asmodeus-24B-v3` receives an explicit third-person camera instruction
+  ("describing {name} acting and speaking in the third person — never as 'I'") in place
+  of "open the scene in character": in a controlled run the default phrasing produced
+  first-person narration from this model, and the explicit camera instruction held third
+  person. Overrides are keyed by the exact catalog id in `OPENING_DIRECTIVE_OVERRIDES`
+  (`prompts/character-chat/single.ts`); a narrator with no entry receives the default
+  text. The pipeline resolves the narrator id once and passes that same id to the
+  stream call, so the directive and the model that answers it cannot diverge.
 - **Reply-discipline gates (volatile tail).** Pure reads over the window's last 1–2
   assistant replies (`buildChatReplyGates`, `chat-intent.ts`): a **hook-cadence** note when
   the last two replies both ended their final dialogue line with "?"

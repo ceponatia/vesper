@@ -315,9 +315,9 @@ export interface ChatSceneDiscontinuity {
   readonly awaySubjects: readonly AffordanceSubjectId[];
   /**
    * Members still present whose own body repositioned within the current place
-   * (#330) — clears only their own relations, never everyone's.
+   * (#330) — clears only their own relations, never everyone's. Absent ⇒ none.
    */
-  readonly movedSubjects: readonly AffordanceSubjectId[];
+  readonly movedSubjects?: readonly AffordanceSubjectId[];
 }
 
 /**
@@ -346,7 +346,7 @@ export function chatSceneAfterDiscontinuity(
 ): SceneState {
   if (input.wholeScene) return withoutAllScenePairRelations(scene);
   let next = scene;
-  const subjects = new Set([...input.awaySubjects, ...input.movedSubjects]);
+  const subjects = new Set([...input.awaySubjects, ...(input.movedSubjects ?? [])]);
   for (const subjectId of subjects) next = withoutScenePairRelations(next, subjectId);
   return next;
 }
