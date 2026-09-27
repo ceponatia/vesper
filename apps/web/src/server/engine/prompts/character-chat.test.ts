@@ -416,8 +416,11 @@ describe("buildCharacterChatSystemPrompt", () => {
       expect(asmodeus).toContain("third person");
       expect(asmodeus).not.toContain("open the scene in character");
       // The run never measured first-person pronouns INSIDE quoted dialogue, so the
-      // override must not add a clause forbidding them there.
-      expect(asmodeus).not.toContain("never as");
+      // override must not add a clause forbidding them there. Scoped to the retired
+      // clause's own punctuation (never bare "never as") because the standing
+      // player-address rule (charter.ts) legitimately says `never as "I"/"me"` on
+      // every turn — a bare substring check collides with that unrelated rule.
+      expect(asmodeus).not.toContain('(never as "I")');
     });
 
     it("changes ONLY Asmodeus's opening-directive line — every other rendered byte is unchanged", () => {
@@ -432,8 +435,13 @@ describe("buildCharacterChatSystemPrompt", () => {
     });
 
     it("does not affect a non-opening turn (no every-turn anchor)", () => {
+      // The byte-identity check IS the real proof (any leak of the override would
+      // change some byte). The second check is scoped to text unique to the override
+      // ("as its narrator:" appears nowhere else) rather than the bare phrase "third
+      // person" — charter.ts's own viewpoint rule says that on every turn, opening or
+      // not, so a bare substring check would fail here whether or not the override leaked.
       expect(systemPrompt({ narratorModelId: ASMODEUS_24B_V3_ID })).toBe(systemPrompt());
-      expect(systemPrompt({ narratorModelId: ASMODEUS_24B_V3_ID })).not.toContain("third person");
+      expect(systemPrompt({ narratorModelId: ASMODEUS_24B_V3_ID })).not.toContain("as its narrator:");
     });
 
     it("contains no accidental /think trigger substring in the assembled opening prompt", () => {
