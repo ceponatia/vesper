@@ -236,12 +236,19 @@ describe.runIf(ready)("a transfer-bearing settle commits as one write", () => {
  * take it discards.
  */
 describe.runIf(ready)("the meters' story-time stamp", () => {
-  it("round-trips an explicit stamp through the row and the retake anchor", async () => {
-    const stamped: ChatState = { ...seedChatState(richProfile()), metersAtMinutes: 120 };
+  it("round-trips an explicit stamp and the sleep record through the row and the retake anchor", async () => {
+    const stamped: ChatState = { ...seedChatState(richProfile()), metersAtMinutes: 120, lastSleepEndedAtMinutes: 60 };
     await persistChatState(chat.chatId, fixture.characterId, stamped);
-    expect((await loadChatState(chat.chatId, fixture.characterId))?.metersAtMinutes).toBe(120);
+    const loaded = await loadChatState(chat.chatId, fixture.characterId);
+    expect(loaded?.metersAtMinutes).toBe(120);
+    expect(loaded?.lastSleepEndedAtMinutes).toBe(60);
     await savePreExchangeSnapshot(chat.chatId, fixture.characterId, stamped);
-    expect((await loadPreExchangeState(chat.chatId, fixture.characterId)).state?.metersAtMinutes).toBe(120);
+    const anchor = (await loadPreExchangeState(chat.chatId, fixture.characterId)).state;
+    expect(anchor?.metersAtMinutes).toBe(120);
+    expect(anchor?.lastSleepEndedAtMinutes).toBe(60);
+    // "No sleep on record" is a stored fact too, never healed into an invented wake time.
+    await persistChatState(chat.chatId, fixture.characterId, { ...stamped, lastSleepEndedAtMinutes: null });
+    expect((await loadChatState(chat.chatId, fixture.characterId))?.lastSleepEndedAtMinutes).toBeNull();
   });
 
   it("stamps a never-stamped state at its chat's clock as of the write", async () => {
@@ -270,7 +277,10 @@ describe.runIf(ready)("a time skip commits the clock and every member together",
     const scenario = await loadChatScenario(chat.chatId);
     if (scenario === null) throw new Error("fixture has no scenario");
     const skipped = { ...scenario, clockMinutes: scenario.clockMinutes + 540 };
-    const caughtUp = driftChatState(baseline, richProfile(), { clockMinutes: skipped.clockMinutes });
+    const caughtUp = driftChatState(baseline, richProfile(), {
+      clockMinutes: skipped.clockMinutes,
+      calendarStart: skipped.calendarStart,
+    });
 
     await expect(
       persistChatTimeSkip(chat.chatId, skipped, [
@@ -291,7 +301,10 @@ describe.runIf(ready)("a time skip commits the clock and every member together",
     const scenario = await loadChatScenario(chat.chatId);
     if (scenario === null) throw new Error("fixture has no scenario");
     const skipped = { ...scenario, clockMinutes: scenario.clockMinutes + 540 };
-    const caughtUp = driftChatState(baseline, richProfile(), { clockMinutes: skipped.clockMinutes });
+    const caughtUp = driftChatState(baseline, richProfile(), {
+      clockMinutes: skipped.clockMinutes,
+      calendarStart: skipped.calendarStart,
+    });
 
     await persistChatTimeSkip(chat.chatId, skipped, [{ characterId: fixture.characterId, state: caughtUp }]);
 

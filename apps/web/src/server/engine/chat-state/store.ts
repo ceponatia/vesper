@@ -278,6 +278,7 @@ export async function loadChatState(
     .select({
       meters: characterChatState.meters,
       metersAtMinutes: characterChatState.metersAtMinutes,
+      lastSleepEndedAtMinutes: characterChatState.lastSleepEndedAtMinutes,
       regard: characterChatState.regard,
       familiarity: characterChatState.familiarity,
       familiaritySceneGain: characterChatState.familiaritySceneGain,
@@ -315,6 +316,7 @@ export async function loadChatState(
     meters: parseOr(metersSchema, row.meters, initialMeters(), sink, "character_chat_state.meters"),
     // NULL only on a row a pre-stamp writer inserted: it holds at the first clock it meets.
     metersAtMinutes: row.metersAtMinutes,
+    lastSleepEndedAtMinutes: row.lastSleepEndedAtMinutes,
     regard: clampRegard(row.regard),
     familiarity: clampFamiliarity(row.familiarity),
     familiaritySceneGain: Math.max(0, row.familiaritySceneGain),
@@ -421,13 +423,14 @@ export async function upsertChatState(
   const metersAtMinutes = sql`coalesce(${state.metersAtMinutes}::integer, (select clock_minutes from ${characterChats} where id = ${chatId}), 0)`;
   await writer.execute(sql`
     insert into ${characterChatState}
-      (chat_id, character_id, meters, meters_at_minutes, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, body_surface, presence, whereabouts, quiet_exchanges, updated_at)
-    select ${chatId}, ${characterId}, ${meters}::jsonb, ${metersAtMinutes}, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
+      (chat_id, character_id, meters, meters_at_minutes, last_sleep_ended_at_minutes, regard, familiarity, familiarity_scene_gain, relationship_record, conditions, mind_note, last_pulse_trace, surfaced_cues, memory_queries, open_loops, attribute_overlays, trait_overlays, voice_exemplars, last_memory_trace, worn_item_ids, outfit_preset_id, outfit, outfit_exposed, relationship_history, milestones, callback_history, feeling, selfie_history, drives, body_surface, presence, whereabouts, quiet_exchanges, updated_at)
+    select ${chatId}, ${characterId}, ${meters}::jsonb, ${metersAtMinutes}, ${state.lastSleepEndedAtMinutes}::integer, ${state.regard}, ${state.familiarity}, ${state.familiaritySceneGain}, ${relationshipRecord}::jsonb, ${conditions}::jsonb, ${state.mindNote},
            ${trace}::jsonb, ${surfacedCues}::jsonb, ${memoryQueries}::jsonb, ${openLoops}::jsonb, ${attributeOverlays}::jsonb, ${traitOverlays}::jsonb, ${voiceExemplars}::jsonb, ${memoryTrace}::jsonb, ${wornItemIds}::jsonb, ${state.outfitPresetId}, ${state.outfit}, ${state.outfitExposed}, ${relationshipHistory}::jsonb, ${milestones}::jsonb, ${callbackHistory}::jsonb, ${feeling}::jsonb, ${selfieHistory}::jsonb, ${drives}::jsonb, ${bodySurface}::jsonb, ${state.presence}, ${state.whereabouts}, ${state.quietExchanges}, now()
     where ${guard}
     on conflict (chat_id, character_id) do update set
       meters = excluded.meters,
       meters_at_minutes = excluded.meters_at_minutes,
+      last_sleep_ended_at_minutes = excluded.last_sleep_ended_at_minutes,
       regard = excluded.regard,
       familiarity = excluded.familiarity,
       familiarity_scene_gain = excluded.familiarity_scene_gain,

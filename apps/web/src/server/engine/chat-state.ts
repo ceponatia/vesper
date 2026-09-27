@@ -1,6 +1,6 @@
 /** Public chat-state entry; lower-level owners import their focused siblings directly. */
 export type { ChatPresence, ChatScenario, ChatState, ChatStateSnapshot } from "./chat-state/types";
-export { chatStateSnapshot } from "./chat-state/readout";
+export { chatMeterReads, chatStateSnapshot } from "./chat-state/readout";
 export { seedChatScenario, seedChatState } from "./chat-state/seed";
 export {
   applyTimeSkip,

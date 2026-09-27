@@ -100,7 +100,7 @@ async function loadChatPreviewCut(input: {
   const state = driftChatState(
     await resolveSeededOutfit(stored ?? seedChatState(profile), owner, profile, sink),
     profile,
-    { clockMinutes: scenario.clockMinutes },
+    { clockMinutes: scenario.clockMinutes, calendarStart: scenario.calendarStart },
   );
   const player = await resolveChatPersona({ ownerId: owner, chatId: input.chatId });
   const wardrobe = await resolveChatWardrobe(

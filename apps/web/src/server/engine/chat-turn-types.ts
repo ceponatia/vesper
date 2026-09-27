@@ -75,7 +75,8 @@ export interface SubmitChatMessageInput {
    * The full sort-ordered roster — the first entry
    * describes the same primary as `character`/`memoryGroupId`. Absent or length 1
    * ⇒ the 1-on-1 path, byte-identical prompts. Length > 1 ⇒ the ensemble frame:
-   * per-member state (present members drift, away freeze), tier-1
+   * per-member state (every member's meters catch up on the shared clock;
+   * present members take the exchange's feeling beat), tier-1
    * memory legs, and per-member activity-recency stamping post-turn.
    */
   roster?: readonly { characterId: string; memoryGroupId: string; name: string; profile: unknown }[];

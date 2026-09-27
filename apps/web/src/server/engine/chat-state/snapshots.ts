@@ -137,6 +137,9 @@ const storedChatStateSchema = z.object({
   // interval the discarded take did. An anchor written before the stamp existed
   // heals to null: its meters hold at the clock the retake meets.
   metersAtMinutes: z.number().int().nonnegative().nullable().catch(null).default(null),
+  // The anchored sleep record rolls back with the meters it explains; an
+  // anchor from before it existed heals to "no sleep on record".
+  lastSleepEndedAtMinutes: z.number().int().nullable().catch(null).default(null),
   regard: z.number(),
   familiarity: z.number().catch(0).default(0),
   familiaritySceneGain: z.number().catch(0).default(0),

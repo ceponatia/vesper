@@ -5,11 +5,7 @@ import {
   CHAT_ACTIONS,
   chatGameTime,
   formatChatTime,
-  meterDefinitions,
-  meterStateCue,
-  MOOD_BRIGHT_MIN,
-  MOOD_LOW_MAX,
-  NEUTRAL_MOOD_METER,
+  meterReadPips,
   type ChatActionId,
 } from "@/contracts";
 import type { ChatStateSnapshot } from "@/lib/client/api";
@@ -58,25 +54,17 @@ const PIP_TONES: Record<string, TagTone> = { stress: "danger", arousal: "accent"
 
 /**
  * Compact, off-baseline meter pips for the status strip (only what's worth saying).
- * Bands + labels come from the meters registry (`pipLabel` on each threshold), so a
- * registry edit moves this strip and the narration cues together — the old hardcoded
- * copies silently desynced. Mood is the deliberate exception:
- * it has no registry thresholds (derived descriptor instead), so it reads the shared
- * valence band cuts.
+ * Bands + labels come from the one derived-read path (`meterReadPips` over the
+ * server's `meterReads`), so the strip and the narration cues read every meter —
+ * energy against sleep pressure, mood by valence — the same way. Tone is the
+ * strip's own presentation.
  */
-function meterPips(meters: Record<string, number>): { id: string; label: string; tone: TagTone }[] {
-  const pips: { id: string; label: string; tone: TagTone }[] = [];
-  for (const def of meterDefinitions) {
-    const value = meters[def.id];
-    if (value === undefined) continue;
-    const cue = meterStateCue(def.id, value);
-    if (!cue?.pipLabel) continue;
-    pips.push({ id: def.id, label: cue.pipLabel, tone: PIP_TONES[def.id] ?? "default" });
-  }
-  const mood = meters.mood ?? NEUTRAL_MOOD_METER;
-  if (mood >= MOOD_BRIGHT_MIN) pips.push({ id: "mood", label: "bright", tone: "ok" });
-  else if (mood <= MOOD_LOW_MAX) pips.push({ id: "mood", label: "low", tone: "default" });
-  return pips;
+function meterPips(reads: Record<string, number>): { id: string; label: string; tone: TagTone }[] {
+  return meterReadPips(reads).map((pip) => ({
+    id: pip.meterId,
+    label: pip.label,
+    tone: pip.meterId === "mood" && pip.label === "bright" ? "ok" : (PIP_TONES[pip.meterId] ?? "default"),
+  }));
 }
 
 /** First couple of garments from the free-text outfit phrase ("a, b and c" → "a, b…"). */
@@ -102,7 +90,7 @@ export function outfitSummary(outfit: string): string {
  * seed-on-read, which already carries the authored Starting Relationship.
  */
 export function StatusStrip({ state, onOpenScenario }: { state: ChatStateSnapshot; onOpenScenario: () => void }) {
-  const pips = meterPips(state.meters);
+  const pips = meterPips(state.meterReads);
   const [outfitOpen, setOutfitOpen] = useState(false);
   // The rendered garment phrase (structured worn items + overlay); falls back to the
   // free-text outfit for legacy/ad-hoc chats (chat-wardrobe-parity).

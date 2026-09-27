@@ -201,6 +201,7 @@ export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
     ...chatStateSnapshot(primaryNext, nextScenario, {
       dominance: effectiveTraitValue(primaryProfile.traits, "social.dominance"),
       intimateContext: true,
+      profile: primaryProfile,
     }),
     // The snapshot this response replaces on the client also feeds the Character
     // sheet's presentation controls, so it carries

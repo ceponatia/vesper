@@ -2,16 +2,17 @@ import { foldPrimaryProgression } from "./chat-state/character-fold";
 import { settleEnsembleMember } from "./chat-state/ensemble";
 import { describe, expect, it } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
-import { initialMeters, meterById, METER_DRIFT_STEP_PRECISION } from "@/contracts/meters/registry";
+import { applyMeterDrift, initialMeters, meterById, METER_DRIFT_STEP_PRECISION } from "@/contracts/meters/registry";
 import { stageMidpoint } from "@/contracts/relationships/stages";
 import { familiarityBandMidpoint, regardBandForValue, regardBandMidpoint } from "@/contracts/relationships/bands";
-import type { ActiveCondition } from "@/contracts/conditions/condition";
+import { conditionKey, type ActiveCondition } from "@/contracts/conditions/condition";
 import type { ChatPersonalNotes } from "@/contracts/turns/chat-archivist";
 import type { ChatPulse } from "@/contracts/turns/chat-pulse";
 import type { SocialReactionCard } from "@/contracts/personality/cards";
 import { characterProfileSchema } from "@/contracts/world/profile";
 import { makeProfile } from "@/server/test-support";
 import { SKIP_HISTORY_CAP } from "@/contracts/turns/chat-skip";
+import { CHAT_DEFAULT_CALENDAR_START as CAL } from "@/contracts/turns/chat-clock";
 import { CHAT_AROUSAL_INTIMATE, CHAT_SKIP_MINUTES } from "./constants";
 import {
   applyChatAction,
@@ -21,6 +22,7 @@ import {
   applyOpenerPulse,
   applyTimeSkip,
   applyTimeSkipToScenario,
+  chatMeterReads,
   chatStateSnapshot,
   decayExchangeFeeling,
   driftChatState,
@@ -35,6 +37,7 @@ import { matchOutfitPresetInText, outfitChangeEvidenceValidated } from "./chat-s
 import { resolveSeededOutfit } from "./chat-state/outfit-fold";
 import { runChatPulse } from "./chat-state/pulse-agent";
 import { rollbackScenario } from "./chat-state/snapshots";
+import { CHAT_ASLEEP_CONDITION_LABEL, CHAT_COLLAPSE_SLEEP_MINUTES } from "./chat-state/time";
 import { seededOutfitMarker } from "./chat-wardrobe";
 
 // These run with AI_FAKE=1 (src/test/setup.ts): demo mode short-circuits the
@@ -282,22 +285,22 @@ describe("driftChatState — meters follow elapsed story time on the shared cloc
 
   it("changes nothing when no story time elapsed, and a re-read at one clock is a no-op", () => {
     const tired = stamped(100, { meters: { ...initialMeters(), hygiene: 0.2, energy: 0.2 } });
-    expect(driftChatState(tired, makeProfile(), { clockMinutes: 100 })).toBe(tired);
-    const caughtUp = driftChatState(tired, makeProfile(), { clockMinutes: 640 });
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 100, calendarStart: CAL })).toBe(tired);
+    const caughtUp = driftChatState(tired, makeProfile(), { clockMinutes: 640, calendarStart: CAL });
     expect(caughtUp.metersAtMinutes).toBe(640);
     expect(caughtUp.meters.hygiene).toBeLessThan(0.2);
     // Re-reading the caught-up state at the same clock moves nothing ...
-    expect(driftChatState(caughtUp, makeProfile(), { clockMinutes: 640 })).toBe(caughtUp);
+    expect(driftChatState(caughtUp, makeProfile(), { clockMinutes: 640, calendarStart: CAL })).toBe(caughtUp);
     // ... and re-reading the stored state is the same projection every time.
-    expect(driftChatState(tired, makeProfile(), { clockMinutes: 640 })).toEqual(caughtUp);
+    expect(driftChatState(tired, makeProfile(), { clockMinutes: 640, calendarStart: CAL })).toEqual(caughtUp);
   });
 
   it("a busy conversation barely moves hygiene and lands where one catch-up over the same minutes does", () => {
     const start = stamped(0);
     // Sixty exchanges, one story minute each, every one caught up and re-stamped.
     let busy = start;
-    for (let clock = 1; clock <= 60; clock += 1) busy = driftChatState(busy, makeProfile(), { clockMinutes: clock });
-    const oneStep = driftChatState(start, makeProfile(), { clockMinutes: 60 });
+    for (let clock = 1; clock <= 60; clock += 1) busy = driftChatState(busy, makeProfile(), { clockMinutes: clock, calendarStart: CAL });
+    const oneStep = driftChatState(start, makeProfile(), { clockMinutes: 60, calendarStart: CAL });
     const moved = (start.meters.hygiene ?? Number.NaN) - (busy.meters.hygiene ?? Number.NaN);
     expect(moved).toBeGreaterThan(0);
     expect(moved).toBeLessThanOrEqual(hygieneRatePerHour() + 60 * METER_DRIFT_STEP_PRECISION); // one story hour's drift
@@ -309,8 +312,8 @@ describe("driftChatState — meters follow elapsed story time on the shared cloc
   it("an away character catches up when read, exactly as a present one does", () => {
     const present = stamped(0);
     const away = stamped(0, { presence: "away" });
-    const readPresent = driftChatState(present, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight });
-    const readAway = driftChatState(away, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight });
+    const readPresent = driftChatState(present, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight, calendarStart: CAL });
+    const readAway = driftChatState(away, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.overnight, calendarStart: CAL });
     expect(readAway.meters).toEqual(readPresent.meters);
     expect(readAway.meters).not.toEqual(away.meters);
     expect(readAway.metersAtMinutes).toBe(CHAT_SKIP_MINUTES.overnight);
@@ -318,26 +321,97 @@ describe("driftChatState — meters follow elapsed story time on the shared cloc
 
   it("holds an unstamped state at the clock it meets, and never integrates backwards", () => {
     const seeded = seedChatState(makeProfile());
-    const met = driftChatState(seeded, makeProfile(), { clockMinutes: 900 });
+    const met = driftChatState(seeded, makeProfile(), { clockMinutes: 900, calendarStart: CAL });
     expect(met.meters).toEqual(seeded.meters);
     expect(met.metersAtMinutes).toBe(900);
     // A stamp ahead of the clock (the state settled, the tick did not) waits for it.
     const ahead = stamped(901);
-    expect(driftChatState(ahead, makeProfile(), { clockMinutes: 900 })).toBe(ahead);
+    expect(driftChatState(ahead, makeProfile(), { clockMinutes: 900, calendarStart: CAL })).toBe(ahead);
   });
 
   it("never decays regard", () => {
     const warm = stamped(0, { regard: 57 });
-    expect(driftChatState(warm, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.days }).regard).toBe(57);
+    expect(driftChatState(warm, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.days, calendarStart: CAL }).regard).toBe(57);
   });
 
   it("expires conditions past the SHARED clock for every member", () => {
     const condition: ActiveCondition = { id: "tipsy", label: "Tipsy", startedAtMinutes: 0, durationMinutes: 2, attributeEffects: [] };
     const withCondition = stamped(0, { conditions: [condition], presence: "away" });
     // A clock past started + duration (2) ⇒ expired, one story timeline for the roster.
-    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 3 }).conditions).toHaveLength(0);
+    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 3, calendarStart: CAL }).conditions).toHaveLength(0);
     // A read with the clock still at 0 keeps the condition running.
-    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 0 }).conditions).toHaveLength(1);
+    expect(driftChatState(withCondition, makeProfile(), { clockMinutes: 0, calendarStart: CAL }).conditions).toHaveLength(1);
+  });
+});
+
+describe("the energy reserve: sleep and collapse on the story clock", () => {
+  /** Chat minute of `hour:minute` on calendar day `day` (default anchor: day 0, 8:00am = minute 0). */
+  const at = (day: number, hour: number, minute = 0): number => day * 1_440 + hour * 60 + minute - 8 * 60;
+  const asleep = (startedAtMinutes: number, durationMinutes: number): ActiveCondition => ({
+    id: `sleep-${startedAtMinutes}`,
+    label: CHAT_ASLEEP_CONDITION_LABEL,
+    startedAtMinutes,
+    durationMinutes,
+    attributeEffects: [],
+  });
+  const withEnergy = (energy: number, overrides: Partial<ChatState> = {}): ChatState => ({
+    ...seedChatState(makeProfile()),
+    metersAtMinutes: 0,
+    meters: { ...initialMeters(), energy },
+    ...overrides,
+  });
+  const drift = (state: ChatState, clockMinutes: number): ChatState =>
+    driftChatState(state, makeProfile(), { clockMinutes, calendarStart: CAL });
+  const energyRead = (state: ChatState): number =>
+    chatMeterReads(state, { clockMinutes: state.metersAtMinutes ?? 0, calendarStart: CAL }, makeProfile()).energy ??
+    Number.NaN;
+
+  it("sleep holds the reserve and credits it exactly once, even read after the sleep ended", () => {
+    const tired = withEnergy(0.3, { conditions: [asleep(60, 480)] });
+    const woke = drift(tired, 600);
+    // An hour's drain, eight hours asleep (+0.72 — past the 0.95 cap), an hour's drain.
+    expect(woke.meters.energy).toBe(applyMeterDrift({ energy: 0.95 }, 60).energy);
+    expect(woke.lastSleepEndedAtMinutes).toBe(540);
+    expect(woke.conditions).toEqual([]);
+    expect(drift(woke, 600)).toBe(woke);
+    expect(drift(tired, 600)).toEqual(woke);
+    // Caught up one story minute at a time, the same night credits the same sleep.
+    let stepped = tired;
+    for (let clock = 1; clock <= 600; clock += 1) stepped = drift(stepped, clock);
+    expect(Math.abs((stepped.meters.energy ?? Number.NaN) - (woke.meters.energy ?? Number.NaN))).toBeLessThanOrEqual(
+      600 * METER_DRIFT_STEP_PRECISION,
+    );
+    expect(stepped.lastSleepEndedAtMinutes).toBe(540);
+  });
+
+  it("a nap lifts the evening read and records the sleep that just ended", () => {
+    const day = withEnergy(0.9, { lastSleepEndedAtMinutes: at(0, 7) });
+    const napped = { ...day, conditions: [asleep(at(0, 14), 90)] };
+    const evening = at(0, 21);
+    const withNap = drift(napped, evening);
+    expect(energyRead(withNap)).toBeGreaterThan(energyRead(drift(day, evening)));
+    expect(withNap.lastSleepEndedAtMinutes).toBe(at(0, 15, 30));
+  });
+
+  it("collapse at the read's floor is forced sleep that restores the reserve once", () => {
+    // Up since 07:00 the day before yesterday, caught at 4am with little left.
+    const worn = withEnergy(0.2, { metersAtMinutes: at(1, 4) - 1, lastSleepEndedAtMinutes: at(-1, 7) });
+    const collapsed = drift(worn, at(1, 4));
+    const sleep = collapsed.conditions.find((c) => conditionKey(c) === CHAT_ASLEEP_CONDITION_LABEL);
+    expect(sleep?.startedAtMinutes).toBe(at(1, 4));
+    expect(sleep?.durationMinutes).toBe(CHAT_COLLAPSE_SLEEP_MINUTES);
+    expect(collapsed.meters.energy).toBeGreaterThanOrEqual(0);
+    // Read two hours after the collapse sleep ended: restored, woken, and the condition gone.
+    const later = drift(collapsed, at(1, 4) + CHAT_COLLAPSE_SLEEP_MINUTES + 120);
+    expect(later.meters.energy ?? 0).toBeGreaterThan((collapsed.meters.energy ?? 1) + 0.5);
+    expect(later.lastSleepEndedAtMinutes).toBe(at(1, 4) + CHAT_COLLAPSE_SLEEP_MINUTES);
+    expect(later.conditions.some((c) => conditionKey(c) === CHAT_ASLEEP_CONDITION_LABEL)).toBe(false);
+    expect(drift(later, at(1, 4) + CHAT_COLLAPSE_SLEEP_MINUTES + 120)).toBe(later);
+  });
+
+  it("never collapses a character with no sleep on record", () => {
+    const worn = withEnergy(0.2, { metersAtMinutes: at(1, 4) - 1 });
+    expect(drift(worn, at(1, 4)).conditions).toEqual([]);
   });
 });
 
@@ -363,7 +437,7 @@ describe("time skips (split across scenario + member halves)", () => {
       feeling: felt,
     });
     const clock = CHAT_SKIP_MINUTES.overnight;
-    const drifted = driftChatState(tired, makeProfile(), { clockMinutes: clock });
+    const drifted = driftChatState(tired, makeProfile(), { clockMinutes: clock, calendarStart: CAL });
     const present = skipChatMember(tired, "overnight", clock, makeProfile());
     const away = skipChatMember({ ...tired, presence: "away" }, "overnight", clock, makeProfile());
     // Physiology is presence-independent: both integrate the same interval ...
@@ -1175,7 +1249,7 @@ describe("emotional weather wiring", () => {
     expect(beat.feeling.current?.intensity).toBeCloseTo(0.75);
     expect(beat.feeling.bruise?.remaining).toBe(3);
     // Feeling is not elapsed-time physiology: the meter catch-up leaves it standing.
-    expect(driftChatState(felt, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.hours }).feeling).toEqual(felt.feeling);
+    expect(driftChatState(felt, makeProfile(), { clockMinutes: CHAT_SKIP_MINUTES.hours, calendarStart: CAL }).feeling).toEqual(felt.feeling);
     const skipped = applyTimeSkip(felt, "days", CHAT_SKIP_MINUTES.days);
     expect(skipped.feeling.current).toBeNull();
     expect(skipped.feeling.bruise).toBeNull();

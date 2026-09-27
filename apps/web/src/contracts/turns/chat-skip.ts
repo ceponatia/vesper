@@ -4,10 +4,10 @@ import { z } from "zod";
  * Player time skips: in-game
  * time is the only time model — a skip advances the chat clock, lets running timed
  * conditions expire through the existing clock-keyed expiry, stamps the one-shot
- * skip note, and records itself. **Meters do not change** (flavor-only v1 — whether
- * twelve skipped hours mean recovery or deterioration is circumstance, so the full
- * time-effects system stays scaffolded, not wired). The fixed four amounts map to
- * minutes via `CHAT_SKIP_MINUTES` below, never free-form durations.
+ * skip note, and records itself. Every character's meters then follow the skipped
+ * minutes on the story clock (the engine's elapsed-time drift, with sleep held and
+ * credited) — never a flat recovery. The fixed four amounts map to minutes via
+ * `CHAT_SKIP_MINUTES` below, never free-form durations.
  */
 
 export const chatSkipAmounts = ["moments", "hours", "overnight", "days"] as const;

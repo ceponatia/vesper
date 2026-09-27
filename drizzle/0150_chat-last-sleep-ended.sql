@@ -1,0 +1,11 @@
+-- Energy as a reserve read against sleep pressure (#300): each character state
+-- row records the story minute the character last actually came out of sleep.
+-- Sleep pressure escalates from it once they stay up past their normal waking
+-- span, which is what tells real sleep apart from merely reaching a scheduled
+-- wake time. Pressure itself is derived on read and never stored.
+--
+-- NULLABLE with no default and NO backfill, on purpose: NULL means "no sleep on
+-- record", which the pressure curve reads as "the routine was kept" — exactly
+-- what every existing row can honestly claim. A fabricated value would instead
+-- start escalating pressure from an invented wake time.
+ALTER TABLE "character_chat_state" ADD COLUMN "last_sleep_ended_at_minutes" integer;

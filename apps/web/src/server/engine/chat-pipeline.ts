@@ -87,6 +87,7 @@ import {
 import { reconcileMessageMemory } from "./chat-memory";
 import { resolveSeededOutfit } from "./chat-state/outfit-fold";
 import {
+  chatMeterReads,
   decayExchangeFeeling,
   driftChatState,
   finalizeChatState,
@@ -573,7 +574,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       driftChatState(
         await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
         profile,
-        { clockMinutes: tickedClock },
+        { clockMinutes: tickedClock, calendarStart: baseScenario.calendarStart },
       ),
     );
 
@@ -648,7 +649,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               const preExchangeState = storedMember;
               const seededMember = storedMember ?? seedChatState(memberProfile);
               const resolved = await resolveSeededOutfit(seededMember, owner, memberProfile, sink);
-              const caughtUp = driftChatState(resolved, memberProfile, { clockMinutes: tickedClock });
+              const caughtUp = driftChatState(resolved, memberProfile, {
+                clockMinutes: tickedClock,
+                calendarStart: baseScenario.calendarStart,
+              });
               const state = caughtUp.presence === "present" ? decayExchangeFeeling(caughtUp) : caughtUp;
               return {
                 characterId: member.characterId,
@@ -1058,7 +1062,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // one-shot skip note this beat just rendered, and store the
         // rollback anchor so even an opening beat can be regenerated.
         try {
-          const surfacedCues = splitStateCues(driftedState.meters, driftedState.surfacedCues).nextBands;
+          const surfacedCues = splitStateCues(
+            chatMeterReads(driftedState, scenario, profile),
+            driftedState.surfacedCues,
+          ).nextBands;
           await persistChatState(chatId, characterId, { ...driftedState, surfacedCues });
           await saveChatScenario(chatId, { ...scenario, pendingSkipNote: "", pendingMeanwhileNote: "" });
           await savePreExchangeSnapshot(chatId, characterId, storedState);
