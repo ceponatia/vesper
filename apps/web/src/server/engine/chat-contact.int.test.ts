@@ -50,8 +50,10 @@ import { codes } from "@/test/diagnostics";
  * - the leg ENDS contacts as well as starting them: the player's own release
  *   (`withdrawn`), the player's own departure (`separated` — and the distance it
  *   opens, which is the only physical claim an end ever makes), a pending
- *   story-clock skip (`separated`, owner ruling), and walking out of the scene
- *   (`scene_changed`);
+ *   story-clock skip (`separated`, owner ruling), a grounded move onto
+ *   furniture/a fixture WITHIN the current place (`separated`; #330, owner
+ *   ruling 2026-09-27 — the scene does not change, but the player's body still
+ *   crossed the room), and walking out of the scene (`scene_changed`);
  * - with `CHAT_CONTACT_ACTIONS` unset the turn is the pre-feature turn: no rows,
  *   a scene that places nobody, and a system prompt byte-identical to the one the
  *   flag-ON take of that same line builds — the leg can commit a durable contact
@@ -164,8 +166,10 @@ const RELEASE = "I pull my hand back.";
 const STEP_BACK = "I step back.";
 /**
  * A line every detector in the leg refuses — "her desk" is furniture, so neither
- * the approach nor the departure reads it — and that `detectSceneMovement` reads
- * as a place change. The reconciliation case: the player moved, so the touch ends.
+ * the approach nor the departure reads it — and that `detectSceneMovement` also
+ * refuses (furniture is not a place; #330, owner ruling 2026-09-27). The
+ * reconciliation case: `detectWithinPlaceMovement` reads the player's own body
+ * crossing the room, so the touch still ends (`separated`) with no scene change.
  */
 const DESK = "I walk over to her desk.";
 /** A line carrying no act at all — the control for every byte-identity comparison. */
@@ -648,17 +652,21 @@ describe.runIf(ready)("the ledger is idempotent against its own retry, and verif
 
 /**
  * A contact is a claim that two surfaces are in contact NOW, so the leg has to be
- * able to stop claiming it. Four ways, and only the first two are something the
- * player wrote as an act:
+ * able to stop claiming it. Five ways, and only the first two are read by the
+ * turn plan as an attempted act — the rest are hooks applied BEFORE the plan
+ * runs:
  *
  * - the player's own RELEASE (`withdrawn`), read by the plan — a hand coming back;
  * - the player's own DEPARTURE (`separated`), read by the same plan — a body
  *   moving off, which additionally states the distance it opened;
  * - a pending story-clock SKIP (`separated`, owner ruling 2026-07-31 — hours do
  *   not pass with a hand left resting somewhere), which ends EVERY contact;
+ * - a grounded move onto furniture/a fixture WITHIN the current place
+ *   (`separated`; #330, owner ruling 2026-09-27 — the scene does not change, but
+ *   the player's own body still crossed the room);
  * - walking out of the scene (`scene_changed`).
  *
- * All four persist through the same transactional append, under the ENDING
+ * All five persist through the same transactional append, under the ENDING
  * exchange's own event ref — the ends are that exchange's record, not an
  * amendment to the one that started the contact.
  */
@@ -761,17 +769,23 @@ describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
 
   /**
    * The reconciliation the possessive guard forces, and the owner's directive
-   * settles.
+   * settles — as ruled on #330, 2026-09-27.
    *
    * "I walk over to her desk" states no distance (the approach guard) and no
-   * departure (the same guard, on the "…from <X>" clause) — but
-   * `detectSceneMovement` reads it as a place change and mints a micro-place, so
-   * the `scene_changed` hook ends the contact. That outcome is CORRECT: the
-   * player moved, and a held touch does not survive the mover. Pinned here so a
-   * future change to either detector has to face the question rather than
-   * silently flip the answer.
+   * departure (the same guard, on the "…from <X>" clause). It is ALSO not a
+   * place change: the desk is furniture within the current place, so
+   * `detectSceneMovement` returns null and the scene memory never mints a
+   * stub (superseding this test's prior reading of the same line as a place
+   * change). But the player's own body still crossed the room —
+   * `detectWithinPlaceMovement` carries that — so the held touch still ends,
+   * reason `separated` (the same reason a plain departure uses: nobody took a
+   * hand back, the distance simply stopped allowing it), and the pair's
+   * proximity still clears to unknown (owner ruling 2026-08-04 still applies;
+   * only the inference that this line is a place change is superseded). Pinned
+   * here so a future change to either detector has to face the question rather
+   * than silently flip the answer.
    */
-  it("walking over to her desk ends the held touch through the place change, and starts nothing", async () => {
+  it("walking over to her desk ends the held touch as a within-place move, and starts nothing", async () => {
     process.env.CHAT_CONTACT_ACTIONS = "on";
     const { chat } = await touchedChat();
     const started = await soleRow(chat.chatId);
@@ -783,18 +797,24 @@ describe.runIf(ready)("the leg ends contacts as well as starting them", () => {
     expect(all.map((entry) => entry.kind)).toEqual(["contact_started", "contact_ended"]);
     expect(row.contactId).toBe(started.contactId);
     expect(row.guardMessageId).toBe(deskGuardId);
-    expect(row.payload).toMatchObject({ kind: "contact_ended", reason: "scene_changed" });
+    expect(row.payload).toMatchObject({ kind: "contact_ended", reason: "separated" });
 
     const scene = await storedScene(chat.chatId);
     expect(activeContactsOf(scene.contacts)).toEqual([]);
     // Nothing was started: walking up to her furniture is neither an approach to
     // her nor a departure from her.
     expect(all.filter((entry) => entry.kind === "contact_started")).toHaveLength(1);
-    // The place CHANGED, so the distance goes with the contact (owner ruling
-    // 2026-08-04). Keeping the old `close` while ending the touch on the grounds
-    // that she is no longer here is the contradiction the ruling closes — and it
-    // is cleared to UNKNOWN, never to an invented `distant`.
+    // The player's body moved, so the distance goes with the contact (owner
+    // ruling 2026-08-04) even though the SCENE did not (owner ruling on #330,
+    // 2026-09-27). Keeping the old `close` while ending the touch on the
+    // grounds that she is no longer in reach is the contradiction the 2026-08-04
+    // ruling closes — and it is cleared to UNKNOWN, never to an invented
+    // `distant`.
     expect(sceneProximityFact(scene, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
+
+    // The scene itself did NOT change — no stub place, `current` stays unset.
+    const scenario = await loadChatScenario(chat.chatId);
+    expect(scenario?.sceneMemory.current).toBeFalsy();
   });
 
   it("a pending time skip ends EVERY contact, reason `separated`, on the exchange that sees it", async () => {
@@ -1027,6 +1047,14 @@ describe.runIf(ready)("silence beats a guess", () => {
    * `close` proximity claim about a body the player walked PAST, and the touch
    * that follows then lands on that invented distance. This is the regression
    * that costs a durable row.
+   *
+   * `detectWithinPlaceMovement` also reads this exact line (#330, owner ruling
+   * 2026-09-27) and asserts a `separated` end every exchange, but there is
+   * nothing active to end on a chat's first line, so it is a harmless no-op
+   * here — this test is about the possessive guard withholding a distance
+   * claim in the first place, not about ending an existing one (see "walking
+   * over to her desk ends the held touch as a within-place move" above for
+   * that half). The scene itself never changes either way.
    */
   it("an approach to her DESK states no distance, so the touch after it commits nothing", async () => {
     process.env.CHAT_CONTACT_ACTIONS = "on";
@@ -1041,6 +1069,9 @@ describe.runIf(ready)("silence beats a guess", () => {
     expect(sceneProximityFact(afterApproach, CHAT_CONTACT_PLAYER_SUBJECT, target())).toBeUndefined();
     expect(afterApproach.proximity).toEqual([]);
     expect(afterApproach.participants).toHaveLength(2);
+    // No place change either — the desk is furniture within the current place.
+    const scenarioAfterApproach = await loadChatScenario(chat.chatId);
+    expect(scenarioAfterApproach?.sceneMemory.current).toBeFalsy();
 
     const turn = await sayWithDiagnostics(chat, touch());
     expect(turn.reply.length).toBeGreaterThan(0);

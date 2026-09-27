@@ -6,6 +6,7 @@ import {
   detectChatCue,
   detectSceneMovement,
   detectSensoryFocus,
+  detectWithinPlaceMovement,
   isCheckInReply,
   replyEndsInQuestion,
   type ChatCueHint,
@@ -140,6 +141,66 @@ describe("detectSceneMovement (chat scene memory)", () => {
     expect(detectSceneMovement("If she asks, I go to the kitchen.")).toBeNull();
     expect(detectSceneMovement("I have moved to the kitchen before.")).toBeNull();
     expect(detectSceneMovement("I moved to the kitchen.")).toBe("kitchen");
+  });
+
+  // #330: an unrelated third party's own errand, narrated in passing, must not teleport
+  // the shared scene — only the player actually going (or being taken) somewhere may
+  // switch the current place. (The reported "back room" shape: a background mention, not
+  // the player moving.)
+  it("does not move the scene for an unrelated third party's own errand (#330)", () => {
+    expect(detectSceneMovement("The bartender walks back to the back room for napkins.")).toBeNull();
+    expect(detectSceneMovement("Mara heads to the kitchen to grab a drink.")).toBeNull();
+  });
+
+  it("still allows legitimate movement into a brand-new place (leading/being led)", () => {
+    expect(detectSceneMovement("She leads me to the back room.")).toBe("back room");
+    expect(detectSceneMovement("I lead her to the back room.")).toBe("back room");
+    expect(detectSceneMovement("He carries you to the bedroom.")).toBe("bedroom");
+  });
+
+  it("a mere mention of a place, with no movement verb, never changes the scene", () => {
+    expect(detectSceneMovement("The desk in the back room is old.")).toBeNull();
+    expect(detectSceneMovement("I love this kitchen.")).toBeNull();
+  });
+
+  // #330, owner ruling 2026-09-27: a player-grounded move onto furniture/a fixture
+  // WITHIN the current place is not a place change — the desk is not a room.
+  it("does not read furniture/a fixture as a destination, even when the move is grounded", () => {
+    expect(detectSceneMovement("I walk over to the desk.")).toBeNull();
+    expect(detectSceneMovement("I carry my drink over to the counter.")).toBeNull();
+    expect(detectSceneMovement("She leads me to the fireplace.")).toBeNull();
+  });
+
+  it("room-type nouns are never read as furniture (back room / kitchen / garden stay places)", () => {
+    expect(detectSceneMovement("I walk over to the back room.")).toBe("back room");
+    expect(detectSceneMovement("I walk over to the kitchen.")).toBe("kitchen");
+    expect(detectSceneMovement("I walk over to the garden.")).toBe("garden");
+  });
+
+  it("still switches to a furniture-named destination once it is an established place", () => {
+    expect(detectSceneMovement("I walk over to the desk.", { knownPlaceNames: ["desk"] })).toBe("desk");
+  });
+
+  it("accepts 'us' in the first-person subject ('the two of us')", () => {
+    expect(detectSceneMovement("The two of us head to the kitchen.")).toBe("kitchen");
+  });
+});
+
+describe("detectWithinPlaceMovement (chat scene memory: furniture, #330)", () => {
+  it("reads a player-grounded move onto furniture/a fixture within the current place", () => {
+    expect(detectWithinPlaceMovement("I walk over to the desk.")).toBe("desk");
+    expect(detectWithinPlaceMovement("I carry my drink over to the counter.")).toBe("counter");
+    expect(detectWithinPlaceMovement("She leads me to the fireplace.")).toBe("fireplace");
+  });
+
+  it("is null for a real place change, a mere mention, or an ungrounded third party's move", () => {
+    expect(detectWithinPlaceMovement("I walk over to the kitchen.")).toBeNull();
+    expect(detectWithinPlaceMovement("There's a desk by the window.")).toBeNull();
+    expect(detectWithinPlaceMovement("The bartender walks back to the counter.")).toBeNull();
+  });
+
+  it("is null once the furniture-named phrase is an established place", () => {
+    expect(detectWithinPlaceMovement("I walk over to the desk.", { knownPlaceNames: ["desk"] })).toBeNull();
   });
 });
 
