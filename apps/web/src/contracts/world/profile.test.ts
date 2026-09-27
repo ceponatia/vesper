@@ -10,6 +10,8 @@ import {
   matchScheduleDayPart,
   SCHEDULE_DAY_PARTS,
   scheduleDayPartById,
+  scheduleEntrySchema,
+  scheduleKinds,
   toPublicCharacterProfile,
   VOICE_PET_PHRASES_MAX,
   voiceAnchorsSchema,
@@ -102,6 +104,39 @@ describe("profile.schedule boundary (element-wise catch)", () => {
     expect(parsed.schedule).toEqual([
       { startMinute: 360, endMinute: 720, locationName: "the quay", activity: "inspection" },
     ]);
+  });
+});
+
+describe("scheduleEntrySchema kind (#320, owner ruling 2026-09-27)", () => {
+  it("exports exactly the five ruled kinds — no commute or errand", () => {
+    expect(scheduleKinds).toEqual(["sleep", "wash", "meal", "work", "leisure"]);
+  });
+
+  it("a legacy row with no kind key stays valid and reads as no kind", () => {
+    const parsed = characterProfileSchema.parse({ schedule: [entry()] });
+    expect(parsed.schedule).toEqual([entry()]);
+    expect(parsed.schedule[0]?.kind).toBeUndefined();
+  });
+
+  it("round-trips every ruled kind through the profile schema", () => {
+    for (const kind of scheduleKinds) {
+      const parsed = scheduleEntrySchema.parse(entry({ kind }));
+      expect(parsed.kind).toBe(kind);
+    }
+  });
+
+  it("an unrecognized stored kind degrades to no kind with the rest of the row intact, never dropping it", () => {
+    const parsed = characterProfileSchema.parse({
+      schedule: [{ ...entry(), kind: "commute" }],
+    });
+    expect(parsed.schedule).toEqual([entry()]);
+    expect(parsed.schedule[0]?.kind).toBeUndefined();
+  });
+
+  it("\"unknown\" itself is not a selectable kind", () => {
+    expect((scheduleKinds as readonly string[]).includes("unknown")).toBe(false);
+    const parsed = scheduleEntrySchema.parse({ ...entry(), kind: "unknown" });
+    expect(parsed.kind).toBeUndefined();
   });
 });
 

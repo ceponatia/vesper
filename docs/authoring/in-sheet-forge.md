@@ -18,9 +18,10 @@ counts. The editor uses those definitions for section navigation and actions. Co
 authored details; an empty optional section is not a validation failure.
 
 - **Profile** owns background bio and daily rhythm. Scoped generation represents full schedule
-  rows, including exact custom/overnight windows, weekdays and outfit preset mappings; it does not
-  reduce an authored routine to the create leg's four-row day-part sketch. Name, real age,
-  aliases, library tags and species controls live here but remain fixed during section generation.
+  rows, including exact custom/overnight windows, weekdays, the optional typed `kind` and outfit
+  preset mappings; it does not reduce an authored routine to the create leg's four-row day-part
+  sketch. Name, real age, aliases, library tags and species controls live here but remain fixed
+  during section generation.
 - **Appearance** owns physical attributes and optional intimate anatomy. Nonempty authored body
   configuration stays fixed; an empty configuration can adopt the grounded seed from generated
   identity attributes. Visual attribute grounding uses that same resulting body. Attribute values, including manually authored ones, are reviewable

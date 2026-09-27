@@ -54,9 +54,9 @@ export function demoCharacterProfileSection() {
       },
     ],
     schedule: [
-      { dayPart: "morning" as const, activity: "walking the quay and checking moorings", locationName: "Greywater Harbor" },
-      { dayPart: "afternoon" as const, activity: "working the ledgers and berth disputes", locationName: "the harbor office" },
-      { dayPart: "evening" as const, activity: "one slow pint at a corner table", locationName: "the Rusted Anchor", days: [5, 6] },
+      { dayPart: "morning" as const, kind: "work" as const, activity: "walking the quay and checking moorings", locationName: "Greywater Harbor" },
+      { dayPart: "afternoon" as const, kind: "work" as const, activity: "working the ledgers and berth disputes", locationName: "the harbor office" },
+      { dayPart: "evening" as const, kind: "leisure" as const, activity: "one slow pint at a corner table", locationName: "the Rusted Anchor", days: [5, 6] },
     ],
     playerRelationship: {
       familiarity: "acquainted",
