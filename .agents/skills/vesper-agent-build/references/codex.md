@@ -24,8 +24,9 @@ override use the host default. The root Codex policy owns the full table and
 escalation criteria. Claude-side roles use host-native pins instead, and
 `AGENTS.md` §Subagent model policy (Claude) owns that table. Do not run every
 role for every change.
-Context, review, UX, and scenario roles inspect without editing; the UI role may record
-evaluation artifacts; the test keeper edits tests only. They do not implement
+Context, review, UX, and scenario roles inspect without editing; the UI and
+chat-tester roles may record evaluation artifacts; the test keeper edits
+tests only. They do not implement
 fixes or spawn further agents. Run the test keeper after an implementation slice
 lands and before reporting it complete — it is the one role every coding task
 ends with.

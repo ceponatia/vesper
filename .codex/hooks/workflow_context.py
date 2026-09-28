@@ -16,6 +16,7 @@ ROLES = {
     "vesper-ui-reviewer": "vesper-ui-quality",
     "vesper-scenario-reviewer": "vesper-scenario-review",
     "vesper-test-keeper": "vesper-testing",
+    "vesper-chat-tester": "verify",
 }
 STATUSES = {"verified", "failed", "unverified", "not-applicable"}
 

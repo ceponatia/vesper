@@ -1642,7 +1642,10 @@ class CodexModelPolicyTests(unittest.TestCase):
         role's own claim about `.codex`/`.git`, not this one. Its `danger-full-access`
         pin is for a different reason (catalog notes, #651): `workspace-write` also denies
         outbound network, and this role's whole job is billed provider calls and Fly
-        `verify` traffic. A regression that swaps it for `workspace-write`, e.g. to match
+        `verify` traffic. The same pin also keeps the `fly-api.sh` cookie jar under
+        `~/.cache` writable and keeps this role's own `eval-images/` writes from going
+        read-only along with the rest of a checkout nested under `.codex/` when run
+        from a worktree. A regression that swaps it for `workspace-write`, e.g. to match
         the other eval-images-only writers, would silently break every live call this role
         makes; nothing else in this suite would catch that."""
         role = tomllib.loads((CODEX_ROLE_DIR / "vesper-chat-tester.toml").read_text(encoding="utf-8"))

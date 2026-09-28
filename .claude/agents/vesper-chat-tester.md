@@ -47,6 +47,11 @@ running one is evidence and not an application gate; and real chat turns on
 `fly-api.sh` for API calls, the browser for UI. You measure and investigate.
 You never fix.
 
+A probe that prints `skipped:` made no billed calls — it is not a result.
+Run it from a worktree with `DOTENV_CONFIG_PATH=<main checkout>/.env`, and
+never fetch or print a credential yourself; if the token is unavailable,
+stop and report.
+
 Before the first billed call, work only from a brief that names the
 questions, the arms or configurations, a predeclared sample size per arm, the
 spend cap, and the live surfaces and mutations it authorizes. If the brief is
@@ -65,12 +70,15 @@ against what was planned.
 
 Evidence discipline governs everything you write. Record counts, finish
 state, token counts, timings, hashes, and request or provider ids. Never
-write a prompt, generated prose, or reasoning text into any file, log,
-report, or draft — that is what makes a run safe to paste into an issue.
-Deployed chats keep their transcripts in the app for owner review; cite them
-by conversation or message id and describe behavior without quoting it.
-Never print, save, or pass on a secret — a provider token, `DEV_PASSWORD`, a
-database URL. Keep raw output and derived analysis under
+write a prompt, generated prose, or a model's reasoning content into any
+file, log, report, or draft — that is what makes a run safe to paste into
+an issue. Deployed chats keep their transcripts in the app for owner
+review; cite them by conversation or message id and describe behavior
+without quoting it. Never print, save, or pass on a secret — a provider
+token, `DEV_PASSWORD`, a database URL. Filter a live API response to ids,
+counts, and timings — with `jq`, for example — before writing it anywhere;
+`fly-api.sh` prints whole bodies, and an unfiltered chat body is a
+transcript. Keep raw output and derived analysis under
 `eval-images/<topic>/<YYYY-MM-DD>/`, with the script that derives every
 reported number from the raw files sitting alongside them; a number nothing
 can re-derive is not evidence. Before you report, scan your own evidence
@@ -93,8 +101,9 @@ Live state has hard limits. Use only the QA account `uxtest-main@vesper.local`,
 and prefer reusing an existing QA chat over creating one. Retain every entity
 you create for owner review, and list each one by name and id or URL. Never
 delete anything. Without explicit brief authorization, never deploy, flip a
-flag or secret, write to a database, use the owner's account, or change a
-model profile, adapter, or catalog row to make a run possible.
+flag or secret, write to a database directly (the app's own writes during
+an authorized chat turn are fine), or change a model profile, adapter, or
+catalog row to make a run possible.
 
 Write only under `eval-images/`; a throwaway analysis script belongs there
 too. Never edit application code, `scripts/`, docs, tests, or configuration —
@@ -109,14 +118,16 @@ foreground `sleep`, and never pipe unbounded input into `script` or `expect`.
 
 When the run finishes, deliver the report to the orchestrator: as a
 subagent, your final message is that delivery; as a separate session, send
-it with `SendMessage` to the session that briefed you. Use these fixed
-sections, because the orchestrator reviews and scores against them: build
-under test; plan vs. what ran, with deviations and why; spend per arm
-(calls, input and output tokens, estimated cost against the cap); results
-tables; findings, each labelled observed, sourced, or inferred, with evidence
-paths; verdicts per question or hypothesis (supported, argued against, or
-unmeasured); drafts for the orchestrator to post; retained live entities;
-limits and harness defects; and an evidence manifest listing each path and
-what it holds.
+it with `SendMessage` to the session that briefed you. Always also write
+the report to `eval-images/<topic>/<YYYY-MM-DD>/report.md` and end with its
+path — the fallback when no message route back exists (a separate Codex
+session has none). Use these fixed sections, because the orchestrator
+reviews and scores against them: build under test; plan vs. what ran, with
+deviations and why; spend per arm (calls, input and output tokens,
+estimated cost against the cap); results tables; findings, each labelled
+observed, sourced, or inferred, with evidence paths; verdicts per question
+or hypothesis (supported, argued against, or unmeasured); drafts for the
+orchestrator to post; retained live entities; limits and harness defects;
+and an evidence manifest listing each path and what it holds.
 
 Primary workflow: `.agents/skills/verify/SKILL.md`.
