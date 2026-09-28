@@ -7,9 +7,13 @@ import { NARRATIVE_TEMPERATURE } from "@/server/engine";
  * rather than re-implementing any of it — this file is the one place each rule is
  * stated.
  *
- * Nothing here ever sees a prompt or a completion's prose. Every input type below is
- * either a count, a timing, or the sampler-only wire body `probe.ts` already captures
- * with prompt/tool content excluded (see `probe.ts`'s `WIRE_CONTENT_KEYS`).
+ * Every input type below is either a count, a timing, or a wire body (a request the
+ * transforms rewrite, an SSE/JSON body the accumulator parses). The transforms and
+ * the accumulator DO see the request/response bytes — prompt content included — but
+ * every one of them only ever COUNTS or TRANSFORMS that content; none of it is ever
+ * returned as text, logged, or otherwise emitted by anything in this file. `probe.ts`
+ * additionally never sends this file the fields that hold prose in the first place
+ * for its own printed output (see `probe.ts`'s `WIRE_CONTENT_KEYS`).
  */
 
 // ---------------------------------------------------------------------------
@@ -97,6 +101,16 @@ export function isProbeArm(value: string): value is ProbeArm {
 export const DIRECT_ARMS: ReadonlySet<ProbeArm> = new Set(["direct-stream", "direct-json"]);
 
 /**
+ * A type-guard twin of {@link DIRECT_ARMS}: `Set.has` reports a boolean but does
+ * not narrow its argument's type, so a caller that needs the narrower
+ * `"direct-stream" | "direct-json"` type (to build a direct-arm-only request)
+ * needs this instead — the two are kept next to each other so they can't drift.
+ */
+export function isDirectArm(arm: ProbeArm): arm is "direct-stream" | "direct-json" {
+  return arm === "direct-stream" || arm === "direct-json";
+}
+
+/**
  * The wire body's CONTENT keys — everything a row with no exact-model adapter still
  * carries. Deliberately a small, named list rather than `probe.ts`'s
  * `WIRE_CONTENT_KEYS` denylist: the `lane` arm's whole point is to reproduce what an
@@ -120,10 +134,11 @@ function definedValue(body: Record<string, unknown>, key: string): unknown {
  * body (the transform is applied just before it goes over the wire); for the two
  * direct arms it is a `profile` body captured from an earlier call and replayed.
  *
- * `narrativeTemperature` is threaded in rather than imported a second time so this
- * function's only external dependency is its caller — `probe.ts` passes
- * `NARRATIVE_TEMPERATURE` (`server/engine/constants.ts`) once, at the one call site
- * that owns it.
+ * `narrativeTemperature` is a PARAMETER, defaulted from this file's own
+ * `NARRATIVE_TEMPERATURE` import so a direct call (as every test below makes) never
+ * has to pass it explicitly. `probe.ts` passes it explicitly anyway at its one call
+ * site, so the constant is read from exactly one place (`@/server/engine`) even
+ * though two files reference it.
  */
 export function transformArmBody(
   arm: ProbeArm,
@@ -155,7 +170,7 @@ export function transformArmBody(
       return cap === undefined ? lane : { ...lane, max_tokens: cap };
     }
     case "direct-json": {
-      const next = { ...body, stream: false };
+      const next: Record<string, unknown> = { ...body, stream: false };
       delete next.stream_options;
       return next;
     }
@@ -169,7 +184,7 @@ export function transformArmBody(
 export interface SanitizedHeaders {
   /** Every header name the response carried, lowercased and sorted. */
   names: string[];
-  /** Values kept for the allowlisted names only, truncated at {@link MAX_HEADER_VALUE}. */
+  /** Values kept for the allowlisted names only — DROPPED (key absent), not truncated, past {@link MAX_HEADER_VALUE}. */
   values: Record<string, string>;
 }
 
@@ -189,14 +204,24 @@ const HEADER_ALLOW_PATTERN = /(request|trace|correlat|cf-ray|served?-?by|server|
  */
 const HEADER_DENY_PATTERN = /(cookie|authoriz|api[-_]?key|secret|token|credential|signature)/i;
 
-/** Longest header value ever printed; anything longer is truncated with its true length noted. */
+/**
+ * Exact header names excluded even though they'd otherwise match the allowlist
+ * pattern above. `server-timing` contains "server" but can carry internal request
+ * breakdowns beyond a plain routing identifier, so it is named out rather than
+ * relying on the substring pattern to exclude it.
+ */
+const HEADER_NAME_EXCLUDE: ReadonlySet<string> = new Set(["server-timing"]);
+
+/** Longest header value ever printed; a longer allowlisted value is DROPPED, not truncated. */
 const MAX_HEADER_VALUE = 120;
 
 /**
  * Reduce a response's headers to the safe subset (#594 acceptance point 4): every header
  * NAME (so a new one shows up in evidence even before it earns an allowlist entry),
  * and a VALUE only for the names an operator would recognize as a routing or
- * correlation identifier — never a cookie, an auth header, or anything key-shaped.
+ * correlation identifier — never a cookie, an auth header, anything key-shaped,
+ * `server-timing`, or a value longer than {@link MAX_HEADER_VALUE} (dropped whole,
+ * never truncated, so a printed value is always the host's own unmodified text).
  */
 export function sanitizeHeaders(headers: Iterable<readonly [string, string]>): SanitizedHeaders {
   const names: string[] = [];
@@ -205,11 +230,10 @@ export function sanitizeHeaders(headers: Iterable<readonly [string, string]>): S
     const name = rawName.toLowerCase();
     names.push(name);
     if (HEADER_DENY_PATTERN.test(name)) continue;
+    if (HEADER_NAME_EXCLUDE.has(name)) continue;
     if (!HEADER_ALLOW_PATTERN.test(name)) continue;
-    values[name] =
-      rawValue.length > MAX_HEADER_VALUE
-        ? `${rawValue.slice(0, MAX_HEADER_VALUE)}…(+${String(rawValue.length - MAX_HEADER_VALUE)} more chars)`
-        : rawValue;
+    if (rawValue.length > MAX_HEADER_VALUE) continue;
+    values[name] = rawValue;
   }
   names.sort();
   return { names, values };
@@ -340,7 +364,11 @@ export function createSseAccumulator(): SseAccumulator {
   let buffer = "";
   const events: SseParsedEvent[] = [];
   function drain(text: string): SseParsedEvent[] {
-    const frames = text.split("\n\n");
+    // Normalise CRLF (and a bare CR) to LF before framing: some hosts/proxies send
+    // `\r\n\r\n` frame boundaries, and a parser that only ever splits on `\n\n`
+    // would silently treat the whole response as one unterminated frame.
+    const normalized = text.replace(/\r\n?/g, "\n");
+    const frames = normalized.split("\n\n");
     // The last split part is either empty (text ended exactly on a boundary) or an
     // incomplete frame — either way it is not yet parseable and stays in the buffer.
     const trailing = frames.pop() ?? "";
@@ -421,10 +449,13 @@ export function summarizeJsonCompletion(bodyText: string): SseSummary | null {
   const choice = firstChoice(body);
   const message = objectField(choice, "message");
   const content = stringField(message?.content) ?? "";
+  // Counted the same way the SSE path counts a delta: content OR reasoning content,
+  // whichever the host actually populated.
+  const reasoning = stringField(message?.reasoning_content) ?? "";
   const finishReason = stringField(choice?.finish_reason) ?? null;
   return {
-    contentEventCount: content.length > 0 ? 1 : 0,
-    totalContentChars: content.length,
+    contentEventCount: content.length > 0 || reasoning.length > 0 ? 1 : 0,
+    totalContentChars: content.length + reasoning.length,
     finishReason,
     usage: readUsage(body),
     meta: readMeta(body),
@@ -490,6 +521,16 @@ export function rawLengthStub(input: RawLengthStubInput): boolean {
 export type ProbeCase = "tiny" | "vesper-sized" | "terse-invite";
 
 /**
+ * What one call was FOR. Only `"call"` rows — the interleaved arm × case grid —
+ * enter {@link ProbeCellSummary}; the other three are billed calls this run made
+ * for a different reason (seeding a direct-arm replay, the 32K context edge, an
+ * optional cold-start warm-up) and are reported only in the run-wide token totals
+ * and the JSONL output, never mixed into the grid's distributions.
+ */
+export const PROBE_RECORD_KINDS = ["call", "bootstrap-call", "long-history", "warmup"] as const;
+export type ProbeRecordKind = (typeof PROBE_RECORD_KINDS)[number];
+
+/**
  * One call's flattened, counts-only record — what `probe.ts` both prints as a row
  * and writes as one JSONL line (`PROBE_OUT`), and what {@link buildProbeSummary}
  * consumes. `visible` is null for the two direct arms, which have no SDK completion
@@ -498,10 +539,31 @@ export type ProbeCase = "tiny" | "vesper-sized" | "terse-invite";
 export interface ProbeCallRecord {
   arm: ProbeArm;
   probeCase: ProbeCase;
+  kind: ProbeRecordKind;
   round: number;
+  /** Monotonic across the whole run. */
   position: number;
+  /** 1-based order within this row's own round — resets each round, unlike {@link position}. */
+  positionInRound: number;
   startedAt: string;
   totalMs: number;
+  /**
+   * The LAST underlying HTTP request's start, as an offset from this call's own
+   * start (0 for a call with no hidden retry). Raw timings (`raw.firstByteMs` etc.)
+   * are anchored to that last request; `visible.ttftMs` and `totalMs` are anchored
+   * to the call's start — this is what lets the two be reconciled when a hidden
+   * retry means they are not the same zero point. Null when no request was ever
+   * observed (the call errored before the fetch wrapper saw one).
+   */
+  requestStartOffsetMs: number | null;
+  /**
+   * The `max_tokens` THIS ARM's own request actually carried on the wire, or null
+   * for an arm that sent none (`lane`, or `profile`/`profile-uncapped` on a model
+   * with no adapter cap). Distinct from `visible.maxOutputTokens`, which is the
+   * narrator gateway's OWN budget bookkeeping and can differ from the wire value
+   * for a direct arm (which never asks the gateway at all — its `visible` is null).
+   */
+  requestMaxTokens: number | null;
   errored: boolean;
   timedOut: boolean;
   /** A thrown/aborted call's own message, truncated; absent for a call that returned. */
@@ -519,6 +581,11 @@ export interface ProbeCallRecord {
     contentChars: number;
     contentEventCount: number;
     firstByteMs: number | null;
+    /**
+     * Null for `direct-json`: reading a non-streaming body gives one moment (the
+     * whole body arriving), which `firstByteMs` already reports — a duplicate
+     * `firstContentMs` would only pretend to be a distinct measurement.
+     */
     firstContentMs: number | null;
     stub: boolean;
   };
@@ -526,11 +593,20 @@ export interface ProbeCallRecord {
     finishReason: string | null;
     rawFinishReason: string | null;
     ttftMs: number | null;
+    /** Characters the AI SDK's stream carried BEFORE Vesper's output normalizers. */
+    rawTextLength: number | null;
     visibleTextChars: number | null;
     inputTokens: number | null;
     outputTokens: number | null;
+    /** Output tokens the provider attributed to visible text, when it splits them out. */
+    textTokens: number | null;
+    /** Output tokens the provider attributed to a reasoning chain, when it splits them out. */
+    reasoningTokens: number | null;
+    /** The narrator gateway's OWN output-cap bookkeeping — see `requestMaxTokens` for the wire value. */
     maxOutputTokens: number | null;
     attempts: number | null;
+    /** The classified provider failure behind an `error` finish, when there was one. */
+    providerError: { code: string; detail: string } | null;
     stub: boolean;
   } | null;
 }
@@ -555,19 +631,32 @@ function latencyStats(values: readonly (number | null)[]): LatencyStats {
 export interface ProbeCellSummary {
   arm: ProbeArm;
   probeCase: ProbeCase;
+  /** Every row in this cell, failed ones included. */
   n: number;
   errored: number;
   empty: number;
+  /**
+   * Rows this cell disqualifies from the stub verdict and the latency stats: a
+   * thrown/timed-out call, an HTTP status >= 400, or a completion/raw finish of
+   * `"error"`. A failed call answers a different question (did the request
+   * complete at all) and would only add noise to "did a completed reply stub".
+   */
+  failed: number;
+  /** Denominator `n - failed`; count/rate/wilson95 are all over that denominator. */
   stub: { count: number; rate: number; wilson95: WilsonInterval };
+  /** Over every row in the cell, failed included — a failure's own finish reason is evidence too. */
   finishReasonTally: Record<string, number>;
+  /** Excludes failed rows (see `failed`). */
   rawFirstContentMs: LatencyStats;
+  /** Excludes failed rows. */
   visibleFirstMs: LatencyStats;
+  /** Excludes failed rows. */
   totalMs: LatencyStats;
   promptTokensTotal: number;
   completionTokensTotal: number;
 }
 
-/** Raw-wire verdict vs completion verdict, over every PRODUCTION row (both verdicts present). */
+/** Raw-wire verdict vs completion verdict, over every non-failed PRODUCTION row (both verdicts present). */
 export interface StubCrossTab {
   bothStub: number;
   rawOnlyStub: number;
@@ -579,9 +668,13 @@ export interface StubCrossTab {
 
 export interface ProbeSummary {
   percentileMethod: "nearest-rank";
+  /** Only `kind: "call"` rows — the interleaved grid. */
   cells: ProbeCellSummary[];
   stubCrossTab: StubCrossTab;
+  /** Every row of every kind — "every billed call" (#594 correction round P2/P3). */
   tokenTotalsByArm: Record<string, { promptTokens: number; completionTokens: number }>;
+  /** The same total, broken out by {@link ProbeRecordKind} instead of by arm. */
+  tokenTotalsByKind: Record<string, { promptTokens: number; completionTokens: number }>;
 }
 
 /** Whichever verdict this row is actually judged by: the completion verdict when there is one, else the raw one. */
@@ -595,6 +688,21 @@ function rowEmpty(row: ProbeCallRecord): boolean {
   return row.visible ? (row.visible.visibleTextChars ?? 0) === 0 : row.raw.contentChars === 0;
 }
 
+/**
+ * A row whose request did not cleanly complete: thrown/aborted, an HTTP status
+ * `probe.ts` never even handed to the SDK/JSON parser (>= 400), or a finish of
+ * `"error"` (production's unified reason, or the raw wire's own word for it —
+ * Featherless does not reuse `"error"` for anything else). Pure function of
+ * already-recorded fields, so a tester reading `buildProbeSummary`'s output can
+ * recompute it by hand from the same row.
+ */
+function rowFailed(row: ProbeCallRecord): boolean {
+  if (row.errored) return true;
+  if (row.raw.status !== null && row.raw.status >= 400) return true;
+  const finish = row.visible?.finishReason ?? row.raw.finishReason;
+  return finish === "error";
+}
+
 function rowFinishReason(row: ProbeCallRecord): string {
   if (row.errored) return row.timedOut ? "timeout" : "error";
   return row.visible?.finishReason ?? row.raw.finishReason ?? "unknown";
@@ -604,51 +712,71 @@ function emptyCrossTab(): StubCrossTab {
   return { bothStub: 0, rawOnlyStub: 0, completionOnlyStub: 0, neitherStub: 0, disagreements: 0 };
 }
 
+function tokenTotals(rows: readonly ProbeCallRecord[]): { promptTokens: number; completionTokens: number } {
+  return rows.reduce(
+    (sum, row) => ({
+      promptTokens: sum.promptTokens + (row.raw.promptTokens ?? row.visible?.inputTokens ?? 0),
+      completionTokens: sum.completionTokens + (row.raw.completionTokens ?? row.visible?.outputTokens ?? 0),
+    }),
+    { promptTokens: 0, completionTokens: 0 },
+  );
+}
+
 /**
- * Build the arm × case distributions and the two run-wide tallies from a flat list
- * of call records (#594 acceptance point 5) — PURE: every input is already the counts-only
- * shape `probe.ts` records per call, so this can be exercised (and its arithmetic
- * proved) without a credential or a network call.
+ * Build the arm × case distributions and the run-wide tallies from a flat list of
+ * call records (#594 acceptance point 5) — PURE: every input is already the
+ * counts-only shape `probe.ts` records per call, so this can be exercised (and its
+ * arithmetic proved) without a credential or a network call.
+ *
+ * `rows` carries every billed call this run made, of every {@link ProbeRecordKind}:
+ * the grid (`cells`) is built from `kind: "call"` rows alone, but the token totals
+ * below sum every row, because a bootstrap, long-history or warm-up call is still
+ * money spent and a tester pricing the run needs all of it.
  */
 export function buildProbeSummary(rows: readonly ProbeCallRecord[]): ProbeSummary {
+  const gridRows = rows.filter((row) => row.kind === "call");
   const cellKeys = new Map<string, { arm: ProbeArm; probeCase: ProbeCase }>();
-  for (const row of rows) cellKeys.set(`${row.arm}\u0000${row.probeCase}`, { arm: row.arm, probeCase: row.probeCase });
+  for (const row of gridRows) cellKeys.set(`${row.arm}\u0000${row.probeCase}`, { arm: row.arm, probeCase: row.probeCase });
 
   const cells: ProbeCellSummary[] = [];
   for (const { arm, probeCase } of cellKeys.values()) {
-    const cellRows = rows.filter((row) => row.arm === arm && row.probeCase === probeCase);
+    const cellRows = gridRows.filter((row) => row.arm === arm && row.probeCase === probeCase);
     const errored = cellRows.filter((row) => row.errored).length;
     const empty = cellRows.filter(rowEmpty).length;
-    const stubbed = cellRows.filter(rowStub).length;
+    const failedRows = cellRows.filter(rowFailed);
+    const consideredRows = cellRows.filter((row) => !rowFailed(row));
+    const stubbed = consideredRows.filter(rowStub).length;
     const finishReasonTally: Record<string, number> = {};
     for (const row of cellRows) {
       const reason = rowFinishReason(row);
       finishReasonTally[reason] = (finishReasonTally[reason] ?? 0) + 1;
     }
-    const wilson = wilsonInterval(stubbed, cellRows.length);
+    const wilson = wilsonInterval(stubbed, consideredRows.length);
     cells.push({
       arm,
       probeCase,
       n: cellRows.length,
       errored,
       empty,
-      stub: { count: stubbed, rate: cellRows.length === 0 ? 0 : stubbed / cellRows.length, wilson95: wilson },
+      failed: failedRows.length,
+      stub: {
+        count: stubbed,
+        rate: consideredRows.length === 0 ? 0 : stubbed / consideredRows.length,
+        wilson95: wilson,
+      },
       finishReasonTally,
-      rawFirstContentMs: latencyStats(cellRows.map((row) => row.raw.firstContentMs)),
-      visibleFirstMs: latencyStats(cellRows.map((row) => row.visible?.ttftMs ?? null)),
-      totalMs: latencyStats(cellRows.map((row) => row.totalMs)),
-      promptTokensTotal: cellRows.reduce((sum, row) => sum + (row.raw.promptTokens ?? row.visible?.inputTokens ?? 0), 0),
-      completionTokensTotal: cellRows.reduce(
-        (sum, row) => sum + (row.raw.completionTokens ?? row.visible?.outputTokens ?? 0),
-        0,
-      ),
+      rawFirstContentMs: latencyStats(consideredRows.map((row) => row.raw.firstContentMs)),
+      visibleFirstMs: latencyStats(consideredRows.map((row) => row.visible?.ttftMs ?? null)),
+      totalMs: latencyStats(consideredRows.map((row) => row.totalMs)),
+      promptTokensTotal: tokenTotals(cellRows).promptTokens,
+      completionTokensTotal: tokenTotals(cellRows).completionTokens,
     });
   }
   cells.sort((a, b) => (a.arm === b.arm ? a.probeCase.localeCompare(b.probeCase) : a.arm.localeCompare(b.arm)));
 
   const stubCrossTab = emptyCrossTab();
-  for (const row of rows) {
-    if (!row.visible || row.errored) continue;
+  for (const row of gridRows) {
+    if (!row.visible || rowFailed(row)) continue;
     const raw = row.raw.stub;
     const completion = row.visible.stub;
     if (raw && completion) stubCrossTab.bothStub += 1;
@@ -666,5 +794,13 @@ export function buildProbeSummary(rows: readonly ProbeCallRecord[]): ProbeSummar
     tokenTotalsByArm[row.arm] = totals;
   }
 
-  return { percentileMethod: "nearest-rank", cells, stubCrossTab, tokenTotalsByArm };
+  const tokenTotalsByKind: Record<string, { promptTokens: number; completionTokens: number }> = {};
+  for (const row of rows) {
+    const totals = tokenTotalsByKind[row.kind] ?? { promptTokens: 0, completionTokens: 0 };
+    totals.promptTokens += row.raw.promptTokens ?? row.visible?.inputTokens ?? 0;
+    totals.completionTokens += row.raw.completionTokens ?? row.visible?.outputTokens ?? 0;
+    tokenTotalsByKind[row.kind] = totals;
+  }
+
+  return { percentileMethod: "nearest-rank", cells, stubCrossTab, tokenTotalsByArm, tokenTotalsByKind };
 }

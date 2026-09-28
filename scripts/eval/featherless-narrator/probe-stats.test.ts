@@ -1,3 +1,4 @@
+import { isNarratorLengthStub, type NarratorCompletion } from "@/server/ai";
 import { describe, expect, it } from "vitest";
 import {
   buildProbeSummary,
@@ -207,13 +208,23 @@ describe("sanitizeHeaders", () => {
     expect(result.values).toEqual({});
   });
 
-  it("truncates a long allowlisted value rather than printing it whole", () => {
+  it("drops (never truncates) an allowlisted value longer than 120 characters (#594 correction round P3.8)", () => {
     const long = "x".repeat(200);
     const result = sanitizeHeaders([["X-Worker-Region", long]]);
-    const value = result.values["x-worker-region"];
-    expect(value).toBeDefined();
-    expect(value?.length).toBeLessThan(200);
-    expect(value?.startsWith("x".repeat(120))).toBe(true);
+    expect(result.names).toEqual(["x-worker-region"]);
+    expect(result.values).not.toHaveProperty("x-worker-region");
+  });
+
+  it("keeps an allowlisted value at exactly 120 characters", () => {
+    const exact = "x".repeat(120);
+    const result = sanitizeHeaders([["X-Worker-Region", exact]]);
+    expect(result.values["x-worker-region"]).toBe(exact);
+  });
+
+  it("excludes server-timing by name even though it contains \"server\" (#594 correction round P3.8)", () => {
+    const result = sanitizeHeaders([["Server-Timing", "db;dur=53, app;dur=47.2"]]);
+    expect(result.names).toEqual(["server-timing"]);
+    expect(result.values).not.toHaveProperty("server-timing");
   });
 });
 
@@ -283,6 +294,27 @@ describe("createSseAccumulator", () => {
     expect(flushed).toHaveLength(1);
     expect(flushed[0]?.finishReason).toBe("stop");
   });
+
+  it("normalises a CRLF frame boundary (\\r\\n\\r\\n) the same way as LF (#594 correction round P3.4)", () => {
+    const acc = createSseAccumulator();
+    const first = acc.push('data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":null}]}\r\n\r\n');
+    expect(first).toHaveLength(1);
+    expect(first[0]?.hasContent).toBe(true);
+    expect(first[0]?.contentChars).toBe(2);
+    // A second event over a second CRLF-terminated frame, to prove the boundary
+    // itself (not just an internal \r) is recognized.
+    const second = acc.push('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\r\n\r\n');
+    expect(second).toHaveLength(1);
+    expect(second[0]?.finishReason).toBe("stop");
+  });
+
+  it("normalises a bare CR line ending the same way", () => {
+    const acc = createSseAccumulator();
+    const events = acc.push('data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":"stop"}]}\r\r');
+    expect(events).toHaveLength(1);
+    expect(events[0]?.contentChars).toBe(2);
+    expect(events[0]?.finishReason).toBe("stop");
+  });
 });
 
 describe("summarizeJsonCompletion", () => {
@@ -304,6 +336,15 @@ describe("summarizeJsonCompletion", () => {
 
   it("returns null for an unparseable body rather than throwing", () => {
     expect(summarizeJsonCompletion("not json")).toBeNull();
+  });
+
+  it("counts message.reasoning_content the same way the SSE path counts a reasoning delta (#594 correction round P3.13)", () => {
+    const body = JSON.stringify({
+      choices: [{ index: 0, message: { role: "assistant", content: "", reasoning_content: "thinking…" }, finish_reason: "length" }],
+    });
+    const summary = summarizeJsonCompletion(body);
+    expect(summary?.contentEventCount).toBe(1);
+    expect(summary?.totalContentChars).toBe("thinking…".length);
   });
 });
 
@@ -352,6 +393,81 @@ describe("rawLengthStub", () => {
 });
 
 // ---------------------------------------------------------------------------
+// rawLengthStub vs isNarratorLengthStub — a parity table (#594 correction round P3.12)
+// ---------------------------------------------------------------------------
+
+describe("rawLengthStub mirrors isNarratorLengthStub", () => {
+  /** The minimum a `NarratorCompletion` needs beyond the fields each case varies. */
+  function completion(overrides: Partial<NarratorCompletion> = {}): NarratorCompletion {
+    return {
+      provider: "featherless",
+      modelId: "DarkArtsForge/Asmodeus-24B-v3",
+      finishReason: "length",
+      rawTextLength: 1,
+      visibleTextLength: 1,
+      visibleTextChars: 1,
+      attempts: 1,
+      ...overrides,
+    };
+  }
+
+  const cases: {
+    name: string;
+    completion: NarratorCompletion;
+    raw: Parameters<typeof rawLengthStub>[0];
+    expected: boolean;
+  }[] = [
+    {
+      name: "the pathological one-token length stub",
+      completion: completion({ outputTokens: 1, maxOutputTokens: 1_024 }),
+      raw: { finishReason: "length", completionTokens: 1, contentChars: 1, maxTokens: 1_024 },
+      expected: true,
+    },
+    {
+      name: "a one-character stop reply",
+      completion: completion({ finishReason: "stop", outputTokens: 1, maxOutputTokens: 1_024 }),
+      raw: { finishReason: "stop", completionTokens: 1, contentChars: 1, maxTokens: 1_024 },
+      expected: false,
+    },
+    {
+      name: "a deliberate one-token budget",
+      completion: completion({ outputTokens: 1, maxOutputTokens: 1 }),
+      raw: { finishReason: "length", completionTokens: 1, contentChars: 1, maxTokens: 1 },
+      expected: false,
+    },
+    {
+      name: "a missing count with 1 raw char",
+      completion: completion({ rawTextLength: 1, maxOutputTokens: 1_024 }),
+      raw: { finishReason: "length", completionTokens: undefined, contentChars: 1, maxTokens: 1_024 },
+      expected: true,
+    },
+    {
+      name: "a missing count with 7 raw chars",
+      completion: completion({ rawTextLength: 7, maxOutputTokens: 1_024 }),
+      raw: { finishReason: "length", completionTokens: undefined, contentChars: 7, maxTokens: 1_024 },
+      expected: false,
+    },
+    {
+      name: "a count of 0 with 40 raw chars (the SDK's missing-usage zero, contradicted by real text)",
+      completion: completion({ outputTokens: 0, rawTextLength: 40, maxOutputTokens: 1_024 }),
+      raw: { finishReason: "length", completionTokens: 0, contentChars: 40, maxTokens: 1_024 },
+      expected: false,
+    },
+    {
+      name: "a long reply that legitimately ran into its cap",
+      completion: completion({ outputTokens: 512, rawTextLength: 2_000, maxOutputTokens: 512 }),
+      raw: { finishReason: "length", completionTokens: 512, contentChars: 2_000, maxTokens: 512 },
+      expected: false,
+    },
+  ];
+
+  it.each(cases)("$name: both verdicts are $expected", ({ completion: c, raw, expected }) => {
+    expect(isNarratorLengthStub(c)).toBe(expected);
+    expect(rawLengthStub(raw)).toBe(expected);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildProbeSummary
 // ---------------------------------------------------------------------------
 
@@ -377,11 +493,15 @@ describe("buildProbeSummary", () => {
       finishReason: "stop",
       rawFinishReason: "stop",
       ttftMs: 70,
+      rawTextLength: 40,
       visibleTextChars: 40,
       inputTokens: 10,
       outputTokens: 20,
+      textTokens: 20,
+      reasoningTokens: null,
       maxOutputTokens: 1_024,
       attempts: 1,
+      providerError: null,
       stub: false,
     };
   }
@@ -390,10 +510,14 @@ describe("buildProbeSummary", () => {
     return {
       arm: "profile",
       probeCase: "tiny",
+      kind: "call",
       round: 1,
       position: 1,
+      positionInRound: 1,
       startedAt: new Date(0).toISOString(),
       totalMs: 100,
+      requestStartOffsetMs: 0,
+      requestMaxTokens: 1_024,
       errored: false,
       timedOut: false,
       requestCount: 1,
@@ -456,6 +580,80 @@ describe("buildProbeSummary", () => {
       completionOnlyStub: 0,
       neitherStub: 0,
       disagreements: 0,
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Failed rows (#594 correction round P2a): excluded from the stub denominator
+  // and from the latency stats, counted separately.
+  // ---------------------------------------------------------------------------
+
+  it("excludes a thrown/errored row from both the stub denominator and the latency stats", () => {
+    const clean = productionRow();
+    const thrown = productionRow({ position: 2, errored: true, errorMessage: "boom", raw: { ...defaultRaw(), stub: true } });
+    const summary = buildProbeSummary([clean, thrown]);
+    const cell = summary.cells[0];
+    expect(cell?.n).toBe(2);
+    expect(cell?.failed).toBe(1);
+    // The stub denominator is n - failed = 1, and the thrown row's own (otherwise
+    // stub-shaped) raw verdict never enters the count.
+    expect(cell?.stub.count).toBe(0);
+    expect(cell?.stub.rate).toBe(0);
+    expect(cell?.rawFirstContentMs.count).toBe(1);
+    expect(cell?.visibleFirstMs.count).toBe(1);
+    expect(cell?.totalMs.count).toBe(1);
+  });
+
+  it("treats an HTTP status >= 400 as failed even when nothing threw", () => {
+    const clean = productionRow();
+    const httpFailure = productionRow({ position: 2, raw: { ...defaultRaw(), status: 503 } });
+    const summary = buildProbeSummary([clean, httpFailure]);
+    expect(summary.cells[0]?.failed).toBe(1);
+    expect(summary.cells[0]?.n).toBe(2);
+  });
+
+  it("treats a finish of \"error\" as failed even when nothing threw and status is 200", () => {
+    const clean = productionRow();
+    const providerFailure = productionRow({
+      position: 2,
+      visible: { ...defaultVisible(), finishReason: "error" },
+    });
+    const summary = buildProbeSummary([clean, providerFailure]);
+    expect(summary.cells[0]?.failed).toBe(1);
+    // Failed rows still contribute to the finish-reason tally — it is evidence too.
+    expect(summary.cells[0]?.finishReasonTally).toEqual({ stop: 1, error: 1 });
+  });
+
+  it("returns null latency stats (not zero) for a cell whose every row failed", () => {
+    const allFailed = [productionRow({ errored: true, errorMessage: "boom" })];
+    const summary = buildProbeSummary(allFailed);
+    const cell = summary.cells[0];
+    expect(cell?.failed).toBe(1);
+    expect(cell?.rawFirstContentMs).toEqual({ count: 0, p50: null, p90: null, max: null });
+    expect(cell?.stub).toEqual({ count: 0, rate: 0, wilson95: { low: 0, high: 0 } });
+  });
+
+  // ---------------------------------------------------------------------------
+  // `kind` (#594 correction round P3.6): only "call" rows enter the grid: token
+  // totals still cover every kind.
+  // ---------------------------------------------------------------------------
+
+  it("excludes non-\"call\" kinds from the grid cells but still counts their tokens", () => {
+    const gridRow = productionRow();
+    const bootstrapRow = productionRow({
+      kind: "bootstrap-call",
+      round: 0,
+      position: 0,
+      positionInRound: 0,
+      raw: { ...defaultRaw(), promptTokens: 1_000, completionTokens: 5 },
+    });
+    const summary = buildProbeSummary([gridRow, bootstrapRow]);
+    expect(summary.cells).toHaveLength(1);
+    expect(summary.cells[0]?.n).toBe(1);
+    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 1_010, completionTokens: 25 });
+    expect(summary.tokenTotalsByKind).toEqual({
+      call: { promptTokens: 10, completionTokens: 20 },
+      "bootstrap-call": { promptTokens: 1_000, completionTokens: 5 },
     });
   });
 });

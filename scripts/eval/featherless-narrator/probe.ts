@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { execFileSync } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
 import { FABLE_FUSION_711_ID, hasFeatherless, isNarratorLengthStub, type NarratorCompletion } from "@/server/ai";
@@ -12,6 +13,7 @@ import {
   buildProbeSummary,
   createSseAccumulator,
   DIRECT_ARMS,
+  isDirectArm,
   isProbeArm,
   PROBE_ARMS,
   rawLengthStub,
@@ -22,6 +24,7 @@ import {
   type ProbeArm,
   type ProbeCallRecord,
   type ProbeCase,
+  type ProbeRecordKind,
   type SanitizedHeaders,
   type SseEventMeta,
 } from "./probe-stats";
@@ -82,28 +85,42 @@ import {
  * one-token stub is a host-level fact or something the SDK's own normalization
  * introduces.
  *
+ * A hidden retry can make several underlying HTTP requests for one production call;
+ * `requestStartOffsetMs` records the LAST request's start as an offset from the
+ * call's own start, because `raw.*` timings are anchored to that last request while
+ * `visible.ttftMs`/`totalMs` are anchored to the call itself — the two clocks only
+ * read the same event when the offset is 0 (no retry happened).
+ *
  * ## Safe metadata only
  *
  * Every response's status, every header NAME, and header VALUES for a small
  * allowlist (request/trace/correlation ids, `cf-ray`, server, worker, region, node,
- * backend, model, version, served-by — never `set-cookie`/`authorization`/anything
- * key-shaped) are recorded, plus `id`/`model`/`system_fingerprint`/`created` from the
- * first SSE event or JSON body. No prompt, prose, reasoning content or Authorization
- * header is ever printed or written — the same rule the pre-#594 probe already kept.
+ * backend, model, version, served-by — never `set-cookie`/`authorization`/`server-timing`/
+ * anything key-shaped, and never longer than 120 characters, DROPPED rather than
+ * truncated past that) are recorded, plus `id`/`model`/`system_fingerprint`/`created`
+ * from the first SSE event or JSON body. No prompt, prose, reasoning content or
+ * Authorization header is ever printed or written.
  *
- * ## Budget
+ * ## Budget, kinds and the JSONL output
  *
  * The planned call count is printed before the first call. `PROBE_MAX_CALLS`
- * (default 60) refuses to start a larger run without an explicit opt-in.
- * `PROBE_OUT=<path>` writes one JSONL row per call plus a final summary object.
+ * (default 60) refuses to start a larger run without an explicit opt-in; so does an
+ * unparseable `PROBE_MAX_CALLS`/`PROBE_ATTEMPTS`, or an unrecognised `PROBE_ARMS`/
+ * `PROBE_CASES` entry — none of these ever falls back silently.
  *
- * `PROBE_LONG_HISTORY=1` still adds the two ~32K-input-token edge calls, through
- * the `profile` arm only (unchanged from the pre-#594 probe) — they are by far the
- * most expensive calls here and are not a case this interleaving grid re-measures.
+ * `PROBE_OUT=<path>` writes a `type:"run"` header line, one JSONL row per call typed
+ * by `kind` (`call` | `bootstrap-call` | `long-history` | `warmup`), and a final
+ * `type:"summary"` object. Only `kind:"call"` rows — the interleaved grid — feed the
+ * summary's per-arm/case cells; every kind still counts toward the token totals,
+ * because a bootstrap, long-history or warm-up call is still money spent.
+ *
+ * `PROBE_LONG_HISTORY=1` still adds the two ~32K-input-token edge calls, through the
+ * `profile` arm only. `PROBE_WARMUP=1` adds one `profile` call before round 1 (kind
+ * `warmup`) so the first grid call does not absorb a cold start.
  */
 
 // ---------------------------------------------------------------------------
-// Config
+// Config parsing — every bad value refuses to start rather than falling back
 // ---------------------------------------------------------------------------
 
 /**
@@ -112,12 +129,6 @@ import {
  * can measure an OpenRouter row for comparison when a verdict needs a baseline.
  */
 const MODEL_ID = process.env.PROBE_MODEL?.trim() || FABLE_FUSION_711_ID;
-
-/** Rounds of the full arm × case grid (kept as `PROBE_ATTEMPTS` — the pre-#594 name for "calls per case"). */
-const ROUNDS = Number(process.env.PROBE_ATTEMPTS ?? 3);
-
-/** Refuse to start a run planned larger than this without an explicit opt-in. */
-const PROBE_MAX_CALLS = Number(process.env.PROBE_MAX_CALLS ?? 60);
 
 /** Direct arms get a generous timeout rather than stalling the run; a trip is recorded as an error row. */
 const DIRECT_ARM_TIMEOUT_MS = 120_000;
@@ -131,32 +142,48 @@ const ALL_CASES: readonly ProbeCase[] = ["tiny", "vesper-sized", "terse-invite"]
 /** The four arms that still run through `streamCharacterChat` (see the module doc). */
 const PRODUCTION_ARMS: ReadonlySet<ProbeArm> = new Set(["profile", "profile-uncapped", "lane", "lane-capped"]);
 
-function parseArms(raw: string | undefined): ProbeArm[] {
-  if (raw === undefined || raw.trim().length === 0) return ["profile"];
+/** A config value plus a reason it could not be used — never a silent fallback. */
+type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
+
+function parseArms(raw: string | undefined): ParseResult<ProbeArm[]> {
+  if (raw === undefined || raw.trim().length === 0) return { ok: true, value: ["profile"] };
   const arms: ProbeArm[] = [];
   for (const entry of raw.split(",").map((value) => value.trim()).filter((value) => value.length > 0)) {
-    if (isProbeArm(entry)) {
-      if (!arms.includes(entry)) arms.push(entry);
-    } else {
-      console.log(`ignoring unknown PROBE_ARMS entry "${entry}" — known arms: ${PROBE_ARMS.join(", ")}`);
+    if (!isProbeArm(entry)) {
+      return {
+        ok: false,
+        message: `PROBE_ARMS has an unknown entry "${entry}" — known arms: ${PROBE_ARMS.join(", ")}`,
+      };
     }
+    if (!arms.includes(entry)) arms.push(entry);
   }
-  return arms.length > 0 ? arms : ["profile"];
+  return { ok: true, value: arms.length > 0 ? arms : ["profile"] };
 }
 
-function parseCases(raw: string | undefined): ProbeCase[] {
-  if (raw === undefined || raw.trim().length === 0) return [...ALL_CASES];
+function parseCases(raw: string | undefined): ParseResult<ProbeCase[]> {
+  if (raw === undefined || raw.trim().length === 0) return { ok: true, value: [...ALL_CASES] };
   const cases: ProbeCase[] = [];
   for (const entry of raw.split(",").map((value) => value.trim()).filter((value) => value.length > 0)) {
-    const known = (ALL_CASES as readonly string[]).includes(entry);
-    if (known) {
-      const probeCase = entry as ProbeCase;
-      if (!cases.includes(probeCase)) cases.push(probeCase);
-    } else {
-      console.log(`ignoring unknown PROBE_CASES entry "${entry}" — known cases: ${ALL_CASES.join(", ")}`);
+    if (!(ALL_CASES as readonly string[]).includes(entry)) {
+      return {
+        ok: false,
+        message: `PROBE_CASES has an unknown entry "${entry}" — known cases: ${ALL_CASES.join(", ")}`,
+      };
     }
+    const probeCase = entry as ProbeCase;
+    if (!cases.includes(probeCase)) cases.push(probeCase);
   }
-  return cases.length > 0 ? cases : [...ALL_CASES];
+  return { ok: true, value: cases.length > 0 ? cases : [...ALL_CASES] };
+}
+
+/** A positive integer, or a refusal — never a silently-substituted default for a garbage value. */
+function parsePositiveInt(raw: string | undefined, fallback: number, name: string): ParseResult<number> {
+  if (raw === undefined || raw.trim().length === 0) return { ok: true, value: fallback };
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    return { ok: false, message: `${name}="${raw}" is not a positive integer` };
+  }
+  return { ok: true, value };
 }
 
 /** `arms` rotated left by `offset` positions (wraps around) — how the round-robin varies which arm goes first. */
@@ -315,22 +342,31 @@ interface RawRequestSnapshot {
   contentEventCount: number;
 }
 
+/** `readTap`'s resolved shape — named so a caller building a same-shaped fallback (no body to read) can type it explicitly. */
+type DirectStreamTap = Omit<RawRequestSnapshot, "status" | "headers"> & { readError?: string };
+
 /**
  * Read a Featherless response body to completion, decoding it as SSE, WITHOUT
- * assuming any other consumer needs the same bytes — the direct arms' own reader,
- * since there is no SDK downstream of them. Production arms use
+ * assuming any other consumer needs the same bytes — the direct-stream arm's own
+ * reader, since there is no SDK downstream of it. Production arms use
  * {@link instrumentResponse} instead, which tees the stream so this same logic can
  * run alongside the real consumer.
+ *
+ * `readError` is the one field the two callers read differently: a production
+ * call's tee is diagnostic-only (its `whenDone` promise is never awaited for
+ * correctness, only for evidence — the SDK already owns and reports that failure on
+ * its own branch), so `instrumentResponse` simply never looks at this field. A
+ * direct call has NO other consumer of the bytes, so the SAME failure here IS the
+ * call's failure, and `runDirectCall` turns it into an errored row instead of a
+ * clean empty one (#594 correction round P1).
  */
-async function readTap(
-  body: ReadableStream<Uint8Array>,
-  startedAt: number,
-): Promise<Omit<RawRequestSnapshot, "status" | "headers">> {
+async function readTap(body: ReadableStream<Uint8Array>, startedAt: number): Promise<DirectStreamTap> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const acc = createSseAccumulator();
   let firstByteMs: number | null = null;
   let firstContentMs: number | null = null;
+  let readError: string | undefined;
   try {
     for (;;) {
       const { value, done } = await reader.read();
@@ -343,9 +379,8 @@ async function readTap(
       }
     }
     acc.flush();
-  } catch {
-    // This tap must never affect the real response or its real consumer; a read
-    // failure here only leaves this one request's raw-wire evidence incomplete.
+  } catch (caught) {
+    readError = caught instanceof Error ? caught.message.slice(0, 200) : String(caught).slice(0, 200);
   }
   const summary = summarizeSseEvents(acc.all());
   return {
@@ -357,6 +392,7 @@ async function readTap(
     completionTokens: summary.usage?.completionTokens ?? null,
     contentChars: summary.totalContentChars,
     contentEventCount: summary.contentEventCount,
+    ...(readError === undefined ? {} : { readError }),
   };
 }
 
@@ -364,7 +400,8 @@ async function readTap(
  * Wrap a production response so the real consumer (the AI SDK, inside
  * `streamCharacterChat`) reads the SAME bytes unchanged, while a decoded copy on a
  * second branch (`ReadableStream.tee()`) measures the raw-wire evidence (#594
- * acceptance point 2). The tee's own read failures never reach the pass-through branch.
+ * acceptance point 2). The tee's own read failures never reach the pass-through
+ * branch, and `readTap`'s `readError` is intentionally discarded here — see its doc.
  */
 function instrumentResponse(response: Response, startedAt: number): { passThrough: Response; whenDone: Promise<RawRequestSnapshot> } {
   const status = response.status;
@@ -392,6 +429,9 @@ function instrumentResponse(response: Response, startedAt: number): { passThroug
     statusText: response.statusText,
     headers: response.headers,
   });
+  // `tap.readError`, when present, is deliberately never read here — see `readTap`'s
+  // doc. Spreading it into the result is harmless: `RawRequestSnapshot` simply has
+  // no such field, and nothing downstream of this promise looks for one.
   const whenDone = readTap(tapBody, startedAt).then((tap) => ({ status, headers, ...tap }));
   return { passThrough, whenDone };
 }
@@ -404,6 +444,10 @@ interface RawSink {
   builtBody: Record<string, unknown> | null;
   /** One promise per underlying HTTP request this call made (a hidden retry makes more than one). */
   requests: Promise<RawRequestSnapshot>[];
+  /** This call's own start (`Date.now()`), so the wrapper can offset each request's start against it. */
+  callStartedAt: number;
+  /** The LAST request's start, as an offset from `callStartedAt` — see the module doc on `requestStartOffsetMs`. */
+  lastRequestStartOffsetMs: number | null;
 }
 
 let activeSink: RawSink | null = null;
@@ -440,6 +484,7 @@ function installFetchWrapper(): () => void {
       // simply whatever the SDK sent, unrewritten.
     }
     const startedAt = Date.now();
+    sink.lastRequestStartOffsetMs = startedAt - sink.callStartedAt;
     const response = await original(input, { ...init, body: outgoing });
     const { passThrough, whenDone } = instrumentResponse(response, startedAt);
     sink.requests.push(whenDone);
@@ -464,17 +509,31 @@ interface ExtendedRow extends ProbeCallRecord {
 async function runProductionCall(args: {
   arm: ProbeArm;
   probeCase: ProbeCase;
+  kind: ProbeRecordKind;
   round: number;
   position: number;
+  positionInRound: number;
   system: string;
   history: ChatTurn[];
 }): Promise<{ row: ExtendedRow; builtBody: Record<string, unknown> | null }> {
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
-  const sink: RawSink = { arm: args.arm, probeCase: args.probeCase, builtBody: null, requests: [] };
+  const sink: RawSink = {
+    arm: args.arm,
+    probeCase: args.probeCase,
+    builtBody: null,
+    requests: [],
+    callStartedAt: startedAt,
+    lastRequestStartOffsetMs: null,
+  };
   activeSink = sink;
   let ttftMs: number | null = null;
-  let completion: NarratorCompletion | null = null;
+  // A box rather than a bare `let`: `completion` is written only from inside
+  // `onCompletion`'s closure, and reading a plain closure-only-assigned `let`
+  // after the call it was passed to has returned is exactly the pattern that
+  // trips some TypeScript versions into narrowing it away entirely (#594
+  // correction round type error). A property read is not narrowed that way.
+  const completionBox: { value: NarratorCompletion | null } = { value: null };
   let errorMessage: string | undefined;
   let full = "";
   try {
@@ -485,7 +544,7 @@ async function runProductionCall(args: {
       names: { speakers: ["Mira"], plain: ["Brian"] },
       model: MODEL_ID,
       onCompletion: (value) => {
-        completion = value;
+        completionBox.value = value;
       },
     });
     for await (const delta of stream) {
@@ -500,9 +559,8 @@ async function runProductionCall(args: {
   const totalMs = Date.now() - startedAt;
   const snapshots = await Promise.all(sink.requests);
   const last = snapshots.length > 0 ? snapshots[snapshots.length - 1] : undefined;
-  const requestMaxTokens = extractMaxTokens(
-    sink.builtBody === null ? null : transformArmBody(args.arm, sink.builtBody, NARRATIVE_TEMPERATURE),
-  );
+  const requestMaxTokens =
+    extractMaxTokens(sink.builtBody === null ? null : transformArmBody(args.arm, sink.builtBody, NARRATIVE_TEMPERATURE)) ?? null;
   const rawFinishReason = last?.finishReason ?? null;
   const rawCompletionTokens = last?.completionTokens ?? undefined;
   const rawContentChars = last?.contentChars ?? 0;
@@ -510,17 +568,23 @@ async function runProductionCall(args: {
     finishReason: rawFinishReason,
     completionTokens: rawCompletionTokens,
     contentChars: rawContentChars,
-    maxTokens: requestMaxTokens,
+    maxTokens: requestMaxTokens ?? undefined,
   });
+  const completion = completionBox.value;
   const stubCompletion = completion !== null && isNarratorLengthStub(completion);
   const errored = errorMessage !== undefined;
+  const providerError = completion?.providerError;
   const row: ExtendedRow = {
     arm: args.arm,
     probeCase: args.probeCase,
+    kind: args.kind,
     round: args.round,
     position: args.position,
+    positionInRound: args.positionInRound,
     startedAt: startedAtIso,
     totalMs,
+    requestStartOffsetMs: sink.lastRequestStartOffsetMs,
+    requestMaxTokens,
     errored,
     timedOut: false,
     requestCount: snapshots.length,
@@ -541,11 +605,15 @@ async function runProductionCall(args: {
       finishReason: completion?.finishReason ?? null,
       rawFinishReason: completion?.rawFinishReason ?? null,
       ttftMs,
+      rawTextLength: completion?.rawTextLength ?? null,
       visibleTextChars: completion?.visibleTextChars ?? null,
       inputTokens: completion?.inputTokens ?? null,
       outputTokens: completion?.outputTokens ?? null,
+      textTokens: completion?.textTokens ?? null,
+      reasoningTokens: completion?.reasoningTokens ?? null,
       maxOutputTokens: completion?.maxOutputTokens ?? null,
       attempts: completion?.attempts ?? null,
+      providerError: providerError ? { code: providerError.code, detail: providerError.detail } : null,
       stub: stubCompletion,
     },
     wire: sink.builtBody === null ? "(no request captured)" : describeWireBody(transformArmBody(args.arm, sink.builtBody, NARRATIVE_TEMPERATURE)),
@@ -565,17 +633,17 @@ async function runDirectCall(args: {
   profileBody: Record<string, unknown>;
   round: number;
   position: number;
+  positionInRound: number;
 }): Promise<ExtendedRow> {
   const startedAt = Date.now();
   const startedAtIso = new Date(startedAt).toISOString();
   const body = transformArmBody(args.arm, args.profileBody, NARRATIVE_TEMPERATURE);
-  const requestMaxTokens = extractMaxTokens(body);
+  const requestMaxTokens = extractMaxTokens(body) ?? null;
   lastWireBodyByArmCase.set(`${args.arm}\u0000${args.probeCase}`, describeWireBody(body));
 
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), DIRECT_ARM_TIMEOUT_MS);
   let snapshot: RawRequestSnapshot | null = null;
-  let timedOut = false;
   let errorMessage: string | undefined;
   try {
     const response = await trueFetch(FEATHERLESS_CHAT_COMPLETIONS_URL, {
@@ -588,10 +656,15 @@ async function runDirectCall(args: {
       body: JSON.stringify(body),
       signal: controller.signal,
     });
+    // Measured right when the response object arrives (headers received) — the
+    // true "first byte" moment, and shared by both branches below. Reading it
+    // AFTER `response.text()` (the pre-correction-round bug) always equals total
+    // time, because `.text()` only resolves once the whole body has arrived.
+    const firstByteMs = Date.now() - startedAt;
     const status = response.status;
     const headers = sanitizeHeaders(response.headers.entries());
     if (args.arm === "direct-stream") {
-      const tap = response.body
+      const tap: DirectStreamTap = response.body
         ? await readTap(response.body, startedAt)
         : {
             meta: {},
@@ -603,17 +676,22 @@ async function runDirectCall(args: {
             contentChars: 0,
             contentEventCount: 0,
           };
-      snapshot = { status, headers, ...tap };
+      const { readError, ...rest } = tap;
+      if (readError !== undefined) errorMessage = readError;
+      snapshot = { status, headers, ...rest };
     } else {
       const text = await response.text();
-      const firstByteMs = Date.now() - startedAt;
       const summary = summarizeJsonCompletion(text);
       snapshot = {
         status,
         headers,
         meta: summary?.meta ?? {},
         firstByteMs,
-        firstContentMs: summary && summary.totalContentChars > 0 ? firstByteMs : null,
+        // Never derived from firstByteMs: a non-streaming read gives one moment
+        // (the whole body), which firstByteMs already reports (#594 correction
+        // round P3.2) — a second "first content" number here would only pretend
+        // to measure something firstByteMs did not already cover.
+        firstContentMs: null,
         finishReason: summary?.finishReason ?? null,
         promptTokens: summary?.usage?.promptTokens ?? null,
         completionTokens: summary?.usage?.completionTokens ?? null,
@@ -622,12 +700,16 @@ async function runDirectCall(args: {
       };
     }
   } catch (caught) {
-    timedOut = caught instanceof Error && caught.name === "AbortError";
     errorMessage = caught instanceof Error ? caught.message.slice(0, 200) : String(caught).slice(0, 200);
   } finally {
     clearTimeout(timeoutHandle);
   }
   const totalMs = Date.now() - startedAt;
+  // Read from the signal itself rather than from which catch fired: an abort can
+  // land after headers arrived but mid-body, which throws from inside `readTap`
+  // (now surfaced via `readError` above) rather than as an `AbortError` from the
+  // outer `fetch` call.
+  const timedOut = controller.signal.aborted;
   const errored = errorMessage !== undefined;
   const stub =
     snapshot !== null
@@ -635,16 +717,22 @@ async function runDirectCall(args: {
           finishReason: snapshot.finishReason,
           completionTokens: snapshot.completionTokens ?? undefined,
           contentChars: snapshot.contentChars,
-          maxTokens: requestMaxTokens,
+          maxTokens: requestMaxTokens ?? undefined,
         })
       : false;
   return {
     arm: args.arm,
     probeCase: args.probeCase,
+    kind: "call",
     round: args.round,
     position: args.position,
+    positionInRound: args.positionInRound,
     startedAt: startedAtIso,
     totalMs,
+    // A direct call makes exactly one attempt (no SDK retry), so its one request
+    // starts immediately — the offset is always 0 by construction.
+    requestStartOffsetMs: 0,
+    requestMaxTokens,
     errored,
     timedOut,
     requestCount: 1,
@@ -715,6 +803,28 @@ function longHistory(fillerCount: number): ChatTurn[] {
   return turns;
 }
 
+/**
+ * The 32K edge is a VERDICT, not a row: a request over the window either completes
+ * or errors with the host's own words, and a 200 whose reported input is materially
+ * smaller than what was sent is SILENT TRUNCATION. Restored from the pre-#594 probe
+ * (#594 correction round P2b), adapted to the arm × case row shape.
+ */
+function longHistoryVerdict(row: ExtendedRow, estimated: number, label: string): string {
+  const reported = row.visible?.inputTokens ?? null;
+  const truncated = reported !== null && reported < estimated * 0.95;
+  const built = `built ~${String(estimated)} input tokens`;
+  if (row.errored) return `${label} (${built}): THREW${row.timedOut ? " (timeout)" : ""} ${row.errorMessage ?? ""}`;
+  if (row.visible?.providerError) {
+    return `${label} (${built}): errored — ${row.visible.providerError.code}: ${row.visible.providerError.detail.slice(0, 160)}`;
+  }
+  if (row.visible === null) return `${label} (${built}): no completion record`;
+  if (truncated) return `${label} (${built}): SILENTLY TRUNCATED — host reported ${String(reported)}`;
+  return (
+    `${label} (${built}): completed — finish ${row.visible.finishReason}/${row.visible.rawFinishReason ?? "—"}, ` +
+    `${String(reported ?? "—")} in / ${String(row.visible.outputTokens ?? "—")} out`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Console + JSONL output
 // ---------------------------------------------------------------------------
@@ -725,10 +835,12 @@ function printRow(row: ExtendedRow): void {
   console.log(
     [
       `r${row.round}`,
-      `#${row.position}`,
-      row.arm,
+      `#${row.position}(${row.positionInRound})`,
+      row.kind === "call" ? row.arm : `${row.arm}[${row.kind}]`,
       row.probeCase,
       `reqs=${row.requestCount}`,
+      `reqOffset=${num(row.requestStartOffsetMs)}ms`,
+      `cap=${num(row.requestMaxTokens)}`,
       `rawFinish=${row.raw.finishReason ?? "—"}`,
       `visFinish=${row.visible?.finishReason ?? "—"}`,
       `rawStub=${row.raw.stub ? 1 : 0}`,
@@ -739,6 +851,12 @@ function printRow(row: ExtendedRow): void {
       `visFirstMs=${num(row.visible?.ttftMs)}`,
       `totalMs=${row.totalMs}`,
       row.shape ? `tagOpen=${row.shape.tagOpen ? 1 : 0} tagStray=${row.shape.tagStray} aster=${row.shape.asterisk}` : "shape=—",
+      row.visible
+        ? `rawLen=${num(row.visible.rawTextLength)} visLen=${num(row.visible.visibleTextChars)} textTok=${num(row.visible.textTokens)} reasonTok=${num(row.visible.reasoningTokens)}`
+        : "text=—",
+      row.visible?.providerError
+        ? `providerError=${row.visible.providerError.code}: ${row.visible.providerError.detail.slice(0, 90)}`
+        : "providerError=—",
     ].join(" ") + (row.errored ? ` ERRORED${row.timedOut ? " (timeout)" : ""}: ${row.errorMessage ?? ""}` : ""),
   );
 }
@@ -752,14 +870,14 @@ function printSummary(rows: readonly ExtendedRow[]): void {
   console.log(`\n=== summary (percentile method: ${summary.percentileMethod}) ===`);
   for (const cell of summary.cells) {
     console.log(
-      `\n${cell.arm} / ${cell.probeCase}: n=${cell.n} errored=${cell.errored} empty=${cell.empty} ` +
-        `stub=${cell.stub.count}/${cell.n} (rate ${cell.stub.rate.toFixed(3)}, 95% CI ` +
-        `${cell.stub.wilson95.low.toFixed(3)}–${cell.stub.wilson95.high.toFixed(3)})`,
+      `\n${cell.arm} / ${cell.probeCase}: n=${cell.n} errored=${cell.errored} failed=${cell.failed} empty=${cell.empty} ` +
+        `stub=${cell.stub.count}/${cell.n - cell.failed} (rate ${cell.stub.rate.toFixed(3)}, 95% CI ` +
+        `${cell.stub.wilson95.low.toFixed(3)}–${cell.stub.wilson95.high.toFixed(3)}) [stub/latency stats exclude failed rows]`,
     );
     const reasons = Object.entries(cell.finishReasonTally)
       .map(([reason, count]) => `${reason}=${count}`)
       .join(", ");
-    console.log(`  finish reasons: ${reasons || "—"}`);
+    console.log(`  finish reasons (all rows, failed included): ${reasons || "—"}`);
     console.log(
       `  raw first-content ms: n=${cell.rawFirstContentMs.count} p50=${fmtStat(cell.rawFirstContentMs.p50)} ` +
         `p90=${fmtStat(cell.rawFirstContentMs.p90)} max=${fmtStat(cell.rawFirstContentMs.max)}`,
@@ -772,22 +890,35 @@ function printSummary(rows: readonly ExtendedRow[]): void {
       `  total ms:             n=${cell.totalMs.count} p50=${fmtStat(cell.totalMs.p50)} ` +
         `p90=${fmtStat(cell.totalMs.p90)} max=${fmtStat(cell.totalMs.max)}`,
     );
-    console.log(`  tokens: prompt=${cell.promptTokensTotal} completion=${cell.completionTokensTotal}`);
+    console.log(`  tokens (all rows): prompt=${cell.promptTokensTotal} completion=${cell.completionTokensTotal}`);
   }
-  console.log("\nstub cross-tab (raw-wire verdict vs completion verdict, production rows only):");
+  console.log("\nstub cross-tab (raw-wire verdict vs completion verdict, non-failed production rows only):");
   console.log(
     `  both=${summary.stubCrossTab.bothStub} raw-only=${summary.stubCrossTab.rawOnlyStub} ` +
       `completion-only=${summary.stubCrossTab.completionOnlyStub} neither=${summary.stubCrossTab.neitherStub} ` +
       `— disagreements=${summary.stubCrossTab.disagreements}`,
   );
-  console.log("\ntoken totals by arm:");
+  console.log("\ntoken totals by arm (every billed call, every kind):");
   for (const [arm, totals] of Object.entries(summary.tokenTotalsByArm)) {
     console.log(`  ${arm}: prompt=${totals.promptTokens} completion=${totals.completionTokens}`);
+  }
+  console.log("\ntoken totals by kind:");
+  for (const [kind, totals] of Object.entries(summary.tokenTotalsByKind)) {
+    console.log(`  ${kind}: prompt=${totals.promptTokens} completion=${totals.completionTokens}`);
   }
   console.log("\nwire body per arm x case (sampler + thinking fields only):");
   for (const [key, wire] of [...lastWireBodyByArmCase.entries()].sort()) {
     const [arm, probeCase] = key.split("\u0000");
     console.log(`  ${arm ?? "?"} / ${probeCase ?? "?"}: ${wire}`);
+  }
+}
+
+/** Best-effort `git rev-parse HEAD` for the JSONL run header; null when it cannot be read. Never network, never billed. */
+function resolveGitHead(): string | null {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  } catch {
+    return null;
   }
 }
 
@@ -806,8 +937,34 @@ async function main(): Promise<void> {
   }
   console.log(`model: ${MODEL_ID}`);
 
-  const arms = parseArms(process.env.PROBE_ARMS);
-  const cases = parseCases(process.env.PROBE_CASES);
+  const armsResult = parseArms(process.env.PROBE_ARMS);
+  if (!armsResult.ok) {
+    console.log(`refusing to start: ${armsResult.message}.`);
+    return;
+  }
+  const arms = armsResult.value;
+
+  const casesResult = parseCases(process.env.PROBE_CASES);
+  if (!casesResult.ok) {
+    console.log(`refusing to start: ${casesResult.message}.`);
+    return;
+  }
+  const cases = casesResult.value;
+
+  const roundsResult = parsePositiveInt(process.env.PROBE_ATTEMPTS, 3, "PROBE_ATTEMPTS");
+  if (!roundsResult.ok) {
+    console.log(`refusing to start: ${roundsResult.message}.`);
+    return;
+  }
+  const ROUNDS = roundsResult.value;
+
+  const maxCallsResult = parsePositiveInt(process.env.PROBE_MAX_CALLS, 60, "PROBE_MAX_CALLS");
+  if (!maxCallsResult.ok) {
+    console.log(`refusing to start: ${maxCallsResult.message}.`);
+    return;
+  }
+  const PROBE_MAX_CALLS = maxCallsResult.value;
+
   console.log(`arms: ${arms.join(", ")}`);
   console.log(`cases: ${cases.join(", ")}`);
 
@@ -819,14 +976,27 @@ async function main(): Promise<void> {
   const anyDirect = arms.some((arm) => DIRECT_ARMS.has(arm));
   const anyProduction = arms.some((arm) => PRODUCTION_ARMS.has(arm));
   const needsBootstrapCall = anyDirect && !anyProduction;
+  if (needsBootstrapCall && cases.length > 1) {
+    console.log(
+      "refusing to start: a direct arm is selected without any production arm, and PROBE_CASES names more than " +
+        "one case. Without a production arm this run can only capture ONE case's body to replay (see the module " +
+        "doc), so a direct-arm-only run must name exactly one PROBE_CASES entry.",
+    );
+    return;
+  }
   const longHistoryEnabled = process.env.PROBE_LONG_HISTORY === "1" && arms.includes("profile");
+  const warmupEnabled = process.env.PROBE_WARMUP === "1";
   const plannedCalls =
-    ROUNDS * arms.length * cases.length + (needsBootstrapCall ? 1 : 0) + (longHistoryEnabled ? 2 : 0);
+    ROUNDS * arms.length * cases.length +
+    (needsBootstrapCall ? 1 : 0) +
+    (longHistoryEnabled ? 2 : 0) +
+    (warmupEnabled ? 1 : 0);
 
   console.log(
     `planned calls: ${plannedCalls} (${ROUNDS} round(s) x ${arms.length} arm(s) x ${cases.length} case(s)` +
       `${needsBootstrapCall ? " + 1 bootstrap capture call" : ""}` +
-      `${longHistoryEnabled ? " + 2 long-history edge calls" : ""})`,
+      `${longHistoryEnabled ? " + 2 long-history edge calls" : ""}` +
+      `${warmupEnabled ? " + 1 warm-up call" : ""})`,
   );
   if (plannedCalls > PROBE_MAX_CALLS) {
     console.log(
@@ -835,12 +1005,30 @@ async function main(): Promise<void> {
     );
     return;
   }
+
   const outPath = process.env.PROBE_OUT?.trim();
   if (outPath) writeFileSync(outPath, "");
   const appendOut = (record: unknown): void => {
     if (!outPath) return;
     appendFileSync(outPath, `${JSON.stringify(record)}\n`);
   };
+
+  appendOut({
+    type: "run",
+    modelId: MODEL_ID,
+    arms,
+    cases,
+    attempts: ROUNDS,
+    plannedCalls,
+    plannedBreakdown: {
+      grid: ROUNDS * arms.length * cases.length,
+      bootstrap: needsBootstrapCall ? 1 : 0,
+      longHistory: longHistoryEnabled ? 2 : 0,
+      warmup: warmupEnabled ? 1 : 0,
+    },
+    gitHead: resolveGitHead(),
+    startedAt: new Date().toISOString(),
+  });
 
   const restoreFetch = installFetchWrapper();
   const rows: ExtendedRow[] = [];
@@ -849,36 +1037,60 @@ async function main(): Promise<void> {
   let bootstrapFallbackBody: Record<string, unknown> | null = null;
 
   try {
-    if (needsBootstrapCall) {
-      // `parseCases` never returns an empty array (it falls back to every case), so
-      // this is always defined in practice; the fallback degrades rather than throws
-      // in case that invariant ever changes.
-      const bootstrapCase = cases[0] ?? "tiny";
-      console.log(
-        `bootstrap: capturing one un-transformed production call from case "${bootstrapCase}" to seed the ` +
-          "direct arm(s) — profile is not among the selected arms, so every case's direct-arm rows replay THIS " +
-          "one case's body rather than their own.",
-      );
-      const { row: bootstrapRow, builtBody } = await runProductionCall({
+    if (warmupEnabled) {
+      // `cases[0]` always exists: `parseCases` never returns an empty array.
+      const warmupCase = cases[0] ?? "tiny";
+      console.log(`warm-up: one profile call on case "${warmupCase}", excluded from the summary grid.`);
+      const { row: warmupRow, builtBody } = await runProductionCall({
         arm: "profile",
-        probeCase: bootstrapCase,
+        probeCase: warmupCase,
+        kind: "warmup",
         round: 0,
         position: 0,
-        ...CASE_DEFS[bootstrapCase],
+        positionInRound: 0,
+        ...CASE_DEFS[warmupCase],
       });
-      bootstrapFallbackBody = builtBody;
-      if (builtBody) capturedProfileBody.set(bootstrapCase, builtBody);
-      console.log(`  bootstrap call: ${bootstrapRow.raw.finishReason ?? "—"}, ${bootstrapRow.totalMs}ms`);
-      appendOut({ type: "bootstrap-call", ...bootstrapRow });
+      if (builtBody) capturedProfileBody.set(warmupCase, builtBody);
+      printRow(warmupRow);
+      rows.push(warmupRow);
+      appendOut({ type: "warmup", ...warmupRow });
+    }
+
+    if (needsBootstrapCall) {
+      const bootstrapCase = cases[0] ?? "tiny";
+      if (!capturedProfileBody.has(bootstrapCase)) {
+        console.log(
+          `bootstrap: capturing one un-transformed production call from case "${bootstrapCase}" to seed the ` +
+            "direct arm(s) — profile is not among the selected arms.",
+        );
+        const { row: bootstrapRow, builtBody } = await runProductionCall({
+          arm: "profile",
+          probeCase: bootstrapCase,
+          kind: "bootstrap-call",
+          round: 0,
+          position: 0,
+          positionInRound: 0,
+          ...CASE_DEFS[bootstrapCase],
+        });
+        if (builtBody) capturedProfileBody.set(bootstrapCase, builtBody);
+        printRow(bootstrapRow);
+        rows.push(bootstrapRow);
+        appendOut({ type: "bootstrap-call", ...bootstrapRow });
+      } else {
+        console.log(`bootstrap: the warm-up call already captured case "${bootstrapCase}" — no extra call needed.`);
+      }
+      bootstrapFallbackBody = capturedProfileBody.get(bootstrapCase) ?? null;
     }
 
     let position = 0;
     for (let round = 1; round <= ROUNDS; round++) {
       const armOrder = armsForRound(arms, round);
+      let positionInRound = 0;
       for (const arm of armOrder) {
         for (const probeCase of cases) {
           position += 1;
-          if (DIRECT_ARMS.has(arm)) {
+          positionInRound += 1;
+          if (isDirectArm(arm)) {
             const body = capturedProfileBody.get(probeCase) ?? bootstrapFallbackBody ?? undefined;
             if (!body) {
               console.log(
@@ -886,7 +1098,7 @@ async function main(): Promise<void> {
               );
               continue;
             }
-            const row = await runDirectCall({ arm, probeCase, profileBody: body, round, position });
+            const row = await runDirectCall({ arm, probeCase, profileBody: body, round, position, positionInRound });
             rows.push(row);
             printRow(row);
             appendOut({ type: "call", ...row });
@@ -894,8 +1106,10 @@ async function main(): Promise<void> {
             const { row, builtBody } = await runProductionCall({
               arm,
               probeCase,
+              kind: "call",
               round,
               position,
+              positionInRound,
               ...CASE_DEFS[probeCase],
             });
             if (builtBody && !capturedProfileBody.has(probeCase)) capturedProfileBody.set(probeCase, builtBody);
@@ -907,9 +1121,9 @@ async function main(): Promise<void> {
       }
     }
 
-    // ---- The 32K edge, `profile` arm only (unchanged from the pre-#594 probe) ----
+    // ---- The 32K edge, `profile` arm only (restored from the pre-#594 probe) ----
     if (process.env.PROBE_LONG_HISTORY === "1") {
-      if (!arms.includes("profile")) {
+      if (!longHistoryEnabled) {
         console.log("\nlong-history: skipped — PROBE_LONG_HISTORY=1 only extends the `profile` arm, which is not selected.");
       } else {
         const perFiller = fillerTokenRate(rows);
@@ -924,15 +1138,16 @@ async function main(): Promise<void> {
           const { row: under } = await runProductionCall({
             arm: "profile",
             probeCase: "tiny",
+            kind: "long-history",
             round: 0,
             position,
+            positionInRound: 0,
             system: TINY_SYSTEM,
             history: longHistory(underTurns),
           });
           const underEstimated = estimateInput(rows, perFiller, underTurns);
-          console.log(`\nlong-history-under (built ~${underEstimated} input tokens):`);
-          printRow(under);
-          appendOut({ type: "call", label: "long-history-under", estimatedInputTokens: underEstimated, ...under });
+          rows.push(under);
+          appendOut({ type: "long-history", label: "long-history-under", estimatedInputTokens: underEstimated, ...under });
 
           const measured = under.visible?.inputTokens ?? null;
           const overTurns =
@@ -943,15 +1158,20 @@ async function main(): Promise<void> {
           const { row: over } = await runProductionCall({
             arm: "profile",
             probeCase: "tiny",
+            kind: "long-history",
             round: 0,
             position,
+            positionInRound: 0,
             system: TINY_SYSTEM,
             history: longHistory(overTurns),
           });
           const overEstimated = estimateInput(rows, perFiller, overTurns);
-          console.log(`\nlong-history-over (built ~${overEstimated} input tokens):`);
-          printRow(over);
-          appendOut({ type: "call", label: "long-history-over", estimatedInputTokens: overEstimated, ...over });
+          rows.push(over);
+          appendOut({ type: "long-history", label: "long-history-over", estimatedInputTokens: overEstimated, ...over });
+
+          console.log("\n32K edge:");
+          console.log(`  ${longHistoryVerdict(under, underEstimated, "long-history-under")}`);
+          console.log(`  ${longHistoryVerdict(over, overEstimated, "long-history-over")}`);
         }
       }
     }
@@ -959,13 +1179,14 @@ async function main(): Promise<void> {
     restoreFetch();
   }
 
-  console.log(`\n${rows.length} calls in the interleaved grid, ${rows.filter((row) => row.errored).length} errored.`);
+  const gridRows = rows.filter((row) => row.kind === "call");
+  console.log(`\n${gridRows.length} calls in the interleaved grid, ${gridRows.filter((row) => row.errored).length} errored.`);
   printSummary(rows);
 
   if (outPath) {
     const summary = buildProbeSummary(rows);
     appendOut({ type: "summary", ...summary });
-    console.log(`\nwrote ${rows.length} call row(s) + 1 summary row to ${outPath}`);
+    console.log(`\nwrote ${rows.length} call row(s) (every kind) + 1 run header + 1 summary row to ${outPath}`);
   }
 }
 
