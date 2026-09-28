@@ -1635,6 +1635,19 @@ class CodexModelPolicyTests(unittest.TestCase):
                 role = tomllib.loads((CODEX_ROLE_DIR / f"{name}.toml").read_text(encoding="utf-8"))
                 self.assertEqual(role.get("sandbox_mode"), "danger-full-access")
 
+    def test_chat_tester_pins_full_access_for_network_not_worktree_writes(self):
+        """`vesper-chat-tester` never edits code, commits or writes outside `eval-images/`
+        (#651), so it is not one of the `.codex/worktrees/` git-writers
+        `test_codex_worktree_writers_keep_full_access` protects -- and belongs on that
+        role's own claim about `.codex`/`.git`, not this one. Its `danger-full-access`
+        pin is for a different reason (catalog notes, #651): `workspace-write` also denies
+        outbound network, and this role's whole job is billed provider calls and Fly
+        `verify` traffic. A regression that swaps it for `workspace-write`, e.g. to match
+        the other eval-images-only writers, would silently break every live call this role
+        makes; nothing else in this suite would catch that."""
+        role = tomllib.loads((CODEX_ROLE_DIR / "vesper-chat-tester.toml").read_text(encoding="utf-8"))
+        self.assertEqual(role.get("sandbox_mode"), "danger-full-access")
+
     def test_codex_config_does_not_define_unsupported_agent_defaults(self):
         config = tomllib.loads(CODEX_CONFIG.read_text(encoding="utf-8"))
         self.assertNotIn("agents", config)
