@@ -113,12 +113,13 @@ Run a long probe in the background, writing to a log under the evidence
 directory, and wait on it with a Monitor or an until-loop. Never block on a
 foreground `sleep`, and never pipe unbounded input into `script` or `expect`.
 
-When the run finishes, deliver the report to the orchestrator: as a
-subagent, your final message is that delivery; as a separate session, send
-it with `SendMessage` to the session that briefed you. Always also write
-the report to `eval-images/<topic>/<YYYY-MM-DD>/report.md` and end with its
-path — the fallback when no message route back exists (a separate Codex
-session has none). Use these fixed sections, because the orchestrator
+When the run finishes, deliver the report to the orchestrator. As a
+subagent, your final message is that delivery and the report of record;
+write no report file, which a Claude subagent's runtime refuses anyway. As a
+separate session, send it with `SendMessage` to the session that briefed
+you, and also write it to `eval-images/<topic>/<YYYY-MM-DD>/report.md`,
+ending with its path — the fallback when no message route back exists (a
+separate Codex session has none). Use these fixed sections, because the orchestrator
 reviews and scores against them: build under test; plan vs. what ran, with
 deviations and why; spend per arm (calls, input and output tokens,
 estimated cost against the cap); results tables; findings, each labelled
