@@ -3,6 +3,12 @@
 # A throwaway git repository with a stub gate file; no application code, no network.
 set -euo pipefail
 
+# Isolate git from the caller: an exported GIT_DIR (a hook) would aim `add`/`commit`
+# at the outer repository, and a global color.ui=always would put escapes in the
+# diff that scan-diff's control-character check then fails on.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+
 SKILL_DIR=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -13,16 +19,21 @@ GATE="$TMP/check-route-authz.ts"
 fail() { echo "FAILED: $1" >&2; exit 1; }
 put() { mkdir -p "$(dirname "$1")"; cat >"$1"; }
 
-# The gate's literal shapes, including a commented-out helper and a `[^/]`
-# class inside the RESOURCE_ROUTE literal. The wrapper list is decoration: the
-# gate never consults it, and neither may the port.
-put "$GATE" <<'TS'
+# write_gate <file> [extra helper]...: the gate's literal shapes, including a
+# commented-out helper, a `[^/]` class inside the RESOURCE_ROUTE literal, and the
+# constants route-authz.py mirrors. The wrapper list is decoration: the gate never
+# consults it, and neither may the port.
+write_gate() {
+  local file=$1 name
+  shift
+  mkdir -p "$(dirname "$file")"
+  {
+    cat <<'TS'
 export const APPROVED_ROUTE_AUTHZ_WRAPPERS = [
   "withOwnedChat",
   "withAuthorizedResource",
 ] as const;
 
-/** Audited seams; "notAHelper" in this comment must not count. */
 export const APPROVED_ROUTE_AUTHZ_HELPERS = [
   "loadOwnedChat",
   // "retiredHelper",
@@ -30,10 +41,22 @@ export const APPROVED_ROUTE_AUTHZ_HELPERS = [
   "findItem",
   "findViewable",
   "cloneToLibrary",
+TS
+    for name in "$@"; do printf '  "%s",\n' "$name"; done
+    cat <<'TS'
 ] as const;
 
 export const RESOURCE_ROUTE = /^apps\/web\/src\/app\/api\/.+\/\[[^/]+\]\/.*route\.ts$/;
+
+const WITH_USER_CALL = /\bwithUser(?:<[^>\n]+>)?\s*\(/g;
+const OWNER_TOKEN = /\bowner(?:Id|_id)\b/;
+const USER_ID = /\buser\.id\b/;
+const GUARD_CHECK_LOOKAHEAD = 4;
+const GUARD_EXIT_LOOKAHEAD = 3;
 TS
+  } >"$file"
+}
+write_gate "$GATE"
 
 # --- route-authz.py: one handler shape per row --------------------------------------------
 # check <safe|unsafe> <route path> <name>; the route source is on stdin.
@@ -176,21 +199,68 @@ check safe 'apps/web/src/app/api/chats/route.ts' "a route without a [param] segm
 export const GET = withUser(async (user) => jsonOk({ user: user.id }));
 TS
 
-rc=0
-(cd "$UNIT" && python3 "$SKILL_DIR/route-authz.py" --gate "$TMP/missing.ts" x 2>/dev/null) || rc=$?
-[ "$rc" -eq 2 ] || fail "a missing gate file exited $rc, not 2"
-echo 'ok  an unreadable gate exits 2 instead of passing every route'
+# Guard shapes the real routes do not use yet; verdicts read from the gate's resultIsGuarded.
+check safe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a result compared to null guards the route" <<'TS'
+export const GET = withUser<Params>(async (user, _req, ctx) => {
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  if (owned === null) return jsonError("not_found", "chat not found", 404);
+  return jsonOk({ owned });
+});
+TS
+check safe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a result chosen by a ternary guards the route" <<'TS'
+export const GET = withUser<Params>(async (user, _req, ctx) => {
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  return owned ? jsonOk({ owned }) : jsonError("not_found", "chat not found", 404);
+});
+TS
+check unsafe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a guard past the four-line lookahead is too late" <<'TS'
+export const GET = withUser<Params>(async (user, _req, ctx) => {
+  const { chatId } = await ctx.params;
+  const owned = await loadOwnedChat(chatId, user.id);
+  const a = 1;
+  const b = 2;
+  const c = 3;
+  const d = 4;
+  if (!owned) return jsonError("not_found", "chat not found", 404);
+  return jsonOk({ owned, a, b, c, d });
+});
+TS
 
-# The gate reads routes with readFileSync(path, "utf8"), which decodes invalid bytes to
-# U+FFFD. A strict decode would raise instead, and scan-diff would then drop its
-# prediction for every changed route. The file must be judged like any other.
-rm -rf "$UNIT"
-BAD='apps/web/src/app/api/chats/[chatId]/route.ts'
-mkdir -p "$UNIT/$(dirname "$BAD")"
-printf 'export const GET = withUser(async (user, _req, ctx) => {\n  // \xff\xfe not utf-8\n  return jsonOk({});\n});\n' >"$UNIT/$BAD"
-rc=0; out=$(cd "$UNIT" && python3 "$SKILL_DIR/route-authz.py" --gate "$GATE" "$BAD") || rc=$?
-[ "$rc" -eq 1 ] && [ "$out" = "$BAD" ] || fail "a route that is not valid utf-8 exited $rc with '$out', not judged unsafe"
-echo 'ok  a route that is not valid utf-8 is decoded as the gate decodes it and judged'
+# Text the gate's JavaScript reads differently from Python's defaults.
+printf 'export const GET = withUser\xc2\xa0(async (user, _req, ctx) => {\n  const { chatId } = await ctx.params;\n  return jsonOk({ chatId });\n});\n' \
+  | check unsafe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a handler after a no-break space is judged (JavaScript's \\s matches U+00A0)"
+printf 'export const GET = withUser(async (user, _req, ctx) => {\n  const { chatId } = await ctx.params;\n  const owned = await loadOwnedChat(chatId, user.id);\n  if\xc2\xa0(!owned) return jsonError("not_found", "chat not found", 404);\n  return jsonOk({ owned });\n});\n' \
+  | check safe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a guard written with a no-break space still counts"
+printf 'export const GET = withUser(async (user, _req, ctx) => {\n  const { chatId } = await ctx.params; // note\r  const owned = await loadOwnedChat(chatId, user.id);\n  if (!owned) return jsonError("not_found", "chat not found", 404);\n  return jsonOk({ owned });\n});\n' \
+  | check unsafe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a lone CR does not end a // comment (readFileSync keeps it)"
+# readFileSync(path, "utf8") decodes invalid bytes to U+FFFD. A strict decode would
+# raise, and scan-diff would then drop its prediction for every changed route.
+printf 'export const GET = withUser(async (user, _req, ctx) => {\n  // \xff\xfe not utf-8\n  return jsonOk({});\n});\n' \
+  | check unsafe 'apps/web/src/app/api/chats/[chatId]/route.ts' "a route that is not valid utf-8 is decoded as the gate decodes it and judged"
+
+# --- route-authz.py: what it refuses to predict ---------------------------------------------
+# refuses <exit> <stderr text> <name> <route-authz.py args>...
+refuses() {
+  local want=$1 text=$2 name=$3 rc=0 err
+  shift 3
+  rm -rf "$UNIT"; mkdir -p "$UNIT"
+  err=$(cd "$UNIT" && python3 "$SKILL_DIR/route-authz.py" "$@" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq "$want" ] || fail "$name: exited $rc, not $want ($err)"
+  grep -Fq -- "$text" <<<"$err" || fail "$name: stderr does not say '$text': $err"
+  echo "ok  $name"
+}
+refuses 2 "missing.ts" "a missing gate file exits 2 instead of passing every route" \
+  --gate "$TMP/missing.ts" 'apps/web/src/app/api/chats/[chatId]/route.ts'
+sed 's/GUARD_CHECK_LOOKAHEAD = 4;/GUARD_CHECK_LOOKAHEAD = 5;/' "$GATE" >"$TMP/drifted.ts"
+refuses 2 "const GUARD_CHECK_LOOKAHEAD = 4;" "a gate whose mirrored constants changed exits 2 and names them" \
+  --gate "$TMP/drifted.ts" 'apps/web/src/app/api/chats/[chatId]/route.ts'
+sed 's/  "requireSimChat",/  ...OWNER_HELPERS,/' "$GATE" >"$TMP/spread.ts"
+refuses 2 "APPROVED_ROUTE_AUTHZ_HELPERS" "a helper list it can only half read exits 2" \
+  --gate "$TMP/spread.ts" 'apps/web/src/app/api/chats/[chatId]/route.ts'
+refuses 3 "apps/web/src/app/api/chats/[chatId]/gone/route.ts" "a changed route it cannot read exits 3; other paths are not read" \
+  --gate "$GATE" docs/absent.md 'apps/web/src/app/api/chats/[chatId]/gone/route.ts'
 
 # --- scan-diff.sh end to end ----------------------------------------------------------------
 g() {
@@ -204,7 +274,7 @@ SAFE=apps/web/src/app/api/chats/[chatId]/time-skip/route.ts
 UNSAFE=apps/web/src/app/api/widgets/[id]/route.ts
 mkdir -p "$REPO"
 g init -q -b main
-put "$REPO/scripts/check-route-authz.ts" <"$GATE"
+write_gate "$REPO/scripts/check-route-authz.ts"
 put "$REPO/$SAFE" <<'TS'
 type Params = { chatId: string };
 export const POST = withUser<Params>(async (user, req: NextRequest, ctx) => {
@@ -247,7 +317,7 @@ grep -Fq 'WARN  apps/web/src/app/api/gadgets/[id]/route.ts: a bare withUser' <<<
 echo 'ok  scan-diff skips a pure rename and judges a rename with edits, as the gate does'
 
 g switch -qc new-helper main
-sed -i 's/  "cloneToLibrary",/  "cloneToLibrary",\n  "loadOwnedWidget",/' "$REPO/scripts/check-route-authz.ts"
+write_gate "$REPO/scripts/check-route-authz.ts" loadOwnedWidget
 put "$REPO/$UNSAFE" <<'TS'
 type Params = { id: string };
 export const DELETE = withUser<Params>(async (user, _req, ctx) => {
@@ -267,15 +337,29 @@ printf 'export const RESOURCE_ROUTE = "moved";\n' >"$REPO/scripts/check-route-au
 printf '// edited\n' >>"$REPO/$UNSAFE"
 g commit -qam "broken gate"
 out=$(scan 2>&1)
-grep -Fq 'WARN  lint:authz not predicted for 1 changed route file(s): route-authz.py exited 2' <<<"$out" \
+grep -Fq 'WARN  lint:authz not predicted: route-authz.py exited 2' <<<"$out" \
   || fail "scan-diff did not report an unreadable gate: $out"
 echo 'ok  scan-diff reports an unreadable gate instead of passing silently'
+
+# An interpreter that dies before main() exits 1 with nothing on stdout; that must
+# not become a warning about an empty path.
+mkdir -p "$TMP/fakebin"
+printf '#!/bin/sh\nexit 1\n' >"$TMP/fakebin/python3"
+chmod +x "$TMP/fakebin/python3"
+g switch -qc silent-python main
+printf '// edited\n' >>"$REPO/$UNSAFE"
+g commit -qam "silent python"
+out=$(PATH="$TMP/fakebin:$PATH" scan 2>&1)
+grep -Fq 'WARN  lint:authz not predicted: route-authz.py exited 1' <<<"$out" \
+  || fail "scan-diff read a silent exit 1 as a verdict: $out"
+! grep -Fq 'WARN  : ' <<<"$out" || fail "scan-diff warned about an empty path: $out"
+echo 'ok  scan-diff reports a silent route-authz.py failure instead of an empty-path warning'
 
 g switch -qc delete-route main
 g rm -q "$UNSAFE"
 g commit -qm delete
 out=$(scan)
-[ "$(authz_warns "$out")" -eq 0 ] || fail "scan-diff judged a deleted route: $out"
-echo 'ok  scan-diff ignores a deleted route'
+[ "$(authz_warns "$out")" -eq 0 ] || fail "scan-diff passed a deleted route to route-authz.py: $out"
+echo 'ok  scan-diff leaves a deleted route out, as the gate does'
 
 echo "scan-diff fixtures passed"

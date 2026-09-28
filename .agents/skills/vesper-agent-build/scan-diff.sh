@@ -17,7 +17,7 @@
 #   WARN  markdown table rows whose pipes do not line up (docs are read raw)
 #   WARN  dynamic-state wording added under docs/ (status, remaining, awaiting…)
 #   WARN  a changed [param] route with a bare withUser handler that carries no
-#         authorization evidence lint:authz accepts (route-authz.py predicts it)
+#         authorization evidence lint:authz accepts, or when that cannot be predicted
 #   WARN  ageAnchor mentioned in a census-guarded file (the test greps source text)
 #   INFO  new test files, so vesper-testing's question gets asked
 set -euo pipefail
@@ -101,20 +101,20 @@ done
 
 # --- lint:authz ----------------------------------------------------------------------------------
 # The gate's own file set: content-changed paths, pure renames (R100) excluded. route-authz.py
-# applies RESOURCE_ROUTE and judges every withUser( / withUser<Params>( handler as the gate does.
-mapfile -t routes < <(git diff --name-status --find-renames -l0 --diff-filter=ACMR "$range" \
-  | awk -F'\t' '$1 != "R100" { p = ($1 ~ /^[RC]/) ? $3 : $2; if (p ~ /route\.ts$/) print p }')
-if [ ${#routes[@]} -gt 0 ]; then
+# keeps the gate's RESOURCE_ROUTE matches and judges each withUser( / withUser<Params>( handler.
+mapfile -t changed < <(git diff --name-status --find-renames -l0 --diff-filter=ACMR "$range" \
+  | awk -F'\t' '$1 != "R100" { p = ($1 ~ /^[RC]/) ? $3 : $2; print p }')
+if [ ${#changed[@]} -gt 0 ]; then
   if ! command -v python3 >/dev/null; then
-    warn "python3 not found — lint:authz not predicted for ${#routes[@]} changed route file(s)"
+    warn "lint:authz not predicted: python3 not found"
   else
-    rc=0; unsafe=$(python3 "$HERE/route-authz.py" --gate scripts/check-route-authz.ts "${routes[@]}") || rc=$?
-    if [ "$rc" -eq 1 ]; then
+    rc=0; unsafe=$(python3 "$HERE/route-authz.py" --gate scripts/check-route-authz.ts "${changed[@]}") || rc=$?
+    if [ "$rc" -eq 1 ] && [ -n "$unsafe" ]; then
       while IFS= read -r f; do
         warn "$f: a bare withUser handler has no authorization evidence — lint:authz will fail; use an owner-scoped wrapper, a guarded approved helper called with user.id and the route param, or an inline (route id, owner id) .where predicate"
       done <<<"$unsafe"
     elif [ "$rc" -ne 0 ]; then
-      warn "lint:authz not predicted for ${#routes[@]} changed route file(s): route-authz.py exited $rc (message above)"
+      warn "lint:authz not predicted: route-authz.py exited $rc (message above, if any)"
     fi
   fi
 fi

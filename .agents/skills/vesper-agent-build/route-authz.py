@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Predict which changed resource-ID routes `pnpm lint:authz` will reject.
 
-    route-authz.py --gate scripts/check-route-authz.ts <route.ts>...
+    route-authz.py --gate scripts/check-route-authz.ts <changed path>...
 
-scan-diff.sh calls this with the content-changed `route.ts` paths of a branch.
-It prints each path that holds a bare `withUser` handler with no authorization
-evidence and exits 1 if any does. It exits 0 when every path passes, 2 when the
-gate's lists cannot be read, and 3 on any other failure; the caller reports 2
-and 3 rather than skipping silently.
+scan-diff.sh calls this with the content-changed paths of a branch; it keeps
+those that match the gate's RESOURCE_ROUTE. It prints each route holding a bare
+`withUser` handler with no authorization evidence and exits 1 if any does.
+Otherwise it exits 0 when every route passes, 2 when the gate cannot be read or
+its mirrored constants changed, 3 when a route cannot be read or anything else
+fails, and 64 on a usage error. The caller reports 2 and 3 rather than
+skipping silently.
 
 This is a port of `resourceRouteHasAuthorizationEvidence` in
 `scripts/check-route-authz.ts`, which the local-gate ban forbids running here.
@@ -22,8 +24,9 @@ does. A handler passes when it has either of these:
 Wrapper handlers (`withOwnedChat`, `withAuthorizedResource`, ...) pass because
 they are not `withUser` calls, exactly as in the gate. The helper list and
 RESOURCE_ROUTE are read from the gate file of the tree being scanned, so a PR
-that adds a helper is judged by its own list. Everything else is mirrored by
-hand: a change to the gate's matching logic must be ported here, with a row in
+that adds a helper is judged by its own list. The gate's matching constants
+must still read as MIRRORED below, or this refuses to predict. The function
+logic is mirrored by hand: a change there must be ported here, with a row in
 tests/scan-diff.sh.
 
 Standard library only; it reads the gate as text and never imports or runs it.
@@ -31,14 +34,35 @@ Standard library only; it reads the gate as text and never imports or runs it.
 import re
 import sys
 
-A = re.ASCII  # JavaScript's \w and \b are ASCII-only
+# JavaScript's \w and \b are ASCII-only, but its \s also matches these spaces.
+JS_SPACE = r"[\s   -     　﻿]"
 
-WITH_USER_CALL = re.compile(r"\bwithUser(?:<[^>\n]+>)?\s*\(", A)
-OWNER_TOKEN = re.compile(r"\bowner(?:Id|_id)\b", A)
-USER_ID = re.compile(r"\buser\.id\b", A)
-EXIT = re.compile(r"\breturn\b|\bthrow\b", A)
+
+def js(pattern):
+    """Compile a JavaScript regex source (no `\\s` inside a character class)."""
+    return re.compile(pattern.replace(r"\s", JS_SPACE), re.ASCII)
+
+
+# The gate's constants, spelled as its source declares them.
+MIRRORED = (
+    r"const WITH_USER_CALL = /\bwithUser(?:<[^>\n]+>)?\s*\(/g;",
+    r"const OWNER_TOKEN = /\bowner(?:Id|_id)\b/;",
+    r"const USER_ID = /\buser\.id\b/;",
+    "const GUARD_CHECK_LOOKAHEAD = 4;",
+    "const GUARD_EXIT_LOOKAHEAD = 3;",
+)
+WITH_USER_CALL = js(r"\bwithUser(?:<[^>\n]+>)?\s*\(")
+OWNER_TOKEN = js(r"\bowner(?:Id|_id)\b")
+USER_ID = js(r"\buser\.id\b")
 GUARD_CHECK_LOOKAHEAD = 4
 GUARD_EXIT_LOOKAHEAD = 3
+EXIT = js(r"\breturn\b|\bthrow\b")
+NEGATED_IF = js(r"\bif\s*\(\s*!")
+BINDING = js(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=")
+
+
+class GateError(Exception):
+    pass
 
 
 def strip_comments(source):
@@ -105,17 +129,17 @@ def call_arguments(text, open_at):
 
 def method_call_arguments(source, method):
     stripped = strip_comments(source)
-    call = re.compile(r"\." + method + r"\s*\(", A)
+    call = js(r"\." + method + r"\s*\(")
     return [call_arguments(stripped, m.end() - 1) for m in call.finditer(stripped)]
 
 
 def route_parameter_names(path):
-    return [m for m in re.findall(r"\[(?:\.\.\.)?([A-Za-z_$][\w$]*)\]", path, A) if m]
+    return [m for m in js(r"\[(?:\.\.\.)?([A-Za-z_$][\w$]*)\]").findall(path) if m]
 
 
 def has_route_param(text, params):
     """A route parameter used as a variable, not the `.id` property of a table."""
-    return any(re.search(r"(?:^|[^.$\w])" + p + r"\b", text, A) for p in params)
+    return any(js(r"(?:^|[^.$\w])" + p + r"\b").search(text) for p in params)
 
 
 def exits_within(lines, at):
@@ -125,15 +149,15 @@ def exits_within(lines, at):
 
 def result_is_guarded(lines, call_line):
     line = lines[call_line] if call_line < len(lines) else ""
-    if re.search(r"\bif\s*\(\s*!", line, A) and exits_within(lines, call_line):
+    if NEGATED_IF.search(line) and exits_within(lines, call_line):
         return True
-    binding = re.search(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=", line, A)
+    binding = BINDING.search(line)
     if not binding:
         return False
     name = binding.group(1)
-    negated = re.compile(r"\bif\s*\(\s*!\s*" + name + r"\b", A)
-    compared = re.compile(r"\bif\s*\(\s*" + name + r"\s*={2,3}\s*(?:null|undefined|false)\b", A)
-    chosen = re.compile(r"\b" + name + r"\s*\?\??(?!\.)", A)
+    negated = js(r"\bif\s*\(\s*!\s*" + name + r"\b")
+    compared = js(r"\bif\s*\(\s*" + name + r"\s*={2,3}\s*(?:null|undefined|false)\b")
+    chosen = js(r"\b" + name + r"\s*\?\??(?!\.)")
     last = min(len(lines) - 1, call_line + GUARD_CHECK_LOOKAHEAD)
     for i in range(call_line, last + 1):
         candidate = lines[i]
@@ -148,7 +172,7 @@ def has_guarded_authorization_helper(source, params, helpers):
     stripped = strip_comments(source)
     lines = stripped.split("\n")
     for helper in helpers:
-        for m in re.finditer(r"\b" + helper + r"\s*\(", stripped, A):
+        for m in js(r"\b" + helper + r"\s*\(").finditer(stripped):
             args = call_arguments(stripped, m.end() - 1)
             if USER_ID.search(args) and has_route_param(args, params):
                 if result_is_guarded(lines, stripped.count("\n", 0, m.start())):
@@ -179,24 +203,39 @@ def has_authorization_evidence(path, source, resource_route, helpers):
 
 
 def read_gate(gate_source):
-    """(RESOURCE_ROUTE, helper names) from the gate's source text, or None."""
+    """(RESOURCE_ROUTE, helper names) from the gate's source text, or GateError."""
     text = strip_comments(gate_source)
+    drifted = [line for line in MIRRORED if line not in text]
+    if drifted:
+        raise GateError("its matching constants changed; port the change to route-authz.py: " + " ".join(drifted))
     # A regex literal body: escapes, character classes (which may hold a bare
     # `/`, as `[^/]` does), and any other character but `/`.
     route = re.search(
         r"\bRESOURCE_ROUTE\s*=\s*/((?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\[\n])+)/([a-z]*)\s*;", text
     )
+    if not route or set(route.group(2)) - set("iu"):
+        raise GateError("no RESOURCE_ROUTE regex literal it can read")
     helpers = re.search(r"\bAPPROVED_ROUTE_AUTHZ_HELPERS\s*=\s*\[([^\]]*)\]", text)
-    if not route or not helpers or set(route.group(2)) - set("iu"):
-        return None
-    names = re.findall(r"[\"']([A-Za-z_$][\w$]*)[\"']", helpers.group(1), A)
+    literal = js(r"([\"'`])([A-Za-z_$][\w$]*)\1")
+    # Only quoted names, commas and whitespace: a spread or a computed entry
+    # would otherwise be dropped and its helper judged unapproved.
+    if not helpers or literal.sub("", helpers.group(1)).strip(" \t\r\n,"):
+        raise GateError("no APPROVED_ROUTE_AUTHZ_HELPERS list of plain names it can read")
+    names = [m.group(2) for m in literal.finditer(helpers.group(1))]
     if not names:
-        return None
+        raise GateError("APPROVED_ROUTE_AUTHZ_HELPERS is empty")
     try:
-        pattern = re.compile(route.group(1), re.IGNORECASE if "i" in route.group(2) else 0)
-    except re.error:
-        return None
-    return pattern, names
+        flags = re.ASCII | (re.IGNORECASE if "i" in route.group(2) else 0)
+        return re.compile(route.group(1), flags), names
+    except re.error as error:
+        raise GateError(f"RESOURCE_ROUTE does not compile here ({error})") from error
+
+
+def read_text(path):
+    # errors="replace" and newline="" match Node's readFileSync(path, "utf8"),
+    # which the gate uses: invalid bytes become U+FFFD and a lone \r stays a \r.
+    with open(path, encoding="utf-8", errors="replace", newline="") as fh:
+        return fh.read()
 
 
 def main(argv):
@@ -204,26 +243,26 @@ def main(argv):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 64
     try:
-        # errors="replace" mirrors Node's readFileSync(path, "utf8"), which the
-        # gate uses: invalid bytes decode to U+FFFD instead of raising.
-        with open(argv[1], encoding="utf-8", errors="replace") as fh:
-            gate = read_gate(fh.read())
-    except OSError:
-        gate = None
-    if gate is None:
-        print(f"cannot read RESOURCE_ROUTE and APPROVED_ROUTE_AUTHZ_HELPERS from {argv[1]}", file=sys.stderr)
+        resource_route, helpers = read_gate(read_text(argv[1]))
+    except (OSError, GateError) as error:
+        print(f"cannot predict lint:authz from {argv[1]}: {error}", file=sys.stderr)
         return 2
-    resource_route, helpers = gate
-    unsafe = 0
+    unsafe, unreadable = [], []
     for path in argv[2:]:
+        if not resource_route.search(path):
+            continue
         try:
-            with open(path, encoding="utf-8", errors="replace") as fh:
-                source = fh.read()
-        except OSError:
-            continue  # deleted in the working tree; the gate reads only present files
+            source = read_text(path)
+        except OSError as error:
+            unreadable.append(f"{path} ({error.strerror})")
+            continue
         if not has_authorization_evidence(path, source, resource_route, helpers):
-            print(path)
-            unsafe += 1
+            unsafe.append(path)
+    if unreadable:
+        print("cannot read changed route(s): " + ", ".join(unreadable), file=sys.stderr)
+        return 3
+    for path in unsafe:
+        print(path)
     return 1 if unsafe else 0
 
 
