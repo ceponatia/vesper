@@ -7,7 +7,7 @@ import {
   type CharacterAuthoringTarget,
 } from "@/lib/client/api/character-authoring-runs";
 import { parseOrNull } from "@/lib/parse";
-import { proposalChanges, type CharacterProposal, type CharacterReviewState } from "./character-proposals";
+import { proposalChanges, type CharacterProposal, type CharacterReviewState, type ProposalChange } from "./character-proposals";
 
 export const characterGenerationSchema = characterAuthoringRunSchema;
 export type CharacterGeneration = CharacterAuthoringRun;
@@ -37,29 +37,29 @@ export function matchesGeneration(record: CharacterGeneration, ownerId: string, 
     && (!record.scope || record.operation === "fill" || record.operation === "redraft");
 }
 
-export function hasReceivedGeneration(review: CharacterReviewState, id: string): boolean {
-  return review.pending.some((item) => item.sourceRunId === id || item.id === id)
-    || review.handledIds?.includes(id) === true
-    || review.undo?.sourceRunId === id;
-}
-
 /**
  * The very first Forge on a character that has never been edited applies
  * directly, without a review step. `initialPreview` is computed server-side
  * (true only for a never-edited blank character), so any edit made meanwhile —
  * including one made while this run was in flight — turns it into an ordinary
- * proposal instead. #517: AI output never silently replaces authored values
- * otherwise.
+ * proposal instead. `changes` are the record's own base/proposed diff: an
+ * empty first Forge has nothing to apply and takes the "no changes
+ * suggested" path instead. AI output never silently replaces authored values
+ * otherwise. The caller still has to reconfirm the authoring revision after
+ * flushing any unsaved local edit — this predicate only covers what the
+ * record itself can say.
  */
 export function isFirstForgeAutoAccept(
   record: CharacterGeneration,
   firstReceipt: boolean,
+  changes: readonly ProposalChange[],
 ): record is CharacterGeneration & { source: NonNullable<CharacterGeneration["source"]> } {
   return record.operation === "create"
     && record.creationStart?.initialPreview === true
     && record.proposal.status === "unresolved"
     && firstReceipt
-    && record.source !== null;
+    && record.source !== null
+    && changes.length > 0;
 }
 
 /** A receipt is specific to one server proposal projection, including decisions that advance its revision. */
@@ -72,36 +72,6 @@ export function needsGenerationProjection(
 ): boolean {
   return record.status === "completed" && record.result !== null
     && !receipts.has(generationProjectionReceipt(record));
-}
-
-const needsAbandonment = (record: CharacterGeneration) => record.status === "pending"
-  || record.status === "failed"
-  || record.proposal.status === "unresolved";
-
-export interface SettledGenerationRequest {
-  readonly requestId: string;
-  readonly run: CharacterGeneration | null;
-}
-
-/**
- * Resolve reset against the requests that existed when reset began. A retry may
- * converge on a different active run id, so its returned durable row replaces
- * the optimistic request id. Rows discovered later are left alone.
- */
-export function generationRecordsForAbandonment(
-  captured: readonly CharacterGeneration[],
-  current: readonly CharacterGeneration[],
-  settled: readonly SettledGenerationRequest[],
-): CharacterGeneration[] {
-  const capturedIds = new Set(captured.filter(needsAbandonment).map((record) => record.id));
-  const selected = new Map(captured.filter(needsAbandonment).map((record) => [record.id, record]));
-  for (const record of current) if (capturedIds.has(record.id)) selected.set(record.id, record);
-  for (const request of settled) {
-    if (!capturedIds.has(request.requestId) || !request.run) continue;
-    selected.delete(request.requestId);
-    selected.set(request.run.id, request.run);
-  }
-  return [...selected.values()];
 }
 
 function proposalFor(record: CharacterGeneration): CharacterProposal | null {

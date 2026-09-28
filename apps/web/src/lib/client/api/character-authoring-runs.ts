@@ -107,6 +107,5 @@ export const characterAuthoringRunsApi = {
     expectedProposalRevision: number;
     expectedAuthoringRevision?: number;
     choices?: Record<string, "current" | "proposed">;
-    currentDraft?: z.infer<typeof characterDraftSchema>;
   }) => apiPatch(decisionEnvelopeSchema, `/api/characters/authoring-runs/${runId}/decision`, body),
 };

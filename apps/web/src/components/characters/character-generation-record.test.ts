@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyCharacterDraft } from "@/lib/client/api";
-import { emptyCharacterReview } from "./character-proposals";
-import { generationCacheKey, generationProjectionReceipt, generationRecordsForAbandonment, isFirstForgeAutoAccept, matchesGeneration, needsGenerationProjection, readGenerationCache, receiveGenerationReview, type CharacterGeneration } from "./character-generation-record";
+import { emptyCharacterReview, proposalChanges } from "./character-proposals";
+import { generationCacheKey, generationProjectionReceipt, isFirstForgeAutoAccept, matchesGeneration, needsGenerationProjection, readGenerationCache, receiveGenerationReview, type CharacterGeneration } from "./character-generation-record";
 
 function fixture(overrides: Partial<CharacterGeneration> = {}): CharacterGeneration {
   const base = emptyCharacterDraft();
@@ -39,6 +39,11 @@ function createFixture(overrides: Partial<CharacterGeneration> = {}): CharacterG
     source: { authoringRevision: 1, imageId: null },
     ...overrides,
   });
+}
+
+/** The exact diff the completion handler computes before deciding whether to auto-accept. */
+function changesFor(record: CharacterGeneration) {
+  return proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result!.proposed, undo: false });
 }
 
 describe("server character generation records", () => {
@@ -108,17 +113,6 @@ describe("server character generation records", () => {
     expect(receiveGenerationReview(received, run)).toBe(received);
   });
 
-  it("replaces a captured optimistic request with its durable settlement without touching newer rows", () => {
-    const optimistic = fixture({ id: "optimistic", status: "pending", persisted: false, result: null });
-    const durable = fixture({ id: "durable", status: "pending", result: null });
-    const newer = fixture({ id: "newer", status: "pending", result: null });
-    expect(generationRecordsForAbandonment(
-      [optimistic],
-      [durable, newer],
-      [{ requestId: optimistic.id, run: durable }],
-    )).toEqual([durable]);
-  });
-
   it("keeps a completed proposal active until its exact revision is projected", () => {
     const completed = fixture();
     const receipt = generationProjectionReceipt(completed);
@@ -146,20 +140,27 @@ describe("server character generation records", () => {
     expect(readGenerationCache(JSON.stringify({ savedAt: Date.now(), records: [fixture()] }))).toEqual([fixture()]);
   });
 
-  it("auto-accepts only the first Forge on a still-blank character", () => {
-    expect(isFirstForgeAutoAccept(createFixture(), true)).toBe(true);
+  it("auto-accepts only the first Forge on a still-blank character with real changes to apply", () => {
+    const forged = createFixture();
+    const changes = changesFor(forged);
+    expect(changes.length).toBeGreaterThan(0);
+    expect(isFirstForgeAutoAccept(forged, true, changes)).toBe(true);
   });
 
-  it("never auto-accepts a later Forge, a non-Forge run, or a receipt already seen (#517)", () => {
+  it("never auto-accepts a later Forge, a non-Forge run, an empty-change result, or a receipt already seen (#517)", () => {
+    const forged = createFixture();
+    const changes = changesFor(forged);
     // Not a create run at all.
-    expect(isFirstForgeAutoAccept(fixture(), true)).toBe(false);
+    expect(isFirstForgeAutoAccept(fixture(), true, changesFor(fixture()))).toBe(false);
     // The character was edited (or this is a later Forge): the server computed initialPreview false.
-    expect(isFirstForgeAutoAccept(createFixture({ creationStart: { draft: emptyCharacterDraft(), prompt: "A harbor master", initialPreview: false } }), true)).toBe(false);
+    expect(isFirstForgeAutoAccept(createFixture({ creationStart: { draft: emptyCharacterDraft(), prompt: "A harbor master", initialPreview: false } }), true, changes)).toBe(false);
     // Already decided.
-    expect(isFirstForgeAutoAccept(createFixture({ proposal: { revision: 1, status: "accepted", choices: {}, appliedDraft: null, undo: null } }), true)).toBe(false);
+    expect(isFirstForgeAutoAccept(createFixture({ proposal: { revision: 1, status: "accepted", choices: {}, appliedDraft: null, undo: null } }), true, changes)).toBe(false);
     // Already projected once before (a retry of the completion effect, not a first receipt).
-    expect(isFirstForgeAutoAccept(createFixture(), false)).toBe(false);
+    expect(isFirstForgeAutoAccept(forged, false, changes)).toBe(false);
     // No authoring revision to compare-and-set against.
-    expect(isFirstForgeAutoAccept(createFixture({ source: null }), true)).toBe(false);
+    expect(isFirstForgeAutoAccept(createFixture({ source: null }), true, changes)).toBe(false);
+    // An empty first Forge has nothing to apply; it takes the "no changes suggested" path instead.
+    expect(isFirstForgeAutoAccept(forged, true, [])).toBe(false);
   });
 });

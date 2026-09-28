@@ -88,25 +88,35 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
     const result = record.result;
     const firstReceipt = !reviewStore.current.current.pending.some((item) => item.sourceRunId === record.id || item.id === record.id)
       && !reviewStore.current.current.handledIds?.includes(record.id);
-    if (isFirstForgeAutoAccept(record, firstReceipt)) {
-      const accepted = await actions.decide(
-        { sourceRunId: record.id, proposalRevision: record.proposal.revision },
-        "accept",
-        {},
-        { expectedAuthoringRevision: record.source.authoringRevision },
-      );
-      if (accepted) {
-        setForgeDiagnostics(result.diagnostics);
-        reviewStore.update((review) => receiveGenerationReview(review, accepted.run));
-        await author.refreshServer();
-        detail.reload({ silent: true });
-        await reviewStore.flush();
-        return reviewStore.isPersisted();
-      }
-      // Refused (e.g. the character changed underneath this run) — fall through
-      // and leave it as an ordinary pending proposal for review below.
-    }
     const changes = proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: result.proposed, undo: false });
+    if (isFirstForgeAutoAccept(record, firstReceipt, changes)) {
+      const source = record.source;
+      // Flush any edit typed while the run was in flight first. A real flush
+      // advances the authoring revision past the run's source revision, which
+      // fails the match below and falls through to ordinary review instead of
+      // silently discarding what the author just typed; a no-op flush leaves
+      // it unchanged.
+      const prepared = await author.prepareAction();
+      if (prepared && prepared.authoringRevision === source.authoringRevision) {
+        const accepted = await actions.decide(
+          { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+          "accept",
+          {},
+          { expectedAuthoringRevision: prepared.authoringRevision },
+        );
+        if (accepted) {
+          setForgeDiagnostics(result.diagnostics);
+          reviewStore.update((review) => receiveGenerationReview(review, accepted.run));
+          await author.refreshServer();
+          detail.reload({ silent: true });
+          await reviewStore.flush();
+          return reviewStore.isPersisted();
+        }
+      }
+      // An unsaved edit advanced the revision, the flush failed, or the
+      // accept was refused (e.g. the character changed underneath this run)
+      // — fall through and leave it as an ordinary pending proposal below.
+    }
     let projected = record;
     if (record.proposal.status === "unresolved" && changes.length === 0) {
       const current = await charactersApi.get(characterId);
