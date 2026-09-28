@@ -530,6 +530,12 @@ describe("buildProbeSummary", () => {
       totalMs: 100,
       requestStartOffsetMs: 0,
       requestMaxTokens: 1_024,
+      // Matches `defaultRaw()`'s promptTokens/completionTokens by default, as if
+      // the row's one request priced cleanly — override explicitly to model a
+      // multi-request (hidden-retry) or unpriced row.
+      billedPromptTokens: 10,
+      billedCompletionTokens: 20,
+      unpricedRequests: 0,
       errored: false,
       timedOut: false,
       requestCount: 1,
@@ -575,10 +581,42 @@ describe("buildProbeSummary", () => {
     });
   });
 
-  it("sums prompt/completion tokens per arm across every row", () => {
+  it("sums BILLED prompt/completion tokens per arm across every row", () => {
     const rows = [productionRow(), productionRow({ position: 2, probeCase: "vesper-sized" })];
     const summary = buildProbeSummary(rows);
-    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 20, completionTokens: 40 });
+    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 20, completionTokens: 40, unpricedRequests: 0 });
+  });
+
+  it("sums a TWO-REQUEST row's billed usage (both requests), not just the last one's raw values", () => {
+    // A hidden-retry call: two underlying requests, 800+200=1000 prompt tokens and
+    // 5+15=20 completion tokens billed in total, while `raw` (the last request
+    // alone) reports only the second request's own smaller numbers — the stub and
+    // timing verdicts still read `raw`, but the token total must read the sum.
+    const retried = productionRow({
+      requestCount: 2,
+      billedPromptTokens: 1_000,
+      billedCompletionTokens: 20,
+      raw: { ...defaultRaw(), promptTokens: 200, completionTokens: 15 },
+    });
+    const summary = buildProbeSummary([retried]);
+    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 1_000, completionTokens: 20, unpricedRequests: 0 });
+    expect(summary.tokenTotalsGrand).toEqual({ promptTokens: 1_000, completionTokens: 20, unpricedRequests: 0 });
+    expect(summary.cells[0]?.promptTokensTotal).toBe(1_000);
+    expect(summary.cells[0]?.completionTokensTotal).toBe(20);
+  });
+
+  it("contributes 0 (not a thrown error) and flags unpricedRequests when a row could not be priced", () => {
+    const unpriced = productionRow({
+      position: 2,
+      billedPromptTokens: null,
+      billedCompletionTokens: null,
+      unpricedRequests: 1,
+    });
+    const summary = buildProbeSummary([productionRow(), unpriced]);
+    // Only the priced row's 10/20 reach the total; the unpriced row contributes 0
+    // and is named instead.
+    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 10, completionTokens: 20, unpricedRequests: 1 });
+    expect(summary.cells[0]?.unpricedRequests).toBe(1);
   });
 
   it("treats a direct-arm row (no `visible`) by its raw-wire verdict alone", () => {
@@ -657,15 +695,17 @@ describe("buildProbeSummary", () => {
       round: 0,
       position: 0,
       positionInRound: 0,
-      raw: { ...defaultRaw(), promptTokens: 1_000, completionTokens: 5 },
+      billedPromptTokens: 1_000,
+      billedCompletionTokens: 5,
     });
     const summary = buildProbeSummary([gridRow, bootstrapRow]);
     expect(summary.cells).toHaveLength(1);
     expect(summary.cells[0]?.n).toBe(1);
-    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 1_010, completionTokens: 25 });
+    expect(summary.tokenTotalsByArm.profile).toEqual({ promptTokens: 1_010, completionTokens: 25, unpricedRequests: 0 });
     expect(summary.tokenTotalsByKind).toEqual({
-      call: { promptTokens: 10, completionTokens: 20 },
-      "bootstrap-call": { promptTokens: 1_000, completionTokens: 5 },
+      call: { promptTokens: 10, completionTokens: 20, unpricedRequests: 0 },
+      "bootstrap-call": { promptTokens: 1_000, completionTokens: 5, unpricedRequests: 0 },
     });
+    expect(summary.tokenTotalsGrand).toEqual({ promptTokens: 1_010, completionTokens: 25, unpricedRequests: 0 });
   });
 });

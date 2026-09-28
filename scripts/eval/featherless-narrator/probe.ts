@@ -2,7 +2,13 @@ import "dotenv/config";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
-import { FABLE_FUSION_711_ID, hasFeatherless, isNarratorLengthStub, type NarratorCompletion } from "@/server/ai";
+import {
+  FABLE_FUSION_711_ID,
+  hasFeatherless,
+  isNarratorLengthStub,
+  narratorHiddenRetryModel,
+  type NarratorCompletion,
+} from "@/server/ai";
 import {
   CHARACTER_CHAT_HISTORY_TURNS,
   NARRATIVE_TEMPERATURE,
@@ -341,6 +347,54 @@ interface RawRequestSnapshot {
   contentEventCount: number;
 }
 
+interface BilledTokens {
+  promptTokens: number | null;
+  completionTokens: number | null;
+  unpricedRequests: number;
+}
+
+/**
+ * The row's actual billed usage, summed over EVERY underlying HTTP request the
+ * call made — not just the last one. A model with a hidden retry
+ * (`narratorHiddenRetryModel`, `@/server/ai`) can make two requests per production
+ * call, and a total built from only the last request's `usage` silently prices
+ * just the second one.
+ *
+ * A request that reported no usage block at all is only recoverable when it was
+ * the call's ONLY request: the SDK's single `NarratorCompletion` then corresponds
+ * to exactly that request, so its `inputTokens`/`outputTokens` stand in. With more
+ * than one request, the completion reflects only the LAST attempt and cannot
+ * stand in for an EARLIER request's missing usage — the total becomes unknown
+ * (`null`) rather than a silent undercount, and `unpricedRequests` names how many
+ * requests could not be priced. Direct arms (no SDK completion) pass `null` for
+ * `completion`, so their one request either prices from its own raw usage or,
+ * failing that, is simply unpriced.
+ */
+function computeBilledTokens(
+  snapshots: readonly RawRequestSnapshot[],
+  completion: NarratorCompletion | null,
+): BilledTokens {
+  if (snapshots.length === 0) return { promptTokens: null, completionTokens: null, unpricedRequests: 0 };
+  const unpriced = snapshots.filter((snap) => snap.promptTokens === null && snap.completionTokens === null);
+  if (unpriced.length === 0) {
+    return {
+      promptTokens: snapshots.reduce((sum, snap) => sum + (snap.promptTokens ?? 0), 0),
+      completionTokens: snapshots.reduce((sum, snap) => sum + (snap.completionTokens ?? 0), 0),
+      unpricedRequests: 0,
+    };
+  }
+  if (snapshots.length === 1) {
+    const promptTokens = completion?.inputTokens ?? null;
+    const completionTokens = completion?.outputTokens ?? null;
+    return {
+      promptTokens,
+      completionTokens,
+      unpricedRequests: promptTokens === null && completionTokens === null ? 1 : 0,
+    };
+  }
+  return { promptTokens: null, completionTokens: null, unpricedRequests: unpriced.length };
+}
+
 /** `readTap`'s resolved shape — named so a caller building a same-shaped fallback (no body to read) can type it explicitly. */
 type DirectStreamTap = Omit<RawRequestSnapshot, "status" | "headers"> & { readError?: string };
 
@@ -474,7 +528,15 @@ function installFetchWrapper(): () => void {
     let outgoing = requestBody;
     try {
       const parsed = JSON.parse(requestBody) as Record<string, unknown>;
-      sink.builtBody = parsed;
+      // Only the FIRST request's pre-transform body is kept for direct-arm replay
+      // (and for the bootstrap/warm-up captures, which reuse this same field via
+      // `runProductionCall`'s returned `builtBody`): a hidden retry's own request
+      // can carry the retry-only `min_tokens` floor
+      // (`narratorRetryFloor`/`apps/web/src/server/ai/model-adapters.ts`), and a
+      // direct arm replaying THAT body would be replaying a retry nobody asked it
+      // to reproduce. `sink.arm`'s own transform below still applies to every
+      // request this call actually sends, first or retried alike.
+      if (sink.builtBody === null) sink.builtBody = parsed;
       const transformed = transformArmBody(sink.arm, parsed, NARRATIVE_TEMPERATURE);
       outgoing = JSON.stringify(transformed);
       lastWireBodyByArmCase.set(`${sink.arm}\u0000${sink.probeCase}`, describeWireBody(transformed));
@@ -573,6 +635,7 @@ async function runProductionCall(args: {
   const stubCompletion = completion !== null && isNarratorLengthStub(completion);
   const errored = errorMessage !== undefined;
   const providerError = completion?.providerError;
+  const billed = computeBilledTokens(snapshots, completion);
   const row: ExtendedRow = {
     arm: args.arm,
     probeCase: args.probeCase,
@@ -584,6 +647,9 @@ async function runProductionCall(args: {
     totalMs,
     requestStartOffsetMs: sink.lastRequestStartOffsetMs,
     requestMaxTokens,
+    billedPromptTokens: billed.promptTokens,
+    billedCompletionTokens: billed.completionTokens,
+    unpricedRequests: billed.unpricedRequests,
     errored,
     timedOut: false,
     requestCount: snapshots.length,
@@ -724,6 +790,9 @@ async function runDirectCall(args: {
           maxTokens: requestMaxTokens ?? undefined,
         })
       : false;
+  // A direct arm has no SDK completion to fall back to (`visible` is always
+  // null), so its one request either prices from its own raw usage or is unpriced.
+  const billed = computeBilledTokens(snapshot ? [snapshot] : [], null);
   return {
     arm: args.arm,
     probeCase: args.probeCase,
@@ -737,6 +806,9 @@ async function runDirectCall(args: {
     // starts immediately — the offset is always 0 by construction.
     requestStartOffsetMs: 0,
     requestMaxTokens,
+    billedPromptTokens: billed.promptTokens,
+    billedCompletionTokens: billed.completionTokens,
+    unpricedRequests: billed.unpricedRequests,
     errored,
     timedOut,
     requestCount: 1,
@@ -894,7 +966,10 @@ function printSummary(rows: readonly ExtendedRow[]): void {
       `  total ms:             n=${cell.totalMs.count} p50=${fmtStat(cell.totalMs.p50)} ` +
         `p90=${fmtStat(cell.totalMs.p90)} max=${fmtStat(cell.totalMs.max)}`,
     );
-    console.log(`  tokens (all rows): prompt=${cell.promptTokensTotal} completion=${cell.completionTokensTotal}`);
+    console.log(
+      `  tokens (all rows, billed — summed over every request each row made): prompt=${cell.promptTokensTotal} ` +
+        `completion=${cell.completionTokensTotal}${cell.unpricedRequests > 0 ? ` (${cell.unpricedRequests} request(s) unpriced)` : ""}`,
+    );
   }
   console.log("\nstub cross-tab (raw-wire verdict vs completion verdict, non-failed production rows only):");
   console.log(
@@ -902,14 +977,26 @@ function printSummary(rows: readonly ExtendedRow[]): void {
       `completion-only=${summary.stubCrossTab.completionOnlyStub} neither=${summary.stubCrossTab.neitherStub} ` +
       `— disagreements=${summary.stubCrossTab.disagreements}`,
   );
-  console.log("\ntoken totals by arm (every billed call, every kind):");
+  console.log("\ntoken totals by arm (billed — every request of every row, every kind):");
   for (const [arm, totals] of Object.entries(summary.tokenTotalsByArm)) {
-    console.log(`  ${arm}: prompt=${totals.promptTokens} completion=${totals.completionTokens}`);
+    console.log(
+      `  ${arm}: prompt=${totals.promptTokens} completion=${totals.completionTokens}` +
+        (totals.unpricedRequests > 0 ? ` (${totals.unpricedRequests} request(s) unpriced)` : ""),
+    );
   }
   console.log("\ntoken totals by kind:");
   for (const [kind, totals] of Object.entries(summary.tokenTotalsByKind)) {
-    console.log(`  ${kind}: prompt=${totals.promptTokens} completion=${totals.completionTokens}`);
+    console.log(
+      `  ${kind}: prompt=${totals.promptTokens} completion=${totals.completionTokens}` +
+        (totals.unpricedRequests > 0 ? ` (${totals.unpricedRequests} request(s) unpriced)` : ""),
+    );
   }
+  console.log(
+    `\ntoken totals, grand: prompt=${summary.tokenTotalsGrand.promptTokens} completion=${summary.tokenTotalsGrand.completionTokens}` +
+      (summary.tokenTotalsGrand.unpricedRequests > 0
+        ? ` (${summary.tokenTotalsGrand.unpricedRequests} request(s) unpriced — see the per-row detail)`
+        : ""),
+  );
   console.log("\nwire body per arm x case (sampler + thinking fields only):");
   for (const [key, wire] of [...lastWireBodyByArmCase.entries()].sort()) {
     const [arm, probeCase] = key.split("\u0000");
@@ -997,11 +1084,27 @@ async function main(): Promise<void> {
   }
   const longHistoryEnabled = process.env.PROBE_LONG_HISTORY === "1" && arms.includes("profile");
   const warmupEnabled = process.env.PROBE_WARMUP === "1";
+  const gridProductionCalls = ROUNDS * arms.filter((arm) => PRODUCTION_ARMS.has(arm)).length * cases.length;
+  const gridDirectCalls = ROUNDS * arms.filter((arm) => DIRECT_ARMS.has(arm)).length * cases.length;
   const plannedCalls =
-    ROUNDS * arms.length * cases.length +
-    (needsBootstrapCall ? 1 : 0) +
-    (longHistoryEnabled ? 2 : 0) +
-    (warmupEnabled ? 1 : 0);
+    gridProductionCalls + gridDirectCalls + (needsBootstrapCall ? 1 : 0) + (longHistoryEnabled ? 2 : 0) + (warmupEnabled ? 1 : 0);
+
+  // A production call goes through `streamCharacterChat`, which makes up to TWO
+  // requests for a model with a hidden retry (`narratorHiddenRetryModel`,
+  // `apps/web/src/server/ai/model-adapters.ts`) — Fable Fusion 711 (the default
+  // row) has one; Asmodeus does not. A direct call always makes exactly one. This
+  // is the WORST CASE the spend guard below is sized against, not `plannedCalls`
+  // itself — a `PROBE_MAX_CALLS` that only counted logical calls could let a
+  // hidden-retry model bill twice what it named. (The AI SDK's own transport
+  // retries on 408/429/5xx are a separate, unbounded-by-this-guard caveat — see
+  // the README.)
+  const hiddenRetryMultiplier = narratorHiddenRetryModel(MODEL_ID) ? 2 : 1;
+  const worstCaseRequests =
+    gridProductionCalls * hiddenRetryMultiplier +
+    gridDirectCalls +
+    (needsBootstrapCall ? hiddenRetryMultiplier : 0) +
+    (longHistoryEnabled ? 2 * hiddenRetryMultiplier : 0) +
+    (warmupEnabled ? hiddenRetryMultiplier : 0);
 
   console.log(
     `planned calls: ${plannedCalls} (${ROUNDS} round(s) x ${arms.length} arm(s) x ${cases.length} case(s)` +
@@ -1009,10 +1112,15 @@ async function main(): Promise<void> {
       `${longHistoryEnabled ? " + 2 long-history edge calls" : ""}` +
       `${warmupEnabled ? " + 1 warm-up call" : ""})`,
   );
-  if (plannedCalls > PROBE_MAX_CALLS) {
+  console.log(
+    `worst-case requests: ${worstCaseRequests} (hidden-retry multiplier ${hiddenRetryMultiplier}x on production calls` +
+      ` — ${MODEL_ID} ${hiddenRetryMultiplier === 2 ? "has" : "has no"} a hidden retry)`,
+  );
+  if (worstCaseRequests > PROBE_MAX_CALLS) {
     console.log(
-      `refusing to start: planned ${plannedCalls} calls exceeds PROBE_MAX_CALLS=${PROBE_MAX_CALLS}. ` +
-        "Set PROBE_MAX_CALLS to opt into a larger run.",
+      `refusing to start: worst-case ${worstCaseRequests} requests (${plannedCalls} planned calls, hidden-retry ` +
+        `multiplier ${hiddenRetryMultiplier}x) exceeds PROBE_MAX_CALLS=${PROBE_MAX_CALLS}. Set PROBE_MAX_CALLS to ` +
+        "opt into a larger run.",
     );
     return;
   }
@@ -1032,11 +1140,13 @@ async function main(): Promise<void> {
     attempts: ROUNDS,
     plannedCalls,
     plannedBreakdown: {
-      grid: ROUNDS * arms.length * cases.length,
+      grid: gridProductionCalls + gridDirectCalls,
       bootstrap: needsBootstrapCall ? 1 : 0,
       longHistory: longHistoryEnabled ? 2 : 0,
       warmup: warmupEnabled ? 1 : 0,
     },
+    worstCaseRequests,
+    hiddenRetryMultiplier,
     gitHead: resolveGitHead(),
     startedAt: new Date().toISOString(),
   });

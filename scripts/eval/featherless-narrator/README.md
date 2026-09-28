@@ -33,7 +33,7 @@ an issue: a diagnostic that carried content would be a transcript.
 | `PROBE_ATTEMPTS` | runtime | Rounds of the full arm × case grid (default 3) — the pre-#594 name for "calls per case", kept because the default arm set (`profile` alone) makes a round mean the same thing it always did. One round cannot establish an intermittent empty reply. Must be a positive integer or the probe refuses to start. |
 | `PROBE_ARMS` | runtime | Comma-separated list of the six comparison arms (below). Defaults to `profile` alone, so an unset run has the pre-#594 shape. An entry that is not one of the six known arms makes the probe refuse to start — it never silently drops an unknown name. |
 | `PROBE_CASES` | runtime | Comma-separated filter over `tiny`, `vesper-sized`, `terse-invite`. Defaults to all three. An unknown entry refuses to start, the same as `PROBE_ARMS`. |
-| `PROBE_MAX_CALLS` | runtime | Refuses to start (clear message, exit 0) when the planned call count exceeds this (default 60), or when the value itself is not a positive integer. A large interleaved run needs an explicit opt-in. |
+| `PROBE_MAX_CALLS` | runtime | Refuses to start (clear message, exit 0) when the **worst-case request count** exceeds this (default 60), or when the value itself is not a positive integer. A large interleaved run needs an explicit opt-in. Guards worst-case requests, not planned calls — see "Hidden retries and the spend guard" below. |
 | `PROBE_OUT` | runtime | A file path. When set, the runtime probe writes a `type:"run"` header line, one JSONL row per call (typed by `kind`), and a final `type:"summary"` object. |
 | `PROBE_LONG_HISTORY` | runtime | `1` adds the two context-edge calls, through the `profile` arm only. Off by default — they carry ~32K input tokens each and are the most expensive calls here, and are not part of the interleaved arm × case grid or its summary. |
 | `PROBE_WARMUP` | runtime | `1` adds one `profile` call before round 1 (`kind: "warmup"`), so the first grid call does not absorb a cold start. Excluded from the grid summary; counted in the planned-call budget and the token totals. |
@@ -67,11 +67,40 @@ transform (`probe-stats.ts`'s `transformArmBody`) rewrites that call's own outgo
 JSON body inside the probe's `fetch` wrapper, just before it leaves the process.
 No override seam was added to application code. `direct-stream`/`direct-json` are
 DIRECT arms: they never call `streamCharacterChat` — they replay a body captured
-from a production arm's own call for that case. If a direct arm is selected
-without any production arm, the probe makes one extra un-transformed call to seed
-that replay body and says so in its output — and in that mode `PROBE_CASES` must
-name exactly one case (the probe refuses to start otherwise), because without a
-production arm there is only the one captured body to replay.
+from a production arm's own call for that case — specifically, the FIRST request
+that call made. A model with a hidden retry can make a second request carrying
+the retry-only `min_tokens` floor (`narratorRetryFloor`,
+`apps/web/src/server/ai/model-adapters.ts`), and the captured body is pinned to
+the first request's bytes so a direct arm never ends up replaying a retry nobody
+asked it to reproduce. If a direct arm is selected without any production arm,
+the probe makes one extra un-transformed call to seed that replay body and says
+so in its output — and in that mode `PROBE_CASES` must name exactly one case (the
+probe refuses to start otherwise), because without a production arm there is only
+the one captured body to replay.
+
+## Hidden retries and the spend guard
+
+`narratorHiddenRetryModel(modelId)` (`@/server/ai`,
+`apps/web/src/server/ai/model-adapters.ts`) names the narrator rows whose chat
+lane makes up to TWO requests per turn when the first comes back with no visible
+text (`apps/web/src/server/engine/character-chat.ts`'s `maxAttempts`). Fable
+Fusion 711 — this probe's default `PROBE_MODEL` — is one of them; Asmodeus is
+not. Every PRODUCTION arm (`profile`/`profile-uncapped`/`lane`/`lane-capped`, and
+the bootstrap/warm-up/long-history calls, which are all production calls too) can
+therefore bill up to 2 requests for what the console counts as one "call". Direct
+arms always make exactly one request.
+
+The startup print shows both numbers — `planned calls` (logical rows) and
+`worst-case requests` (what `PROBE_MAX_CALLS` actually guards, at the hidden-retry
+model's 2x multiplier on every production call) — and refuses to start when the
+worst case, not the planned-call count, exceeds `PROBE_MAX_CALLS`. The JSONL run
+header carries both (`plannedCalls` and `worstCaseRequests`, plus
+`hiddenRetryMultiplier`).
+
+This budget is about Vesper's OWN hidden retry, not the AI SDK's transport-level
+retries on a transient `408`/`429`/`5xx` (a handful more requests per call in the
+worst case) — those are a real cost but not one this guard sizes against; treat
+them as a caveat when reading a run's actual bill.
 
 Each row records its arm, round, **two** position counters and its wall-clock
 start time:
@@ -138,6 +167,17 @@ THIS arm's own request actually carried on the wire (`null` for an arm that sent
 none), distinct from `visible.maxOutputTokens`, the narrator gateway's own budget
 bookkeeping.
 
+`raw.promptTokens`/`raw.completionTokens` stay the LAST request's own usage — what
+the stub and timing verdicts read, and what a hidden retry's second attempt
+reported on its own. `billedPromptTokens`/`billedCompletionTokens` are the
+SEPARATE, SUMMED field: every request the row's call made, added together, which
+is the number that actually prices it. When a request reported no usage at all
+and could not be recovered (recoverable only when the call made exactly one
+request, from the SDK's own completion counts), the row's billed total is `null`
+and `unpricedRequests` names how many requests could not be priced — every token
+total (`tokenTotalsByArm`, `tokenTotalsByKind`, `tokenTotalsGrand`, and each
+cell's) sums the billed fields and its own `unpricedRequests`.
+
 ## Failed rows
 
 A row is FAILED when it threw/timed out, its HTTP status was >= 400, or its
@@ -173,15 +213,19 @@ stub count/rate/Wilson-95% (over `n - failed`, see "Failed rows" above); a
 `finish_reason` tally (every row, failed included); count/p50/p90/max for raw
 first-content ms, visible first ms and total ms, excluding failed rows (the
 percentile method — nearest-rank — is stated in the output); a stub cross-tab of
-raw-wire verdict vs completion verdict; and prompt/completion token totals, both
-per arm and per `kind`, so a tester can price a run before spending more.
+raw-wire verdict vs completion verdict; and BILLED prompt/completion token totals
+(summed over every request each row made, not just the last — see "Raw vs visible
+timing" above), per arm, per `kind`, and grand, each with its own
+`unpricedRequests` count, so a tester can price a run before spending more.
 
 `PROBE_OUT`'s file is three kinds of line:
 
 1. one `type:"run"` header, written before the first call: the model id, arms,
-   cases, attempts, the planned call count and its breakdown, `git rev-parse HEAD`
-   of the checkout that ran it (`null` if it could not be read — never a network
-   call), and the start time. No env values or secrets.
+   cases, attempts, the planned call count and its breakdown, the worst-case
+   request count and the hidden-retry multiplier it was sized from (see "Hidden
+   retries and the spend guard" above), `git rev-parse HEAD` of the checkout that
+   ran it (`null` if it could not be read — never a network call), and the start
+   time. No env values or secrets.
 2. one line per call, `type` equal to its `kind` — `"call"` (the interleaved grid),
    `"bootstrap-call"`, `"long-history"`, or `"warmup"` — carrying every field the
    console row prints.

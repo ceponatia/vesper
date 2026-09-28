@@ -564,6 +564,23 @@ export interface ProbeCallRecord {
    * for a direct arm (which never asks the gateway at all — its `visible` is null).
    */
   requestMaxTokens: number | null;
+  /**
+   * The row's actual billed usage, summed over EVERY underlying HTTP request the
+   * call made — not just the last one. Null when it could not be priced (more than
+   * one request, and at least one reported no usage block at all); see
+   * `unpricedRequests`. `raw.promptTokens`/`raw.completionTokens` stay the LAST
+   * request's own values, which the stub and timing verdicts read — this is the
+   * separate, summed field a tester prices a run from.
+   */
+  billedPromptTokens: number | null;
+  /** See `billedPromptTokens`. */
+  billedCompletionTokens: number | null;
+  /**
+   * How many of this row's underlying requests reported no usage at all and could
+   * not be priced. 0 when every request was priced, or was recoverable from the
+   * SDK's own completion (only possible when the call made exactly one request).
+   */
+  unpricedRequests: number;
   errored: boolean;
   timedOut: boolean;
   /** A thrown/aborted call's own message, truncated; absent for a call that returned. */
@@ -657,6 +674,8 @@ export interface ProbeCellSummary {
   totalMs: LatencyStats;
   promptTokensTotal: number;
   completionTokensTotal: number;
+  /** Sum of every row's `unpricedRequests` in this cell — 0 when every row priced cleanly. */
+  unpricedRequests: number;
 }
 
 /** Raw-wire verdict vs completion verdict, over every non-failed PRODUCTION row (both verdicts present). */
@@ -669,15 +688,24 @@ export interface StubCrossTab {
   disagreements: number;
 }
 
+export interface TokenTotal {
+  promptTokens: number;
+  completionTokens: number;
+  /** Sum of `unpricedRequests` across the rows this total covers — see `ProbeCallRecord.unpricedRequests`. */
+  unpricedRequests: number;
+}
+
 export interface ProbeSummary {
   percentileMethod: "nearest-rank";
   /** Only `kind: "call"` rows — the interleaved grid. */
   cells: ProbeCellSummary[];
   stubCrossTab: StubCrossTab;
   /** Every row of every kind — "every billed call". */
-  tokenTotalsByArm: Record<string, { promptTokens: number; completionTokens: number }>;
+  tokenTotalsByArm: Record<string, TokenTotal>;
   /** The same total, broken out by {@link ProbeRecordKind} instead of by arm. */
-  tokenTotalsByKind: Record<string, { promptTokens: number; completionTokens: number }>;
+  tokenTotalsByKind: Record<string, TokenTotal>;
+  /** Every row, every arm, every kind — the one number a tester prices the whole run from. */
+  tokenTotalsGrand: TokenTotal;
 }
 
 /** Whichever verdict this row is actually judged by: the completion verdict when there is one, else the raw one. */
@@ -715,14 +743,37 @@ function emptyCrossTab(): StubCrossTab {
   return { bothStub: 0, rawOnlyStub: 0, completionOnlyStub: 0, neitherStub: 0, disagreements: 0 };
 }
 
-function tokenTotals(rows: readonly ProbeCallRecord[]): { promptTokens: number; completionTokens: number } {
+/**
+ * Sum every row's ACTUAL BILLED usage (`billedPromptTokens`/`billedCompletionTokens`,
+ * already summed per row over every underlying request the call made — see
+ * `ProbeCallRecord`), not the last-request-only `raw` values. A row that could not
+ * be priced (`billedPromptTokens === null`) contributes 0 to the sum and its
+ * `unpricedRequests` to the total, rather than silently reintroducing the
+ * last-request undercount this replaces.
+ */
+function tokenTotals(rows: readonly ProbeCallRecord[]): TokenTotal {
   return rows.reduce(
     (sum, row) => ({
-      promptTokens: sum.promptTokens + (row.raw.promptTokens ?? row.visible?.inputTokens ?? 0),
-      completionTokens: sum.completionTokens + (row.raw.completionTokens ?? row.visible?.outputTokens ?? 0),
+      promptTokens: sum.promptTokens + (row.billedPromptTokens ?? 0),
+      completionTokens: sum.completionTokens + (row.billedCompletionTokens ?? 0),
+      unpricedRequests: sum.unpricedRequests + row.unpricedRequests,
     }),
-    { promptTokens: 0, completionTokens: 0 },
+    { promptTokens: 0, completionTokens: 0, unpricedRequests: 0 },
   );
+}
+
+/** `tokenTotals`, grouped by a key read off each row — `tokenTotalsByArm`/`tokenTotalsByKind`'s shared implementation. */
+function groupTokenTotals(rows: readonly ProbeCallRecord[], keyOf: (row: ProbeCallRecord) => string): Record<string, TokenTotal> {
+  const groups = new Map<string, ProbeCallRecord[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  const result: Record<string, TokenTotal> = {};
+  for (const [key, groupRows] of groups) result[key] = tokenTotals(groupRows);
+  return result;
 }
 
 /**
@@ -755,6 +806,7 @@ export function buildProbeSummary(rows: readonly ProbeCallRecord[]): ProbeSummar
       finishReasonTally[reason] = (finishReasonTally[reason] ?? 0) + 1;
     }
     const wilson = wilsonInterval(stubbed, consideredRows.length);
+    const cellTokens = tokenTotals(cellRows);
     cells.push({
       arm,
       probeCase,
@@ -771,8 +823,9 @@ export function buildProbeSummary(rows: readonly ProbeCallRecord[]): ProbeSummar
       rawFirstContentMs: latencyStats(consideredRows.map((row) => row.raw.firstContentMs)),
       visibleFirstMs: latencyStats(consideredRows.map((row) => row.visible?.ttftMs ?? null)),
       totalMs: latencyStats(consideredRows.map((row) => row.totalMs)),
-      promptTokensTotal: tokenTotals(cellRows).promptTokens,
-      completionTokensTotal: tokenTotals(cellRows).completionTokens,
+      promptTokensTotal: cellTokens.promptTokens,
+      completionTokensTotal: cellTokens.completionTokens,
+      unpricedRequests: cellTokens.unpricedRequests,
     });
   }
   cells.sort((a, b) => (a.arm === b.arm ? a.probeCase.localeCompare(b.probeCase) : a.arm.localeCompare(b.arm)));
@@ -789,21 +842,12 @@ export function buildProbeSummary(rows: readonly ProbeCallRecord[]): ProbeSummar
   }
   stubCrossTab.disagreements = stubCrossTab.rawOnlyStub + stubCrossTab.completionOnlyStub;
 
-  const tokenTotalsByArm: Record<string, { promptTokens: number; completionTokens: number }> = {};
-  for (const row of rows) {
-    const totals = tokenTotalsByArm[row.arm] ?? { promptTokens: 0, completionTokens: 0 };
-    totals.promptTokens += row.raw.promptTokens ?? row.visible?.inputTokens ?? 0;
-    totals.completionTokens += row.raw.completionTokens ?? row.visible?.outputTokens ?? 0;
-    tokenTotalsByArm[row.arm] = totals;
-  }
+  // Every row, every kind, prices from `billedPromptTokens`/`billedCompletionTokens`
+  // (summed per row over every request the call made) — never the last-request-only
+  // `raw` values, which would silently underprice a hidden-retry call.
+  const tokenTotalsByArm = groupTokenTotals(rows, (row) => row.arm);
+  const tokenTotalsByKind = groupTokenTotals(rows, (row) => row.kind);
+  const tokenTotalsGrand = tokenTotals(rows);
 
-  const tokenTotalsByKind: Record<string, { promptTokens: number; completionTokens: number }> = {};
-  for (const row of rows) {
-    const totals = tokenTotalsByKind[row.kind] ?? { promptTokens: 0, completionTokens: 0 };
-    totals.promptTokens += row.raw.promptTokens ?? row.visible?.inputTokens ?? 0;
-    totals.completionTokens += row.raw.completionTokens ?? row.visible?.outputTokens ?? 0;
-    tokenTotalsByKind[row.kind] = totals;
-  }
-
-  return { percentileMethod: "nearest-rank", cells, stubCrossTab, tokenTotalsByArm, tokenTotalsByKind };
+  return { percentileMethod: "nearest-rank", cells, stubCrossTab, tokenTotalsByArm, tokenTotalsByKind, tokenTotalsGrand };
 }
