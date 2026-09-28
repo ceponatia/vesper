@@ -145,14 +145,14 @@ Owner ruling 2026-09-14: send an explicit cap of 1,024. Usable prompt is therefo
 
 - **No thinking.** Reasoning tokens are 0 on every call, and raw text length equals visible text length everywhere — no normalizer had to act.
 - **No measured empty reply, so no hidden retry.** The provenance probe recorded no empty completion on this row, so it earns **no hidden empty retry** and no minimum-token retry floor: a retry would be latency spent against a hazard the evidence does not show. The one-token `length` stub below is not an empty reply, and a retry could not cover it — its fragment has already streamed, so a second attempt would append a new answer after it.
-- **It does not reliably hold a turn.** The row intermittently answers with a completion reporting `finish_reason: length` after a single output token and a single character. Vesper withholds that shape on every narrator instead of keeping it as a turn — it never persists and never enters history, and the player gets a reply-failure popup ([reply failures](../../character-chat/reply-failures.md)). It is not caused by the profile this page describes: the same result appears with the adapter removed. Its rate and its cause are not established; the dated record below is the evidence.
+- **It does not reliably hold a turn.** The row intermittently answers with a completion reporting `finish_reason: length` after a single output token and a single character. Vesper withholds that shape on every narrator instead of keeping it as a turn — it never persists and never enters history, and the player gets a reply-failure popup ([reply failures](../../character-chat/reply-failures.md)). The profile this page describes is not required for it: the same result appears with the adapter removed. The one-token stub is the extreme of a wider shape: the row also ends replies on `length` far below any budget in force, after 8 to 200 tokens in the record below, and those settle as ordinary replies because only the one-token case is withheld. Neither shape's cause is established; the dated records below are the evidence.
 - **No cold start observed.** The tier is `warm`, the first call of each session answered in 0.8–2.2s to first token, and no `503 capacity_exhausted` appeared across roughly 90 calls. The row carries no startup-budget override, and that absence is a measurement.
 - **Speaker tags.** The line-start `[Name]` grammar held on 6 of 6 calls whose system prompt carried the instruction close by, and on 0 of 3 for a fixture that buried the instruction under ~8,800 tokens of filler. Stray bracketed spans were 0 everywhere, and one asterisk-action span appeared across nine calls, so this row does not insist on asterisk-action syntax.
 - **Determinism is per server, not per host.** The model is served from a pool: each server decodes deterministically, but repeated greedy calls do not all land on the same server, and greedy returned completions of 20, 35, 36 and 38 tokens across runs. A seed reproduced two calls, and the host documents seeds as unreliable across its pool. Nothing may be built on determinism from this host, and a probe comparing completions by hash needs an anchor set.
 
 ### Turn reliability and first-token latency
 
-Recorded per probe, each with the date it was measured, because the later probe contradicts the earlier one. Every run went through `streamCharacterChat`, the production narrator seam, so model selection, the adapter binding and the output normalizers were all in force. Neither probe establishes a production rate.
+Recorded per probe, each with the date it was measured, because the later probes contradict the earlier one. The 2026-09-04 and 2026-09-14 runs went through `streamCharacterChat`, the production narrator seam, so model selection, the adapter binding and the output normalizers were all in force. The 2026-09-28 record names which layers each of its arms bypasses. No record establishes a production rate.
 
 **2026-09-04, the provenance probe.** Nine of nine short calls returned prose on `finish_reason: stop`. First token arrived in 0.7–2.5s on small and Vesper-sized prompts; a one-word "terse invite" prompt was the outlier at up to 22.2s to first token and 36s total. Nine successes are too few to show that an intermittent failure was absent.
 
@@ -180,3 +180,26 @@ What this record supports, and no more:
 - The clean provenance probe does not prove the stub was absent then, so this is not an established host regression.
 - Failing calls tended to show slower first output, but slow calls also succeeded. The correlation is a lead, not a cause.
 - Two Asmodeus calls on a 32-token prompt took 20.0s and 27.9s to first token, against the provenance probe's sub-three-second figures. The worst call of all four runs — 46,749 ms, on the unadapted control — sat 3.3s under the chat lane's 50s first-token watchdog, so a slower day turns a late reply into a `timeout` reply failure. The neighbour row was also slower than its own earlier 0.7–2.8s, so part of the latency is general host load.
+
+**2026-09-28, an interleaved six-arm re-measure.** 300 calls to the probe harness's Vesper-sized fixture (8,873 prompt tokens), 50 per arm. The arms ran in rotating rounds, so changing host load was spread across the arms instead of landing on one. Each arm isolates one variable: the adapter's sampling fields, the output cap, the SDK, or streaming.
+
+| Arm                | What it sends                                        | One-token `length` |
+| ------------------ | ---------------------------------------------------- | -----------------: |
+| `profile`          | the request this page describes                      |               2/50 |
+| `lane-capped`      | lane defaults (temperature 0.85) plus the 1,024 cap  |               2/50 |
+| `lane`             | lane defaults, no cap                                |               0/50 |
+| `profile-uncapped` | the profile without `max_tokens`                     |               1/50 |
+| `direct-stream`    | the profile body over raw HTTP, no SDK               |               1/50 |
+| `direct-json`      | the same body, non-streaming                         |               0/50 |
+
+What this record supports, and no more:
+
+- **The host itself reports the stub.** The host's raw response and the SDK's completion record agreed on every one of the 200 production calls. The SDK-free `direct-stream` arm reproduced the stub.
+- **The adapter is not required,** since `lane-capped` reproduced it. At 50 calls per arm every comparison's 95% interval overlaps, so this sample cannot say whether the profile, the cap or streaming changes the rate.
+- **The stub is the extreme of a wider shape.** 14 of the 300 calls ended on `length` below their budget; 6 were one-token stubs and 8 stopped after 8 to 200 tokens.
+  - Streaming calls among the 8 decoded at 0.2–5.9 tokens per second, against a median of 22.4 for ordinary replies.
+  - 13 of the 14 fell in three short windows of the 61-minute run.
+  - The neighbouring Fable Fusion 711 row, measured immediately afterwards rather than interleaved, finished 30 of 30 on `stop`.
+  - The pattern points toward degraded serving, but the sample cannot rule out chance clustering.
+- **First token.** The worst visible first token was 44,337 ms, 5.7 s under the chat lane's 50 s first-token watchdog. The median raw first content ran 626–792 ms by arm, and 27 of the 250 streaming calls took 9 s or more.
+- **The same day on the deployed build,** a 20-turn live chat ended 4 turns without a settled reply, 3 of them recorded as the one-token stub. None entered history.
