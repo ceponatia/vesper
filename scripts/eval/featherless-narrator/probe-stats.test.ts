@@ -1,4 +1,5 @@
 import { isNarratorLengthStub, type NarratorCompletion } from "@/server/ai";
+import { NARRATIVE_TEMPERATURE } from "@/server/engine";
 import { describe, expect, it } from "vitest";
 import {
   buildProbeSummary,
@@ -171,6 +172,16 @@ describe("transformArmBody", () => {
     expect(result).not.toHaveProperty("stream_options");
     expect(result.max_tokens).toBe(1_024);
     expect(result.top_p).toBe(1);
+  });
+
+  it("defaults narrativeTemperature to NARRATIVE_TEMPERATURE when the caller omits it", () => {
+    // Every other case in this file passes the temperature explicitly to prove the
+    // transform plumbs through WHATEVER value it is given; this one instead proves the
+    // documented default parameter itself -- production's one caller (`probe.ts`) always
+    // passes it explicitly, so a drifted default would break only a future direct call,
+    // silently, with nothing else here to catch it.
+    const result = transformArmBody("lane", productionBody());
+    expect(result.temperature).toBe(NARRATIVE_TEMPERATURE);
   });
 });
 
