@@ -72,7 +72,7 @@ export function wilsonInterval(successes: number, n: number, z: number = WILSON_
 // ---------------------------------------------------------------------------
 
 /**
- * The six comparison arms (#594 acceptance point 1). `profile` is the default — the only
+ * The six comparison arms. `profile` is the default — the only
  * arm the pre-#594 probe ever sent — so a caller who never sets `PROBE_ARMS` gets
  * exactly the old run.
  *
@@ -127,7 +127,7 @@ function definedValue(body: Record<string, unknown>, key: string): unknown {
 }
 
 /**
- * Apply one arm's transform to an already-built wire body (#594 acceptance point 1).
+ * Apply one arm's transform to an already-built wire body.
  *
  * `body` is the JSON-parsed outgoing request `probe.ts`'s `fetch` wrapper captured —
  * for `profile`/`profile-uncapped`/`lane`/`lane-capped` that is the SAME call's own
@@ -136,9 +136,9 @@ function definedValue(body: Record<string, unknown>, key: string): unknown {
  *
  * `narrativeTemperature` is a PARAMETER, defaulted from this file's own
  * `NARRATIVE_TEMPERATURE` import so a direct call (as every test below makes) never
- * has to pass it explicitly. `probe.ts` passes it explicitly anyway at its one call
- * site, so the constant is read from exactly one place (`@/server/engine`) even
- * though two files reference it.
+ * has to pass it explicitly. `probe.ts` passes it explicitly anyway at each of its
+ * call sites, so the constant is read from exactly one place (`@/server/engine`)
+ * even though two files reference it.
  */
 export function transformArmBody(
   arm: ProbeArm,
@@ -189,7 +189,7 @@ export interface SanitizedHeaders {
 }
 
 /**
- * Header NAMES whose VALUE is safe to print (#594 acceptance point 4): request, trace or
+ * Header NAMES whose VALUE is safe to print: request, trace or
  * correlation ids, `cf-ray`, server, worker, region, node, backend, model, version,
  * served-by. Matched against the lowercased name as a substring, because a host's
  * exact spelling (`x-request-id` vs `request-id` vs `cf-ray`) is not this probe's to
@@ -216,7 +216,7 @@ const HEADER_NAME_EXCLUDE: ReadonlySet<string> = new Set(["server-timing"]);
 const MAX_HEADER_VALUE = 120;
 
 /**
- * Reduce a response's headers to the safe subset (#594 acceptance point 4): every header
+ * Reduce a response's headers to the safe subset: every header
  * NAME (so a new one shows up in evidence even before it earns an allowlist entry),
  * and a VALUE only for the names an operator would recognize as a routing or
  * correlation identifier — never a cookie, an auth header, anything key-shaped,
@@ -243,7 +243,7 @@ export function sanitizeHeaders(headers: Iterable<readonly [string, string]>): S
 // The SSE event accumulator
 // ---------------------------------------------------------------------------
 
-/** Safe top-level identifiers a chat-completion event may carry (#594 acceptance point 4). */
+/** Safe top-level identifiers a chat-completion event may carry. */
 export interface SseEventMeta {
   id?: string;
   model?: string;
@@ -299,7 +299,7 @@ function readUsage(body: Record<string, unknown>): SseUsage | null {
   return { promptTokens: numberField(usage.prompt_tokens), completionTokens: numberField(usage.completion_tokens) };
 }
 
-/** The parsed body's safe top-level metadata (#594 acceptance point 4). */
+/** The parsed body's safe top-level metadata. */
 function readMeta(body: Record<string, unknown>): SseEventMeta {
   return {
     id: stringField(body.id),
@@ -353,8 +353,8 @@ export interface SseAccumulator {
 }
 
 /**
- * A stateful SSE parser that survives chunk boundaries falling mid-frame and mid-line
- * (#594 acceptance point 7) — the shape a real TCP stream actually delivers in, unlike a
+ * A stateful SSE parser that survives chunk boundaries falling mid-frame and mid-line —
+ * the shape a real TCP stream actually delivers in, unlike a
  * fixture that hands one whole frame per chunk. Frames are separated by a blank line
  * (`\n\n`); a chunk boundary may land anywhere inside one, including inside `[DONE]`
  * itself, so the buffer only ever yields a frame once a blank line has actually been
@@ -410,7 +410,7 @@ export interface SseSummary {
   meta: SseEventMeta;
 }
 
-/** Reduce an accumulator's parsed events to the safe, printable summary (#594 acceptance points 2 and 4). */
+/** Reduce an accumulator's parsed events to the safe, printable summary. */
 export function summarizeSseEvents(events: readonly SseParsedEvent[]): SseSummary {
   let contentEventCount = 0;
   let totalContentChars = 0;
@@ -595,6 +595,9 @@ export interface ProbeCallRecord {
     ttftMs: number | null;
     /** Characters the AI SDK's stream carried BEFORE Vesper's output normalizers. */
     rawTextLength: number | null;
+    /** Characters the player sees AFTER the normalizers, whitespace included — comparable with `rawTextLength`. */
+    visibleTextLength: number | null;
+    /** Non-whitespace visible characters: the emptiness test (`rowEmpty`), not a length to compare. */
     visibleTextChars: number | null;
     inputTokens: number | null;
     outputTokens: number | null;
@@ -671,7 +674,7 @@ export interface ProbeSummary {
   /** Only `kind: "call"` rows — the interleaved grid. */
   cells: ProbeCellSummary[];
   stubCrossTab: StubCrossTab;
-  /** Every row of every kind — "every billed call" (#594 correction round P2/P3). */
+  /** Every row of every kind — "every billed call". */
   tokenTotalsByArm: Record<string, { promptTokens: number; completionTokens: number }>;
   /** The same total, broken out by {@link ProbeRecordKind} instead of by arm. */
   tokenTotalsByKind: Record<string, { promptTokens: number; completionTokens: number }>;
@@ -724,7 +727,7 @@ function tokenTotals(rows: readonly ProbeCallRecord[]): { promptTokens: number; 
 
 /**
  * Build the arm × case distributions and the run-wide tallies from a flat list of
- * call records (#594 acceptance point 5) — PURE: every input is already the
+ * call records — PURE: every input is already the
  * counts-only shape `probe.ts` records per call, so this can be exercised (and its
  * arithmetic proved) without a credential or a network call.
  *

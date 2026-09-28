@@ -194,8 +194,7 @@ function rotateLeft<T>(items: readonly T[], offset: number): T[] {
 }
 
 /**
- * This round's arm order (#594 acceptance point 1: "the arm order rotates round to
- * round so no arm always goes first").
+ * This round's arm order.
  *
  * Round 1 carries one bootstrap exception: every case's captured production body
  * (what the direct arms replay) is seeded by whichever production arm runs FIRST
@@ -358,7 +357,7 @@ type DirectStreamTap = Omit<RawRequestSnapshot, "status" | "headers"> & { readEr
  * its own branch), so `instrumentResponse` simply never looks at this field. A
  * direct call has NO other consumer of the bytes, so the SAME failure here IS the
  * call's failure, and `runDirectCall` turns it into an errored row instead of a
- * clean empty one (#594 correction round P1).
+ * clean empty one.
  */
 async function readTap(body: ReadableStream<Uint8Array>, startedAt: number): Promise<DirectStreamTap> {
   const reader = body.getReader();
@@ -458,7 +457,7 @@ const lastWireBodyByArmCase = new Map<string, string>();
 
 /**
  * Install the one `fetch` wrapper that applies each production arm's transform
- * (#594 acceptance point 1) to that call's own outgoing Featherless request, and
+ * to that call's own outgoing Featherless request, and
  * instruments its response. Every other request (a non-Featherless call, or any
  * call made while no probe call is in flight) passes through `trueFetch` untouched.
  */
@@ -606,6 +605,7 @@ async function runProductionCall(args: {
       rawFinishReason: completion?.rawFinishReason ?? null,
       ttftMs,
       rawTextLength: completion?.rawTextLength ?? null,
+      visibleTextLength: completion?.visibleTextLength ?? null,
       visibleTextChars: completion?.visibleTextChars ?? null,
       inputTokens: completion?.inputTokens ?? null,
       outputTokens: completion?.outputTokens ?? null,
@@ -678,19 +678,23 @@ async function runDirectCall(args: {
           };
       const { readError, ...rest } = tap;
       if (readError !== undefined) errorMessage = readError;
+      else if (status < 400 && rest.finishReason === null) errorMessage = "stream ended without a finish_reason";
       snapshot = { status, headers, ...rest };
     } else {
       const text = await response.text();
       const summary = summarizeJsonCompletion(text);
+      if (status < 400 && (summary?.finishReason ?? null) === null) {
+        errorMessage = "response body carried no finish_reason (unparseable or truncated)";
+      }
       snapshot = {
         status,
         headers,
         meta: summary?.meta ?? {},
         firstByteMs,
         // Never derived from firstByteMs: a non-streaming read gives one moment
-        // (the whole body), which firstByteMs already reports (#594 correction
-        // round P3.2) — a second "first content" number here would only pretend
-        // to measure something firstByteMs did not already cover.
+        // (the whole body), which firstByteMs already reports — a second "first
+        // content" number here would only pretend to measure something firstByteMs
+        // did not already cover.
         firstContentMs: null,
         finishReason: summary?.finishReason ?? null,
         promptTokens: summary?.usage?.promptTokens ?? null,
@@ -767,7 +771,7 @@ const LONG_HISTORY_TURNS = CHARACTER_CHAT_HISTORY_TURNS * 2;
 
 function medianInputTokens(rows: readonly ExtendedRow[], probeCase: ProbeCase): number | null {
   const values = rows
-    .filter((row) => row.arm === "profile" && row.probeCase === probeCase)
+    .filter((row) => row.kind !== "long-history" && row.arm === "profile" && row.probeCase === probeCase)
     .map((row) => row.visible?.inputTokens ?? null)
     .filter((value): value is number => value !== null)
     .sort((a, b) => a - b);
@@ -806,8 +810,8 @@ function longHistory(fillerCount: number): ChatTurn[] {
 /**
  * The 32K edge is a VERDICT, not a row: a request over the window either completes
  * or errors with the host's own words, and a 200 whose reported input is materially
- * smaller than what was sent is SILENT TRUNCATION. Restored from the pre-#594 probe
- * (#594 correction round P2b), adapted to the arm × case row shape.
+ * smaller than what was sent is SILENT TRUNCATION. Restored from the earlier probe,
+ * adapted to the arm × case row shape.
  */
 function longHistoryVerdict(row: ExtendedRow, estimated: number, label: string): string {
   const reported = row.visible?.inputTokens ?? null;
@@ -852,7 +856,7 @@ function printRow(row: ExtendedRow): void {
       `totalMs=${row.totalMs}`,
       row.shape ? `tagOpen=${row.shape.tagOpen ? 1 : 0} tagStray=${row.shape.tagStray} aster=${row.shape.asterisk}` : "shape=—",
       row.visible
-        ? `rawLen=${num(row.visible.rawTextLength)} visLen=${num(row.visible.visibleTextChars)} textTok=${num(row.visible.textTokens)} reasonTok=${num(row.visible.reasoningTokens)}`
+        ? `rawLen=${num(row.visible.rawTextLength)} visLen=${num(row.visible.visibleTextLength)} textTok=${num(row.visible.textTokens)} reasonTok=${num(row.visible.reasoningTokens)}`
         : "text=—",
       row.visible?.providerError
         ? `providerError=${row.visible.providerError.code}: ${row.visible.providerError.detail.slice(0, 90)}`
@@ -943,6 +947,13 @@ async function main(): Promise<void> {
     return;
   }
   const arms = armsResult.value;
+  const modelRow = NARRATIVE_MODELS.find((option) => option.id === MODEL_ID);
+  if (modelRow?.provider !== "featherless" && arms.some((arm) => arm !== "profile")) {
+    console.log(
+      `refusing to start: ${MODEL_ID} is not a Featherless row, and every arm except \`profile\` rewrites or replays a Featherless request.`,
+    );
+    return;
+  }
 
   const casesResult = parseCases(process.env.PROBE_CASES);
   if (!casesResult.ok) {

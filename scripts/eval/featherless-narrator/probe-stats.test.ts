@@ -219,7 +219,7 @@ describe("sanitizeHeaders", () => {
     expect(result.values).toEqual({});
   });
 
-  it("drops (never truncates) an allowlisted value longer than 120 characters (#594 correction round P3.8)", () => {
+  it("drops (never truncates) an allowlisted value longer than 120 characters", () => {
     const long = "x".repeat(200);
     const result = sanitizeHeaders([["X-Worker-Region", long]]);
     expect(result.names).toEqual(["x-worker-region"]);
@@ -232,7 +232,7 @@ describe("sanitizeHeaders", () => {
     expect(result.values["x-worker-region"]).toBe(exact);
   });
 
-  it("excludes server-timing by name even though it contains \"server\" (#594 correction round P3.8)", () => {
+  it("excludes server-timing by name even though it contains \"server\"", () => {
     const result = sanitizeHeaders([["Server-Timing", "db;dur=53, app;dur=47.2"]]);
     expect(result.names).toEqual(["server-timing"]);
     expect(result.values).not.toHaveProperty("server-timing");
@@ -306,7 +306,7 @@ describe("createSseAccumulator", () => {
     expect(flushed[0]?.finishReason).toBe("stop");
   });
 
-  it("normalises a CRLF frame boundary (\\r\\n\\r\\n) the same way as LF (#594 correction round P3.4)", () => {
+  it("normalises a CRLF frame boundary (\\r\\n\\r\\n) the same way as LF", () => {
     const acc = createSseAccumulator();
     const first = acc.push('data: {"choices":[{"delta":{"content":"Hi"},"finish_reason":null}]}\r\n\r\n');
     expect(first).toHaveLength(1);
@@ -349,7 +349,7 @@ describe("summarizeJsonCompletion", () => {
     expect(summarizeJsonCompletion("not json")).toBeNull();
   });
 
-  it("counts message.reasoning_content the same way the SSE path counts a reasoning delta (#594 correction round P3.13)", () => {
+  it("counts message.reasoning_content the same way the SSE path counts a reasoning delta", () => {
     const body = JSON.stringify({
       choices: [{ index: 0, message: { role: "assistant", content: "", reasoning_content: "thinking…" }, finish_reason: "length" }],
     });
@@ -404,7 +404,7 @@ describe("rawLengthStub", () => {
 });
 
 // ---------------------------------------------------------------------------
-// rawLengthStub vs isNarratorLengthStub — a parity table (#594 correction round P3.12)
+// rawLengthStub vs isNarratorLengthStub — a parity table
 // ---------------------------------------------------------------------------
 
 describe("rawLengthStub mirrors isNarratorLengthStub", () => {
@@ -505,6 +505,7 @@ describe("buildProbeSummary", () => {
       rawFinishReason: "stop",
       ttftMs: 70,
       rawTextLength: 40,
+      visibleTextLength: 40,
       visibleTextChars: 40,
       inputTokens: 10,
       outputTokens: 20,
@@ -595,7 +596,7 @@ describe("buildProbeSummary", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Failed rows (#594 correction round P2a): excluded from the stub denominator
+  // Failed rows: excluded from the stub denominator
   // and from the latency stats, counted separately.
   // ---------------------------------------------------------------------------
 
@@ -645,7 +646,7 @@ describe("buildProbeSummary", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // `kind` (#594 correction round P3.6): only "call" rows enter the grid: token
+  // `kind`: only "call" rows enter the grid: token
   // totals still cover every kind.
   // ---------------------------------------------------------------------------
 

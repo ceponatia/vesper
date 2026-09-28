@@ -96,8 +96,8 @@ needs them (the AI SDK for a production arm, the probe's own reader for a direct
 one), while a decoded copy records:
 
 - time to first response body byte;
-- time to the first SSE event (or, for `direct-json`, the parsed body) carrying a
-  non-empty `delta.content`/`delta.reasoning_content`;
+- time to the first SSE event carrying a non-empty
+  `delta.content`/`delta.reasoning_content` (null for `direct-json`, which has no stream);
 - the number of content delta events and total content characters — **counts
   only**, never the text;
 - the raw `finish_reason` from the last event that carried one;
@@ -196,18 +196,18 @@ honours `DOTENV_CONFIG_PATH` when it is set. An isolated worktree has no `.env` 
 its own, so a run from one needs the main checkout's, e.g.:
 
 ```
-DOTENV_CONFIG_PATH=/home/brian/projects/vesper/.env \
+DOTENV_CONFIG_PATH=<main checkout>/.env \
   PROBE_MODEL=DarkArtsForge/Asmodeus-24B-v3 \
   PROBE_ARMS=profile,profile-uncapped,lane,lane-capped,direct-stream,direct-json \
   PROBE_CASES=vesper-sized \
   PROBE_ATTEMPTS=3 \
-  PROBE_OUT=/tmp/asmodeus-594.jsonl \
+  PROBE_OUT=<main checkout>/eval-images/featherless-narrator/<YYYY-MM-DD>/asmodeus.jsonl \
   pnpm probe:featherless-narrator
 ```
 
 That plans 18 calls (3 rounds × 6 arms × 1 case), under the default
 `PROBE_MAX_CALLS=60`, and leaves the full evidence — the `type:"run"` header, one
-line per call, and the final `type:"summary"` — at `/tmp/asmodeus-594.jsonl`.
+line per call, and the final `type:"summary"` — in that gitignored evidence file.
 
 Without it (or without a token in either place), the probe prints why it skipped
 and exits 0 — the evidence-discipline rule above still holds either way.
