@@ -1,142 +1,241 @@
 import "dotenv/config";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { NARRATIVE_MODELS } from "@/lib/narrative-models";
-import { FABLE_FUSION_711_ID, hasFeatherless, type NarratorCompletion } from "@/server/ai";
-import { CHARACTER_CHAT_HISTORY_TURNS, streamCharacterChat, type ChatTurn } from "@/server/engine";
+import { FABLE_FUSION_711_ID, hasFeatherless, isNarratorLengthStub, type NarratorCompletion } from "@/server/ai";
+import {
+  CHARACTER_CHAT_HISTORY_TURNS,
+  NARRATIVE_TEMPERATURE,
+  streamCharacterChat,
+  type ChatTurn,
+} from "@/server/engine";
+import {
+  buildProbeSummary,
+  createSseAccumulator,
+  DIRECT_ARMS,
+  isProbeArm,
+  PROBE_ARMS,
+  rawLengthStub,
+  sanitizeHeaders,
+  summarizeJsonCompletion,
+  summarizeSseEvents,
+  transformArmBody,
+  type ProbeArm,
+  type ProbeCallRecord,
+  type ProbeCase,
+  type SanitizedHeaders,
+  type SseEventMeta,
+} from "./probe-stats";
 
 /**
- * Opt-in live probe of one exact Featherless narrator — the evidence behind a
- * Featherless row's request policy.
+ * Opt-in live probe of one exact Featherless narrator — the diagnostic instrument
+ * behind #594's Asmodeus re-measure.
  * Not part of any suite and never run by CI: it makes real, billed calls.
  * Without `FEATHERLESS_API_TOKEN` it prints why it skipped and exits 0, so a clean
  * checkout can run it harmlessly.
  *
  *   pnpm probe:featherless-narrator
- *   PROBE_MODEL=Naphula/Slimaki-Tavern-24B-v1.3 pnpm probe:featherless-narrator
- *   PROBE_LONG_HISTORY=1 pnpm probe:featherless-narrator   # adds the two 32K-edge calls
+ *   PROBE_MODEL=DarkArtsForge/Asmodeus-24B-v3 PROBE_ARMS=profile,lane,lane-capped,direct-stream,direct-json \
+ *     PROBE_CASES=vesper-sized pnpm probe:featherless-narrator
  *
- * `PROBE_MODEL` names the curated row to measure and defaults to Fable Fusion 711, the
- * first row probed this way. It exists because the questions this answers — does the
- * model spend the reply thinking, does it hold the first-token budget, does it ever
- * return nothing — have to be re-asked per model rather than inherited from a family,
- * and that rule is only cheap to follow if adding a row can reuse this harness.
+ * ## What changed for #594 scope 2
  *
- * It records COUNTS AND FINISH STATE ONLY — attempt, finish reason, token counts,
- * raw/visible text lengths, TTFT, total latency. No prompt, no prose, no reasoning
- * content: the question this answers is "how did the generation end", and printing
- * the model's words would make a diagnostic tool a transcript.
+ * The pre-#594 probe sent exactly one shape of request (the production body,
+ * unmodified) and reported only what `streamCharacterChat` handed back. That
+ * cannot tell an owner WHERE a one-token `length` stub actually originates —
+ * the model, the sampler profile, the output cap, or a layer between the host's
+ * raw wire and the AI SDK's normalized completion. This probe now runs up to
+ * six ARMS (see `./probe-stats.ts`'s `PROBE_ARMS`) interleaved in ROUNDS, and
+ * wraps every Featherless response — production and direct alike — in a
+ * pass-through tap that records RAW wire timing and content separately from
+ * the VISIBLE, SDK-normalized numbers `streamCharacterChat` already reported.
  *
- * It runs through `streamCharacterChat`, the production narrator seam, rather than
- * calling the provider itself. That is deliberate — a probe with its own request
- * builder measures the probe. Everything the chat lane applies (the exact-model
- * sampler + thinking policy, the normalizers, the hidden retry) is therefore in
- * force, and the completion record printed below is the same one the pipeline
- * classifies a failed reply from.
+ * `PROBE_ARMS` defaults to `profile` alone, so a caller who sets nothing gets
+ * exactly the old run's shape (three cases × `PROBE_ATTEMPTS` calls each).
  *
- * Two prompt sizes, because the failure being chased is budget-shaped. The tiny
- * synthetic prompt isolates the model's own behaviour; the padded one puts a
- * Vesper-sized prefill in front of it (the built narrator system prompt runs ~9K
- * tokens) so a slow first token shows up the way the chat lane would see it.
+ * ## How an arm reaches the wire
  *
- * Three SHAPE counts ride alongside the finish state — whether the reply opened with its
- * line-start `[Name]` speaker tag, how many bracketed spans landed where a tag cannot go,
- * and how many `*…*` asterisk-action spans it used. They are computed in memory from the
- * accumulated stream and never printed as text. They exist because a row that will not hold
- * the tag grammar, or that insists on asterisk actions, is dropped rather than having this
- * repo's output grammar widened to suit it (#215).
+ * `profile` / `profile-uncapped` / `lane` / `lane-capped` are PRODUCTION arms:
+ * every one of them still calls `streamCharacterChat`, so the exact-model
+ * adapter, the lane defaults, the output normalizers and the hidden retry are
+ * ALL still in force — only the fetch wrapper's arm transform (`transformArmBody`
+ * in `./probe-stats.ts`) rewrites that call's own outgoing JSON body just before
+ * it leaves the process. No override seam was added to application code.
  *
- * `PROBE_LONG_HISTORY=1` adds the 32K edge: a full verbatim window
- * (`CHARACTER_CHAT_HISTORY_TURNS × 2` padded turns) sized once just under the model's
- * context window and once just over it. It is opt-in because those two calls carry ~32K
- * input tokens each and are by far the most expensive thing here. The fixture is sized from
- * the token rate DIVIDED OUT of the two cases above rather than from a guess, and each row
- * reports the size it was built to send next to the size the host says it received —
- * because the failure being looked for is the host quietly dropping the top of the
- * conversation and answering anyway.
+ * `direct-stream` / `direct-json` are DIRECT arms: they never call
+ * `streamCharacterChat` at all. They replay a `profile`-shaped body — captured
+ * from whichever production arm ran first for that case — straight against
+ * `POST /v1/chat/completions`, with no SDK in the loop, so a difference between
+ * a direct arm and `profile` isolates the AI SDK's own normalization layer.
  *
- * Each call's outgoing wire body is captured through a `fetch` wrapper and printed
- * field by field, which is how this proves the exact-model ADAPTER reaches the
- * provider rather than merely being registered. It reports every field the body
- * carries except the ones that hold prompt or tool content, so a field the
- * adapter starts binding appears in the capture on its first call rather than
- * waiting for this script to be updated — and a field that must never be sent
- * (`chat_template_kwargs` on a Mistral tokenizer) is reported as absent instead
- * of simply missing from the line. Message content is never read out of the
- * captured body, and any value long enough to be prose is elided to its length.
+ * ## Raw vs visible, and the two stub verdicts
+ *
+ * Every request's response body is wrapped in a pass-through tap (`instrumentResponse`
+ * for production arms via the fetch wrapper, `readTap` inline for direct arms) that
+ * forwards bytes UNCHANGED to whichever consumer needs them, while a decoded copy
+ * measures: time to first body byte, time to the first SSE event carrying non-empty
+ * content, a content-event count and character count (counts only), the raw
+ * `finish_reason` from the last event that carried one, and raw `usage` tokens. Every
+ * production row therefore carries TWO independent stub verdicts —
+ * `isNarratorLengthStub` on the SDK-normalized completion, and `rawLengthStub`
+ * (`./probe-stats.ts`, a documented mirror) on the raw wire evidence — and any
+ * disagreement between them is counted in the summary. That is what shows whether a
+ * one-token stub is a host-level fact or something the SDK's own normalization
+ * introduces.
+ *
+ * ## Safe metadata only
+ *
+ * Every response's status, every header NAME, and header VALUES for a small
+ * allowlist (request/trace/correlation ids, `cf-ray`, server, worker, region, node,
+ * backend, model, version, served-by — never `set-cookie`/`authorization`/anything
+ * key-shaped) are recorded, plus `id`/`model`/`system_fingerprint`/`created` from the
+ * first SSE event or JSON body. No prompt, prose, reasoning content or Authorization
+ * header is ever printed or written — the same rule the pre-#594 probe already kept.
+ *
+ * ## Budget
+ *
+ * The planned call count is printed before the first call. `PROBE_MAX_CALLS`
+ * (default 60) refuses to start a larger run without an explicit opt-in.
+ * `PROBE_OUT=<path>` writes one JSONL row per call plus a final summary object.
+ *
+ * `PROBE_LONG_HISTORY=1` still adds the two ~32K-input-token edge calls, through
+ * the `profile` arm only (unchanged from the pre-#594 probe) — they are by far the
+ * most expensive calls here and are not a case this interleaving grid re-measures.
  */
 
-/** Attempts per case — a zero-text completion is intermittent, so one call proves nothing. */
-const ATTEMPTS = Number(process.env.PROBE_ATTEMPTS ?? 3);
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
 /**
- * The curated narrator row under test. Any id is accepted rather than only Featherless
- * ones: the guard below is curation, not provider, so the same harness can measure an
- * OpenRouter row for comparison when a verdict needs a baseline.
+ * The curated narrator row under test. Any id is accepted rather than only
+ * Featherless ones: the guard below is curation, not provider, so the same harness
+ * can measure an OpenRouter row for comparison when a verdict needs a baseline.
  */
 const MODEL_ID = process.env.PROBE_MODEL?.trim() || FABLE_FUSION_711_ID;
 
-/**
- * Body fields that carry PROMPT OR TOOL CONTENT, and are never reported.
- *
- * A denylist rather than an allowlist, because the question this probe answers
- * is "what did the adapter actually put on the wire" — and a fixed list of
- * sampler names answers it only for the fields somebody remembered to add. Every
- * other field is reported, so a newly bound one shows up in the capture the
- * first time it is sent instead of the first time this list is updated.
- */
-const WIRE_CONTENT_KEYS: ReadonlySet<string> = new Set([
-  "messages",
-  "prompt",
-  "input",
-  "tools",
-  "tool_choice",
-  "response_format",
-  "model",
-  "stream",
-  "stream_options",
-]);
+/** Rounds of the full arm × case grid (kept as `PROBE_ATTEMPTS` — the pre-#594 name for "calls per case"). */
+const ROUNDS = Number(process.env.PROBE_ATTEMPTS ?? 3);
+
+/** Refuse to start a run planned larger than this without an explicit opt-in. */
+const PROBE_MAX_CALLS = Number(process.env.PROBE_MAX_CALLS ?? 60);
+
+/** Direct arms get a generous timeout rather than stalling the run; a trip is recorded as an error row. */
+const DIRECT_ARM_TIMEOUT_MS = 120_000;
+
+const DIRECT_ARM_USER_AGENT = "vesper-featherless-narrator-probe/2 (+github.com/ceponatia/vesper issue 594)";
+
+const FEATHERLESS_CHAT_COMPLETIONS_URL = "https://api.featherless.ai/v1/chat/completions";
+
+const ALL_CASES: readonly ProbeCase[] = ["tiny", "vesper-sized", "terse-invite"];
+
+/** The four arms that still run through `streamCharacterChat` (see the module doc). */
+const PRODUCTION_ARMS: ReadonlySet<ProbeArm> = new Set(["profile", "profile-uncapped", "lane", "lane-capped"]);
+
+function parseArms(raw: string | undefined): ProbeArm[] {
+  if (raw === undefined || raw.trim().length === 0) return ["profile"];
+  const arms: ProbeArm[] = [];
+  for (const entry of raw.split(",").map((value) => value.trim()).filter((value) => value.length > 0)) {
+    if (isProbeArm(entry)) {
+      if (!arms.includes(entry)) arms.push(entry);
+    } else {
+      console.log(`ignoring unknown PROBE_ARMS entry "${entry}" — known arms: ${PROBE_ARMS.join(", ")}`);
+    }
+  }
+  return arms.length > 0 ? arms : ["profile"];
+}
+
+function parseCases(raw: string | undefined): ProbeCase[] {
+  if (raw === undefined || raw.trim().length === 0) return [...ALL_CASES];
+  const cases: ProbeCase[] = [];
+  for (const entry of raw.split(",").map((value) => value.trim()).filter((value) => value.length > 0)) {
+    const known = (ALL_CASES as readonly string[]).includes(entry);
+    if (known) {
+      const probeCase = entry as ProbeCase;
+      if (!cases.includes(probeCase)) cases.push(probeCase);
+    } else {
+      console.log(`ignoring unknown PROBE_CASES entry "${entry}" — known cases: ${ALL_CASES.join(", ")}`);
+    }
+  }
+  return cases.length > 0 ? cases : [...ALL_CASES];
+}
+
+/** `arms` rotated left by `offset` positions (wraps around) — how the round-robin varies which arm goes first. */
+function rotateLeft<T>(items: readonly T[], offset: number): T[] {
+  if (items.length === 0) return [];
+  const shift = ((offset % items.length) + items.length) % items.length;
+  return [...items.slice(shift), ...items.slice(0, shift)];
+}
 
 /**
- * Fields reported even when absent, because their ABSENCE is the measurement.
+ * This round's arm order (#594 acceptance point 1: "the arm order rotates round to
+ * round so no arm always goes first").
  *
- * `chat_template_kwargs` is rejected outright on a Mistral tokenizer and is the
- * only thing standing between two DavidAU rows and an empty reply, so "it was
- * not sent" has to be visible rather than inferred from a missing column.
+ * Round 1 carries one bootstrap exception: every case's captured production body
+ * (what the direct arms replay) is seeded by whichever production arm runs FIRST
+ * for that case, so round 1 moves every production arm ahead of every direct arm —
+ * whatever order the caller listed them in `PROBE_ARMS` — to guarantee that seed
+ * exists before a direct arm can consume it. Rounds after the first already have a
+ * capture and rotate freely.
  */
-const WIRE_PRESENCE_KEYS = ["chat_template_kwargs"] as const;
+function armsForRound(arms: readonly ProbeArm[], round: number): ProbeArm[] {
+  const rotated = rotateLeft(arms, round - 1);
+  if (round !== 1) return rotated;
+  const production = rotated.filter((arm) => PRODUCTION_ARMS.has(arm));
+  const direct = rotated.filter((arm) => DIRECT_ARMS.has(arm));
+  if (production.length === 0 || direct.length === 0) return rotated;
+  return [...production, ...direct];
+}
 
-/** Longest rendered value a field may report; anything larger is elided rather than printed. */
-const MAX_WIRE_VALUE = 160;
+// ---------------------------------------------------------------------------
+// Case fixtures (unchanged from the pre-#594 probe)
+// ---------------------------------------------------------------------------
+
+const TINY_SYSTEM = "You narrate one short scene beat in third person, present tense. Open the line with [Mira].";
+
+/**
+ * The neutral filler sentence every oversized fixture is built from. Its content is
+ * irrelevant and deliberately so — the token count is the whole point — but it is
+ * ordinary prose rather than repeated punctuation, so it tokenizes at a realistic rate.
+ */
+const FILLER =
+  "The hallway is narrow, lit by one window at the far end, and the floorboards have been walked smooth down the middle. ";
+/** Copies of {@link FILLER} in the Vesper-sized prefill — also the divisor that calibrates its token rate. */
+const FILLER_REPEATS = 340;
+
+/** A Vesper-sized prefill, without shipping a real narrator prompt into this file. */
+const PADDED_SYSTEM = `${TINY_SYSTEM}\n\n${FILLER.repeat(FILLER_REPEATS)}`;
+
+const OPENER: ChatTurn[] = [{ role: "user", content: "She opens the door." }];
+/** A one-word invitation: the shape most likely to produce a genuinely short or empty completion. */
+const TERSE_INVITE: ChatTurn[] = [{ role: "user", content: "..." }];
+
+const CASE_DEFS: Record<ProbeCase, { system: string; history: ChatTurn[] }> = {
+  tiny: { system: TINY_SYSTEM, history: OPENER },
+  "vesper-sized": { system: PADDED_SYSTEM, history: OPENER },
+  "terse-invite": { system: TINY_SYSTEM, history: TERSE_INVITE },
+};
+
+// ---------------------------------------------------------------------------
+// Reply shape (unchanged from the pre-#594 probe — production rows only)
+// ---------------------------------------------------------------------------
 
 /** Longest bracketed span the segmenter will read as a speaker tag (its TAG_RE bound). */
 const MAX_TAG_INNER = 64;
-/** A complete bracketed span on one line — the segmenter's tag shape, minus nesting. */
 const BRACKET_SPAN = new RegExp(`\\[[^\\[\\]\\n]{1,${MAX_TAG_INNER}}\\]`, "g");
-/** The same shape anchored at a line start — the one position a tag is legitimate. */
 const LEADING_TAG = new RegExp(`^\\[([^\\[\\]\\n]{1,${MAX_TAG_INNER}})\\]`);
-/** An asterisk action span (`*she smiles*`) — the output grammar this repo does not use. */
 const ASTERISK_SPAN = /\*[^*\n]+\*/g;
 
-/**
- * The reply's SHAPE as three counts, computed in memory from the accumulated stream and
- * never printed: whether it opens with the expected line-start speaker tag, how many
- * bracketed spans sit where a tag cannot go, and how many asterisk-action spans it used.
- *
- * These are measured on the text the PLAYER sees, because that is what the generator
- * yields. `stripMisplacedSpeakerTagStream` has already de-bracketed known names outside a
- * line start by then, so a zero `tagStray` means "nothing leaked to the player", not
- * "the model emitted none" — the `rawChars` vs `visChars` columns are where a normalizer
- * having acted shows up. Asterisk spans pass through untouched by every normalizer, so
- * that count is faithful to what the model wrote.
- */
 interface ReplyShape {
-  /** The reply's first non-empty line opens with `[<speaker>]`. */
   tagOpen: boolean;
-  /** Bracketed spans anywhere other than a line start. */
   tagStray: number;
-  /** `*…*` asterisk-action spans. */
   asterisk: number;
 }
 
+/**
+ * The reply's SHAPE as three counts, computed in memory from the accumulated stream
+ * and never printed as text (see the module doc on the original probe for the full
+ * rationale; unchanged by #594).
+ */
 function replyShape(text: string, speaker: string): ReplyShape {
   const lines = text.split("\n");
   const first = lines.find((line) => line.trim().length > 0) ?? "";
@@ -150,71 +249,233 @@ function replyShape(text: string, speaker: string): ReplyShape {
   };
 }
 
-interface ProbeRow {
-  label: string;
-  call: number;
-  completion: NarratorCompletion | null;
-  ttftMs: number | null;
-  totalMs: number;
-  wire: string;
-  shape: ReplyShape;
-  /** Input tokens this fixture was BUILT to send, when it was sized to a target. */
-  estimatedInputTokens?: number;
-  error?: string;
-}
+// ---------------------------------------------------------------------------
+// Wire body description (unchanged from the pre-#594 probe — human-readable dump only)
+// ---------------------------------------------------------------------------
 
-function describeWireBody(raw: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return "unparsed";
-  }
-  if (typeof parsed !== "object" || parsed === null) return "unparsed";
-  const body = parsed as Record<string, unknown>;
-  const reported = Object.entries(body)
-    .filter(([key, value]) => !WIRE_CONTENT_KEYS.has(key) && value !== undefined)
-    .map(([key, value]) => `${key}=${renderWireValue(value)}`);
-  const absent = WIRE_PRESENCE_KEYS.filter((key) => body[key] === undefined).map((key) => `${key}=absent`);
-  return [...reported, ...absent].join(" ");
-}
+/** Body fields that carry PROMPT OR TOOL CONTENT, and are never reported. */
+const WIRE_CONTENT_KEYS: ReadonlySet<string> = new Set([
+  "messages",
+  "prompt",
+  "input",
+  "tools",
+  "tool_choice",
+  "response_format",
+  "model",
+  "stream",
+  "stream_options",
+]);
 
-/** One field's value as one short token — JSON for a structured value, elided when long. */
+/** Longest rendered value a field may report; anything larger is elided rather than printed. */
+const MAX_WIRE_VALUE = 160;
+
+/**
+ * Fields reported even when absent, because their ABSENCE is the measurement.
+ * `chat_template_kwargs` is rejected outright on a Mistral tokenizer and is the only
+ * thing standing between two DavidAU rows and an empty reply, so "it was not sent"
+ * has to be visible rather than inferred from a missing column.
+ */
+const WIRE_PRESENCE_KEYS = ["chat_template_kwargs"] as const;
+
 function renderWireValue(value: unknown): string {
   const rendered = typeof value === "string" ? value : JSON.stringify(value);
   return rendered.length > MAX_WIRE_VALUE ? `<${rendered.length} chars elided>` : rendered;
 }
 
-/** Wrap global fetch so each call's outgoing body is captured (sampler fields only). */
-function captureWire(): { last: () => string; restore: () => void } {
-  const original = globalThis.fetch;
-  let last = "unobserved";
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (typeof init?.body === "string") last = describeWireBody(init.body);
-    return original(input, init);
-  }) as typeof globalThis.fetch;
+/** A short, human-readable dump of a wire body's sampler/profile fields — never its content. */
+function describeWireBody(body: Record<string, unknown>): string {
+  const reported = Object.entries(body)
+    .filter(([key, value]) => !WIRE_CONTENT_KEYS.has(key) && value !== undefined)
+    .map(([key, value]) => `${key}=${renderWireValue(value)}`);
+  const absent = WIRE_PRESENCE_KEYS.filter((key) => body[key] === undefined).map((key) => `${key}=absent`);
+  const all = [...reported, ...absent];
+  return all.length > 0 ? all.join(" ") : "(no sampler/profile fields)";
+}
+
+/** The `max_tokens` a request body actually carries, or undefined for none sent. */
+function extractMaxTokens(body: Record<string, unknown> | null): number | undefined {
+  const value = body?.max_tokens;
+  return typeof value === "number" ? value : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Raw-wire instrumentation
+// ---------------------------------------------------------------------------
+
+interface RawRequestSnapshot {
+  status: number;
+  headers: SanitizedHeaders;
+  meta: SseEventMeta;
+  firstByteMs: number | null;
+  firstContentMs: number | null;
+  finishReason: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  contentChars: number;
+  contentEventCount: number;
+}
+
+/**
+ * Read a Featherless response body to completion, decoding it as SSE, WITHOUT
+ * assuming any other consumer needs the same bytes — the direct arms' own reader,
+ * since there is no SDK downstream of them. Production arms use
+ * {@link instrumentResponse} instead, which tees the stream so this same logic can
+ * run alongside the real consumer.
+ */
+async function readTap(
+  body: ReadableStream<Uint8Array>,
+  startedAt: number,
+): Promise<Omit<RawRequestSnapshot, "status" | "headers">> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const acc = createSseAccumulator();
+  let firstByteMs: number | null = null;
+  let firstContentMs: number | null = null;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (firstByteMs === null) firstByteMs = Date.now() - startedAt;
+      const events = acc.push(decoder.decode(value, { stream: true }));
+      if (firstContentMs === null) {
+        const hit = events.find((event) => event.hasContent);
+        if (hit !== undefined) firstContentMs = Date.now() - startedAt;
+      }
+    }
+    acc.flush();
+  } catch {
+    // This tap must never affect the real response or its real consumer; a read
+    // failure here only leaves this one request's raw-wire evidence incomplete.
+  }
+  const summary = summarizeSseEvents(acc.all());
   return {
-    last: () => last,
-    restore: () => {
-      globalThis.fetch = original;
-    },
+    meta: summary.meta,
+    firstByteMs,
+    firstContentMs,
+    finishReason: summary.finishReason,
+    promptTokens: summary.usage?.promptTokens ?? null,
+    completionTokens: summary.usage?.completionTokens ?? null,
+    contentChars: summary.totalContentChars,
+    contentEventCount: summary.contentEventCount,
   };
 }
 
-async function runCall(args: {
-  label: string;
-  call: number;
+/**
+ * Wrap a production response so the real consumer (the AI SDK, inside
+ * `streamCharacterChat`) reads the SAME bytes unchanged, while a decoded copy on a
+ * second branch (`ReadableStream.tee()`) measures the raw-wire evidence (#594
+ * acceptance point 2). The tee's own read failures never reach the pass-through branch.
+ */
+function instrumentResponse(response: Response, startedAt: number): { passThrough: Response; whenDone: Promise<RawRequestSnapshot> } {
+  const status = response.status;
+  const headers = sanitizeHeaders(response.headers.entries());
+  if (!response.body) {
+    return {
+      passThrough: response,
+      whenDone: Promise.resolve({
+        status,
+        headers,
+        meta: {},
+        firstByteMs: null,
+        firstContentMs: null,
+        finishReason: null,
+        promptTokens: null,
+        completionTokens: null,
+        contentChars: 0,
+        contentEventCount: 0,
+      }),
+    };
+  }
+  const [passThroughBody, tapBody] = response.body.tee();
+  const passThrough = new Response(passThroughBody, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  const whenDone = readTap(tapBody, startedAt).then((tap) => ({ status, headers, ...tap }));
+  return { passThrough, whenDone };
+}
+
+/** One production call's in-flight state, read by the installed `fetch` wrapper while it runs. */
+interface RawSink {
+  arm: ProbeArm;
+  probeCase: ProbeCase;
+  /** The body `streamCharacterChat` actually built, BEFORE this arm's transform — captured for direct-arm replay. */
+  builtBody: Record<string, unknown> | null;
+  /** One promise per underlying HTTP request this call made (a hidden retry makes more than one). */
+  requests: Promise<RawRequestSnapshot>[];
+}
+
+let activeSink: RawSink | null = null;
+/** The pristine `fetch`, captured before the wrapper is installed — direct arms always call this, never the wrapped one. */
+let trueFetch: typeof fetch = globalThis.fetch;
+/** The last wire body actually sent for each `arm`/`case` pair, for the end-of-run human-readable dump. */
+const lastWireBodyByArmCase = new Map<string, string>();
+
+/**
+ * Install the one `fetch` wrapper that applies each production arm's transform
+ * (#594 acceptance point 1) to that call's own outgoing Featherless request, and
+ * instruments its response. Every other request (a non-Featherless call, or any
+ * call made while no probe call is in flight) passes through `trueFetch` untouched.
+ */
+function installFetchWrapper(): () => void {
+  const original = globalThis.fetch;
+  trueFetch = original;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const requestBody = init?.body;
+    if (activeSink === null || url !== FEATHERLESS_CHAT_COMPLETIONS_URL || typeof requestBody !== "string") {
+      return original(input, init);
+    }
+    const sink = activeSink;
+    let outgoing = requestBody;
+    try {
+      const parsed = JSON.parse(requestBody) as Record<string, unknown>;
+      sink.builtBody = parsed;
+      const transformed = transformArmBody(sink.arm, parsed, NARRATIVE_TEMPERATURE);
+      outgoing = JSON.stringify(transformed);
+      lastWireBodyByArmCase.set(`${sink.arm}\u0000${sink.probeCase}`, describeWireBody(transformed));
+    } catch {
+      // An unparseable body is passed through untouched; the arm's own bytes are
+      // simply whatever the SDK sent, unrewritten.
+    }
+    const startedAt = Date.now();
+    const response = await original(input, { ...init, body: outgoing });
+    const { passThrough, whenDone } = instrumentResponse(response, startedAt);
+    sink.requests.push(whenDone);
+    return passThrough;
+  }) as typeof globalThis.fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// One production call (profile / profile-uncapped / lane / lane-capped)
+// ---------------------------------------------------------------------------
+
+interface ExtendedRow extends ProbeCallRecord {
+  /** The actual sampler/profile fields this row's request carried — never its content. */
+  wire: string;
+  /** Reply shape counts, production rows only (a direct arm has no SDK normalizer to measure). */
+  shape: ReplyShape | null;
+}
+
+async function runProductionCall(args: {
+  arm: ProbeArm;
+  probeCase: ProbeCase;
+  round: number;
+  position: number;
   system: string;
   history: ChatTurn[];
-  wire: () => string;
-  estimatedInputTokens?: number;
-}): Promise<ProbeRow> {
-  const started = Date.now();
+}): Promise<{ row: ExtendedRow; builtBody: Record<string, unknown> | null }> {
+  const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
+  const sink: RawSink = { arm: args.arm, probeCase: args.probeCase, builtBody: null, requests: [] };
+  activeSink = sink;
   let ttftMs: number | null = null;
   let completion: NarratorCompletion | null = null;
-  let error: string | undefined;
-  // The accumulated reply, held only to count its shape below. It is never printed and
-  // never leaves this function.
+  let errorMessage: string | undefined;
   let full = "";
   try {
     const stream = streamCharacterChat({
@@ -228,107 +489,311 @@ async function runCall(args: {
       },
     });
     for await (const delta of stream) {
-      if (ttftMs === null && delta.length > 0) ttftMs = Date.now() - started;
+      if (ttftMs === null && delta.length > 0) ttftMs = Date.now() - startedAt;
       full += delta;
     }
   } catch (caught) {
-    error = caught instanceof Error ? caught.message.slice(0, 200) : String(caught).slice(0, 200);
+    errorMessage = caught instanceof Error ? caught.message.slice(0, 200) : String(caught).slice(0, 200);
+  } finally {
+    activeSink = null;
   }
+  const totalMs = Date.now() - startedAt;
+  const snapshots = await Promise.all(sink.requests);
+  const last = snapshots.length > 0 ? snapshots[snapshots.length - 1] : undefined;
+  const requestMaxTokens = extractMaxTokens(
+    sink.builtBody === null ? null : transformArmBody(args.arm, sink.builtBody, NARRATIVE_TEMPERATURE),
+  );
+  const rawFinishReason = last?.finishReason ?? null;
+  const rawCompletionTokens = last?.completionTokens ?? undefined;
+  const rawContentChars = last?.contentChars ?? 0;
+  const stubRaw = rawLengthStub({
+    finishReason: rawFinishReason,
+    completionTokens: rawCompletionTokens,
+    contentChars: rawContentChars,
+    maxTokens: requestMaxTokens,
+  });
+  const stubCompletion = completion !== null && isNarratorLengthStub(completion);
+  const errored = errorMessage !== undefined;
+  const row: ExtendedRow = {
+    arm: args.arm,
+    probeCase: args.probeCase,
+    round: args.round,
+    position: args.position,
+    startedAt: startedAtIso,
+    totalMs,
+    errored,
+    timedOut: false,
+    requestCount: snapshots.length,
+    raw: {
+      status: last?.status ?? null,
+      headers: last?.headers ?? { names: [], values: {} },
+      meta: last?.meta ?? {},
+      finishReason: rawFinishReason,
+      promptTokens: last?.promptTokens ?? null,
+      completionTokens: last?.completionTokens ?? null,
+      contentChars: rawContentChars,
+      contentEventCount: last?.contentEventCount ?? 0,
+      firstByteMs: last?.firstByteMs ?? null,
+      firstContentMs: last?.firstContentMs ?? null,
+      stub: stubRaw,
+    },
+    visible: {
+      finishReason: completion?.finishReason ?? null,
+      rawFinishReason: completion?.rawFinishReason ?? null,
+      ttftMs,
+      visibleTextChars: completion?.visibleTextChars ?? null,
+      inputTokens: completion?.inputTokens ?? null,
+      outputTokens: completion?.outputTokens ?? null,
+      maxOutputTokens: completion?.maxOutputTokens ?? null,
+      attempts: completion?.attempts ?? null,
+      stub: stubCompletion,
+    },
+    wire: sink.builtBody === null ? "(no request captured)" : describeWireBody(transformArmBody(args.arm, sink.builtBody, NARRATIVE_TEMPERATURE)),
+    shape: errored ? null : replyShape(full, "Mira"),
+    ...(errorMessage === undefined ? {} : { errorMessage }),
+  };
+  return { row, builtBody: sink.builtBody };
+}
+
+// ---------------------------------------------------------------------------
+// One direct call (direct-stream / direct-json)
+// ---------------------------------------------------------------------------
+
+async function runDirectCall(args: {
+  arm: "direct-stream" | "direct-json";
+  probeCase: ProbeCase;
+  profileBody: Record<string, unknown>;
+  round: number;
+  position: number;
+}): Promise<ExtendedRow> {
+  const startedAt = Date.now();
+  const startedAtIso = new Date(startedAt).toISOString();
+  const body = transformArmBody(args.arm, args.profileBody, NARRATIVE_TEMPERATURE);
+  const requestMaxTokens = extractMaxTokens(body);
+  lastWireBodyByArmCase.set(`${args.arm}\u0000${args.probeCase}`, describeWireBody(body));
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), DIRECT_ARM_TIMEOUT_MS);
+  let snapshot: RawRequestSnapshot | null = null;
+  let timedOut = false;
+  let errorMessage: string | undefined;
+  try {
+    const response = await trueFetch(FEATHERLESS_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.FEATHERLESS_API_TOKEN ?? ""}`,
+        "user-agent": DIRECT_ARM_USER_AGENT,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const status = response.status;
+    const headers = sanitizeHeaders(response.headers.entries());
+    if (args.arm === "direct-stream") {
+      const tap = response.body
+        ? await readTap(response.body, startedAt)
+        : {
+            meta: {},
+            firstByteMs: null,
+            firstContentMs: null,
+            finishReason: null,
+            promptTokens: null,
+            completionTokens: null,
+            contentChars: 0,
+            contentEventCount: 0,
+          };
+      snapshot = { status, headers, ...tap };
+    } else {
+      const text = await response.text();
+      const firstByteMs = Date.now() - startedAt;
+      const summary = summarizeJsonCompletion(text);
+      snapshot = {
+        status,
+        headers,
+        meta: summary?.meta ?? {},
+        firstByteMs,
+        firstContentMs: summary && summary.totalContentChars > 0 ? firstByteMs : null,
+        finishReason: summary?.finishReason ?? null,
+        promptTokens: summary?.usage?.promptTokens ?? null,
+        completionTokens: summary?.usage?.completionTokens ?? null,
+        contentChars: summary?.totalContentChars ?? 0,
+        contentEventCount: summary?.contentEventCount ?? 0,
+      };
+    }
+  } catch (caught) {
+    timedOut = caught instanceof Error && caught.name === "AbortError";
+    errorMessage = caught instanceof Error ? caught.message.slice(0, 200) : String(caught).slice(0, 200);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+  const totalMs = Date.now() - startedAt;
+  const errored = errorMessage !== undefined;
+  const stub =
+    snapshot !== null
+      ? rawLengthStub({
+          finishReason: snapshot.finishReason,
+          completionTokens: snapshot.completionTokens ?? undefined,
+          contentChars: snapshot.contentChars,
+          maxTokens: requestMaxTokens,
+        })
+      : false;
   return {
-    label: args.label,
-    call: args.call,
-    completion,
-    ttftMs,
-    totalMs: Date.now() - started,
-    wire: args.wire(),
-    shape: replyShape(full, "Mira"),
-    ...(args.estimatedInputTokens === undefined ? {} : { estimatedInputTokens: args.estimatedInputTokens }),
-    ...(error === undefined ? {} : { error }),
+    arm: args.arm,
+    probeCase: args.probeCase,
+    round: args.round,
+    position: args.position,
+    startedAt: startedAtIso,
+    totalMs,
+    errored,
+    timedOut,
+    requestCount: 1,
+    raw: {
+      status: snapshot?.status ?? null,
+      headers: snapshot?.headers ?? { names: [], values: {} },
+      meta: snapshot?.meta ?? {},
+      finishReason: snapshot?.finishReason ?? null,
+      promptTokens: snapshot?.promptTokens ?? null,
+      completionTokens: snapshot?.completionTokens ?? null,
+      contentChars: snapshot?.contentChars ?? 0,
+      contentEventCount: snapshot?.contentEventCount ?? 0,
+      firstByteMs: snapshot?.firstByteMs ?? null,
+      firstContentMs: snapshot?.firstContentMs ?? null,
+      stub,
+    },
+    visible: null,
+    wire: describeWireBody(body),
+    shape: null,
+    ...(errorMessage === undefined ? {} : { errorMessage }),
   };
 }
 
-const num = (value: number | undefined): string => (typeof value === "number" ? String(value) : "—");
+// ---------------------------------------------------------------------------
+// The 32K context edge (unchanged from the pre-#594 probe — `profile` arm only)
+// ---------------------------------------------------------------------------
 
-/**
- * The neutral filler sentence every oversized fixture is built from. Its content is
- * irrelevant and deliberately so — the token count is the whole point — but it is ordinary
- * prose rather than repeated punctuation, so it tokenizes at a realistic rate.
- */
-const FILLER =
-  "The hallway is narrow, lit by one window at the far end, and the floorboards have been walked smooth down the middle. ";
-/** Copies of {@link FILLER} in the Vesper-sized prefill — also the divisor that calibrates its token rate. */
-const FILLER_REPEATS = 340;
-
-/**
- * Input-token targets for the 32K edge. The model's window is 32,768, so one fixture lands
- * comfortably inside it and one comfortably outside, close enough on both sides that the
- * answer is about the boundary rather than about an absurd request.
- */
 const UNDER_TARGET_TOKENS = 31_500;
 const OVER_TARGET_TOKENS = 33_500;
-
-/**
- * Assumed per-message chat-template overhead. An ESTIMATE, and the only guessed number in
- * the sizing: it shifts the fixture by at most a few hundred tokens across 80 messages,
- * which is why the rows report the estimate and the host's own count side by side instead
- * of trusting either alone.
- */
 const MESSAGE_OVERHEAD_TOKENS = 8;
-
-/** The chat lane's verbatim ceiling — `windowChatHistory` keeps exactly this many messages. */
 const LONG_HISTORY_TURNS = CHARACTER_CHAT_HISTORY_TURNS * 2;
 
-function medianInputTokens(rows: ProbeRow[], label: string): number | null {
+function medianInputTokens(rows: readonly ExtendedRow[], probeCase: ProbeCase): number | null {
   const values = rows
-    .filter((row) => row.label === label)
-    .map((row) => row.completion?.inputTokens)
-    .filter((value): value is number => typeof value === "number")
+    .filter((row) => row.arm === "profile" && row.probeCase === probeCase)
+    .map((row) => row.visible?.inputTokens ?? null)
+    .filter((value): value is number => value !== null)
     .sort((a, b) => a - b);
-  return values.length === 0 ? null : (values[Math.floor(values.length / 2)] ?? null);
+  if (values.length === 0) return null;
+  const middle = values[Math.floor(values.length / 2)];
+  return middle === undefined ? null : middle;
 }
 
-/**
- * Tokens per filler sentence for THIS model's tokenizer, divided out of two measurements
- * this probe already made: the padded system prompt is the tiny one plus FILLER_REPEATS
- * copies of one sentence, so the difference in reported input tokens is that sentence's
- * rate. Null when either case did not report a count — sizing a 32K fixture off a guessed
- * rate would measure the guess.
- */
-function fillerTokenRate(rows: ProbeRow[]): number | null {
+function fillerTokenRate(rows: readonly ExtendedRow[]): number | null {
   const tiny = medianInputTokens(rows, "tiny");
   const padded = medianInputTokens(rows, "vesper-sized");
   if (tiny === null || padded === null || padded <= tiny) return null;
   return (padded - tiny) / FILLER_REPEATS;
 }
 
-/** Filler sentences per history turn that put the whole request near `target` input tokens. */
-function fillerPerTurn(rows: ProbeRow[], perFiller: number, target: number): number {
+function fillerPerTurn(rows: readonly ExtendedRow[], perFiller: number, target: number): number {
   const base = medianInputTokens(rows, "tiny") ?? 0;
   const perTurn = (target - base) / LONG_HISTORY_TURNS - MESSAGE_OVERHEAD_TOKENS;
   return Math.max(1, Math.round(perTurn / perFiller));
 }
 
-/** What that fixture is expected to weigh — the number the host's own count is checked against. */
-function estimateInput(rows: ProbeRow[], perFiller: number, turns: number): number {
+function estimateInput(rows: readonly ExtendedRow[], perFiller: number, turns: number): number {
   const base = medianInputTokens(rows, "tiny") ?? 0;
   return Math.round(base + LONG_HISTORY_TURNS * (MESSAGE_OVERHEAD_TOKENS + turns * perFiller));
 }
 
-/**
- * A full verbatim window of padded history: `CHARACTER_CHAT_HISTORY_TURNS × 2` alternating
- * turns, which is exactly what `windowChatHistory` keeps, so nothing is trimmed before the
- * request is built and the fixture's size is the request's size.
- */
 function longHistory(fillerCount: number): ChatTurn[] {
   const turns: ChatTurn[] = [];
   for (let i = 0; i < LONG_HISTORY_TURNS; i++) {
-    // Anchored so the LAST message is the player's: a history ending on an assistant turn
-    // asks the model to continue itself rather than to reply, which is a different test.
     const role = (LONG_HISTORY_TURNS - 1 - i) % 2 === 0 ? "user" : "assistant";
     turns.push({ role, content: `Beat ${i + 1}. ${FILLER.repeat(fillerCount)}`.trimEnd() });
   }
   return turns;
 }
+
+// ---------------------------------------------------------------------------
+// Console + JSONL output
+// ---------------------------------------------------------------------------
+
+const num = (value: number | null | undefined): string => (typeof value === "number" ? String(value) : "—");
+
+function printRow(row: ExtendedRow): void {
+  console.log(
+    [
+      `r${row.round}`,
+      `#${row.position}`,
+      row.arm,
+      row.probeCase,
+      `reqs=${row.requestCount}`,
+      `rawFinish=${row.raw.finishReason ?? "—"}`,
+      `visFinish=${row.visible?.finishReason ?? "—"}`,
+      `rawStub=${row.raw.stub ? 1 : 0}`,
+      `compStub=${row.visible === null ? "—" : row.visible.stub ? 1 : 0}`,
+      `in=${num(row.raw.promptTokens ?? row.visible?.inputTokens)}`,
+      `out=${num(row.raw.completionTokens ?? row.visible?.outputTokens)}`,
+      `rawFirstMs=${num(row.raw.firstContentMs)}`,
+      `visFirstMs=${num(row.visible?.ttftMs)}`,
+      `totalMs=${row.totalMs}`,
+      row.shape ? `tagOpen=${row.shape.tagOpen ? 1 : 0} tagStray=${row.shape.tagStray} aster=${row.shape.asterisk}` : "shape=—",
+    ].join(" ") + (row.errored ? ` ERRORED${row.timedOut ? " (timeout)" : ""}: ${row.errorMessage ?? ""}` : ""),
+  );
+}
+
+function fmtStat(value: number | null): string {
+  return value === null ? "—" : String(value);
+}
+
+function printSummary(rows: readonly ExtendedRow[]): void {
+  const summary = buildProbeSummary(rows);
+  console.log(`\n=== summary (percentile method: ${summary.percentileMethod}) ===`);
+  for (const cell of summary.cells) {
+    console.log(
+      `\n${cell.arm} / ${cell.probeCase}: n=${cell.n} errored=${cell.errored} empty=${cell.empty} ` +
+        `stub=${cell.stub.count}/${cell.n} (rate ${cell.stub.rate.toFixed(3)}, 95% CI ` +
+        `${cell.stub.wilson95.low.toFixed(3)}–${cell.stub.wilson95.high.toFixed(3)})`,
+    );
+    const reasons = Object.entries(cell.finishReasonTally)
+      .map(([reason, count]) => `${reason}=${count}`)
+      .join(", ");
+    console.log(`  finish reasons: ${reasons || "—"}`);
+    console.log(
+      `  raw first-content ms: n=${cell.rawFirstContentMs.count} p50=${fmtStat(cell.rawFirstContentMs.p50)} ` +
+        `p90=${fmtStat(cell.rawFirstContentMs.p90)} max=${fmtStat(cell.rawFirstContentMs.max)}`,
+    );
+    console.log(
+      `  visible first ms:     n=${cell.visibleFirstMs.count} p50=${fmtStat(cell.visibleFirstMs.p50)} ` +
+        `p90=${fmtStat(cell.visibleFirstMs.p90)} max=${fmtStat(cell.visibleFirstMs.max)}`,
+    );
+    console.log(
+      `  total ms:             n=${cell.totalMs.count} p50=${fmtStat(cell.totalMs.p50)} ` +
+        `p90=${fmtStat(cell.totalMs.p90)} max=${fmtStat(cell.totalMs.max)}`,
+    );
+    console.log(`  tokens: prompt=${cell.promptTokensTotal} completion=${cell.completionTokensTotal}`);
+  }
+  console.log("\nstub cross-tab (raw-wire verdict vs completion verdict, production rows only):");
+  console.log(
+    `  both=${summary.stubCrossTab.bothStub} raw-only=${summary.stubCrossTab.rawOnlyStub} ` +
+      `completion-only=${summary.stubCrossTab.completionOnlyStub} neither=${summary.stubCrossTab.neitherStub} ` +
+      `— disagreements=${summary.stubCrossTab.disagreements}`,
+  );
+  console.log("\ntoken totals by arm:");
+  for (const [arm, totals] of Object.entries(summary.tokenTotalsByArm)) {
+    console.log(`  ${arm}: prompt=${totals.promptTokens} completion=${totals.completionTokens}`);
+  }
+  console.log("\nwire body per arm x case (sampler + thinking fields only):");
+  for (const [key, wire] of [...lastWireBodyByArmCase.entries()].sort()) {
+    const [arm, probeCase] = key.split("\u0000");
+    console.log(`  ${arm ?? "?"} / ${probeCase ?? "?"}: ${wire}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   if (!hasFeatherless()) {
@@ -341,161 +806,166 @@ async function main(): Promise<void> {
   }
   console.log(`model: ${MODEL_ID}`);
 
-  const tiny = "You narrate one short scene beat in third person, present tense. Open the line with [Mira].";
-  // A Vesper-sized prefill, without shipping a real narrator prompt into this file:
-  // filler setting text sized to the ~9K-token system prompt the chat lane carries.
-  // The content is irrelevant; the token count is the point.
-  const padded = `${tiny}\n\n${FILLER.repeat(FILLER_REPEATS)}`;
-  const opener: ChatTurn[] = [{ role: "user", content: "She opens the door." }];
+  const arms = parseArms(process.env.PROBE_ARMS);
+  const cases = parseCases(process.env.PROBE_CASES);
+  console.log(`arms: ${arms.join(", ")}`);
+  console.log(`cases: ${cases.join(", ")}`);
 
-  const capture = captureWire();
-  const rows: ProbeRow[] = [];
+  // Direct arms replay a per-case body captured from a production arm's own call.
+  // Only when NO production arm is selected at all is there no such call to
+  // capture it from — every other combination captures it for free the first
+  // time any production arm runs for that case (`armsForRound`'s round-1 bootstrap
+  // ordering guarantees that happens before a direct arm's turn).
+  const anyDirect = arms.some((arm) => DIRECT_ARMS.has(arm));
+  const anyProduction = arms.some((arm) => PRODUCTION_ARMS.has(arm));
+  const needsBootstrapCall = anyDirect && !anyProduction;
+  const longHistoryEnabled = process.env.PROBE_LONG_HISTORY === "1" && arms.includes("profile");
+  const plannedCalls =
+    ROUNDS * arms.length * cases.length + (needsBootstrapCall ? 1 : 0) + (longHistoryEnabled ? 2 : 0);
+
+  console.log(
+    `planned calls: ${plannedCalls} (${ROUNDS} round(s) x ${arms.length} arm(s) x ${cases.length} case(s)` +
+      `${needsBootstrapCall ? " + 1 bootstrap capture call" : ""}` +
+      `${longHistoryEnabled ? " + 2 long-history edge calls" : ""})`,
+  );
+  if (plannedCalls > PROBE_MAX_CALLS) {
+    console.log(
+      `refusing to start: planned ${plannedCalls} calls exceeds PROBE_MAX_CALLS=${PROBE_MAX_CALLS}. ` +
+        "Set PROBE_MAX_CALLS to opt into a larger run.",
+    );
+    return;
+  }
+  const outPath = process.env.PROBE_OUT?.trim();
+  if (outPath) writeFileSync(outPath, "");
+  const appendOut = (record: unknown): void => {
+    if (!outPath) return;
+    appendFileSync(outPath, `${JSON.stringify(record)}\n`);
+  };
+
+  const restoreFetch = installFetchWrapper();
+  const rows: ExtendedRow[] = [];
+  const capturedProfileBody = new Map<ProbeCase, Record<string, unknown>>();
+  /** Set only in the "direct arms with no production arm selected" fallback (see the module doc). */
+  let bootstrapFallbackBody: Record<string, unknown> | null = null;
+
   try {
-    for (let call = 1; call <= ATTEMPTS; call++) {
-      rows.push(await runCall({ label: "tiny", call, system: tiny, history: opener, wire: capture.last }));
-    }
-    for (let call = 1; call <= ATTEMPTS; call++) {
-      rows.push(await runCall({ label: "vesper-sized", call, system: padded, history: opener, wire: capture.last }));
-    }
-    // A one-word invitation: the shape most likely to produce a genuinely short or
-    // empty completion, which is what the hidden retry exists for.
-    for (let call = 1; call <= ATTEMPTS; call++) {
-      rows.push(
-        await runCall({ label: "terse-invite", call, system: tiny, history: [{ role: "user", content: "..." }], wire: capture.last }),
+    if (needsBootstrapCall) {
+      // `parseCases` never returns an empty array (it falls back to every case), so
+      // this is always defined in practice; the fallback degrades rather than throws
+      // in case that invariant ever changes.
+      const bootstrapCase = cases[0] ?? "tiny";
+      console.log(
+        `bootstrap: capturing one un-transformed production call from case "${bootstrapCase}" to seed the ` +
+          "direct arm(s) — profile is not among the selected arms, so every case's direct-arm rows replay THIS " +
+          "one case's body rather than their own.",
       );
+      const { row: bootstrapRow, builtBody } = await runProductionCall({
+        arm: "profile",
+        probeCase: bootstrapCase,
+        round: 0,
+        position: 0,
+        ...CASE_DEFS[bootstrapCase],
+      });
+      bootstrapFallbackBody = builtBody;
+      if (builtBody) capturedProfileBody.set(bootstrapCase, builtBody);
+      console.log(`  bootstrap call: ${bootstrapRow.raw.finishReason ?? "—"}, ${bootstrapRow.totalMs}ms`);
+      appendOut({ type: "bootstrap-call", ...bootstrapRow });
     }
 
-    // ---- The 32K edge -------------------------------------------------------------
-    // Off by default: two calls that each carry ~32K input tokens are the most expensive
-    // thing in this file, and the answer only changes when the model or its host does.
+    let position = 0;
+    for (let round = 1; round <= ROUNDS; round++) {
+      const armOrder = armsForRound(arms, round);
+      for (const arm of armOrder) {
+        for (const probeCase of cases) {
+          position += 1;
+          if (DIRECT_ARMS.has(arm)) {
+            const body = capturedProfileBody.get(probeCase) ?? bootstrapFallbackBody ?? undefined;
+            if (!body) {
+              console.log(
+                `  skipped r${round} #${position} ${arm}/${probeCase}: no captured production body yet for this case`,
+              );
+              continue;
+            }
+            const row = await runDirectCall({ arm, probeCase, profileBody: body, round, position });
+            rows.push(row);
+            printRow(row);
+            appendOut({ type: "call", ...row });
+          } else {
+            const { row, builtBody } = await runProductionCall({
+              arm,
+              probeCase,
+              round,
+              position,
+              ...CASE_DEFS[probeCase],
+            });
+            if (builtBody && !capturedProfileBody.has(probeCase)) capturedProfileBody.set(probeCase, builtBody);
+            rows.push(row);
+            printRow(row);
+            appendOut({ type: "call", ...row });
+          }
+        }
+      }
+    }
+
+    // ---- The 32K edge, `profile` arm only (unchanged from the pre-#594 probe) ----
     if (process.env.PROBE_LONG_HISTORY === "1") {
-      // Tokens per filler sentence, derived from the two cases already measured rather
-      // than guessed: the padded system prompt is the tiny one plus FILLER_REPEATS copies
-      // of the same sentence, so the difference in reported input tokens divides out to
-      // this model's own tokenizer rate. That is what lets the fixture below be sized to
-      // a token target without a tokenizer in this repo.
-      const perFiller = fillerTokenRate(rows);
-      if (perFiller === null) {
-        console.log("long-history: skipped, no edge call made — the tiny and vesper-sized cases did not both report input tokens to calibrate from.");
+      if (!arms.includes("profile")) {
+        console.log("\nlong-history: skipped — PROBE_LONG_HISTORY=1 only extends the `profile` arm, which is not selected.");
       } else {
-        const underTurns = fillerPerTurn(rows, perFiller, UNDER_TARGET_TOKENS);
-        const under = await runCall({
-          label: "long-history-under",
-          call: 1,
-          system: tiny,
-          history: longHistory(underTurns),
-          wire: capture.last,
-          estimatedInputTokens: estimateInput(rows, perFiller, underTurns),
-        });
-        rows.push(under);
-        // The over-limit fixture is scaled from what the host ACTUALLY reported for the
-        // under-limit one, so the second call inherits a measurement instead of stacking a
-        // second estimate on the first.
-        const measured = under.completion?.inputTokens ?? null;
-        const overTurns =
-          measured !== null && measured > 0
-            ? Math.max(underTurns + 1, Math.ceil((underTurns * OVER_TARGET_TOKENS) / measured))
-            : Math.ceil((underTurns * OVER_TARGET_TOKENS) / UNDER_TARGET_TOKENS);
-        rows.push(
-          await runCall({
-            label: "long-history-over",
-            call: 1,
-            system: tiny,
+        const perFiller = fillerTokenRate(rows);
+        if (perFiller === null) {
+          console.log(
+            "\nlong-history: skipped, no edge call made — the tiny and vesper-sized `profile` cases did not both " +
+              "report input tokens to calibrate from.",
+          );
+        } else {
+          const underTurns = fillerPerTurn(rows, perFiller, UNDER_TARGET_TOKENS);
+          position += 1;
+          const { row: under } = await runProductionCall({
+            arm: "profile",
+            probeCase: "tiny",
+            round: 0,
+            position,
+            system: TINY_SYSTEM,
+            history: longHistory(underTurns),
+          });
+          const underEstimated = estimateInput(rows, perFiller, underTurns);
+          console.log(`\nlong-history-under (built ~${underEstimated} input tokens):`);
+          printRow(under);
+          appendOut({ type: "call", label: "long-history-under", estimatedInputTokens: underEstimated, ...under });
+
+          const measured = under.visible?.inputTokens ?? null;
+          const overTurns =
+            measured !== null && measured > 0
+              ? Math.max(underTurns + 1, Math.ceil((underTurns * OVER_TARGET_TOKENS) / measured))
+              : Math.ceil((underTurns * OVER_TARGET_TOKENS) / UNDER_TARGET_TOKENS);
+          position += 1;
+          const { row: over } = await runProductionCall({
+            arm: "profile",
+            probeCase: "tiny",
+            round: 0,
+            position,
+            system: TINY_SYSTEM,
             history: longHistory(overTurns),
-            wire: capture.last,
-            estimatedInputTokens: estimateInput(rows, perFiller, overTurns),
-          }),
-        );
+          });
+          const overEstimated = estimateInput(rows, perFiller, overTurns);
+          console.log(`\nlong-history-over (built ~${overEstimated} input tokens):`);
+          printRow(over);
+          appendOut({ type: "call", label: "long-history-over", estimatedInputTokens: overEstimated, ...over });
+        }
       }
     }
   } finally {
-    capture.restore();
+    restoreFetch();
   }
 
-  const header = [
-    "case",
-    "call",
-    "attempts",
-    "finish",
-    "rawFinish",
-    "in",
-    "estIn",
-    "out",
-    "text",
-    "reasoning",
-    "rawChars",
-    "visChars",
-    "tagOpen",
-    "tagStray",
-    "aster",
-    "ttftMs",
-    "totalMs",
-    "providerError",
-  ];
-  console.log(header.join("\t"));
-  for (const row of rows) {
-    const c = row.completion;
-    console.log(
-      [
-        row.label,
-        row.call,
-        c?.attempts ?? "—",
-        c?.finishReason ?? "—",
-        c?.rawFinishReason ?? "—",
-        num(c?.inputTokens),
-        num(row.estimatedInputTokens),
-        num(c?.outputTokens),
-        num(c?.textTokens),
-        num(c?.reasoningTokens),
-        c?.rawTextLength ?? "—",
-        c?.visibleTextLength ?? "—",
-        row.shape.tagOpen ? 1 : 0,
-        row.shape.tagStray,
-        row.shape.asterisk,
-        row.ttftMs ?? "—",
-        row.totalMs,
-        c?.providerError ? `${c.providerError.code}: ${c.providerError.detail.slice(0, 90)}` : "—",
-      ].join("\t") + (row.error ? `\tTHREW ${row.error}` : ""),
-    );
-  }
-  const empties = rows.filter((row) => (row.completion?.visibleTextChars ?? 0) === 0 && !row.error);
-  console.log(`\n${rows.length} calls, ${empties.length} with no visible text, ${rows.filter((r) => r.error).length} errored.`);
-  // The 32K edge is a verdict, not a row: a request over the window either completes or
-  // errors with the host's own words, and a 200 whose reported input is materially smaller
-  // than what was sent is SILENT TRUNCATION — the outcome this model may not have, because
-  // a narrator that quietly forgets the top of the conversation is worse than one that
-  // refuses it.
-  //
-  // Two DIFFERENT rejections live at this edge on Featherless, and reading them as one
-  // failure is how the usable window gets overstated. A prompt larger than the window is
-  // refused outright ("your prompt has N tokens"). But a prompt that FITS is also refused
-  // when no `max_tokens` is sent, because the host reserves a 4096-token default output
-  // inside the same window — measured 2026-09-04, where a 31,594-token prompt was refused
-  // bare and answered fine at `max_tokens: 256`. So a caller that sends no output cap gets
-  // roughly window-minus-4096 of usable prompt, not the whole window.
-  const longRows = rows.filter((row) => row.label.startsWith("long-history"));
-  if (longRows.length > 0) {
-    console.log("\n32K edge:");
-    for (const row of longRows) {
-      const c = row.completion;
-      const reported = c?.inputTokens ?? null;
-      const estimated = row.estimatedInputTokens ?? null;
-      const truncated = reported !== null && estimated !== null && reported < estimated * 0.95;
-      const verdict = row.error
-        ? `THREW ${row.error}`
-        : c?.providerError
-          ? `errored — ${c.providerError.code}: ${c.providerError.detail.slice(0, 160)}`
-          : c === null
-            ? "no completion record"
-            : truncated
-              ? `SILENTLY TRUNCATED — built ~${String(estimated)} input tokens, host reported ${String(reported)}`
-              : `completed — finish ${c.finishReason}/${c.rawFinishReason ?? "—"}, ${String(reported ?? "—")} in / ${String(c.outputTokens ?? "—")} out`;
-      console.log(`  ${row.label} (built ~${String(estimated ?? "—")} input tokens): ${verdict}`);
-    }
-  }
-  console.log("wire body per case (sampler + thinking fields only):");
-  for (const label of [...new Set(rows.map((row) => row.label))]) {
-    console.log(`  ${label}: ${rows.find((row) => row.label === label)?.wire}`);
+  console.log(`\n${rows.length} calls in the interleaved grid, ${rows.filter((row) => row.errored).length} errored.`);
+  printSummary(rows);
+
+  if (outPath) {
+    const summary = buildProbeSummary(rows);
+    appendOut({ type: "summary", ...summary });
+    console.log(`\nwrote ${rows.length} call row(s) + 1 summary row to ${outPath}`);
   }
 }
 
