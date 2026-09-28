@@ -4,14 +4,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { emptyCharacterProfile } from "@/contracts";
 import { emptyCharacterDraft } from "@/lib/client/api";
 import { characters, db, jobs } from "@/server/db";
-import { bindCreationAuthoringRuns, claimJobSlot, isCoalescedAuthoringRetry, resetRateLimits, startAuthoringRunSchema, startCharacterAuthoringRun, startJobAfterAdmission } from "@/server/api";
+import { blankCreatedCharacterContent, characterCreateSchema, claimJobSlot, createOwnedCharacter, isCoalescedAuthoringRetry, resetRateLimits, startAuthoringRunSchema, startCharacterAuthoringRun, startJobAfterAdmission } from "@/server/api";
 
 const authState = vi.hoisted(() => ({ user: { id: "", email: "", name: "Authoring runs", role: "admin" as const } }));
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import { characterDraftSchema, portraitAuthoringFingerprint } from "@/server/authoring";
 import { absoluteImagePath, createImageAsset, saveOwnedImageBuffer, sourceContentHashOf } from "@/server/images";
-import { apiRequest, bindAuthUser, endTestPool, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, testPngBuffer, withAuthUser, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
+import { apiRequest, bindAuthUser, endTestPool, expectApiError, expectJson, probeIntegrationDb, purgeOwnerRows, routeCtx, seedTestUser, testPngBuffer, withAuthUser, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { GET as listRuns, POST as startRun } from "./route";
 import { PATCH as decideRun } from "./[runId]/decision/route";
 import { POST as retryRun } from "./[runId]/retry/route";
@@ -50,6 +50,55 @@ const list = (kind: "creation" | "character", id?: string) => listRuns(
   routeCtx({}),
 );
 
+type CreateRun = {
+  id: string;
+  base: { name: string };
+  creationStart: { draft: unknown; prompt: string; initialPreview: boolean } | null;
+  source: { authoringRevision: number };
+  status: string;
+  proposal: { revision: number; status: string };
+  result: { proposed: { name: string; profile: { creationBrief: string } }; diagnostics: { code: string }[] } | null;
+};
+
+/** A character exactly as the library's New button creates it. */
+async function blankCharacter(name = "New character") {
+  const outcome = await createOwnedCharacter(authState.user.id, characterCreateSchema.parse({ name }));
+  if (outcome.status !== "created") throw new Error("failed to create blank character fixture");
+  return outcome.response.character;
+}
+
+/** The body the character page sends: the browser draft and flag are ignored. */
+function createRunBody(character: { id: string; authoringRevision: number }, prompt: string, requestId: string) {
+  return {
+    requestId,
+    target: { kind: "character", id: character.id },
+    operation: "create",
+    scope: null,
+    label: "forged character",
+    base: emptyCharacterDraft(),
+    creationStart: { draft: emptyCharacterDraft(), prompt, initialPreview: false },
+    source: { authoringRevision: character.authoringRevision, imageId: null },
+  };
+}
+
+const startCreate = (character: { id: string; authoringRevision: number }, prompt: string, requestId: string = crypto.randomUUID()) => startRun(
+  apiRequest("/api/characters/authoring-runs", { method: "POST", body: createRunBody(character, prompt, requestId) }),
+  routeCtx({}),
+);
+const decide = (runId: string, body: Record<string, unknown>) => decideRun(
+  apiRequest(`/api/characters/authoring-runs/${runId}/decision`, { method: "PATCH", body }),
+  routeCtx({ runId }),
+);
+/** The start-time snapshot as stored; the projected flag also depends on the result. */
+async function storedCreationStart(runId: string) {
+  const [row] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, runId));
+  return (row?.payload as { intent?: { creationStart?: unknown } } | undefined)?.intent?.creationStart;
+}
+async function storedBrief(characterId: string) {
+  const [row] = await db().select({ profile: characters.profile }).from(characters).where(eq(characters.id, characterId));
+  return (row?.profile as { creationBrief?: unknown } | undefined)?.creationBrief;
+}
+
 function storedRun(input: { id: string; characterId: string; revision: number; before: string; after: string }) {
   const base = { ...emptyCharacterDraft(), name: input.before };
   const proposed = { ...base, name: input.after };
@@ -82,6 +131,25 @@ function storedRun(input: { id: string; characterId: string; revision: number; b
   };
 }
 
+/** A completed first Forge started on an untouched blank, with the given result diagnostics. */
+function storedFirstForge(input: { id: string; characterId: string; diagnostics: { severity: "info" | "warn" | "error"; code: string; message: string }[] }) {
+  const stored = storedRun({ id: input.id, characterId: input.characterId, revision: 1, before: "New character", after: "Forged name" });
+  return {
+    ...stored,
+    payload: {
+      ...stored.payload,
+      intent: {
+        ...stored.payload.intent,
+        operation: "create",
+        scope: null,
+        label: "forged character",
+        creationStart: { draft: stored.payload.intent.base, prompt: "A patient harbor master", initialPreview: true, origin: "reserved_row" },
+      },
+      result: { ...stored.payload.result, diagnostics: input.diagnostics },
+    },
+  };
+}
+
 function storedCreationRun(input: { id: string; creationId: string; before: string; after: string }) {
   const stored = storedRun({
     id: input.id,
@@ -101,20 +169,6 @@ function storedCreationRun(input: { id: string; creationId: string; before: stri
       },
     },
   };
-}
-
-async function holdJobRowLock(jobId: string) {
-  let release!: () => void;
-  let acquired!: () => void;
-  const released = new Promise<void>((resolve) => { release = resolve; });
-  const locked = new Promise<void>((resolve) => { acquired = resolve; });
-  const done = db().transaction(async (tx) => {
-    await tx.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, jobId)).for("update");
-    acquired();
-    await released;
-  });
-  await locked;
-  return { release, done };
 }
 
 async function portraitSubject(name: string) {
@@ -187,28 +241,150 @@ function storedPortraitRun(input: Awaited<ReturnType<typeof portraitSubject>> & 
 }
 
 describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
-  it("keeps the first Forge decidable until the client accepts its unchanged preview", async () => {
+  it("marks a first Forge on an untouched blank for direct apply until its forge degrades, and stores the brief on a manual accept", async () => {
+    const row = await blankCharacter();
+    const started = await expectJson<{ run: CreateRun }>(await startCreate(row, "A patient harbor master"), 202);
+    // The snapshot comes from the reserved row, never the browser's empty draft.
+    expect(started.run.base.name).toBe(row.name);
+    expect(started.run.creationStart).toEqual({ draft: expect.any(Object), prompt: "A patient harbor master", initialPreview: expect.any(Boolean) });
+    expect(started.run.source.authoringRevision).toBe(1);
+    expect(await storedCreationStart(started.run.id)).toMatchObject({ initialPreview: true, origin: "reserved_row" });
+    await waitForJob(started.run.id);
+
+    const listed = await expectJson<{ runs: CreateRun[] }>(await list("character", row.id));
+    const completed = listed.runs.find((run) => run.id === started.run.id);
+    expect(completed).toMatchObject({ status: "completed", proposal: { status: "unresolved" } });
+    expect(completed?.result?.proposed.profile.creationBrief).toBe("A patient harbor master");
+    // The test provider's forge falls back to demo content, which is never
+    // applied without review: the completed run is an ordinary proposal.
+    expect(completed?.result?.diagnostics.map((item) => item.code)).toContain("forge.character.profile.degraded");
+    expect(completed?.creationStart?.initialPreview).toBe(false);
+    expect(await storedBrief(row.id)).toBe("");
+
+    const accepted = await decide(started.run.id, {
+      action: "accept", expectedProposalRevision: 1, expectedAuthoringRevision: started.run.source.authoringRevision, choices: {},
+    });
+    expect((await expectJson<{ run: CreateRun }>(accepted)).run.proposal.status).toBe("accepted");
+    const [saved] = await db().select().from(characters).where(eq(characters.id, row.id));
+    expect(saved?.authoringRevision).toBeGreaterThan(1);
+    expect(await storedBrief(row.id)).toBe("A patient harbor master");
+  });
+
+  it("projects direct apply for a clean completed first Forge and withholds it for a degraded one", async () => {
+    const row = await blankCharacter();
+    const clean = storedFirstForge({ id: crypto.randomUUID(), characterId: row.id, diagnostics: [
+      { severity: "info", code: "forge.character.profile.repaired", message: "structured output needed one repair round-trip" },
+    ] });
+    const timedOut = storedFirstForge({ id: crypto.randomUUID(), characterId: row.id, diagnostics: [
+      { severity: "warn", code: "forge.character.outfit.timeout", message: "generation exceeded the leg budget; degrading to the fallback" },
+    ] });
+    await db().insert(jobs).values([clean, timedOut]);
+    const listed = await expectJson<{ runs: CreateRun[] }>(await list("character", row.id));
+    expect(listed.runs.find((run) => run.id === clean.id)?.creationStart?.initialPreview).toBe(true);
+    expect(listed.runs.find((run) => run.id === timedOut.id)?.creationStart?.initialPreview).toBe(false);
+  });
+
+  it("turns an edit made during the first Forge into an ordinary proposal, and rejection keeps the brief unsaved", async () => {
+    const row = await blankCharacter();
+    const started = await expectJson<{ run: CreateRun }>(await startCreate(row, "A retired lighthouse keeper"), 202);
+    expect(await storedCreationStart(started.run.id)).toMatchObject({ initialPreview: true, origin: "reserved_row" });
+    const [edited] = await db().update(characters).set({ tags: ["edited meanwhile"] }).where(eq(characters.id, row.id)).returning();
+    await waitForJob(started.run.id);
+
+    await expectApiError(await decide(started.run.id, {
+      action: "accept", expectedProposalRevision: 1, expectedAuthoringRevision: started.run.source.authoringRevision, choices: {},
+    }), 409, "authoring_conflict");
+    expect(await storedBrief(row.id)).toBe("");
+
+    const rejected = await decide(started.run.id, {
+      action: "reject", expectedProposalRevision: 1, expectedAuthoringRevision: edited!.authoringRevision, choices: {},
+    });
+    expect((await expectJson<{ run: CreateRun }>(rejected)).run.proposal.status).toBe("rejected");
+    const [after] = await db().select().from(characters).where(eq(characters.id, row.id));
+    expect(after).toMatchObject({ name: row.name, tags: ["edited meanwhile"] });
+    expect(await storedBrief(row.id)).toBe("");
+  });
+
+  it("reviews every create on a character that is not an untouched blank, forging from its saved brief", async () => {
+    // Revision 1 alone is not enough: this row was stored with content other
+    // than what a blank create seeds.
+    const authored = await subject("Authored at creation");
+    expect(authored.authoringRevision).toBe(1);
+    const reviewed = await expectJson<{ run: CreateRun }>(await startCreate(authored, "A quiet cartographer"), 202);
+    expect(reviewed.run.creationStart).toMatchObject({ prompt: "A quiet cartographer", initialPreview: false });
+
+    const blank = blankCreatedCharacterContent();
+    const [briefed] = await db().insert(characters).values({
+      ownerId: authState.user.id,
+      name: "Briefed blank",
+      profile: { ...blank.profile, creationBrief: "Original harbor concept" },
+      tags: blank.tags,
+    }).returning();
+    const regenerated = await expectJson<{ run: CreateRun }>(await startCreate(briefed!, "A different typed concept"), 202);
+    expect(regenerated.run.creationStart).toMatchObject({ prompt: "Original harbor concept", initialPreview: false });
+    await waitForJob(reviewed.run.id);
+    await waitForJob(regenerated.run.id);
+    const listed = await expectJson<{ runs: CreateRun[] }>(await list("character", briefed!.id));
+    expect(listed.runs.find((run) => run.id === regenerated.run.id)?.result?.proposed.profile.creationBrief).toBe("Original harbor concept");
+  });
+
+  it("refuses a create with no brief on the character or in the request before admission", async () => {
+    const row = await blankCharacter();
     const requestId = crypto.randomUUID();
-    const creationId = crypto.randomUUID();
-    const blank = emptyCharacterDraft();
-    const base = { ...blank, profile: { ...blank.profile, creationBrief: "A patient harbor master" } };
-    const response = await startRun(apiRequest("/api/characters/authoring-runs", { method: "POST", body: {
-      requestId,
-      target: { kind: "creation", id: creationId },
-      operation: "create",
-      scope: null,
-      label: "forged character",
-      base,
-      creationStart: { draft: blank, prompt: "A patient harbor master", initialPreview: true },
-      source: null,
-    } }), routeCtx({}));
-    expect(response.status).toBe(202);
+    let admissions = 0;
+    const outcome = await startCharacterAuthoringRun(
+      authState.user.id,
+      startAuthoringRunSchema.parse(createRunBody(row, "   ", requestId)),
+      async () => { admissions += 1; return null; },
+    );
+    expect(outcome.status).toBe("brief_required");
+    expect(admissions).toBe(0);
+    expect(await db().select({ id: jobs.id }).from(jobs).where(eq(jobs.id, requestId))).toEqual([]);
+    await expectApiError(await startCreate(row, ""), 400, "invalid_body");
+  });
+
+  it("replays a repeated create after acceptance and refuses a changed prompt under the same id", async () => {
+    const row = await blankCharacter();
+    const requestId = crypto.randomUUID();
+    const first = await expectJson<{ run: CreateRun }>(await startCreate(row, "A patient harbor master", requestId), 202);
     await waitForJob(requestId);
-    const listed = await expectJson<{ runs: { id: string; proposal: { status: string } }[] }>(await list("creation", creationId));
-    expect(listed.runs).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: requestId, proposal: expect.objectContaining({ status: "unresolved" }) }),
-    ]));
-    expect((await expectJson<{ runs: unknown[] }>(await list("creation", crypto.randomUUID()))).runs).toEqual([]);
+    await expectJson(await decide(requestId, {
+      action: "accept", expectedProposalRevision: 1, expectedAuthoringRevision: first.run.source.authoringRevision, choices: {},
+    }), 200);
+
+    // A lost response retried after the character moved on replays the stored run.
+    const replay = await expectJson<{ run: CreateRun }>(await startCreate(row, "A patient harbor master", requestId), 202);
+    expect(replay.run).toMatchObject({ id: requestId, proposal: { status: "accepted" } });
+    await expectApiError(await startCreate(row, "A different concept", requestId), 409, "idempotency_conflict");
+    expect(await db().select({ id: jobs.id }).from(jobs).where(eq(jobs.id, requestId))).toHaveLength(1);
+  });
+
+  it("keeps stored creation-draft runs inert and never trusts a bound run's browser preview flag", async () => {
+    // A creation-draft run orphaned by the deploy: never listed, decided or re-run.
+    const creationId = crypto.randomUUID();
+    const legacy = storedCreationRun({ id: crypto.randomUUID(), creationId, before: "Legacy draft", after: "Legacy result" });
+    const legacyPayload = { ...legacy.payload, result: null };
+    await db().insert(jobs).values({ ...legacy, status: "running", finishedAt: null, heartbeatAt: new Date(0), payload: legacyPayload });
+    await expectApiError(await list("creation", creationId), 400, "invalid_query");
+    await expectApiError(await decide(legacy.id, { action: "dismiss", expectedProposalRevision: 1, choices: {} }), 409, "invalid_run");
+    const ownedJobs = () => db().select({ id: jobs.id }).from(jobs).where(eq(jobs.ownerId, authState.user.id));
+    const before = await ownedJobs();
+    await expectApiError(await retryRun(apiRequest(`/api/characters/authoring-runs/${legacy.id}/retry`, {
+      method: "POST", body: { requestId: crypto.randomUUID() },
+    }), routeCtx({ runId: legacy.id })), 409, "idempotency_conflict");
+    expect(await ownedJobs()).toHaveLength(before.length);
+    const [untouched] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, legacy.id));
+    expect(untouched?.payload).toEqual(legacyPayload);
+
+    // A run bound onto a character by the old save carries a browser-computed flag.
+    const destination = await subject("Bound legacy destination");
+    const bound = storedRun({ id: crypto.randomUUID(), characterId: destination.id, revision: destination.authoringRevision, before: destination.name, after: "Bound result" });
+    await db().insert(jobs).values({ ...bound, payload: { ...bound.payload, intent: {
+      ...bound.payload.intent, operation: "create", scope: null,
+      creationStart: { draft: bound.payload.intent.base, prompt: "Legacy prompt", initialPreview: true },
+    } } });
+    const listed = await expectJson<{ runs: CreateRun[] }>(await list("character", destination.id));
+    expect(listed.runs.find((run) => run.id === bound.id)?.creationStart).toMatchObject({ prompt: "Legacy prompt", initialPreview: false });
   });
 
   it("preserves a running dismissal when detached work settles", async () => {
@@ -235,89 +411,6 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     expect(settled?.payload).toEqual(expect.objectContaining({
       proposal: expect.objectContaining({ status: "dismissed" }),
       result: fixture.payload.result,
-    }));
-  });
-
-  it("binds the locked completion payload without losing its result", async () => {
-    const destination = await subject("Bound completion destination");
-    const creationId = crypto.randomUUID();
-    const fixture = storedCreationRun({
-      id: crypto.randomUUID(),
-      creationId,
-      before: "Creation preview",
-      after: "Completed creation",
-    });
-    let finish!: () => void;
-    const waiting = new Promise<void>((resolve) => { finish = resolve; });
-    const started = await startJobAfterAdmission({
-      type: "character_authoring",
-      ownerId: authState.user.id,
-      requestedJobId: fixture.id,
-      payload: { ...fixture.payload, result: null },
-      run: async () => {
-        await waiting;
-        return { result: fixture.payload.result };
-      },
-    }, async () => null);
-    expect(started.ok).toBe(true);
-
-    const lock = await holdJobRowLock(fixture.id);
-    finish();
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    const binding = bindCreationAuthoringRuns(
-      authState.user.id,
-      creationId,
-      destination.id,
-      destination.authoringRevision,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    lock.release();
-    await Promise.all([lock.done, binding]);
-    await waitForJob(fixture.id);
-
-    const [saved] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, fixture.id));
-    expect(saved?.payload).toEqual(expect.objectContaining({
-      intent: expect.objectContaining({
-        target: { kind: "character", id: destination.id },
-        source: { authoringRevision: destination.authoringRevision, imageId: null },
-      }),
-      proposal: expect.objectContaining({ status: "unresolved" }),
-      result: fixture.payload.result,
-    }));
-  });
-
-  it("binds the locked decision payload without restoring an unresolved proposal", async () => {
-    const destination = await subject("Bound decision destination");
-    const creationId = crypto.randomUUID();
-    const fixture = storedCreationRun({
-      id: crypto.randomUUID(),
-      creationId,
-      before: "Decision preview",
-      after: "Rejected creation",
-    });
-    await db().insert(jobs).values(fixture);
-
-    const lock = await holdJobRowLock(fixture.id);
-    const deciding = decideRun(apiRequest(`/api/characters/authoring-runs/${fixture.id}/decision`, {
-      method: "PATCH",
-      body: { action: "reject", expectedProposalRevision: 1, choices: {} },
-    }), routeCtx({ runId: fixture.id }));
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    const binding = bindCreationAuthoringRuns(
-      authState.user.id,
-      creationId,
-      destination.id,
-      destination.authoringRevision,
-    );
-    await new Promise((resolve) => setTimeout(resolve, 25));
-    lock.release();
-    const [decided] = await Promise.all([deciding, binding, lock.done]);
-    expect((await expectJson<{ run: { proposal: { status: string } } }>(decided)).run.proposal.status).toBe("rejected");
-
-    const [saved] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, fixture.id));
-    expect(saved?.payload).toEqual(expect.objectContaining({
-      intent: expect.objectContaining({ target: { kind: "character", id: destination.id } }),
-      proposal: expect.objectContaining({ status: "rejected", revision: 2 }),
     }));
   });
 

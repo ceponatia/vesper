@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  boundCharacterCreationBrief,
   characterProfileSchema,
   diag,
   type Diagnostic,
@@ -30,13 +32,22 @@ import {
 } from "@/server/authoring";
 import { absoluteImagePath, sourceContentHashOf } from "@/server/images";
 import { materializeSuggestedItems, prepareSuggestedItemEmbeddings, queueEmbedRefresh } from "./library";
-import { reserveCharacterAuthoringAction } from "./character-save";
+import { blankCreatedCharacterContent } from "./character-create";
+import { isDegradedForgeResult } from "./forge-degradation";
+import { reserveCharacterAuthoringAction, type CharacterAuthoringActionSource } from "./character-save";
 import { isJobAdmissionPending, startJobAfterAdmission, waitForJobAdmission } from "./jobs";
 
 const MAX_RUNS_PER_SURFACE = 25;
 
+/**
+ * Saved characters are the only authoring target. Runs stored for the removed
+ * browser creation draft (`kind: "creation"`) no longer parse: listings never
+ * select them, and decisions and retries refuse them before any provider work.
+ * Nothing re-drives a stored job, so one left running at deploy is reclaimed
+ * by the orphaned-job sweep.
+ */
 export const authoringTargetSchema = z.object({
-  kind: z.enum(["creation", "character"]),
+  kind: z.literal("character"),
   id: z.string().min(1).max(128),
 });
 export const authoringSourceSchema = z.object({
@@ -46,6 +57,14 @@ export const authoringSourceSchema = z.object({
   authoringFingerprint: z.string().regex(/^[0-9a-f]{64}$/).nullable().optional(),
 });
 const creationStartSchema = z.object({ draft: characterDraftSchema, prompt: z.string(), initialPreview: z.boolean() });
+/**
+ * The stored create snapshot. `origin: "reserved_row"` marks one the server
+ * derived from the reserved character row. Only that snapshot's
+ * `initialPreview` is projected: runs bound from the removed creation draft
+ * carry a browser-computed flag that meant an untouched browser draft, not an
+ * untouched saved character.
+ */
+const storedCreationStartSchema = creationStartSchema.extend({ origin: z.literal("reserved_row").optional() });
 const resultSchema = z.object({
   proposed: characterDraftSchema,
   diagnostics: z.array(diagnosticSchema),
@@ -72,10 +91,12 @@ const intentSchema = z.object({
   scope: characterSheetScopeSchema.nullable(),
   label: z.string().min(1).max(160),
   base: characterDraftSchema,
-  creationStart: creationStartSchema.nullable(),
+  creationStart: storedCreationStartSchema.nullable(),
   source: authoringSourceSchema.nullable(),
   retryOf: z.string().nullable(),
   rootRunId: z.string(),
+  /** `requestDigest` of the start request itself; absent on older rows. */
+  requestHash: z.string().optional(),
   intentHash: z.string(),
 });
 const payloadSchema = z.object({
@@ -95,10 +116,9 @@ export const startAuthoringRunSchema = z.object({
   creationStart: creationStartSchema.nullable(),
   source: authoringSourceSchema.nullable(),
 }).superRefine((value, ctx) => {
-  if (value.operation === "create" && value.target.kind !== "creation") ctx.addIssue({ code: "custom", message: "create runs require a creation target" });
   if (value.operation === "create" && !value.creationStart) ctx.addIssue({ code: "custom", message: "create runs require their creation snapshot" });
-  if (value.operation === "portrait" && (value.target.kind !== "character" || !value.source?.imageId)) ctx.addIssue({ code: "custom", message: "portrait runs require a saved character and displayed image" });
-  if (value.target.kind === "character" && !value.source) ctx.addIssue({ code: "custom", message: "saved-character runs require an authoring revision" });
+  if (value.operation === "portrait" && !value.source?.imageId) ctx.addIssue({ code: "custom", message: "portrait runs require a saved character and displayed image" });
+  if (!value.source) ctx.addIssue({ code: "custom", message: "saved-character runs require an authoring revision" });
   if (value.operation === "redraft" && !value.scope) ctx.addIssue({ code: "custom", message: "redraft runs require a scope" });
 });
 
@@ -108,47 +128,67 @@ export const decideAuthoringRunSchema = z.object({
   expectedProposalRevision: z.number().int().positive(),
   expectedAuthoringRevision: z.number().int().positive().optional(),
   choices: z.record(z.string(), z.enum(["current", "proposed"])).default({}),
-  currentDraft: characterDraftSchema.optional(),
 });
 
 type StoredPayload = z.infer<typeof payloadSchema>;
+type StoredIntent = z.infer<typeof intentSchema>;
 type StartInput = z.infer<typeof startAuthoringRunSchema>;
 type DecideInput = z.infer<typeof decideAuthoringRunSchema>;
+/** A start whose content fields all come from the reserved server row. */
+type CanonicalStart = Omit<StoredIntent, "retryOf" | "rootRunId" | "requestHash" | "intentHash">;
+type StartConflict = {
+  conflict: "not_found" | "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed" | "invalid_source" | "brief_required";
+  currentRevision?: number;
+  currentImageId?: string | null;
+};
+type DigestInput = Pick<StartInput, "requestId" | "target" | "operation" | "scope" | "label" | "creationStart" | "source">;
 export type AuthoringRunDto = ReturnType<typeof projectRun>;
 
-function intentDigest(value: Omit<z.infer<typeof intentSchema>, "intentHash">): string {
+function intentDigest(value: Omit<StoredIntent, "intentHash">): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-/** Saved-character input is reconstructed from the reserved server row, so its
- * untrusted browser base is deliberately absent from idempotency comparison. */
-function requestDigest(input: StartInput, retryOf: string | null, rootRunId: string): string {
+/**
+ * The idempotency identity of a start request. Content is reconstructed from
+ * the reserved server row, so the untrusted browser base and the browser's
+ * create snapshot are absent; only the snapshot's prompt, the author's intent,
+ * takes part.
+ */
+function requestDigest(input: DigestInput, retryOf: string | null, rootRunId: string): string {
   return createHash("sha256").update(JSON.stringify({
     requestId: input.requestId,
     target: input.target,
     operation: input.operation,
     scope: input.scope,
     label: input.label,
-    ...(input.target.kind === "creation" ? { base: input.base } : {}),
-    creationStart: input.creationStart,
+    creationStart: input.creationStart ? { prompt: input.creationStart.prompt } : null,
     source: input.source ? { authoringRevision: input.source.authoringRevision, imageId: input.source.imageId } : null,
     retryOf,
     rootRunId,
   })).digest("hex");
 }
 
+/**
+ * A stored create snapshot holds the server-derived brief rather than the
+ * prompt the browser sent, so runs record the digest of the request itself.
+ * Rows written before that recompute it from their stored intent.
+ */
 function matchesStoredRequest(payload: StoredPayload, input: StartInput, retryOf: string | null, rootRunId: string): boolean {
-  const stored = {
-    requestId: payload.intent.requestId,
-    target: payload.intent.target,
-    operation: payload.intent.operation,
-    scope: payload.intent.scope,
-    label: payload.intent.label,
-    base: payload.intent.base,
-    creationStart: payload.intent.creationStart,
-    source: payload.intent.source,
-  };
-  return requestDigest(stored, payload.intent.retryOf, payload.intent.rootRunId) === requestDigest(input, retryOf, rootRunId);
+  const stored = payload.intent.requestHash ?? requestDigest(payload.intent, payload.intent.retryOf, payload.intent.rootRunId);
+  return stored === requestDigest(input, retryOf, rootRunId);
+}
+
+/**
+ * `initialPreview` lets the client apply a completed first Forge without
+ * review. It holds only for a server-derived snapshot of an untouched blank,
+ * and never once the result is degraded: fallback content arrives as an
+ * ordinary proposal. A run without a result keeps its start-time value.
+ */
+function projectCreationStart(start: StoredIntent["creationStart"], result: StoredPayload["result"]) {
+  if (!start) return null;
+  const initialPreview = start.initialPreview && start.origin === "reserved_row"
+    && !(result && isDegradedForgeResult(result.diagnostics));
+  return { draft: start.draft, prompt: start.prompt, initialPreview };
 }
 
 function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
@@ -172,7 +212,7 @@ function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
     scope: payload.intent.scope,
     label: payload.intent.label,
     base: payload.intent.base,
-    creationStart: payload.intent.creationStart,
+    creationStart: projectCreationStart(payload.intent.creationStart, payload.result),
     source: payload.intent.source,
     status: failed ? "failed" as const : row.status === "done" ? "completed" as const : "pending" as const,
     result: payload.result,
@@ -247,8 +287,38 @@ export async function listCharacterAuthoringRuns(ownerId: string, target: z.infe
   return { runs: runs.filter((run) => run.proposal.status !== "dismissed"), diagnostics };
 }
 
-async function canonicalizeStart(ownerId: string, input: StartInput): Promise<StartInput | { conflict: "not_found" | "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed" | "invalid_source"; currentRevision?: number; currentImageId?: string | null }> {
-  if (input.target.kind === "creation") return input;
+/** What jsonb storage keeps of a value: members that are undefined disappear. */
+function asStoredJson(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Whether the reserved row is still exactly as `createOwnedCharacter` made it
+ * for a blank `{ name }` body. The database advances the authoring revision
+ * only when name, profile or tags change. Profile and tags are compared
+ * structurally because jsonb rewrites object key order; the name is not
+ * compared, since a never-edited character keeps its creation placeholder.
+ */
+function isUntouchedBlankCharacter(row: Pick<CharacterAuthoringActionSource, "authoringRevision" | "profile" | "tags">): boolean {
+  if (row.authoringRevision !== 1) return false;
+  const blank = blankCreatedCharacterContent();
+  return isDeepStrictEqual(row.profile, asStoredJson(blank.profile)) && isDeepStrictEqual(row.tags, asStoredJson(blank.tags));
+}
+
+/**
+ * The create snapshot comes from the reserved row, never from the browser. A
+ * character's saved original brief outranks a typed one; with neither there is
+ * nothing to forge from. The first Forge may apply without review only while
+ * the character has no brief and is still an untouched blank.
+ */
+function deriveCreationStart(row: CharacterAuthoringActionSource, base: CharacterDraft, requestedPrompt: string): NonNullable<CanonicalStart["creationStart"]> | null {
+  const savedBrief = base.profile.creationBrief;
+  const prompt = savedBrief || boundCharacterCreationBrief(requestedPrompt);
+  if (!prompt) return null;
+  return { draft: base, prompt, initialPreview: !savedBrief && isUntouchedBlankCharacter(row), origin: "reserved_row" };
+}
+
+async function canonicalizeStart(ownerId: string, input: StartInput): Promise<CanonicalStart | StartConflict> {
   const source = input.source;
   if (!source) return { conflict: "not_found" };
   const reserved = await reserveCharacterAuthoringAction({
@@ -271,6 +341,14 @@ async function canonicalizeStart(ownerId: string, input: StartInput): Promise<St
       currentImageId: reserved.source.avatarImageId,
     };
   }
+  const request = {
+    requestId: input.requestId,
+    target: input.target,
+    operation: input.operation,
+    scope: input.scope,
+    label: input.label,
+    base,
+  };
   if (input.operation === "portrait" && source.imageId) {
     const portrait = await ownedPortraitBytes(ownerId, input.target.id, source.imageId);
     if (!portrait) {
@@ -291,8 +369,8 @@ async function canonicalizeStart(ownerId: string, input: StartInput): Promise<St
       };
     }
     return {
-      ...input,
-      base,
+      ...request,
+      creationStart: null,
       source: {
         authoringRevision: reserved.source.authoringRevision,
         imageId: source.imageId,
@@ -301,14 +379,20 @@ async function canonicalizeStart(ownerId: string, input: StartInput): Promise<St
       },
     };
   }
+  let creationStart: CanonicalStart["creationStart"] = null;
+  if (input.operation === "create") {
+    creationStart = deriveCreationStart(reserved.source, base, input.creationStart?.prompt ?? "");
+    // A refusal before admission: no job row, no budget charge, no provider call.
+    if (!creationStart) return { conflict: "brief_required" };
+  }
   return {
-    ...input,
-    base,
+    ...request,
+    creationStart,
     source: { authoringRevision: reserved.source.authoringRevision, imageId: source.imageId },
   };
 }
 
-async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>): Promise<Pick<StoredPayload, "result">> {
+async function executeRun(ownerId: string, intent: StoredIntent): Promise<Pick<StoredPayload, "result">> {
   const sink = new DiagnosticCollector();
   const base = intent.base;
   let proposed: CharacterDraft;
@@ -347,8 +431,13 @@ async function executeRun(ownerId: string, intent: z.infer<typeof intentSchema>)
     if (!intent.scope) throw new Error("redraft scope is missing");
     proposed = mergeRedraftScope(base, await redraftCharacterScope({ draft: base, scope: intent.scope, userId: ownerId, sink }), intent.scope);
   } else {
-    proposed = await forgeCharacter({ prompt: base.profile.creationBrief, userId: ownerId, sink });
-    proposed = { ...proposed, profile: { ...proposed.profile, creationBrief: base.profile.creationBrief } };
+    // The snapshot's prompt is the effective brief. It reaches the character
+    // only through an accepted result (see `withAcceptedCreationBrief`).
+    const brief = boundCharacterCreationBrief(intent.creationStart?.prompt ?? "") || base.profile.creationBrief;
+    const forged = await forgeCharacter({ prompt: brief, userId: ownerId, sink });
+    // A forge that names no one keeps the saved name; a saved character is never
+    // proposed a blank one.
+    proposed = { ...forged, name: forged.name.trim() ? forged.name : base.name, profile: { ...forged.profile, creationBrief: brief } };
   }
   const result = { proposed, diagnostics: sink.items, ...(portrait ? { portrait } : {}) };
   return { result };
@@ -360,6 +449,7 @@ export type StartAuthoringRunOutcome =
   | { status: "admission"; response: Response }
   | { status: "not_found" }
   | { status: "authoring_revision_changed" | "portrait_changed" | "portrait_source_changed" | "invalid_source"; currentRevision?: number; currentImageId?: string | null }
+  | { status: "brief_required" }
   | { status: "admission_pending" }
   | { status: "idempotency_conflict" };
 
@@ -376,7 +466,8 @@ export function isCoalescedAuthoringRetry(
     && storedRootRunId === rootRunId;
 }
 
-async function launch(ownerId: string, input: StartInput, retryOf: string | null, rootRunId: string, admit: () => Promise<Response | null>, sourceAlreadyReserved = false): Promise<StartAuthoringRunOutcome> {
+/** `reserved` is a retry's already-accepted source, which skips reservation. */
+async function launch(ownerId: string, input: StartInput, retryOf: string | null, rootRunId: string, admit: () => Promise<Response | null>, reserved: CanonicalStart | null = null): Promise<StartAuthoringRunOutcome> {
   const existing = await ownedRunRow(ownerId, input.requestId);
   if (existing) {
     const admission = await waitForJobAdmission(existing.id);
@@ -390,7 +481,7 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
         : { status: "idempotency_conflict" };
     }
   }
-  const canonical = sourceAlreadyReserved ? input : await canonicalizeStart(ownerId, input);
+  const canonical = reserved ?? await canonicalizeStart(ownerId, input);
   if ("conflict" in canonical) {
     const raced = await ownedRunRow(ownerId, input.requestId);
     const admission = raced ? await waitForJobAdmission(raced.id) : "missing";
@@ -413,6 +504,7 @@ async function launch(ownerId: string, input: StartInput, retryOf: string | null
     source: canonical.source,
     retryOf,
     rootRunId,
+    requestHash: requestDigest(input, retryOf, rootRunId),
   };
   const intent = { ...unsigned, intentHash: intentDigest(unsigned) };
   const payload: StoredPayload = {
@@ -455,44 +547,6 @@ export function startCharacterAuthoringRun(ownerId: string, input: StartInput, a
   return launch(ownerId, input, null, input.requestId, admit);
 }
 
-/** Move creation-draft runs onto the character minted from that same request. */
-export async function bindCreationAuthoringRuns(ownerId: string, creationId: string, characterId: string, authoringRevision: number): Promise<void> {
-  await db().transaction(async (tx) => {
-    // Binding can race both detached completion (which merges `result`) and an
-    // owner decision (which advances `proposal`). Lock and transform the current
-    // row so this narrow target rewrite cannot restore an earlier payload.
-    const rows = await tx.select().from(jobs).where(and(
-      eq(jobs.ownerId, ownerId),
-      eq(jobs.type, "character_authoring"),
-      sql`${jobs.payload} -> 'intent' -> 'target' ->> 'kind' = 'creation'`,
-      sql`${jobs.payload} -> 'intent' -> 'target' ->> 'id' = ${creationId}`,
-    )).for("update");
-    for (const row of rows) {
-      const parsed = payloadSchema.safeParse(row.payload);
-      if (!parsed.success) continue;
-      const prior = parsed.data;
-      const unsigned = {
-        requestId: prior.intent.requestId,
-        target: { kind: "character" as const, id: characterId },
-        operation: prior.intent.operation,
-        scope: prior.intent.scope,
-        label: prior.intent.label,
-        base: prior.intent.base,
-        creationStart: prior.intent.creationStart,
-        source: { authoringRevision, imageId: null },
-        retryOf: prior.intent.retryOf,
-        rootRunId: prior.intent.rootRunId,
-      };
-      const payload: StoredPayload = { ...prior, intent: { ...unsigned, intentHash: intentDigest(unsigned) } };
-      await tx.update(jobs).set({ payload }).where(and(
-        eq(jobs.id, row.id),
-        eq(jobs.ownerId, ownerId),
-        eq(jobs.type, "character_authoring"),
-      ));
-    }
-  });
-}
-
 export async function retryCharacterAuthoringRun(ownerId: string, runId: string, requestId: string, admit: () => Promise<Response | null>): Promise<StartAuthoringRunOutcome> {
   const prior = await ownedRunRow(ownerId, runId);
   if (!prior) return { status: "not_found" };
@@ -503,7 +557,7 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
     const imageId = old.source?.imageId;
     const contentHash = old.source?.imageContentHash;
     const fingerprint = old.source?.authoringFingerprint;
-    if (!imageId || !contentHash || !fingerprint || old.target.kind !== "character") return { status: "portrait_source_changed" };
+    if (!imageId || !contentHash || !fingerprint) return { status: "portrait_source_changed" };
     const [character] = await db().select().from(characters).where(and(eq(characters.id, old.target.id), eq(characters.ownerId, ownerId))).limit(1);
     const loaded = await ownedPortraitBytes(ownerId, old.target.id, imageId);
     const currentDraft = character ? rowDraft(character) : null;
@@ -514,7 +568,7 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
       return { status: "portrait_source_changed", currentRevision: character?.authoringRevision, currentImageId: character?.avatarImageId };
     }
   }
-  const input = {
+  const reserved: CanonicalStart = {
     requestId,
     target: old.target,
     operation: old.operation,
@@ -523,10 +577,12 @@ export async function retryCharacterAuthoringRun(ownerId: string, runId: string,
     base: old.base,
     creationStart: old.creationStart,
     source: old.source,
-  } as StartInput;
+  };
   // Retry reuses the immutable accepted source only while the portrait and the
-  // appearance facts relevant to the read still match it.
-  return launch(ownerId, input, runId, old.rootRunId, admit, true);
+  // appearance facts relevant to the read still match it. A create retry keeps
+  // its original snapshot, so a first Forge still applies without review only
+  // while the character remains at the revision that snapshot was taken from.
+  return launch(ownerId, reserved, runId, old.rootRunId, admit, reserved);
 }
 
 export type DecideAuthoringRunOutcome =
@@ -576,6 +632,18 @@ function settlePortraitDecision(
   };
 }
 
+/**
+ * Proposal review never diffs `profile.creationBrief` (lib/character-proposals.ts),
+ * so an accepted create run writes its brief here. The brief is the character's
+ * original concept: it is written once, onto a character that has none, and only
+ * when the acceptance applied part of the result. Rejection, failure and undo
+ * leave the stored brief as it was.
+ */
+function withAcceptedCreationBrief(current: CharacterDraft, applied: ReturnType<typeof applyCharacterProposal>, brief: string): CharacterDraft {
+  if (!brief || current.profile.creationBrief || !applied.undo) return applied.draft;
+  return { ...applied.draft, profile: { ...applied.draft.profile, creationBrief: brief } };
+}
+
 export async function decideCharacterAuthoringRun(ownerId: string, runId: string, input: DecideInput): Promise<DecideAuthoringRunOutcome> {
   const before = await ownedRunRow(ownerId, runId);
   if (!before) return { status: "not_found" };
@@ -618,16 +686,6 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       return { status: "accepted", run: projectRun(saved, next) };
     }
     if (job.status !== "done" || !payload.result) return { status: "invalid_run" };
-    if (input.action === "reject" && payload.intent.target.kind === "creation") {
-      if (payload.proposal.status !== "unresolved") return { status: "proposal_changed" };
-      const decidedAt = new Date().toISOString();
-      const revision = payload.proposal.revision + 1;
-      const proposal = { id: runId, label: payload.intent.label, base: payload.intent.base, proposed: payload.result.proposed, undo: false as const };
-      const next = settlePortraitDecision({ ...payload, proposal: { ...payload.proposal, revision, status: "rejected" as const, decidedAt, choices: input.choices, appliedDraft: null, undo: null } }, proposal, "reject", input.choices, revision);
-      const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-      if (!saved) return tx.rollback();
-      return { status: "accepted", run: projectRun(saved, next) };
-    }
 
     const proposal = input.action === "undo" ? payload.proposal.undo : {
       id: runId, label: payload.intent.label, base: payload.intent.base, proposed: payload.result.proposed,
@@ -635,19 +693,6 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
       ...(payload.result.portrait ? { portraitEvidence: payload.result.portrait } : {}),
     };
     if (!proposal || (input.action === "accept" && payload.proposal.status !== "unresolved") || (input.action === "undo" && payload.proposal.status !== "accepted")) return { status: "proposal_changed" };
-
-    if (payload.intent.target.kind === "creation") {
-      if (!input.currentDraft) return { status: "invalid_run" };
-      const applied = applyCharacterProposal(input.currentDraft, proposal, input.choices as ProposalChoices);
-      if (applied.unresolved.length) return { status: "authoring_conflict", conflicts: applied.unresolved };
-      const decidedAt = new Date().toISOString();
-      const revision = payload.proposal.revision + 1;
-      const undo = input.action === "accept" && applied.undo ? { ...applied.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision, decidedAt } : null;
-      const next = { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, decidedAt, choices: input.choices, appliedDraft: applied.draft, undo } };
-      const [saved] = await tx.update(jobs).set({ payload: next }).where(eq(jobs.id, runId)).returning();
-      if (!saved) return tx.rollback();
-      return { status: "accepted", run: projectRun(saved, next) };
-    }
 
     const [character] = await tx.select().from(characters).where(and(
       eq(characters.id, payload.intent.target.id), eq(characters.ownerId, ownerId),
@@ -676,15 +721,18 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
     }
     const applied = applyCharacterProposal(current, proposal, input.choices as ProposalChoices);
     if (applied.unresolved.length) return { status: "authoring_conflict", conflicts: applied.unresolved, currentRevision: character.authoringRevision };
+    const acceptedDraft = input.action === "accept" && payload.intent.operation === "create"
+      ? withAcceptedCreationBrief(current, applied, payload.result.proposed.profile.creationBrief)
+      : applied.draft;
 
-    const materialized = await materializeSuggestedItems(ownerId, applied.draft.suggestedItems, sink, {
+    const materialized = await materializeSuggestedItems(ownerId, acceptedDraft.suggestedItems, sink, {
       executor: tx,
       preparedEmbeddings: suggestionEmbeddings,
       onCreated: (id) => newItems.push(id),
     });
-    const currentProfile = parseOr(characterProfileSchema, applied.draft.profile, emptyCharacterProfile(), sink, "characters.profile");
+    const currentProfile = parseOr(characterProfileSchema, acceptedDraft.profile, emptyCharacterProfile(), sink, "characters.profile");
     const mergedProfile = withItemsInDefaultOutfit(currentProfile, materialized.ids);
-    const savedDraft = { ...applied.draft, suggestedItems: [], profile: { ...mergedProfile, attributes: materializeBodyDefaults(mergedProfile.attributes, mergedProfile) } };
+    const savedDraft = { ...acceptedDraft, suggestedItems: [], profile: { ...mergedProfile, attributes: materializeBodyDefaults(mergedProfile.attributes, mergedProfile) } };
     const [savedCharacter] = await tx.update(characters).set({
       name: savedDraft.name,
       profile: savedDraft.profile,
@@ -695,7 +743,7 @@ export async function decideCharacterAuthoringRun(ownerId: string, runId: string
 
     const decidedAt = new Date().toISOString();
     const revision = payload.proposal.revision + 1;
-    const review = reconcileMaterializedUndo({ pending: [], undo: applied.undo }, applied.draft, savedDraft.profile);
+    const review = reconcileMaterializedUndo({ pending: [], undo: applied.undo }, acceptedDraft, savedDraft.profile);
     const undo = input.action === "accept" && review.undo ? { ...review.undo, undo: true as const, sourceRunId: runId, proposalRevision: revision, decidedAt } : null;
     const next = settlePortraitDecision(
       { ...payload, proposal: { revision, status: input.action === "undo" ? "undone" as const : "accepted" as const, decidedAt, choices: input.choices, appliedDraft: savedDraft, undo } },
