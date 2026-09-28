@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "namespace": "vesper",
-  "notes": "Canonical Vesper agent roles. rolesync renders .claude/agents, .codex/agents and .claude/skills from these sources; edit them here, then run `rolesync sync`. AGENTS.md owns the routing policy and model tables. Tiers mirror across platforms: Sonnet <-> Terra, Opus <-> Sol. Claude `tools: [\"*\"]` inherits every tool; read-only roles list an explicit set. Codex writer roles that work in `.codex/worktrees/` use `danger-full-access`, the mode they inherited before rolesync, because `workspace-write` leaves `.codex/` and `.git` read-only. The Claude orchestrator is the main-session agent through `.claude/settings.json` `agent`.",
+  "notes": "Canonical Vesper agent roles. rolesync renders .claude/agents, .codex/agents and .claude/skills from these sources; edit them here, then run `rolesync sync`. AGENTS.md owns the routing policy and model tables. Tiers mirror across platforms: Sonnet <-> Terra, Opus <-> Sol. Claude `tools: [\"*\"]` inherits every tool; read-only roles list an explicit set. Codex writer roles that work in `.codex/worktrees/` use `danger-full-access`, the mode they inherited before rolesync, because `workspace-write` leaves `.codex/` and `.git` read-only. The Claude orchestrator is the main-session agent through `.claude/settings.json` `agent`. The chat tester pins `danger-full-access` because its billed provider calls and Fly access need network, which `workspace-write` withholds, and because `workspace-write` would also leave the `fly-api.sh` cookie jar under `~/.cache`, the `fly` CLI's own config under `~/.fly`, and its `eval-images/` writes read-only when run from a worktree under `.codex/`.",
   "roles": [
     {
       "id": "orchestrator",
@@ -83,6 +83,15 @@
       "skill": "vesper-ux-review",
       "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "read-only"},
       "claude": {"model": "sonnet", "effort": null, "maxTurns": 100, "tools": ["Read", "Grep", "Glob", "Bash", "Skill", "ToolSearch", "WebFetch", "LSP"], "permissionMode": "default", "isolation": null}
+    },
+    {
+      "id": "chat-tester",
+      "name": "vesper-chat-tester",
+      "description": "Live character-chat tester: runs opt-in, billed chat evidence — the narrator probes under scripts/eval/ that drive the production seam, and real chat turns on the deployed app as the QA account — under a predeclared plan and spend cap. Records counts-only evidence under eval-images/, edits no code, and returns a structured report to the orchestrator for review and scoring.",
+      "source": ".agents/roles/chat-tester.md",
+      "skill": "verify",
+      "codex": {"model": "gpt-5.6-terra", "model_reasoning_effort": "medium", "sandbox_mode": "danger-full-access"},
+      "claude": {"model": "sonnet", "effort": null, "maxTurns": 250, "tools": ["*"], "permissionMode": "default", "isolation": null}
     }
   ]
 }
