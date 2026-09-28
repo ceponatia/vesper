@@ -3,10 +3,11 @@
 
 The owner's ruling: delegated Claude-side Vesper roles pin their own model so
 the choice survives a missed `AGENTS.md` read — Sonnet for bounded
-implementation, test-keeping, context and UI/UX review (`vesper-builder`,
-`vesper-test-keeper`, `vesper-context-scout`, `vesper-ui-reviewer`,
-`vesper-ux-reviewer`), and Opus for escalation, semantic and scenario review
-(`vesper-escalation`, `vesper-reviewer`, `vesper-scenario-reviewer`). The role
+implementation, test-keeping, context, UI/UX review, and live chat testing
+(`vesper-builder`, `vesper-test-keeper`, `vesper-context-scout`,
+`vesper-ui-reviewer`, `vesper-ux-reviewer`, `vesper-chat-tester`), and Opus
+for escalation, semantic and scenario review (`vesper-escalation`,
+`vesper-reviewer`, `vesper-scenario-reviewer`). The role
 files are rendered by rolesync from `.agents/catalog.json`. This hook keeps a
 spawn from working around that:
 an explicit `model` on a pinned role, an implementation brief handed to
@@ -50,6 +51,7 @@ import sys
 
 PINNED_MODEL = {
     "vesper-builder": "sonnet",
+    "vesper-chat-tester": "sonnet",
     "vesper-context-scout": "sonnet",
     "vesper-escalation": "opus",
     "vesper-orchestrator": "claude-opus-5-5",

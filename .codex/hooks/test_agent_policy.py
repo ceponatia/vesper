@@ -1562,6 +1562,7 @@ class PinnedRoleTableTests(unittest.TestCase):
 
     EXPECTED_ROLES = {
         "vesper-builder": "sonnet",
+        "vesper-chat-tester": "sonnet",
         "vesper-context-scout": "sonnet",
         "vesper-escalation": "opus",
         "vesper-orchestrator": "claude-opus-5-5",
@@ -1603,6 +1604,7 @@ class CodexModelPolicyTests(unittest.TestCase):
 
     EXPECTED_ROLES = {
         "vesper-builder": ("gpt-5.6-terra", "medium"),
+        "vesper-chat-tester": ("gpt-5.6-terra", "medium"),
         "vesper-context-scout": ("gpt-5.6-terra", "low"),
         "vesper-escalation": ("gpt-5.6-sol", "high"),
         "vesper-orchestrator": ("gpt-5.6-sol", "high"),

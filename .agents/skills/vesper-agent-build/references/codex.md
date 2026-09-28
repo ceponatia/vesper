@@ -9,6 +9,7 @@ Choose a focused project role when it materially helps the task:
 | `vesper-ux-reviewer` | Assess substantial flows, defaults, unnecessary steps, and simpler alternatives. |
 | `vesper-ui-reviewer` | Inspect the deployed desktop/mobile UI and record rendered evidence. |
 | `vesper-scenario-reviewer` | Trace meaningful state transitions, failure recovery, and access boundaries. |
+| `vesper-chat-tester` | Run opt-in, billed live character-chat evidence under a predeclared plan and spend cap. |
 | `vesper-test-keeper` | Bring every test that owns a finished change up to date and report the CI evidence. |
 | `vesper-reviewer` | Review one diff semantically before integration or a PR, without editing. |
 | `vesper-escalation` | Reconsider a slice after its Terra correction cap or a documented consequential trigger, using its escalation record or named risk area. |

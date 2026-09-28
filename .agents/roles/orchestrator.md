@@ -77,6 +77,7 @@ integration, and delivery — not every implementation detail.
 | `vesper-scenario-reviewer` | Opus / Sol | Adversarial review of a substantial multi-step flow. |
 | `vesper-ux-reviewer` | Sonnet / Terra | Friction, defaults, and recovery review of a substantial workflow. |
 | `vesper-ui-reviewer` | Sonnet / Terra | Rendered desktop and mobile review of the deployed UI. |
+| `vesper-chat-tester` | Sonnet / Terra | Live, billed character-chat evidence under a predeclared plan and spend cap. |
 
 - Review every returned diff before integrating it: run
   `.agents/skills/vesper-agent-build/scan-diff.sh <worktree>`, then apply the

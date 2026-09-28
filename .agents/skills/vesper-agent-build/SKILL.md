@@ -73,8 +73,9 @@ unless the recorded evidence proves it occurred before those edits.
   (with the escalation record or a `Risk area:` line) for risk-area slices or
   after a failed attempt, and `vesper-reviewer` for the semantic pass before
   integrating a code diff; `vesper-context-scout`, `vesper-ux-reviewer`,
-  `vesper-ui-reviewer`, and `vesper-scenario-reviewer` serve the same purposes
-  as their Codex profiles. Never pass `model` to these roles.
+  `vesper-ui-reviewer`, `vesper-scenario-reviewer`, and `vesper-chat-tester`
+  serve the same purposes as their Codex profiles. Never pass `model` to
+  these roles.
   `AGENTS.md` §Subagent model policy (Claude) owns the role table and
   escalation triggers, and the Agent-tool preflight refuses other routes.
 - The parent owns push, external messages, board changes, and delivery unless

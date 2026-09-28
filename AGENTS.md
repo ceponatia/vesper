@@ -26,6 +26,7 @@ independently. Custom Codex roles pin their own model and effort:
 | `vesper-test-keeper` | Terra / medium | Test ownership analysis and scoped test edits after coding. |
 | `vesper-ui-reviewer` | Terra / medium | Rendered UI and accessibility evidence. |
 | `vesper-ux-reviewer` | Terra / medium | Bounded workflow friction and recovery review. |
+| `vesper-chat-tester` | Terra / medium | Live, billed character-chat evidence under a predeclared plan and spend cap. |
 | `vesper-reviewer` | Sol / medium | Read-only semantic review of a diff before integration or a PR. |
 | `vesper-scenario-reviewer` | Sol / medium | Adversarial state-transition, authorization, and recovery analysis. |
 | `vesper-escalation` | Sol / high | An exhausted Terra correction round or a documented consequential trigger that needs a new model of the problem. |
@@ -97,6 +98,7 @@ pinned Vesper role, and any spawn of `vesper-orchestrator`.
 | `vesper-scenario-reviewer` | Opus | Read-only adversarial review of a substantial multi-step flow. |
 | `vesper-ux-reviewer` | Sonnet | Read-only friction, defaults, and recovery review of a substantial workflow. |
 | `vesper-ui-reviewer` | Sonnet | Rendered desktop/mobile review of the deployed UI; writes only under `eval-images/`. |
+| `vesper-chat-tester` | Sonnet | Live, billed character-chat evidence under a predeclared plan and spend cap; writes only under `eval-images/`. |
 
 Escalate when: the builder returns an escalation record or reports a failed
 attempt; a second plausible approach would have different architectural
