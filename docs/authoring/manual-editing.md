@@ -86,9 +86,8 @@ The section registry owns placement, generation scopes and section detail counts
   revision inside one transaction. Acceptance uses a three-way merge against the run's immutable
   base, so unrelated edits survive and overlapping edits require an explicit choice. Provider work,
   including suggested-item embeddings, runs before database locks are taken.
-- The API returns at most the newest 25 runs for a surface, and malformed stored payloads —
-  including a legacy run recorded against the retired creation-draft target — are omitted with a
-  diagnostic instead of breaking the editor.
+- The API returns at most the newest 25 runs for a surface, and malformed stored payloads are
+  omitted with a diagnostic instead of breaking the editor.
 - Browser storage is a bounded read cache. If it is unavailable, the editor reports the temporary
   loss of cached status and refreshes from server authority when the connection returns.
 

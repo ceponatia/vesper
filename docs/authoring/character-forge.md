@@ -43,13 +43,16 @@ Manual form placement, autosave and proposal acceptance belong to
 
 - The server computes `initialPreview` for every `create` run: true only while the character
   remains exactly as created — authoring revision 1, profile and tags equal to a freshly created
-  blank, compared without key-order sensitivity. The client never computes it.
+  blank, compared without key-order sensitivity. The client never computes it. `initialPreview` is
+  also false when the completed result is degraded — any forge leg failed or fell back to
+  placeholder content — so a degraded first Forge arrives as an ordinary proposal for review
+  instead of applying automatically.
 - When a completed run's `initialPreview` is true, its proposal is unresolved, and the browser is
   receiving it for the first time, the character page accepts it immediately, with no review step,
   and refreshes the saved character and its editor. The accept carries the run's source authoring
   revision, so any edit made meanwhile — including one made while the run was still in flight —
-  turns that same run into an ordinary proposal for [manual review](manual-editing.md) instead
-  (#517: AI output never silently replaces authored values).
+  turns that same run into an ordinary proposal for [manual review](manual-editing.md) instead. AI
+  output never silently replaces authored values otherwise.
 - A refused auto-accept (the character changed underneath the run) leaves the run as an ordinary
   pending proposal; nothing else happens automatically.
 - A failed or empty first response leaves the brief editable and unsaved. The panel may prefill
