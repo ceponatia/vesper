@@ -649,10 +649,13 @@ components:
         creationStart:
           description: >-
             Create runs only. prompt is the brief the run forges from. initialPreview is true only
-            when the character was an untouched blank at start: authoring revision 1, no saved brief,
-            and profile and tags exactly as a blank create stores them. A client may then accept an
-            unresolved result without review, sending source.authoringRevision as
-            expectedAuthoringRevision, so any edit made meanwhile returns authoring_conflict.
+            when the character was an untouched blank at start (authoring revision 1, no saved brief,
+            and profile and tags exactly as a blank create stores them) and the result, once present,
+            is not degraded: no forge leg recorded a degraded, timeout, parse_failed or api_error
+            line and nothing recorded an error. A client may then accept an unresolved completed
+            result without review, sending source.authoringRevision as expectedAuthoringRevision, so
+            any edit made meanwhile returns authoring_conflict. A degraded result is an ordinary
+            proposal that can still be accepted or rejected.
           oneOf:
             - $ref: '#/components/schemas/CreationStart'
             - type: 'null'

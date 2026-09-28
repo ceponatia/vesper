@@ -33,6 +33,7 @@ import {
 import { absoluteImagePath, sourceContentHashOf } from "@/server/images";
 import { materializeSuggestedItems, prepareSuggestedItemEmbeddings, queueEmbedRefresh } from "./library";
 import { blankCreatedCharacterContent } from "./character-create";
+import { isDegradedForgeResult } from "./forge-degradation";
 import { reserveCharacterAuthoringAction, type CharacterAuthoringActionSource } from "./character-save";
 import { isJobAdmissionPending, startJobAfterAdmission, waitForJobAdmission } from "./jobs";
 
@@ -177,9 +178,17 @@ function matchesStoredRequest(payload: StoredPayload, input: StartInput, retryOf
   return stored === requestDigest(input, retryOf, rootRunId);
 }
 
-function projectCreationStart(start: StoredIntent["creationStart"]) {
+/**
+ * `initialPreview` lets the client apply a completed first Forge without
+ * review. It holds only for a server-derived snapshot of an untouched blank,
+ * and never once the result is degraded: fallback content arrives as an
+ * ordinary proposal. A run without a result keeps its start-time value.
+ */
+function projectCreationStart(start: StoredIntent["creationStart"], result: StoredPayload["result"]) {
   if (!start) return null;
-  return { draft: start.draft, prompt: start.prompt, initialPreview: start.initialPreview && start.origin === "reserved_row" };
+  const initialPreview = start.initialPreview && start.origin === "reserved_row"
+    && !(result && isDegradedForgeResult(result.diagnostics));
+  return { draft: start.draft, prompt: start.prompt, initialPreview };
 }
 
 function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
@@ -203,7 +212,7 @@ function projectRun(row: typeof jobs.$inferSelect, payload: StoredPayload) {
     scope: payload.intent.scope,
     label: payload.intent.label,
     base: payload.intent.base,
-    creationStart: projectCreationStart(payload.intent.creationStart),
+    creationStart: projectCreationStart(payload.intent.creationStart, payload.result),
     source: payload.intent.source,
     status: failed ? "failed" as const : row.status === "done" ? "completed" as const : "pending" as const,
     result: payload.result,

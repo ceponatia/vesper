@@ -57,7 +57,7 @@ type CreateRun = {
   source: { authoringRevision: number };
   status: string;
   proposal: { revision: number; status: string };
-  result: { proposed: { name: string; profile: { creationBrief: string } } } | null;
+  result: { proposed: { name: string; profile: { creationBrief: string } }; diagnostics: { code: string }[] } | null;
 };
 
 /** A character exactly as the library's New button creates it. */
@@ -89,6 +89,11 @@ const decide = (runId: string, body: Record<string, unknown>) => decideRun(
   apiRequest(`/api/characters/authoring-runs/${runId}/decision`, { method: "PATCH", body }),
   routeCtx({ runId }),
 );
+/** The start-time snapshot as stored; the projected flag also depends on the result. */
+async function storedCreationStart(runId: string) {
+  const [row] = await db().select({ payload: jobs.payload }).from(jobs).where(eq(jobs.id, runId));
+  return (row?.payload as { intent?: { creationStart?: unknown } } | undefined)?.intent?.creationStart;
+}
 async function storedBrief(characterId: string) {
   const [row] = await db().select({ profile: characters.profile }).from(characters).where(eq(characters.id, characterId));
   return (row?.profile as { creationBrief?: unknown } | undefined)?.creationBrief;
@@ -122,6 +127,25 @@ function storedRun(input: { id: string; characterId: string; revision: number; b
       },
       proposal: { revision: 1, status: "unresolved", choices: {}, appliedDraft: null, undo: null },
       result: { proposed, diagnostics: [] },
+    },
+  };
+}
+
+/** A completed first Forge started on an untouched blank, with the given result diagnostics. */
+function storedFirstForge(input: { id: string; characterId: string; diagnostics: { severity: "info" | "warn" | "error"; code: string; message: string }[] }) {
+  const stored = storedRun({ id: input.id, characterId: input.characterId, revision: 1, before: "New character", after: "Forged name" });
+  return {
+    ...stored,
+    payload: {
+      ...stored.payload,
+      intent: {
+        ...stored.payload.intent,
+        operation: "create",
+        scope: null,
+        label: "forged character",
+        creationStart: { draft: stored.payload.intent.base, prompt: "A patient harbor master", initialPreview: true, origin: "reserved_row" },
+      },
+      result: { ...stored.payload.result, diagnostics: input.diagnostics },
     },
   };
 }
@@ -217,19 +241,24 @@ function storedPortraitRun(input: Awaited<ReturnType<typeof portraitSubject>> & 
 }
 
 describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
-  it("applies a first Forge to an untouched blank character from the typed brief, storing the brief on accept", async () => {
+  it("marks a first Forge on an untouched blank for direct apply until its forge degrades, and stores the brief on a manual accept", async () => {
     const row = await blankCharacter();
     const started = await expectJson<{ run: CreateRun }>(await startCreate(row, "A patient harbor master"), 202);
     // The snapshot comes from the reserved row, never the browser's empty draft.
     expect(started.run.base.name).toBe(row.name);
-    expect(started.run.creationStart).toEqual({ draft: expect.any(Object), prompt: "A patient harbor master", initialPreview: true });
+    expect(started.run.creationStart).toEqual({ draft: expect.any(Object), prompt: "A patient harbor master", initialPreview: expect.any(Boolean) });
     expect(started.run.source.authoringRevision).toBe(1);
+    expect(await storedCreationStart(started.run.id)).toMatchObject({ initialPreview: true, origin: "reserved_row" });
     await waitForJob(started.run.id);
 
     const listed = await expectJson<{ runs: CreateRun[] }>(await list("character", row.id));
     const completed = listed.runs.find((run) => run.id === started.run.id);
     expect(completed).toMatchObject({ status: "completed", proposal: { status: "unresolved" } });
     expect(completed?.result?.proposed.profile.creationBrief).toBe("A patient harbor master");
+    // The test provider's forge falls back to demo content, which is never
+    // applied without review: the completed run is an ordinary proposal.
+    expect(completed?.result?.diagnostics.map((item) => item.code)).toContain("forge.character.profile.degraded");
+    expect(completed?.creationStart?.initialPreview).toBe(false);
     expect(await storedBrief(row.id)).toBe("");
 
     const accepted = await decide(started.run.id, {
@@ -241,10 +270,24 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     expect(await storedBrief(row.id)).toBe("A patient harbor master");
   });
 
+  it("projects direct apply for a clean completed first Forge and withholds it for a degraded one", async () => {
+    const row = await blankCharacter();
+    const clean = storedFirstForge({ id: crypto.randomUUID(), characterId: row.id, diagnostics: [
+      { severity: "info", code: "forge.character.profile.repaired", message: "structured output needed one repair round-trip" },
+    ] });
+    const timedOut = storedFirstForge({ id: crypto.randomUUID(), characterId: row.id, diagnostics: [
+      { severity: "warn", code: "forge.character.outfit.timeout", message: "generation exceeded the leg budget; degrading to the fallback" },
+    ] });
+    await db().insert(jobs).values([clean, timedOut]);
+    const listed = await expectJson<{ runs: CreateRun[] }>(await list("character", row.id));
+    expect(listed.runs.find((run) => run.id === clean.id)?.creationStart?.initialPreview).toBe(true);
+    expect(listed.runs.find((run) => run.id === timedOut.id)?.creationStart?.initialPreview).toBe(false);
+  });
+
   it("turns an edit made during the first Forge into an ordinary proposal, and rejection keeps the brief unsaved", async () => {
     const row = await blankCharacter();
     const started = await expectJson<{ run: CreateRun }>(await startCreate(row, "A retired lighthouse keeper"), 202);
-    expect(started.run.creationStart?.initialPreview).toBe(true);
+    expect(await storedCreationStart(started.run.id)).toMatchObject({ initialPreview: true, origin: "reserved_row" });
     const [edited] = await db().update(characters).set({ tags: ["edited meanwhile"] }).where(eq(characters.id, row.id)).returning();
     await waitForJob(started.run.id);
 
