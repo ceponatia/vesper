@@ -14,16 +14,17 @@ import {
 
 describe("character body schemas", () => {
   it("create defaults profile and tags", () => {
-    const parsed = characterCreateSchema.parse({
-      creationRequestId: "467c753c-65e9-40f0-8545-0f0311b3f935",
-      name: "  Maya ",
-    });
+    const parsed = characterCreateSchema.parse({ name: "  Maya " });
     expect(parsed.name).toBe("Maya");
-    expect(parsed.creationRequestId).toBe("467c753c-65e9-40f0-8545-0f0311b3f935");
     expect(parsed.profile.bio).toBe("");
     expect(parsed.profile.attributes).toEqual([]);
     expect(parsed.tags).toEqual([]);
-    expect(characterCreateSchema.safeParse({ creationRequestId: "same-draft", name: "Maya" }).success).toBe(false);
+  });
+
+  it("create refuses the retired creation receipt id instead of ignoring it", () => {
+    // Replay receipts were removed with the browser creation draft (#657); a
+    // strict refusal keeps a stale client from assuming its create is idempotent.
+    expect(characterCreateSchema.safeParse({ creationRequestId: "467c753c-65e9-40f0-8545-0f0311b3f935", name: "Maya" }).success).toBe(false);
   });
 
   it("patch omission preserves the original creation brief", () => {
