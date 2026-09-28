@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { diag } from "@/contracts";
 import { isDegradedForgeResult } from "./forge-degradation";
 
+// Defect killed: a first Forge whose legs fell back to hand-written demo
+// content being applied to a blank character without review (#657).
 describe("isDegradedForgeResult", () => {
   it("accepts a clean forge, including a repaired leg and ordinary grounding drops", () => {
     expect(isDegradedForgeResult([])).toBe(false);
