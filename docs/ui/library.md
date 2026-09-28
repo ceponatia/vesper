@@ -13,12 +13,13 @@ one registry ([../authoring/in-sheet-forge.md](../authoring/in-sheet-forge.md)).
 examples and anchors, daily rhythm, and intimate disposition use shared disclosures. Detailed
 anatomy remains in the attribute accordion.
 
-After a full Forge, the generated character leads the page. Section revisions stay beside the tabs;
-the original brief remains available as authoring context. New and Forge share a recoverable
-creation draft and preserve its selected destination when saving
-([../authoring/character-forge.md](../authoring/character-forge.md)). Generation notes remain
-available through a summarized disclosure. These surfaces share the same editor and form
-primitives as manual authoring.
+**New** and **Forge** both create the character immediately and open its editing page — New plain,
+Forge with the creation-brief panel expanded
+([../authoring/character-forge.md](../authoring/character-forge.md)). After a full Forge, the
+generated character leads the page; section revisions stay beside the tabs, and the original brief
+remains available in that panel as authoring context. Save and autosave there are the only save
+paths. Generation notes remain available through a summarized disclosure. These surfaces share the
+same editor and form primitives as manual authoring.
 
 ## The portrait studio
 
@@ -211,10 +212,10 @@ full faceted browse:
   copy-on-use) that opens the copy's editor. The character editor's **Character actions** menu and
   the item editor SaveBar carry the same **Duplicate**, save-first like the Forge. Wardrobe near-variants ("same
   top in three colors") and archetype characters start here.
-- **New** opens the shared creation draft for characters. Other entity kinds are created
-  immediately with a **randomized placeholder name** ("Untitled item
-  k3f7" — concurrent drafts never collide) and routes to its editor: create-on-new means a draft
-  can never be lost before its first save.
+- **New** creates every entity kind immediately with a **randomized placeholder name** ("Untitled
+  item k3f7" — concurrent drafts never collide) and routes to its editor: create-on-new means a
+  draft can never be lost before its first save. Characters' **Forge** does the same and opens with
+  the creation-brief panel expanded ([../authoring/character-forge.md](../authoring/character-forge.md)).
 - **Editor autosave** (`components/hooks/use-autosave.ts`): the character and item editors save
   silently ~1.5s after the last change, and immediately when focus leaves a field (`onBlur` on
   the editable container — free text lands on field exit, never mid-typing). The Save button

@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
-import { CharacterForgePage } from "@/components/characters/character-forge-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "New character" };
-export default function CharacterNewRoute() { return <CharacterForgePage mode="manual" />; }
+/** Characters use the library's create-on-new path (`entity-library.tsx`
+ * `createBlank`); this route creates nothing. */
+export default function CharacterNewRoute() {
+  redirect("/characters");
+}

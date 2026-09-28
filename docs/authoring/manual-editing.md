@@ -6,9 +6,10 @@ the data model.
 
 ## Owns / does not own
 
-This page owns manual editing and the character suggestion review boundary. Creation-draft
-persistence and original concept capture belong to [character-forge.md](character-forge.md).
-Image generation and reference-image approval belong to [../ui/library.md](../ui/library.md).
+This page owns manual editing and the character suggestion review boundary. The creation brief,
+original concept capture and the first-Forge auto-apply rule belong to
+[character-forge.md](character-forge.md). Image generation and reference-image approval belong to
+[../ui/library.md](../ui/library.md).
 
 ## The character editor
 
@@ -36,8 +37,10 @@ The section registry owns placement, generation scopes and section detail counts
   can propose changes to authored values within the selected section. The visible section and generation scope agree.
 - Completion, section rewrites, Forge regeneration and portrait-derived attributes return a
   reviewable proposal. The author draft stays unchanged until an explicit acceptance. The first
-  full Forge of an untouched blank draft opens the editable preview directly; Create is its
-  review boundary. Any author edits made during that request instead require proposal review.
+  Forge on a still-blank character applies directly, with no review step
+  ([character-forge.md](character-forge.md) §The first Forge applies directly); any author edit
+  made meanwhile, including one made while that run is in flight, turns it into an ordinary
+  proposal instead.
 - The review displays before and proposed values, with independent choices per change. Attributes
   and traits compare by id; provenance-only differences do not request an approval. Results with
   no changes show a short notice without adding a pending review. Review actions remain disabled
@@ -71,10 +74,10 @@ The section registry owns placement, generation scopes and section detail counts
   say that generation did not start. Retryable refusals restart the immutable request through the
   start endpoint; source conflicts direct the author to review current saved inputs and start again.
   Dismissing a browser-only refusal never calls a run endpoint.
-- Returning to either browser reads the saved runs and projects each server proposal into the
-  matching creation draft or saved character. Reload and resume never start a model call. A failed
-  run offers explicit **Retry generation**, which creates a new run linked to the same root and
-  immutable source; **Dismiss** records the decision on the server.
+- Returning to the character page — on this browser or another signed-in one — reads the saved
+  runs and projects each server proposal into the saved character. Reload and resume never start a
+  model call. A failed run offers explicit **Retry generation**, which creates a new run linked to
+  the same root and immutable source; **Dismiss** records the decision on the server.
 - Retry is single-flight per logical root. The browser installs the pending child synchronously,
   and the server coalesces concurrent active children under the owner-scoped job admission lock.
   A refused retry remains visible with its error. Detached completion merges into the latest run
@@ -83,9 +86,9 @@ The section registry owns placement, generation scopes and section detail counts
   revision inside one transaction. Acceptance uses a three-way merge against the run's immutable
   base, so unrelated edits survive and overlapping edits require an explicit choice. Provider work,
   including suggested-item embeddings, runs before database locks are taken.
-- Saving a creation draft binds its runs to the new character. Review decisions then remain
-  available from the saved editor. The API returns at most the newest 25 runs for a surface, and
-  malformed stored payloads are omitted with a diagnostic instead of breaking the editor.
+- The API returns at most the newest 25 runs for a surface, and malformed stored payloads —
+  including a legacy run recorded against the retired creation-draft target — are omitted with a
+  diagnostic instead of breaking the editor.
 - Browser storage is a bounded read cache. If it is unavailable, the editor reports the temporary
   loss of cached status and refreshes from server authority when the connection returns.
 

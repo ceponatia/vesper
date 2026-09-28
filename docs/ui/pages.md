@@ -5,8 +5,7 @@
 ```
 /                        Dashboard: conversations lead ("Continue talking to…"; hidden until a chat exists), then the cast strip
 /worlds                  Successor-engine front door (SuccessorWorldsPage): create and open successor-engine chats, each in its own fresh world
-/characters              Library grid
-/characters/forge        Prose prompt → draft review → save
+/characters              Library grid — New and Forge both create a character and open /characters/:id (Forge with the creation-brief panel expanded); /characters/new and /characters/forge redirect here and create nothing
 /characters/:id          Character editor (below)
 /personas                Library grid (the player as a library entity — cards show the per-owner-unique `title`, with the in-fiction `name` on the subtitle line)
 /personas/:id            Persona editor: profile · body · wardrobe

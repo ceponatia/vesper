@@ -1,41 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { CHARACTER_CREATION_BRIEF_MAX, boundCharacterCreationBrief } from "@/contracts";
 import { characterDraftSchema, emptyCharacterDraft } from "@/lib/client/api";
-import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, reconcileMaterializedUndo, transferCreationReview, type CharacterProposal } from "./character-proposals";
-import { canApplyCreationForgePreview, completeCreationForge, creationForgeStart, emptyCharacterCreation, isPristineCharacterDraft, withCreationBrief } from "./character-creation-draft";
+import { applyCharacterProposal, describeProposalValue, proposalChanges, proposalConflicts, reconcileMaterializedUndo, type CharacterProposal } from "./character-proposals";
+import { withCreationBrief } from "./character-brief";
 
 const proposal = (base: CharacterProposal["base"], proposed: CharacterProposal["proposed"]): CharacterProposal => ({ id: "generation", label: "Profile rewrite", base, proposed, undo: false });
 
 describe("character proposal review", () => {
-  it("falls back to an eligible incoming undo when the destination undo was handled", () => {
-    const base = emptyCharacterDraft();
-    const oldUndo = { ...proposal(base, { ...base, name: "Old name" }), id: "old-undo", undo: true };
-    const newUndo = { ...proposal(base, { ...base, name: "New name" }), id: "new-undo", undo: true };
-    const transferred = transferCreationReview(
-      { pending: [], handledIds: [oldUndo.id], undo: oldUndo },
-      { pending: [], undo: newUndo },
-      "creation",
-    );
-    expect(transferred.undo).toEqual(newUndo);
-  });
-
-  it("does not resurrect transferred suggestions rejected in the retained creation draft", () => {
-    const base = emptyCharacterDraft();
-    const source = proposal(base, { ...base, name: "Source suggestion" });
-    const destination = { ...proposal(base, { ...base, name: "Destination suggestion" }), id: "destination" };
-    const original = transferCreationReview({ pending: [destination], undo: null }, { pending: [source], undo: null }, "creation");
-    expect(original.pending).toHaveLength(2);
-    const repeated = transferCreationReview(original, { pending: [], handledIds: [source.id], undo: null }, "creation");
-    expect(repeated.pending).toEqual([destination]);
-  });
-
-  it("keeps destination decisions when a retained creation copy still has stale suggestions", () => {
-    const base = emptyCharacterDraft();
-    const source = proposal(base, { ...base, name: "Source suggestion" });
-    const destination = { pending: [], handledIds: [source.id], undo: null };
-    expect(transferCreationReview(destination, { pending: [source], undo: null }, "creation").pending).toEqual([]);
-  });
-
   it("applies only proposed differences and preserves edits made during generation", () => {
     const base = characterDraftSchema.parse({ name: "Iris", profile: { bio: "Original", attributes: [{ id: "hair.color", value: "auburn", source: "manual" }] } });
     const incoming = characterDraftSchema.parse({ ...base, profile: { ...base.profile, bio: "Suggested", attributes: [...base.profile.attributes, { id: "eyes.color", value: "green", source: "creation" }] } });
@@ -151,12 +122,6 @@ describe("original creation brief", () => {
     expect(withCreationBrief(emptyCharacterDraft(), prompt).profile.creationBrief).toBe(bounded);
   });
 
-  it("distinguishes the first blank Forge preview from existing author edits", () => {
-    const blank = withCreationBrief(emptyCharacterDraft(), "A harbor master");
-    expect(isPristineCharacterDraft(blank)).toBe(true);
-    expect(isPristineCharacterDraft({ ...blank, name: "Iris" })).toBe(false);
-    expect(isPristineCharacterDraft({ ...blank, profile: { ...blank.profile, bio: "Manual eyes and outfit facts" } })).toBe(false);
-  });
   it("captures the manual concept before its bio can be rewritten", () => {
     const manual = characterDraftSchema.parse({ name: "Iris", profile: { bio: "Green eyes and a blue suit", attributes: [{ id: "hair.color", value: "auburn", source: "manual" }] } });
     const captured = withCreationBrief(manual);
@@ -171,51 +136,5 @@ describe("original creation brief", () => {
     expect(draft.profile.creationBrief).toBe("Human woman, auburn hair, green eyes, blue suit");
     expect(withCreationBrief(draft, "Another prompt")).toBe(draft);
     expect(characterDraftSchema.parse(draft).profile.creationBrief).toBe(draft.profile.creationBrief);
-  });
-});
-
-
-describe("successful creation Forge preview", () => {
-  it("keeps a pristine first prompt editable when Forge returns no actual changes", () => {
-    const started = emptyCharacterCreation();
-    started.prompt = "Human woman with auburn hair";
-    const base = withCreationBrief(started.draft, started.prompt);
-    const completed = completeCreationForge(started, creationForgeStart(started), base, structuredClone(base), "empty-first");
-    expect(completed).toBe(started);
-    expect(completed.draft.profile.creationBrief).toBe("");
-    expect(completed.prompt).toBe(started.prompt);
-    expect(completed.review.pending).toEqual([]);
-  });
-
-  it("builds request context without freezing the authored brief before success", () => {
-    const started = emptyCharacterCreation();
-    started.prompt = "Human woman with auburn hair";
-    const base = withCreationBrief(started.draft, started.prompt);
-    expect(started.draft.profile.creationBrief).toBe("");
-    expect(base.profile.creationBrief).toBe(started.prompt);
-    const generated = { ...base, name: "Iris" };
-    const completed = completeCreationForge(started, creationForgeStart(started), base, generated, "first");
-    expect(completed.draft.name).toBe("Iris");
-    expect(completed.draft.profile.creationBrief).toBe(started.prompt);
-    expect(completed.review.pending).toEqual([]);
-  });
-
-  it("keeps concurrent author edits and stages a successful Forge result", () => {
-    const started = emptyCharacterCreation();
-    started.prompt = "Human woman with auburn hair";
-    const base = withCreationBrief(started.draft, started.prompt);
-    const current = { ...started, draft: { ...started.draft, name: "My own name" } };
-    expect(canApplyCreationForgePreview(current, creationForgeStart(started))).toBe(false);
-    const completed = completeCreationForge(current, creationForgeStart(started), base, { ...base, name: "Iris" }, "first");
-    expect(completed.draft.name).toBe("My own name");
-    expect(completed.draft.profile.creationBrief).toBe(started.prompt);
-    expect(completed.review.pending[0]?.proposed.name).toBe("Iris");
-  });
-
-  it("does not add an empty review when a full regeneration suggests no changes", () => {
-    const started = emptyCharacterCreation();
-    started.draft = withCreationBrief({ ...started.draft, name: "Iris" }, "Original brief");
-    const completed = completeCreationForge(started, creationForgeStart(started), started.draft, structuredClone(started.draft), "same");
-    expect(completed.review).toBe(started.review);
   });
 });

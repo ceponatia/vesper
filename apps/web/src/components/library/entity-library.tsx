@@ -17,6 +17,7 @@ import {
 } from "@/lib/client/api";
 import { parseOr } from "@/lib/parse";
 import { visibleTags } from "@/lib/tags";
+import { useForgeCharacter } from "@/components/characters/use-forge-character";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import { PageContainer } from "@/components/shell/app-shell";
@@ -79,7 +80,10 @@ interface EntityConfig {
   title: string;
   blurb: string;
   basePath: string;
-  forgePath?: string;
+  /** Characters only: the toolbar and empty-state actions create a blank
+   *  character and open it with the creation-brief panel expanded, instead
+   *  of the plain create-on-new New button. */
+  forge?: boolean;
   emptyTitle: string;
   emptyBody: string;
   newName: string;
@@ -131,7 +135,7 @@ const configs: Record<LibraryEntity, EntityConfig> = {
     title: "Characters",
     blurb: "Reusable characters your worlds can cast.",
     basePath: "/characters",
-    forgePath: "/characters/forge",
+    forge: true,
     emptyTitle: "No characters yet",
     emptyBody: "Forge one from a one-line concept, or start from a blank profile.",
     newName: "Untitled character",
@@ -443,6 +447,8 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   const config = configs[entity];
   const router = useRouter();
   const toast = useToast();
+  // Only characters set config.forge, but hooks run unconditionally.
+  const forgeCharacter = useForgeCharacter();
   // One-time snapshot of the stored toolbar state, feeding the initializers below.
   const [stored] = useState(() => readStoredLibraryState(entity, config));
   const [query, setQuery] = useState(stored.query ?? "");
@@ -517,7 +523,6 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
   }, [list.data, tagSel]);
 
   const createBlank = async () => {
-    if (entity === "characters") { router.push("/characters/new"); return; }
     setCreating(true);
     // Randomized placeholder (create-on-new): several
     // fresh drafts never share a name, so nothing dupes or shadows in pickers.
@@ -713,13 +718,10 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
               {organizeRunning ? "Organizing…" : "Organize"}
             </Button>
           ) : null}
-          {config.forgePath ? (
-            <Link
-              href={config.forgePath}
-              className="inline-flex h-9 items-center rounded-md bg-accent-500 px-3.5 text-sm font-medium text-ink-950 hover:bg-accent-400"
-            >
+          {config.forge ? (
+            <Button variant="primary" onClick={() => void forgeCharacter.forge()} busy={forgeCharacter.busy}>
               Forge ✦
-            </Link>
+            </Button>
           ) : null}
         </div>
       </div>
@@ -866,13 +868,10 @@ export function EntityLibrary({ entity }: { entity: LibraryEntity }) {
           title={config.emptyTitle}
           description={config.emptyBody}
           action={
-            config.forgePath ? (
-              <Link
-                href={config.forgePath}
-                className="inline-flex h-9 items-center rounded-md bg-accent-500 px-3.5 text-sm font-medium text-ink-950 hover:bg-accent-400"
-              >
+            config.forge ? (
+              <Button variant="primary" onClick={() => void forgeCharacter.forge()} busy={forgeCharacter.busy}>
                 Open the forge
-              </Link>
+              </Button>
             ) : (
               <Button onClick={createBlank} busy={creating}>
                 Create one

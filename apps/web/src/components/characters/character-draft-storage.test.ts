@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { characterDetailSchema } from "@/lib/client/api/library";
 import { promoteDraftRecovery, readDraft, writeDraft, type DraftStorage } from "./character-draft-storage";
-import { characterCreationStateSchema, creationSaveNavigationHref, emptyCharacterCreation, prepareCreationSave, recoverCreationMismatch, savedCreationHref } from "./character-creation-draft";
 
 function memoryStorage(): DraftStorage {
   const rows = new Map<string, string>();
@@ -10,72 +8,6 @@ function memoryStorage(): DraftStorage {
 }
 
 describe("character browser draft persistence", () => {
-  it("freezes a create retry payload and lets ordinary Save replace an old destination", () => {
-    const first = emptyCharacterCreation();
-    first.draft.name = "Iris";
-    const requested = prepareCreationSave(first, "chat");
-    const retry = prepareCreationSave({ ...requested, draft: { ...requested.draft, name: "Newer edit" } }, null);
-    expect(retry.id).toBe(first.id);
-    expect(retry.initialSaveDraft?.name).toBe("Iris");
-    expect(retry.draft.name).toBe("Newer edit");
-    expect(retry.saveDestination).toBeNull();
-  });
-
-  it("does not keep a successful first save on the creation draft for an already-applied Forge receipt", () => {
-    const state = emptyCharacterCreation();
-    state.savedCharacterId = "saved-character";
-    state.tab = "portrait";
-    state.review.handledIds = ["completed-forge"];
-    const saved = { characterId: "saved-character", requestId: state.id, savedSnapshotUnchanged: true, authoredMatchesSaved: true, revisionMatches: true };
-    expect(creationSaveNavigationHref(state, [{ id: "completed-forge", status: "completed" }], saved)).toBe("/characters/saved-character?tab=portrait");
-    state.tab = "profile";
-    state.saveDestination = "portrait";
-    expect(creationSaveNavigationHref(state, [], saved)).toBe("/characters/saved-character?tab=portrait");
-    state.saveDestination = "chat";
-    expect(creationSaveNavigationHref(state, [], saved)).toBe("/characters/saved-character?tab=chat");
-    expect(creationSaveNavigationHref(state, [{ id: "unapplied-forge", status: "completed" }], saved)).toBeNull();
-    expect(creationSaveNavigationHref(state, [{ id: "pending-forge", status: "pending" }], saved)).toBeNull();
-    expect(creationSaveNavigationHref(state, [{ id: "failed-forge", status: "failed" }], saved)).toBeNull();
-    expect(creationSaveNavigationHref(state, [], { ...saved, savedSnapshotUnchanged: false })).toBeNull();
-    expect(creationSaveNavigationHref(state, [], { ...saved, authoredMatchesSaved: false })).toBeNull();
-    expect(creationSaveNavigationHref(state, [], { ...saved, requestId: "new-draft" })).toBeNull();
-    expect(creationSaveNavigationHref(state, [], { ...saved, revisionMatches: false })).toBeNull();
-  });
-
-  it("binds an idempotency mismatch without changing the retained authored draft", () => {
-    const state = emptyCharacterCreation();
-    state.draft.name = "Retained Iris";
-    state.draft.profile.bio = "Local edit";
-    state.initialSaveDraft = structuredClone(state.draft);
-    const created = characterDetailSchema.parse({
-      id: "saved-iris",
-      name: "Original Iris",
-      profile: { bio: "Original saved value" },
-      updatedAt: "2026-09-07T18:00:00.000Z",
-    });
-    const current = characterDetailSchema.parse({
-      id: "saved-iris",
-      name: "Server Iris",
-      profile: { bio: "Current saved value" },
-      updatedAt: "2026-09-07T19:00:00.000Z",
-      authoringRevision: 7,
-    });
-    const recovered = recoverCreationMismatch(state, created, current);
-    expect(recovered.savedCharacterId).toBe("saved-iris");
-    expect(recovered.draft.name).toBe("Retained Iris");
-    expect(recovered.draft.profile.bio).toBe("Local edit");
-    expect(recovered.serverSnapshot?.draft.name).toBe("Original Iris");
-    expect(recovered.serverConflict?.snapshot.draft.name).toBe("Server Iris");
-    const persisted = readDraft(JSON.stringify({ revision: "recovery", data: recovered }), characterCreationStateSchema)?.data;
-    expect(persisted?.serverConflict?.authoringRevision).toBe(7);
-    const legacy = structuredClone(recovered);
-    delete legacy.serverConflict?.authoringRevision;
-    expect(readDraft(JSON.stringify({ revision: "legacy-recovery", data: legacy }), characterCreationStateSchema)?.data.serverConflict?.authoringRevision).toBeUndefined();
-    expect(recovered.serverConflict?.reason).toBe("creation_mismatch");
-    expect(recovered.serverUpdatedAt).toBe(current.updatedAt);
-    expect(recovered.initialSaveDraft).toBeNull();
-  });
-
   it("consumes the exact recovery copy only after shared promotion succeeds", () => {
     const storage = memoryStorage();
     storage.setItem("shared", "old");
@@ -118,22 +50,5 @@ describe("character browser draft persistence", () => {
     expect(readDraft('{"revision":"one","data":false}', z.string())).toBeNull();
     const unavailable = { getItem: () => { throw new Error("unavailable"); }, setItem: () => undefined, removeItem: () => undefined };
     expect(writeDraft(unavailable, "draft", null, "new")).toBe("unavailable");
-  });
-
-  it("round-trips original brief, destination, accepted author draft and pending review separately", () => {
-    const state = emptyCharacterCreation();
-    state.draft.profile.creationBrief = "A human woman in a blue suit";
-    state.draft.name = "Iris";
-    state.tab = "portrait";
-    state.saveDestination = "chat";
-    state.savedCharacterId = "saved-character";
-    state.materializingDraft = structuredClone(state.draft);
-    state.review.pending.push({ id: "pending", label: "Profile rewrite", base: structuredClone(state.draft), proposed: { ...state.draft, name: "Suggested Iris" }, undo: false });
-    const raw = JSON.stringify({ revision: "one", data: state });
-    const loaded = readDraft(raw, characterCreationStateSchema);
-    expect(loaded?.data).toEqual(state);
-    expect(loaded && savedCreationHref(loaded.data)).toBe("/characters/saved-character?tab=chat");
-    expect(loaded?.data.draft.name).toBe("Iris");
-    expect(loaded?.data.review.pending[0]?.proposed.name).toBe("Suggested Iris");
   });
 });

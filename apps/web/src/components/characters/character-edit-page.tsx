@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type Diagnostic } from "@/contracts";
+import { CHARACTER_CREATION_BRIEF_MAX, VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type Diagnostic } from "@/contracts";
 import { characterEditorTabs, characterSections, type CharacterEditorTab, type CharacterSheetScope } from "@/lib/character-scopes";
 import { charactersApi } from "@/lib/client/api";
 import { useSession } from "@/components/auth/auth-client";
@@ -13,20 +13,23 @@ import { PageContainer } from "@/components/shell/app-shell";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Disclosure } from "@/components/ui/disclosure";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ErrorState } from "@/components/ui/error-state";
+import { Field } from "@/components/ui/field";
 import { SaveBar } from "@/components/ui/save-bar";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 import { CharacterEditor } from "./character-editor";
-import { withCreationBrief } from "./character-creation-draft";
+import { withCreationBrief } from "./character-brief";
 import { CharacterProposalReview } from "./character-proposal-review";
 import { characterReviewStateSchema, emptyCharacterReview, proposalChanges, reconcileMaterializedUndo } from "./character-proposals";
 import { CharacterAuthorRecoveryNotice } from "./character-author-recovery";
 import { useCharacterAuthorDraft } from "./use-character-author-draft";
 import { CharacterGenerationStatus } from "./character-generation-status";
 import { CharacterMediaStatus } from "./character-media-status";
-import { receiveGenerationReview } from "./character-generation-record";
+import { isFirstForgeAutoAccept, receiveGenerationReview } from "./character-generation-record";
 import { useCharacterGeneration } from "./use-character-generation";
 import { useCharacterDraftStorage } from "./use-character-draft-storage";
 
@@ -42,10 +45,13 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
   const router = useRouter();
   const toast = useToast();
   const detail = useAsyncData(() => charactersApi.get(characterId), [characterId]);
-  const [preparing, setPreparing] = useState<"fill" | "redraft" | "portrait" | null>(null);
+  const [preparing, setPreparing] = useState<"create" | "fill" | "redraft" | "portrait" | null>(null);
   const busyRef = useRef(false);
   const [preparingScope, setPreparingScope] = useState<CharacterSheetScope | null>(null);
   const [tab, setTab] = useState<CharacterEditorTab>("profile");
+  const [forgeOpen, setForgeOpen] = useState(false);
+  const [briefPrompt, setBriefPrompt] = useState("");
+  const briefPrefilled = useRef(false);
   const [forgeDiagnostics, setForgeDiagnostics] = useState<readonly Diagnostic[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -64,18 +70,43 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
 
   useEffect(() => {
     alive.current = true;
-    const requested = new URLSearchParams(window.location.search).get("tab");
-    if (characterEditorTabs.some((id) => id === requested)) {
-      void Promise.resolve().then(() => { if (alive.current) setTab(requested as CharacterEditorTab); });
+    const params = new URLSearchParams(window.location.search);
+    const requestedTab = params.get("tab");
+    const requestedForge = params.get("forge") === "1";
+    if (characterEditorTabs.some((id) => id === requestedTab) || requestedForge) {
+      void Promise.resolve().then(() => {
+        if (!alive.current) return;
+        if (characterEditorTabs.some((id) => id === requestedTab)) setTab(requestedTab as CharacterEditorTab);
+        if (requestedForge) setForgeOpen(true);
+      });
     }
     return () => { alive.current = false; };
   }, []);
 
   const generation = useCharacterGeneration(ownerId, { kind: "character", id: characterId }, reviewStore.ready, reviewStore.conflict || author.blocked, reviewStore.data, async (record, actions) => {
     if (reviewStore.isBlocked() || author.isBlocked() || record.ownerId !== ownerId || record.target.id !== characterId || !record.result) return false;
+    const result = record.result;
     const firstReceipt = !reviewStore.current.current.pending.some((item) => item.sourceRunId === record.id || item.id === record.id)
       && !reviewStore.current.current.handledIds?.includes(record.id);
-    const changes = proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: record.result.proposed, undo: false });
+    if (isFirstForgeAutoAccept(record, firstReceipt)) {
+      const accepted = await actions.decide(
+        { sourceRunId: record.id, proposalRevision: record.proposal.revision },
+        "accept",
+        {},
+        { expectedAuthoringRevision: record.source.authoringRevision },
+      );
+      if (accepted) {
+        setForgeDiagnostics(result.diagnostics);
+        reviewStore.update((review) => receiveGenerationReview(review, accepted.run));
+        await author.refreshServer();
+        detail.reload({ silent: true });
+        await reviewStore.flush();
+        return reviewStore.isPersisted();
+      }
+      // Refused (e.g. the character changed underneath this run) — fall through
+      // and leave it as an ordinary pending proposal for review below.
+    }
+    const changes = proposalChanges({ id: record.id, label: record.label, base: record.base, proposed: result.proposed, undo: false });
     let projected = record;
     if (record.proposal.status === "unresolved" && changes.length === 0) {
       const current = await charactersApi.get(characterId);
@@ -89,11 +120,11 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       if (!rejected) return false;
       projected = rejected.run;
     }
-    setForgeDiagnostics(record.result.diagnostics);
+    setForgeDiagnostics(result.diagnostics);
     reviewStore.update((review) => receiveGenerationReview(review, projected));
     if (firstReceipt && changes.length === 0) {
       toast.push({
-        title: record.result.portrait?.outcome === "supported_match" ? "Portrait and sheet agree" : "No changes suggested",
+        title: result.portrait?.outcome === "supported_match" ? "Portrait and sheet agree" : "No changes suggested",
         tone: "success",
       });
     }
@@ -106,14 +137,19 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
   });
   const busy = preparing ?? generation.active?.operation ?? null;
   const scopeBusy = preparingScope ?? generation.active?.scope ?? null;
-  const generate = async (mode: "fill" | "redraft" | "portrait", scope?: CharacterSheetScope) => {
+  const generate = async (mode: "create" | "fill" | "redraft" | "portrait", scope?: CharacterSheetScope) => {
     const currentDraft = author.current.current?.draft;
     if (!currentDraft || busyRef.current || generation.isRunning() || !reviewStore.ready || author.isBlocked() || reviewStore.isBlocked()) return;
+    if (mode === "create" && !briefPrompt.trim() && !currentDraft.profile.creationBrief.trim()) return;
     busyRef.current = true;
     setPreparing(mode); setPreparingScope(scope ?? null);
     try {
-      const withBrief = withCreationBrief(currentDraft);
-      if (withBrief !== currentDraft) changeDraft(withBrief);
+      // A create run's brief is server-derived (from the saved brief, else the
+      // typed prompt), so it never touches draft.profile.creationBrief here.
+      if (mode !== "create") {
+        const withBrief = withCreationBrief(currentDraft);
+        if (withBrief !== currentDraft) changeDraft(withBrief);
+      }
       const displayedPortraitId = mode === "portrait" ? detail.data?.avatarImageId ?? null : null;
       if (mode === "portrait" && pendingProposalCount > 0) {
         toast.push({ title: "Review character suggestions first", description: "Portrait completion uses only accepted, saved details.", tone: "error" });
@@ -125,6 +161,14 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         toast.push({ title: "Portrait unavailable", description: "Generate or upload a portrait first.", tone: "error" });
         return;
       }
+      if (mode === "create") {
+        await generation.start({
+          operation: "create", scope: null, label: "forged character", base: prepared.draft,
+          creationStart: { draft: prepared.draft, prompt: briefPrompt, initialPreview: false },
+          source: { authoringRevision: prepared.authoringRevision, imageId: null },
+        });
+        return;
+      }
       const base = prepared.draft;
       const section = scope ? characterSections[scope].label : "character";
       await generation.start({ operation: mode, scope: scope ?? null, base: structuredClone(base), creationStart: null,
@@ -132,6 +176,19 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         label: mode === "portrait" ? "portrait changes" : mode === "fill" ? `missing ${section} details` : `${section} rewrite` });
     } finally { if (alive.current) { busyRef.current = false; setPreparing(null); setPreparingScope(null); } }
   };
+
+  // Nice-to-have: prefill the brief textarea from the most recent failed or
+  // rejected Forge, once, so a retry after a bad first attempt isn't blank.
+  useEffect(() => {
+    if (briefPrefilled.current || draft?.profile.creationBrief) return;
+    const retry = generation.records.find((record) => record.operation === "create"
+      && (record.status === "failed" || record.proposal.status === "rejected")
+      && record.creationStart?.prompt.trim());
+    if (!retry?.creationStart) return;
+    briefPrefilled.current = true;
+    const prompt = retry.creationStart.prompt;
+    void Promise.resolve().then(() => { if (alive.current) setBriefPrompt((current) => current || prompt); });
+  }, [generation.records, draft?.profile.creationBrief]);
 
   const clone = async () => {
     if (cloning || author.isBlocked()) return;
@@ -251,6 +308,38 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
       {author.recovery ? <CharacterAuthorRecoveryNotice key={author.recovery.id} recovery={author.recovery} disabled={saving || author.storage.conflict} onRestore={author.resolveRecovery} onDiscard={() => void author.discardRecovery()} /> : null}
       <CharacterMediaStatus characterId={characterId} onRetry={() => setTab("portrait")} />
       <CharacterGenerationStatus records={generation.records} activeId={generation.active?.id} unavailable={generation.unavailable} blocked={author.blocked || reviewStore.conflict || preparing !== null} onRetry={generation.retry} onDismiss={generation.dismiss} />
+      <Disclosure
+        title={draft.profile.creationBrief ? "Original brief" : "Creation brief"}
+        description={draft.profile.creationBrief ? "Kept as context for later suggestions" : "Describe the character to draft with the Forge"}
+        defaultOpen={forgeOpen}
+        className="mb-5"
+      >
+        <Field label={draft.profile.creationBrief ? "Original brief (read only)" : "Describe your character"}>
+          {(id) => (
+            <Textarea
+              id={id}
+              rows={5}
+              maxLength={CHARACTER_CREATION_BRIEF_MAX}
+              value={draft.profile.creationBrief || briefPrompt}
+              readOnly={!!draft.profile.creationBrief || busy === "create"}
+              onChange={(event) => setBriefPrompt(event.target.value)}
+              placeholder="A human woman in her forties, a harbor-master with dry humor, auburn hair and a weathered blue coat…"
+            />
+          )}
+        </Field>
+        <Button
+          className="mt-3"
+          variant={draft.profile.creationBrief ? "ghost" : "primary"}
+          busy={busy === "create"}
+          disabled={!(briefPrompt.trim() || draft.profile.creationBrief) || busy !== null || author.blocked || !reviewStore.ready || reviewStore.conflict}
+          onClick={() => void generate("create")}
+        >
+          {draft.profile.creationBrief ? "Regenerate character suggestions" : "Forge character"}
+        </Button>
+        {draft.profile.creationBrief ? (
+          <p className="mt-2 text-xs text-paper-400">Use the section actions to refine one part. Regenerating proposes a full replacement for review.</p>
+        ) : null}
+      </Disclosure>
       <CharacterProposalReview draft={draft} review={reviewStore.data} onReviewChange={reviewStore.update} onChange={changeDraft}
         onDecision={async (proposal, action, choices) => {
           let expectedAuthoringRevision: number | undefined;
@@ -295,7 +384,6 @@ function CharacterEditSession({ characterId, ownerId }: { characterId: string; o
         generationDisabled={busy !== null || !reviewStore.ready || reviewStore.conflict || author.blocked}
         pendingProposalCount={pendingProposalCount}
         preparePortraitGeneration={author.prepareAction}
-        saving={saving}
         onPortraitAttributes={() => void generate("portrait")}
         derivingPortrait={busy === "portrait"}
         diagnostics={forgeDiagnostics}

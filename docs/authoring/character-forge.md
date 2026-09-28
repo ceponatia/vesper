@@ -1,74 +1,59 @@
 # Character forge
 
 `POST /api/characters/forge` with a prose prompt ("a weary harbor-master in her forties, dry
-humor, bad knee…") returns a **draft** and never auto-saves. Three agent legs run in parallel:
-the profile leg ([profile-leg.md](profile-leg.md)), the attribute leg, and the outfit leg.
+humor, bad knee…") returns a **draft** and never auto-saves; it is a stateless preview, not part of
+character creation. Three agent legs run in parallel: the profile leg
+([profile-leg.md](profile-leg.md)), the attribute leg, and the outfit leg.
 
-The Forge and manual New entry points share one character draft. An initial Forge of a blank
-draft opens an editable preview. Subsequent generated changes enter the explicit proposal review
-described in [manual-editing.md](manual-editing.md); saving writes the authored draft and does not
-accept pending suggestions.
+**New** creates a blank character (create-on-new: `POST /api/characters` with a randomized
+placeholder name) and opens its editing page. **Forge** does the same and opens the page with the
+creation-brief panel expanded (`?forge=1`). Save and autosave on the character page
+([manual-editing.md](manual-editing.md)) are the only save paths; there is no separate creation
+draft.
 
 ## Owns / does not own
 
-This page owns character generation and creation-draft persistence. Manual form placement,
-autosave and proposal acceptance belong to [manual-editing.md](manual-editing.md). Portrait
-creation and reference approval belong to [../ui/library.md](../ui/library.md).
+This page owns character generation, the creation-brief panel and the first-Forge auto-apply rule.
+Manual form placement, autosave and proposal acceptance belong to
+[manual-editing.md](manual-editing.md). Portrait creation and reference approval belong to
+[../ui/library.md](../ui/library.md).
 
-## Resumable creation
+## The creation brief
 
-- New and Forge open the same draft for the signed-in account on this browser. The draft stores
-  authored values, the original brief, active section and pending proposals. Resume never starts
-  generation or incurs model spend.
-- **Start a new draft** records durable abandonment for every running, failed or unresolved run
-  associated with that exact draft id. The browser resets only after those decisions succeed;
-  late job completion cannot reclaim the replacement draft.
-- The original brief is stored in the existing profile JSON as `creationBrief`, with an empty
-  default for legacy records. It remains private in public profile projections. A prompt-based
-  draft preserves the original prompt after its first successful full Forge that adds details.
-  A failed or empty first response leaves the brief editable. The first Forge remains unresolved on
-  the server while it runs. A successful response becomes the editable preview only after the
-  browser proves that the draft and prompt still equal the request snapshot and records acceptance.
-  Otherwise it preserves concurrent edits and stages suggestions for explicit review. Before the first AI action on a manual or legacy saved
-  character, the editor captures the original authored details if there is no brief. The durable
-  brief shares the Forge request's 4,000-character limit. Manual capture reserves space for
-  identity, appearance and outfit before bounded biography, personality, voice and traits.
-  Oversized existing briefs retain their opening and closing constraints within that limit.
-- Revisions do not replace the original brief. Fill and rewrite receive it alongside the current
+- The character page's creation-brief panel opens expanded when reached with `?forge=1`, collapsed
+  otherwise. With no saved brief, it holds an editable textarea and **Forge character**. With a
+  saved brief, it shows the brief read-only as **Original brief** and offers **Regenerate character
+  suggestions** instead.
+- A `create` authoring run targets a saved character (`{ kind: "character", id }`). The server
+  rebuilds the generation base and the creation snapshot from the saved row: it uses the row's
+  saved brief when present, else the submitted prompt, and refuses a run whose effective brief is
+  empty. The brief is written to the character only when the resulting proposal is accepted, never
+  on an unresolved or rejected run.
+- The brief is stored in the existing profile JSON as `creationBrief`, with an empty default for
+  legacy records, and stays private in public profile projections. Before the first AI action on a
+  manual or legacy saved character with no brief, the editor captures the original authored details
+  as the brief so later Fill and Re-draft have context to work from. The durable brief shares the
+  Forge request's 4,000-character limit; manual capture reserves space for identity, appearance and
+  outfit before bounded biography, personality, voice and traits, and an oversized existing brief
+  retains its opening and closing constraints within that limit.
+- Revisions never replace the original brief. Fill and rewrite receive it alongside the current
   sheet, whose later authored values remain authoritative when they disagree with the original.
-- An ordinary successful first save opens the persisted character at the creation draft's active
-  section. Save and open Portrait Studio or Chat opens the persisted destination directly. Pending
-  proposals carry into the saved character's review storage without acceptance. Repeated saves replace
-  that creation draft's pending contribution and preserve decisions made on either surface,
-  without removing proposals created independently on the saved character. A failed review
-  transfer retains the creation draft and a link to the requested Portrait Studio or Chat destination.
-- A successful save clears only the browser version it saved. A completed generation receipt that
-  is already represented in the durable draft or review does not delay the transition. If newer
-  edits exist, the saved character remains linked and the newer draft stays available. Subsequent saves of that draft
-  update the linked character rather than creating another character.
-- The first save freezes an `initialSaveDraft` and sends the creation draft's UUID as
-  `creationRequestId`. The server commits the character, its materialized items and a replayable
-  response receipt in one transaction. A lost-response retry with the same request and payload
-  returns that original character, version and item receipt; reuse of the UUID with different
-  content never creates or overwrites another row. That refusal carries the owner-scoped original
-  receipt and current character when both remain valid, so the browser binds the retained draft
-  to the existing character and presents their differences for explicit recovery. An
-  acknowledgment never clears newer authored changes.
-- A linked creation draft retains the last saved server snapshot and `updatedAt` token. Later
-  writes use that token for compare-and-set recovery: authored conflicts require explicit review,
-  while a metadata-only server change advances the token without hiding local edits.
-- Failed saves retain the entire draft. Browser storage failures surface a notice and keep the
-  in-memory draft available. Corrupt records stay retained until an explicit replacement.
-- Browser writes compare versions and use a per-draft Web Lock where available. A conflicting
-  tab keeps its changes in a separate recovery copy. Selecting a recovery preserves the displaced
-  version; queued writes from a version being left cannot overwrite the resumed version. Recovery
-  promotion consumes the exact selected copy only after the shared write succeeds. Displaced
-  shared versions use stable recovery keys rather than multiplying copies on repeated recovery.
-- Browser drafts are scoped to the authenticated account, remain on this device between visits,
-  and are not cloud drafts. Switching accounts remounts the authoring state and never loads the
-  previous account's draft into the new account.
-- Creation-run queries, browser caches and completion projection require the exact creation draft
-  id. A run from an abandoned draft cannot attach itself to a pristine replacement.
+
+## The first Forge applies directly
+
+- The server computes `initialPreview` for every `create` run: true only while the character
+  remains exactly as created — authoring revision 1, profile and tags equal to a freshly created
+  blank, compared without key-order sensitivity. The client never computes it.
+- When a completed run's `initialPreview` is true, its proposal is unresolved, and the browser is
+  receiving it for the first time, the character page accepts it immediately, with no review step,
+  and refreshes the saved character and its editor. The accept carries the run's source authoring
+  revision, so any edit made meanwhile — including one made while the run was still in flight —
+  turns that same run into an ordinary proposal for [manual review](manual-editing.md) instead
+  (#517: AI output never silently replaces authored values).
+- A refused auto-accept (the character changed underneath the run) leaves the run as an ordinary
+  pending proposal; nothing else happens automatically.
+- A failed or empty first response leaves the brief editable and unsaved. The panel may prefill
+  the textarea from the failed attempt's prompt so a retry does not start from a blank field.
 
 ## Species matching runs first
 

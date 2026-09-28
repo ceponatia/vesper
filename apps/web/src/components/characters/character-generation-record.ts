@@ -34,7 +34,6 @@ export function matchesGeneration(record: CharacterGeneration, ownerId: string, 
   return record.ownerId === ownerId
     && record.target.kind === target.kind
     && record.target.id === target.id
-    && (record.operation !== "portrait" || record.target.kind === "character")
     && (!record.scope || record.operation === "fill" || record.operation === "redraft");
 }
 
@@ -42,6 +41,25 @@ export function hasReceivedGeneration(review: CharacterReviewState, id: string):
   return review.pending.some((item) => item.sourceRunId === id || item.id === id)
     || review.handledIds?.includes(id) === true
     || review.undo?.sourceRunId === id;
+}
+
+/**
+ * The very first Forge on a character that has never been edited applies
+ * directly, without a review step. `initialPreview` is computed server-side
+ * (true only for a never-edited blank character), so any edit made meanwhile —
+ * including one made while this run was in flight — turns it into an ordinary
+ * proposal instead. #517: AI output never silently replaces authored values
+ * otherwise.
+ */
+export function isFirstForgeAutoAccept(
+  record: CharacterGeneration,
+  firstReceipt: boolean,
+): record is CharacterGeneration & { source: NonNullable<CharacterGeneration["source"]> } {
+  return record.operation === "create"
+    && record.creationStart?.initialPreview === true
+    && record.proposal.status === "unresolved"
+    && firstReceipt
+    && record.source !== null;
 }
 
 /** A receipt is specific to one server proposal projection, including decisions that advance its revision. */

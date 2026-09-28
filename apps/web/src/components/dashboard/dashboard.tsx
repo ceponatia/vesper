@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { charactersApi, chatsApi } from "@/lib/client/api";
 import { ChatSayMarker } from "@/components/chat/chats-page";
+import { useForgeCharacter } from "@/components/characters/use-forge-character";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { PageContainer } from "@/components/shell/app-shell";
 import { Card } from "@/components/ui/card";
@@ -19,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export function Dashboard() {
   const chats = useAsyncData(() => chatsApi.list(), []);
   const cast = useAsyncData(() => charactersApi.list(), []);
+  const forgeCharacter = useForgeCharacter();
 
   const recentChats = chats.data ?? [];
   const latestChat = recentChats[0];
@@ -122,9 +124,14 @@ export function Dashboard() {
         ) : (cast.data ?? []).length === 0 ? (
           <p className="text-sm text-paper-500">
             No characters yet —{" "}
-            <Link href="/characters/forge" className="text-accent-300 hover:text-accent-400">
+            <button
+              type="button"
+              onClick={() => void forgeCharacter.forge()}
+              disabled={forgeCharacter.busy}
+              className="cursor-pointer text-accent-300 underline-offset-2 hover:text-accent-400 hover:underline disabled:cursor-not-allowed disabled:text-paper-500"
+            >
               forge someone
-            </Link>
+            </button>
             .
           </p>
         ) : (

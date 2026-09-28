@@ -54,8 +54,6 @@ export interface CharacterEditorProps {
   onComplete?: (scope: CharacterSheetScope) => void;
   completing?: CharacterSheetScope | null;
   generationDisabled?: boolean;
-  onSaveAndOpen?: (destination: "portrait" | "chat") => void;
-  saving?: boolean;
   onChange: (next: CharacterDraft) => void;
   /** Edit mode shows per-tab Re-draft buttons. */
   onRedraft?: (scope: CharacterSheetScope) => void;
@@ -63,8 +61,8 @@ export interface CharacterEditorProps {
   /** Portrait → attributes (Attributes tab, needs a ready avatar). */
   onPortraitAttributes?: () => void;
   derivingPortrait?: boolean;
-  /** Saved characters get the portrait studio; drafts don't exist yet. */
-  characterId?: string;
+  /** The character always exists before this editor renders (create-on-new). */
+  characterId: string;
   /** The portrait candidate on screen. */
   avatarImageId?: string | null;
   /** Identity of the saved apparent-age plan used by portrait references. */
@@ -76,10 +74,7 @@ export interface CharacterEditorProps {
   preparePortraitGeneration?: () => Promise<CharacterAuthoringActionDraft | null>;
   pendingProposalCount?: number;
   diagnostics?: readonly Diagnostic[];
-  /**
-   * The page owns narrator selection and autosaves it with the character draft.
-   * Unsaved characters show a save-and-open action on Chat.
-   */
+  /** The page owns narrator selection and autosaves it with the character draft. */
   chatModel?: string;
   onChatModelChange?: (modelId: string) => void;
 }
@@ -92,8 +87,6 @@ export function CharacterEditor({
   onComplete,
   completing = null,
   generationDisabled = false,
-  onSaveAndOpen,
-  saving = false,
   onChange,
   onRedraft,
   redrafting = null,
@@ -461,41 +454,27 @@ export function CharacterEditor({
 
 
       {tab === "portrait" ? (
-        characterId ? (
-          <PortraitStudio
-            characterId={characterId}
-            name={draft.name || "Untitled"}
-            avatarImageId={avatarImageId}
-            referencePlanKey={referencePlanKey}
-            acceptance={acceptance}
-            onAvatarChanged={onAvatarChanged ?? (() => {})}
-            prepareGeneration={preparePortraitGeneration ?? (async () => null)}
-            generationDisabled={generationDisabled}
-            pendingProposalCount={pendingProposalCount}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-400">
-            <p>Save your character to create a portrait from these details.</p>
-            {onSaveAndOpen ? <Button variant="primary" busy={saving} disabled={saving} onClick={() => onSaveAndOpen("portrait")}>Save and open Portrait Studio</Button> : null}
-          </div>
-        )
+        <PortraitStudio
+          characterId={characterId}
+          name={draft.name || "Untitled"}
+          avatarImageId={avatarImageId}
+          referencePlanKey={referencePlanKey}
+          acceptance={acceptance}
+          onAvatarChanged={onAvatarChanged ?? (() => {})}
+          prepareGeneration={preparePortraitGeneration ?? (async () => null)}
+          generationDisabled={generationDisabled}
+          pendingProposalCount={pendingProposalCount}
+        />
       ) : null}
 
       {tab === "chat" ? (
-        characterId ? (
-          // Conversation defaults and links; the player relationship belongs to Relationships.
-          <CharacterChat
-            characterId={characterId}
-            name={draft.name || "Untitled"}
-            chatModel={resolveChatModelId(chatModel)}
-            onChatModelChange={onChatModelChange ?? (() => undefined)}
-          />
-        ) : (
-          <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-ink-600 px-4 py-8 text-center text-sm text-paper-400">
-            <p>Save your character to start a conversation.</p>
-            {onSaveAndOpen ? <Button variant="primary" busy={saving} disabled={saving} onClick={() => onSaveAndOpen("chat")}>Save and open Chat</Button> : null}
-          </div>
-        )
+        // Conversation defaults and links; the player relationship belongs to Relationships.
+        <CharacterChat
+          characterId={characterId}
+          name={draft.name || "Untitled"}
+          chatModel={resolveChatModelId(chatModel)}
+          onChatModelChange={onChatModelChange ?? (() => undefined)}
+        />
       ) : null}
       </div>
     </div>
