@@ -2,7 +2,7 @@
   "schema_version": 1,
   "files": {
     ".claude/agents/vesper-builder.md": "17707c8ce701bb249a2feeefafe479b20946d14f925af68aad617bc8afdbea7f",
-    ".claude/agents/vesper-chat-tester.md": "6480d9acf5d1d2893e58b11effcf17acc1e151841365673bf129c01fdc1a78ba",
+    ".claude/agents/vesper-chat-tester.md": "11f753c5f242d7c6848131a929d118472c14cd01eea966988ee668d6ccbe6d96",
     ".claude/agents/vesper-context-scout.md": "a4d315acabac8da607ac34d7cc7888d330c58aa27ed56969a312cb5971e0c768",
     ".claude/agents/vesper-escalation.md": "0779f837bcaf11e5f4c3e0d5b239c2b832fadb63f848b6582a290952d81ecc53",
     ".claude/agents/vesper-orchestrator.md": "7daa3892aaf85bc11db26ff75f7e06dde8d291e28b671bb8c3f8acb576d5c888",
@@ -99,7 +99,7 @@
     ".claude/skills/vesper-ux-review/SKILL.md": "5a67abe2523c6136ec13765d582db74026f1e534375efb35312e9533995f0ee9",
     ".claude/skills/vesper-ux-review/agents/openai.yaml": "6ebb7d2971c67c924806f5c38f705923ef62d77298337935c36333a254854467",
     ".codex/agents/vesper-builder.toml": "ea4c6e66d6d6d3cc15fa241cc0a294659c24f753abd705e73c6ab8b785217f9a",
-    ".codex/agents/vesper-chat-tester.toml": "7d18e0822c32eb5818008fb7a828b7d337edd010134a336c597d9beaa1d0cc27",
+    ".codex/agents/vesper-chat-tester.toml": "9b3ddbf7c88a54e4eb99625ba3088705c70bdd745407239cc1aee5c1eb6700da",
     ".codex/agents/vesper-context-scout.toml": "9b4c037d01588c0a248ffa2ea4bbb3fc4331f15d42779217a1eb1c51cc217fc8",
     ".codex/agents/vesper-escalation.toml": "e940c7e7b8a370df6e7dd4df3db8f775569a3a4fca9fc0d2fb4cfa992753f973",
     ".codex/agents/vesper-orchestrator.toml": "c4d4b5d7076b9ede471303d3dd1a5115892857e75aaa19dafedc55dc2b7582d9",

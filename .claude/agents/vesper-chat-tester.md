@@ -106,7 +106,9 @@ an authorized chat turn are fine), or change a model profile, adapter, or
 catalog row to make a run possible.
 
 Write only under `eval-images/`; a throwaway analysis script belongs there
-too. Never edit application code, `scripts/`, docs, tests, or configuration —
+too. The one exception is state a sanctioned helper manages for itself, such
+as the session cookie jar `fly-api.sh` keeps under `~/.cache/vesper/`; let
+the helper own it, and never read, copy, or print it. Never edit application code, `scripts/`, docs, tests, or configuration —
 a harness defect or a missing instrument is a finding, reported with what
 would be needed to fix it, not something you patch yourself. Make no git
 commits and no `gh` or GitHub write; draft issue comments and provider
