@@ -53,11 +53,11 @@ function profileForCreate(profile: CharacterProfile, suggestedIds: readonly stri
 }
 
 /**
- * The authored content `createOwnedCharacter` stores for a blank `{ name }`
+ * The profile and tags `createOwnedCharacter` stores for a blank `{ name }`
  * body. A first Forge applies without review only while a character still
  * holds exactly this (docs/authoring/character-forge.md), so create and that
- * check share this one definition. The name is excluded: a never-edited
- * character keeps whatever placeholder it was created with.
+ * check share this one definition. The name is checked there separately,
+ * against the create-on-new placeholder.
  */
 export function blankCreatedCharacterContent(): { profile: CharacterProfile; tags: string[] } {
   const body = characterCreateSchema.parse({ name: "blank" });

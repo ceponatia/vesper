@@ -313,15 +313,9 @@ export const characters = pgTable(
 );
 
 /**
- * Durable receipts for character-creation intents. The browser keeps one UUID
- * for a creation draft; a committed POST whose response is lost can therefore
- * replay the exact successful envelope instead of creating a second character
- * or a second set of suggested items. A request id is owner-scoped, and reuse
- * with a different payload hash is rejected by the route.
- *
- * The receipt has the same lifetime as its character. Deleting the character
- * cascades this row, so a deliberately deleted draft does not leave permanent
- * request metadata behind.
+ * Retained receipts from the retired replayable character create, one per
+ * owner-scoped creation request id. No code path reads or writes this table.
+ * Deleting a character still cascades its rows.
  */
 export const characterCreationRequests = pgTable(
   "character_creation_requests",

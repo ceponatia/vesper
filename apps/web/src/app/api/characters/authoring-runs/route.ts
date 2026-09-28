@@ -8,20 +8,26 @@ import {
   jsonOk,
   listCharacterAuthoringRuns,
   readBody,
+  retiredCreationTargetListing,
   startAuthoringRunSchema,
   startCharacterAuthoringRun,
   withUser,
 } from "@/server/api";
 
-/** Saved characters are the only authoring target; `creation` is refused. */
+/**
+ * Saved characters are the only authoring target. The retired `creation` kind
+ * is still recognized so a page open from before the change, which retries a
+ * refused listing forever, receives an empty one instead.
+ */
 const listQuerySchema = z.object({
-  targetKind: z.literal("character"),
+  targetKind: z.enum(["character", "creation"]),
   targetId: z.string().min(1).max(128),
 });
 
 export const GET = withUser(async (user, req: NextRequest) => {
   const query = listQuerySchema.safeParse(Object.fromEntries(req.nextUrl.searchParams));
   if (!query.success) return jsonError("invalid_query", "invalid authoring-run target", 400);
+  if (query.data.targetKind === "creation") return jsonOk(retiredCreationTargetListing());
   return jsonOk(await listCharacterAuthoringRuns(user.id, { kind: query.data.targetKind, id: query.data.targetId }));
 });
 

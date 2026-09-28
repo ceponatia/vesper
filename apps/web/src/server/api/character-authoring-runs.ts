@@ -293,14 +293,27 @@ function asStoredJson(value: unknown): unknown {
 }
 
 /**
- * Whether the reserved row is still exactly as `createOwnedCharacter` made it
- * for a blank `{ name }` body. The database advances the authoring revision
- * only when name, profile or tags change. Profile and tags are compared
- * structurally because jsonb rewrites object key order; the name is not
- * compared, since a never-edited character keeps its creation placeholder.
+ * The name create-on-new gives a character: "Untitled character " plus
+ * `Math.random().toString(36).slice(2, 6)` (entity-library.tsx `createBlank`,
+ * components/characters/use-forge-character.ts), so zero to four base-36
+ * characters; the create schema trims the space an empty suffix leaves.
  */
-function isUntouchedBlankCharacter(row: Pick<CharacterAuthoringActionSource, "authoringRevision" | "profile" | "tags">): boolean {
-  if (row.authoringRevision !== 1) return false;
+const CREATE_ON_NEW_NAME = /^Untitled character(?: [0-9a-z]{1,4})?$/;
+
+/**
+ * Whether the reserved row is still exactly what create-on-new made: the only
+ * state in which a first Forge may apply without review, since nothing on it
+ * was authored. It requires authoring revision 1 (the database advances the
+ * revision whenever name, profile or tags change), no clone provenance, an
+ * empty or create-on-new placeholder name, and profile and tags equal to what
+ * `createOwnedCharacter` stores for a blank `{ name }` body. Revision 1 alone
+ * proves nothing authored: an API create `{ name: "Alice" }`, a clone, and a
+ * row last edited before revisions existed all carry it. Profile and tags are
+ * compared structurally because jsonb rewrites object key order.
+ */
+function isUntouchedBlankCharacter(row: Pick<CharacterAuthoringActionSource, "authoringRevision" | "clonedFromId" | "name" | "profile" | "tags">): boolean {
+  if (row.authoringRevision !== 1 || row.clonedFromId !== null) return false;
+  if (row.name !== "" && !CREATE_ON_NEW_NAME.test(row.name)) return false;
   const blank = blankCreatedCharacterContent();
   return isDeepStrictEqual(row.profile, asStoredJson(blank.profile)) && isDeepStrictEqual(row.tags, asStoredJson(blank.tags));
 }
@@ -316,6 +329,23 @@ function deriveCreationStart(row: CharacterAuthoringActionSource, base: Characte
   const prompt = savedBrief || boundCharacterCreationBrief(requestedPrompt);
   if (!prompt) return null;
   return { draft: base, prompt, initialPreview: !savedBrief && isUntouchedBlankCharacter(row), origin: "reserved_row" };
+}
+
+/**
+ * The answer to a page loaded before saved characters became the only target,
+ * which still polls for its creation draft's runs: an empty listing, so it
+ * clears its records and stops, with one diagnostic naming the target.
+ */
+export function retiredCreationTargetListing(): { runs: AuthoringRunDto[]; diagnostics: Diagnostic[] } {
+  return {
+    runs: [],
+    diagnostics: [diag(
+      "warn",
+      "authoring.run.unsupported_target",
+      "Creation-draft authoring runs are no longer listed; characters are forged on their own page.",
+      { context: { targetKind: "creation" } },
+    )],
+  };
 }
 
 async function canonicalizeStart(ownerId: string, input: StartInput): Promise<CanonicalStart | StartConflict> {

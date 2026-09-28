@@ -75,6 +75,8 @@ export interface CharacterAuthoringActionSource {
   readonly tags: unknown;
   readonly authoringRevision: number;
   readonly avatarImageId: string | null;
+  /** Library clone provenance; a clone never counts as a freshly created blank. */
+  readonly clonedFromId: string | null;
 }
 
 export type CharacterAuthoringActionReservation =
@@ -122,6 +124,7 @@ export async function reserveCharacterAuthoringAction(input: {
         tags: structuredClone(character.tags),
         authoringRevision: character.authoringRevision,
         avatarImageId: character.avatarImageId,
+        clonedFromId: character.clonedFromId,
       },
     };
   });

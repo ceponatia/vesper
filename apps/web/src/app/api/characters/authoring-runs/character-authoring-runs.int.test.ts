@@ -60,8 +60,8 @@ type CreateRun = {
   result: { proposed: { name: string; profile: { creationBrief: string } }; diagnostics: { code: string }[] } | null;
 };
 
-/** A character exactly as the library's New button creates it. */
-async function blankCharacter(name = "New character") {
+/** A character exactly as the library's New button creates it, placeholder name included. */
+async function blankCharacter(name = "Untitled character q7x2") {
   const outcome = await createOwnedCharacter(authState.user.id, characterCreateSchema.parse({ name }));
   if (outcome.status !== "created") throw new Error("failed to create blank character fixture");
   return outcome.response.character;
@@ -328,6 +328,31 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     expect(listed.runs.find((run) => run.id === regenerated.run.id)?.result?.proposed.profile.creationBrief).toBe("Original harbor concept");
   });
 
+  it("never marks a blank that carries a chosen name or clone provenance for direct apply", async () => {
+    // Revision 1 and blank content are not enough: an API create with a real
+    // name, or a clone of a blank, still carries something the owner chose.
+    const named = await blankCharacter("Alice");
+    const namedRun = await expectJson<{ run: CreateRun }>(await startCreate(named, "A patient harbor master"), 202);
+    expect(await storedCreationStart(namedRun.run.id)).toMatchObject({ initialPreview: false });
+    await waitForJob(namedRun.run.id);
+    expect(named.authoringRevision).toBe(1);
+
+    const source = await blankCharacter();
+    const blank = blankCreatedCharacterContent();
+    const [clone] = await db().insert(characters).values({
+      ownerId: authState.user.id, name: source.name, profile: blank.profile, tags: blank.tags, clonedFromId: source.id,
+    }).returning();
+    const cloneRun = await expectJson<{ run: CreateRun }>(await startCreate(clone!, "A patient harbor master"), 202);
+    expect(await storedCreationStart(cloneRun.run.id)).toMatchObject({ initialPreview: false });
+    await waitForJob(cloneRun.run.id);
+
+    // The same content under the create-on-new placeholder still qualifies.
+    const placeholder = await blankCharacter("Untitled character");
+    const placeholderRun = await expectJson<{ run: CreateRun }>(await startCreate(placeholder, "A patient harbor master"), 202);
+    expect(await storedCreationStart(placeholderRun.run.id)).toMatchObject({ initialPreview: true });
+    await waitForJob(placeholderRun.run.id);
+  });
+
   it("refuses a create with no brief on the character or in the request before admission", async () => {
     const row = await blankCharacter();
     const requestId = crypto.randomUUID();
@@ -365,7 +390,12 @@ describe.skipIf(!ready)("server-authoritative character authoring runs", () => {
     const legacy = storedCreationRun({ id: crypto.randomUUID(), creationId, before: "Legacy draft", after: "Legacy result" });
     const legacyPayload = { ...legacy.payload, result: null };
     await db().insert(jobs).values({ ...legacy, status: "running", finishedAt: null, heartbeatAt: new Date(0), payload: legacyPayload });
-    await expectApiError(await list("creation", creationId), 400, "invalid_query");
+    // A page open from before the deploy polls its creation draft: it gets an
+    // empty listing and stops, while a malformed query is still refused.
+    const retired = await expectJson<{ runs: unknown[]; diagnostics: { code: string }[] }>(await list("creation", creationId), 200);
+    expect(retired.runs).toEqual([]);
+    expect(retired.diagnostics.map((item) => item.code)).toEqual(["authoring.run.unsupported_target"]);
+    await expectApiError(await listRuns(apiRequest(`/api/characters/authoring-runs?targetKind=draft&targetId=${creationId}`), routeCtx({})), 400, "invalid_query");
     await expectApiError(await decide(legacy.id, { action: "dismiss", expectedProposalRevision: 1, choices: {} }), 409, "invalid_run");
     const ownedJobs = () => db().select({ id: jobs.id }).from(jobs).where(eq(jobs.ownerId, authState.user.id));
     const before = await ownedJobs();

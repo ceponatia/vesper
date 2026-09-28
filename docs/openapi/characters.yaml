@@ -203,13 +203,14 @@ paths:
       description: >-
         The newest 25 runs for one owned saved character, excluding dismissed runs. A stored run whose
         payload cannot be read is omitted with an authoring.run.malformed diagnostic. Saved characters
-        are the only target kind; runs stored for the removed browser creation draft are never listed.
+        are the only target; the retired creation kind always returns no runs and one
+        authoring.run.unsupported_target warning, so a page loaded before the change stops polling.
       x-vesper-source: apps/web/src/app/api/characters/authoring-runs/route.ts
       parameters:
         - in: query
           name: targetKind
           required: true
-          schema: { type: string, const: character }
+          schema: { type: string, enum: [character, creation] }
         - in: query
           name: targetId
           required: true
@@ -230,7 +231,7 @@ paths:
                     type: array
                     items: { type: object, additionalProperties: true }
         '400':
-          description: invalid_query, including any targetKind other than character.
+          description: invalid_query for a missing or unknown targetKind or targetId.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
