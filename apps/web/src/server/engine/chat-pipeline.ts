@@ -35,7 +35,7 @@ import {
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
-import type { NarratorCompletion } from "../ai";
+import { chatNarrativeModelId, type NarratorCompletion } from "../ai";
 import { characterChats, characterChatMessages, db } from "../db";
 import { chatAttachmentPaths, claimChatAttachments, deleteChatUploads } from "../images";
 import { log } from "../log";
@@ -81,6 +81,7 @@ import {
   buildChatReplyGates,
   deriveChatSensoryAllowance,
   detectSceneMovement,
+  detectWithinPlaceMovement,
   mentionsCharacter,
   spokeInReply,
 } from "./chat-intent";
@@ -578,12 +579,30 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       ),
     );
 
+    // Who the player is in THIS chat: the chat's own
+    // persona pick, else the owner's default, else their account name — so the
+    // character addresses someone by name instead of a faceless "the user".
+    // Resolved before the movement read below, which counts the persona's name as the
+    // player's own subject ("Brian walks to the kitchen"; #330).
+    const player = await resolveChatPersona({ ownerId: owner, chatId });
+
     // --- Scene memory: deterministic movement switch (pre-prompt) ------------
-    // A movement/arrival in the player's input switches the current place BEFORE the prompt
+    // A movement/arrival in the turn's input switches the current place BEFORE the prompt
     // builds, so THIS turn's Scene injection is right (a stub place is minted on first
     // mention); the archivist reconciles the rest post-turn. "Just changed" = a new current
     // place this turn, or a pending time skip (both call for re-establishing the setting once).
-    const movedTo = playerContent ? detectSceneMovement(playerContent) : null;
+    // In player input the move must be the player's own, never an unrelated third party's
+    // errand; storyteller input is authorized scene authoring and may move the scene through
+    // anyone (#330). A move onto furniture/a fixture within the current place is NOT a place
+    // change (owner ruling on #330, 2026-09-27) — `withinPlaceMove` carries the player's own
+    // such move to the contact leg below instead of `movedTo`/`switchScenePlace`.
+    const sceneMovementContext = {
+      knownPlaces: baseScenario.sceneMemory.places,
+      narratorInput,
+      playerNames: [player.name],
+    };
+    const movedTo = playerContent ? detectSceneMovement(playerContent, sceneMovementContext) : null;
+    const withinPlaceMove = playerContent ? detectWithinPlaceMovement(playerContent, sceneMovementContext) : null;
     const preSceneCurrent = baseScenario.sceneMemory.current;
     const nextSceneMemory = movedTo ? switchScenePlace(baseScenario.sceneMemory, movedTo) : baseScenario.sceneMemory;
     const sceneChanged =
@@ -601,11 +620,6 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     if (history.length >= CHARACTER_CHAT_SUMMARIZE_AT * 2) {
       void enqueueChatSummary({ chatId });
     }
-
-    // Who the player is in THIS chat: the chat's own
-    // persona pick, else the owner's default, else their account name — so the
-    // character addresses someone by name instead of a faceless "the user".
-    const player = await resolveChatPersona({ ownerId: owner, chatId });
 
     // What the post-turn agents read as the player's turn: the message plus a
     // clearly-labeled note of what the attached photos showed — so a shown photo
@@ -738,6 +752,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       narratorInput,
       exchangeGuardMessageId,
       movedTo,
+      withinPlaceMove,
       wardrobe,
       memberWardrobe,
       physicalConstraintsEnabled,
@@ -777,6 +792,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const commitRecognitionMemory = () => commitChatTurnRecognition({ memoryGroupId, owner, characterId, exchangeGuardMessageId, recognition });
     const commitVisualStateCues = () => commitChatTurnVisualCues({ memoryGroupId, owner, characterId, exchangeGuardMessageId, visualStateNarrationOn, visualStateBuild });
 
+    // Resolved ONCE, before the prompt builds, and reused verbatim for the stream call
+    // below (never re-derived from `input.model`) so the opening-directive table the
+    // prompt reads from and the model the exchange actually runs on cannot diverge
+    // (#479). `chatNarrativeModelId` is the same curated + provider-key-gated resolver
+    // `streamCharacterChat` already applies; re-applying it there to an already-resolved
+    // id is a documented no-op, so this changes no other model's resolved id.
+    const narratorModelId = chatNarrativeModelId(input.model);
+
     const promptInput: CharacterChatPromptInput = {
       // The exchange's frozen narrator instructions.
       // This object reaches ONLY the three prose-narrator builds below —
@@ -790,6 +813,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       player: playerPromptSlice(player, playerWardrobe),
       state: promptStateSlice(driftedState, scenario, wardrobe, profile, garmentNarration, bodyCues, visualStateLines),
       opening,
+      // The resolved narrator id (above) — narrow, exact-model threading so the opening
+      // beat can select a per-model directive variant (#479). Unprofiled ids render
+      // today's directive verbatim; see prompts/character-chat/single.ts.
+      narratorModelId,
       narrationShape: narrationShapeId("chat"),
       // Chat scene memory: whether the setting changed this exchange (movement / time skip),
       // which flips the Scene block's directive from "don't re-establish" to "establish once".
@@ -916,7 +943,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         speakers: input.roster?.length ? input.roster.map((r) => r.name) : [characterName],
         plain: [player.name, ...scenario.supportingCast.map((m) => m.name)],
       },
-      model: input.model,
+      // The SAME resolved id the prompt above keyed its opening directive on (#479) —
+      // passed pre-resolved rather than `input.model` so the two cannot diverge.
+      // `chatNarrativeModelId` re-applies as a documented no-op on an already-resolved id.
+      model: narratorModelId,
       signal: abortController.signal,
     });
 
@@ -928,7 +958,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // is the one the generation actually ran, not the id the request asked for.
       const narratorRun = buildNarratorRunProvenance({
         lane: "legacy_chat",
-        modelId: narratorCompletion?.modelId ?? input.model ?? "",
+        modelId: narratorCompletion?.modelId ?? narratorModelId,
         source: instructionSource,
         nodes: narratorPromptNodes(),
         assembled: assembledNarratorPrompt,
@@ -1448,7 +1478,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         settle,
         abortController,
         completion: () => narratorCompletion,
-        modelId: input.model ?? "",
+        modelId: narratorModelId,
         // The coordinator owns the lock; the stream releases it on every terminal path.
         release: releaseChatLock,
       }),

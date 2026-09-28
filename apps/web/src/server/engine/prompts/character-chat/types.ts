@@ -267,6 +267,16 @@ export interface CharacterChatPromptInput {
    */
   opening?: boolean;
   /**
+   * The resolved narrator model id for THIS turn (`chatNarrativeModelId`'s output,
+   * threaded in by the pipeline — see `chat-pipeline.ts`). Narrow, single-purpose input:
+   * it selects an exact-model opening-directive variant (#479's camera-contract hotfix,
+   * `prompts/character-chat/single.ts`'s `OPENING_DIRECTIVE_OVERRIDES`) and changes no
+   * other prompt byte. Absent, or an id with no override, ⇒ today's opening directive
+   * verbatim. #261's resolved-configuration seam will absorb this field without changing
+   * any rendered byte.
+   */
+  narratorModelId?: string;
+  /**
    * Active narration shape profile — the dev
    * toggle still forces chat length when set. Defaults to DEFAULT_NARRATION_SHAPE; the
    * chat route passes `narrationShapeId("chat")` (resting default `aggressive_concise`).

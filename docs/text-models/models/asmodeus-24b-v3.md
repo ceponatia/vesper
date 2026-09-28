@@ -5,7 +5,7 @@
 **Adapter:** `packages/text-models/src/families/mistral-24b/asmodeus-24b-v3.ts`
 **Provenance:** probed 2026-09-04 against `featherless` model record `DarkArtsForge/Asmodeus-24B-v3`.
 
-A Mistral-Small-24B narrator merge, published by its author as fully uncensored, and the first model Vesper asks with its author's **whole** published profile rather than a trimmed subset. Featherless carries seven of those values; the rest are declared and withheld. Everything below the provenance line was read from that model record, from a field sweep against that exact id, or from the production narrator seam on that date.
+A Mistral-Small-24B narrator merge, published by its author as fully uncensored, and the first model Vesper asks with its author's **whole** published profile rather than a trimmed subset. Featherless carries seven of those values; the rest are declared and withheld. Everything below the provenance line was read from that model record, from a field sweep against that exact id, or from the production narrator seam on that date — except the turn-reliability and latency record, which dates each probe it reports.
 
 ## Owns / does not own
 
@@ -130,7 +130,7 @@ The adapter's 1,024-token cap outranks a lane's own output budget, so the succes
 
 ## Context, and the cap that buys it
 
-The model ends its own turns — every short probe call finished on `stop` with prose — so the cap is not a stop condition. It is an **admission** control. With no `max_tokens` the host reserves a 4,096-token output budget inside the same 32,768-token window and refuses a request that does not leave room for it:
+The model ends its own turns — every short call of the provenance probe finished on `stop` with prose, and the one-token `length` stub recorded below is not the cap being reached — so the cap is not a stop condition. It is an **admission** control. With no `max_tokens` the host reserves a 4,096-token output budget inside the same 32,768-token window and refuses a request that does not leave room for it:
 
 | Request                                  | Result                                                         |
 | ---------------------------------------- | -------------------------------------------------------------- |
@@ -144,11 +144,39 @@ Owner ruling 2026-09-14: send an explicit cap of 1,024. Usable prompt is therefo
 ## Measured runtime behavior
 
 - **No thinking.** Reasoning tokens are 0 on every call, and raw text length equals visible text length everywhere — no normalizer had to act.
-- **No empty replies.** Nine of nine short calls returned prose on `finish_reason: stop`. The row therefore earns **no hidden empty retry** and no minimum-token retry floor: there is no empty-reply failure to cover, and a retry would be latency spent against a hazard the evidence does not show.
-- **It does not reliably hold a turn.** The row intermittently answers with a completion reporting `finish_reason: length` carrying a single token and a single character. That reply is not empty, so nothing classifies it as a failure — it settles, persists, and reaches a player as a one-character message. It is not caused by the profile this page describes: the same result appears with the adapter removed and the row asked at the lane's temperature alone, and a different Featherless row measured clean across the same fixtures on the same day. The rate is not established, and the adapted and unadapted samples are far too small to say whether the profile affects it.
-
-  The same runs put first tokens tens of seconds out on prompts of every size, including the smallest, against the sub-three-second figures the provenance date recorded — near enough to the chat lane's first-token watchdog that a slower day turns a late reply into a timeout. Read the latency line below as what that probe measured, not as what the row currently does.
+- **No measured empty reply, so no hidden retry.** The provenance probe recorded no empty completion on this row, so it earns **no hidden empty retry** and no minimum-token retry floor: a retry would be latency spent against a hazard the evidence does not show. The one-token `length` stub below is not an empty reply, and a retry could not cover it — its fragment has already streamed, so a second attempt would append a new answer after it.
+- **It does not reliably hold a turn.** The row intermittently answers with a completion reporting `finish_reason: length` after a single output token and a single character. Vesper withholds that shape on every narrator instead of keeping it as a turn — it never persists and never enters history, and the player gets a reply-failure popup ([reply failures](../../character-chat/reply-failures.md)). It is not caused by the profile this page describes: the same result appears with the adapter removed. Its rate and its cause are not established; the dated record below is the evidence.
 - **No cold start observed.** The tier is `warm`, the first call of each session answered in 0.8–2.2s to first token, and no `503 capacity_exhausted` appeared across roughly 90 calls. The row carries no startup-budget override, and that absence is a measurement.
-- **Latency, as measured on the provenance date.** First token in 0.7–2.5s on small and Vesper-sized prompts. A one-word "terse invite" prompt is the outlier at up to 22.2s to first token and 36s total — inside the chat lane's 50s first-token budget, and the shape most likely to be slow because there is nothing to anchor on.
 - **Speaker tags.** The line-start `[Name]` grammar held on 6 of 6 calls whose system prompt carried the instruction close by, and on 0 of 3 for a fixture that buried the instruction under ~8,800 tokens of filler. Stray bracketed spans were 0 everywhere, and one asterisk-action span appeared across nine calls, so this row does not insist on asterisk-action syntax.
 - **Determinism is per server, not per host.** The model is served from a pool: each server decodes deterministically, but repeated greedy calls do not all land on the same server, and greedy returned completions of 20, 35, 36 and 38 tokens across runs. A seed reproduced two calls, and the host documents seeds as unreliable across its pool. Nothing may be built on determinism from this host, and a probe comparing completions by hash needs an anchor set.
+
+### Turn reliability and first-token latency
+
+Recorded per probe, each with the date it was measured, because the later probe contradicts the earlier one. Every run went through `streamCharacterChat`, the production narrator seam, so model selection, the adapter binding and the output normalizers were all in force. Neither probe establishes a production rate.
+
+**2026-09-04, the provenance probe.** Nine of nine short calls returned prose on `finish_reason: stop`. First token arrived in 0.7–2.5s on small and Vesper-sized prompts; a one-word "terse invite" prompt was the outlier at up to 22.2s to first token and 36s total. Nine successes are too few to show that an intermittent failure was absent.
+
+**2026-09-14, four nine-call runs.** Asmodeus completions reported `finish_reason: length` after exactly one output token and one visible character, with and without the adapter; the neighbouring Featherless row `DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP` ran clean on the same fixtures:
+
+| Configuration                                                    | Calls | One-token `length` |
+| ---------------------------------------------------------------- | ----: | -----------------: |
+| Asmodeus, adapter in force — run 1                               |     9 |                  2 |
+| Asmodeus, adapter in force — run 2                               |     9 |                  4 |
+| Asmodeus, adapter removed — `temperature: 0.85`, no `max_tokens` |     9 |                  1 |
+| Fable Fusion 711, adapter in force                               |     9 |                  0 |
+
+First token, by configuration:
+
+| Configuration                      | Calls | Median / max (ms) | ≥ 9,000 ms |
+| ---------------------------------- | ----: | ----------------- | ---------: |
+| Asmodeus, adapter in force         |    18 | ~6,100 / 26,583   |          7 |
+| Asmodeus, adapter removed          |     9 | 1,451 / 46,749    |          2 |
+| Fable Fusion 711, adapter in force |     9 | 3,573 / 9,968     |          1 |
+
+What this record supports, and no more:
+
+- The adapter is not required for the stub, because the unadapted control reproduced it. The samples are far too small to say whether the profile changes its rate.
+- The clean neighbour row argues against one failure affecting every Featherless request. It does not rule out host load, scheduling, worker-specific behaviour, or a problem confined to this model's deployment.
+- The clean provenance probe does not prove the stub was absent then, so this is not an established host regression.
+- Failing calls tended to show slower first output, but slow calls also succeeded. The correlation is a lead, not a cause.
+- Two Asmodeus calls on a 32-token prompt took 20.0s and 27.9s to first token, against the provenance probe's sub-three-second figures. The worst call of all four runs — 46,749 ms, on the unadapted control — sat 3.3s under the chat lane's 50s first-token watchdog, so a slower day turns a late reply into a `timeout` reply failure. The neighbour row was also slower than its own earlier 0.7–2.8s, so part of the latency is general host load.

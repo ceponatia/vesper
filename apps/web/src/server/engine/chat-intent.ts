@@ -169,52 +169,740 @@ export function chatCueInviteLine(cue: ChatCueHint, name: string): string {
 // ---------------------------------------------------------------------------
 // Scene movement (chat scene memory): switch `current` before the prompt builds
 // ---------------------------------------------------------------------------
+//
+// A deterministic, token-level reading of every movement verb in the line (#330): pure,
+// with no model call. Each verb answers three questions, each by a small structural rule
+// rather than one wide regex whose capture has to be patched clause by clause:
+//
+// 1. WHERE TO — the noun phrase after the verb's FIRST destination preposition, cut at the
+//    first function word ("to her desk and lean against it" → `desk`, "to the table by the
+//    window" → `table`), or an adverbial destination ("outside"). A preposition that no
+//    determiner follows ends the read: "walk over to talk", "go to bed", "walk over to Wren".
+//    A verbless coordinated segment that opens on a path word continues the SAME verb's
+//    motion to its own destination ("walk past her and into the kitchen", "…, then through
+//    to the kitchen"); a coordinated clause with its own subject or verb never does.
+// 2. WHAT KIND — a place; a position WITHIN the current place (furniture, a fixture — owner
+//    ruling on #330, 2026-09-27); or no destination at all: a body part, a garment, or an
+//    abstraction ("my hand to her thigh", "into my dress", "to an agreement") is a gesture
+//    or an idiom, never locomotion.
+// 3. WHOSE BODY MOVES — the verb's own subject (the nearest nominal before it in its
+//    clause), else the subject SHARED from the previous clause ("the bartender nods and
+//    walks …"), else — only when nothing precedes the verb in its sentence — the imperative
+//    player; or a player direct object ("she leads ME …"). Player input must move the
+//    player; storyteller input is authorized scene authoring, so any mover relocates it.
+//
+// The LAST place change in the line wins (where the bodies end the turn: "walk to the
+// kitchen …, then carry it back to the living room"), and a within-place move is reported
+// only when the line has no place change at all.
 
-/** Movement verbs that can carry a destination ("head to the kitchen", "follow her outside"). */
-const MOVE_VERB =
-  "(?:go(?:es|ing)?|went|head(?:s|ing|ed)?|walk(?:s|ing|ed)?|move(?:s|d|ing)?|follow(?:s|ing|ed)?|lead(?:s|ing)?|led|step(?:s|ping|ped)?|slip(?:s|ping|ped)?|wander(?:s|ing|ed)?|retreat(?:s|ing|ed)?|comes?|came|drive(?:s)?|drove|run(?:s|ning)?|ran|takes?|took|brings?|brought|carr(?:y|ies|ied)|makes? (?:our|your|my) way|made (?:our|your|my) way)";
-/** Prepositions that introduce a movement destination. */
-const DEST_PREP = "(?:in ?to|to|toward|towards|onto|out to|over to|back to|down to|up to|through to)";
+/** One place from the chat's scene memory, as the movement read needs it. */
+export interface SceneMovementPlace {
+  readonly name: string;
+  readonly details: readonly string[];
+  readonly connections: readonly string[];
+}
+
+export interface SceneMovementContext {
+  /**
+   * The chat's scene-memory places (`ChatSceneMemory.places`, current place included). A
+   * destination naming an ESTABLISHED place — one the fiction gave at least one detail or
+   * connection — is a place whatever its head noun (a nook called "the Reading Desk"). A bare
+   * stub (no details, no connections) earns no such exemption: a stub named "desk" is exactly
+   * what an earlier mis-read minted, and exempting it would keep the furniture read a room.
+   */
+  readonly knownPlaces?: readonly SceneMovementPlace[];
+  /**
+   * Storyteller (narrator-mode) input: authorized scene authoring, so any subject's movement
+   * may relocate the scene. It is never the player's own POV (`supporting-cast.md`), so there
+   * only "you" and the persona's name denote the player — and only a move of the player
+   * reports a within-place move.
+   */
+  readonly narratorInput?: boolean;
+  /** The player's persona name (and any aliases): in player input, the player's own subject. */
+  readonly playerNames?: readonly string[];
+}
+
+function sceneWordSet(words: string): ReadonlySet<string> {
+  return new Set(words.split(/\s+/u).filter(Boolean));
+}
+
+/** Movement verb forms that can carry a destination ("head to the kitchen", "follow her outside"). */
+const SCENE_MOVE_VERBS = sceneWordSet(`
+  go goes going went head heads heading headed walk walks walking walked
+  move moves moving moved follow follows following followed lead leads leading led
+  step steps stepping stepped slip slips slipping slipped wander wanders wandering wandered
+  retreat retreats retreating retreated come comes coming came drive drives driving drove
+  run runs running ran take takes taking took bring brings bringing brought
+  carry carries carrying carried
+`);
+/** "make my way" / "made our way": one of these, a possessive, then "way". */
+const SCENE_MAKE_WAY_VERBS = sceneWordSet("make makes making made");
+const SCENE_POSSESSIVES = sceneWordSet("my your his her their our its");
+/** A destination noun phrase follows one of these ("over to", "back into" end in them). */
+const SCENE_DEST_PREPOSITIONS = sceneWordSet("to into onto toward towards");
+/** What must follow the preposition for a noun-phrase destination. */
+const SCENE_DEST_DETERMINERS = sceneWordSet("the a an my your his her their our");
+/** Adverbial destinations ("we head outside", "let's go upstairs"); "out back"/"out front" too. */
+const SCENE_BARE_DESTINATIONS = sceneWordSet("outside inside indoors outdoors upstairs downstairs");
+/**
+ * First words of a verbless segment that continues the previous verb's path ("… and INTO the
+ * kitchen", "… and OUT to the patio", "…, then THROUGH to the kitchen").
+ */
+const SCENE_PATH_WORDS = sceneWordSet(`
+  to into onto toward towards out back over down up through past across along around away in
+  inside outside indoors outdoors upstairs downstairs straight right
+`);
+/** What may join a path continuation to its verb: a comma or dash, "and", "then". */
+const SCENE_CONTINUATION_JOINS = sceneWordSet(", \u2013 \u2014 - and then");
+/** Clause boundaries (with clause punctuation): no read crosses one forward. */
+const SCENE_CLAUSE_CONJUNCTIONS = sceneWordSet(`
+  and but or nor yet so then while whereas as when once because since though although where
+  if unless until till before after
+`);
+const SCENE_PERSONAL_PRONOUNS = sceneWordSet(`
+  i me we us you he him she her it they them someone somebody everyone everybody anyone anybody
+`);
+/** In player input, the words that put the player in a subject or object slot. */
+const SCENE_PLAYER_SELF_WORDS = sceneWordSet("i me we us let's");
+/** A pronoun object after "inside"/"outside" makes it a preposition to a person ("slip inside her"). */
+const SCENE_OBJECT_PRONOUNS = sceneWordSet("me you him them us it");
+/** Words that open a third-party noun phrase ("the bartender", "my friend", "both of us"). */
+const SCENE_NP_DETERMINERS = sceneWordSet(`
+  the a an this that these those my your his her their our its some every each another both all no
+`);
+/** Adverbs, interjections, auxiliaries, and the infinitive marker a subject read reads past. */
+const SCENE_SUBJECT_SKIP_WORDS = sceneWordSet(`
+  to now soon later just also still even too again together already instead anyway first finally all both
+  okay ok alright well yes yeah sure fine hey oh um uh please
+  am is are was were be been do does did will shall can must
+`);
+/** A sentence-initial word followed by one of these is an imperative verb ("Grab my keys"), not a name. */
+const SCENE_OBJECT_LEAD = sceneWordSet(`
+  the a an this that these those my your his her their our its some me you him them us it
+  up down out off back over on in at to into onto toward towards away around through across along
+  closer close forward aside inside outside
+`);
+/** Function words that end a destination noun phrase ("the window to look out" → `window`). */
+const SCENE_NP_STOP = sceneWordSet(`
+  to into onto toward towards in on at by near beside behind with for from of off under over across
+  along through past around against inside outside above below beneath underneath between among beyond
+  like without within upon via during except alongside throughout amid
+  i me my mine you your yours he him his she her hers it its we us our ours they them their theirs
+  myself yourself himself herself itself ourselves themselves
+  the a an this that these those some any each every
+  up down out away together again now there here too just also still very already instead anyway alone
+  which who whom whose what how why
+  is are was were am be been being has have had will would can could should shall may might must do does did
+`);
+/**
+ * Trailing words dropped from a destination phrase ("the bathroom real quick" → `bathroom`,
+ * "the table next to the window" → `table`); "next" opens a phrase fine ("the next room").
+ */
+const SCENE_NP_TRAILING = sceneWordSet("first quick fast real next");
+/** "the second floor" is a storey, not the floor underfoot. */
+const SCENE_STOREY_MODIFIERS = sceneWordSet("first second third fourth fifth sixth top ground upper lower main bottom next");
 
 /**
- * A movement verb → preposition → a `the/a/…` + up-to-3-word place noun ("head to the
- * living room", "follow her into the kitchen"). The article requirement keeps
- * "want to talk" / "listen to the radio" from misfiring as movement.
+ * Furniture, fixtures, and positions a beat can cross to without leaving the current place
+ * ("walk over to the desk", "carry it to the counter", "retreat to the corner"): a
+ * destination whose head noun is one of these is a WITHIN-place move. Kept to obvious
+ * furniture/fixtures on purpose — room-type nouns ("back room", "kitchen", "garden",
+ * "study") are never here, so a genuinely new place still establishes. Not exhaustive: a
+ * miss is the soft error the archivist reconciles post-turn.
  */
-const MOVE_DEST_RE = new RegExp(
-  `\\b${MOVE_VERB}\\b[^.?!,;:]*?\\b${DEST_PREP}\\s+(?:the|a|an|his|her|their|your|my|our)\\s+([a-z][a-z'’-]+(?:\\s+[a-z][a-z'’-]+){0,2})\\b`,
-  "i",
-);
-/** A movement verb followed by an adverbial destination ("we head outside", "let's go upstairs"). */
-const MOVE_BARE_RE = new RegExp(
-  `\\b${MOVE_VERB}\\b[^.?!,;:]*?\\b(outside|inside|indoors|outdoors|upstairs|downstairs|out back|out front)\\b`,
-  "i",
-);
+const SCENE_FIXTURE_NOUNS = sceneWordSet(`
+  desk chair armchair table bed couch sofa bench stool barstool counter sink tub bathtub bath shower toilet
+  stove oven fridge refrigerator shelf shelves bookshelf bookcase cabinet drawer dresser mirror nightstand
+  ottoman rug carpet cushion pillow blanket covers sheets window windowsill sill ledge door doorway
+  doorframe threshold wall floor ceiling fireplace hearth mantel mantle wardrobe vanity seat seats booth
+  stairs staircase railing banister lamp piano easel recliner loveseat futon chaise hammock cot crib
+  headboard bedside curtains corner middle center centre
+`);
+/**
+ * Body parts, garments, and the gaze: as a destination ("to her thigh", "into my dress",
+ * "into her arms") or as the thing a verb moves ("I move my hand …", "I follow her gaze …")
+ * they make the line a gesture, never locomotion — no place change and no within-place move.
+ */
+const SCENE_GESTURE_NOUNS = sceneWordSet(`
+  hand hands finger fingers fingertip fingertips palm palms thumb thumbs knuckles wrist wrists arm arms
+  elbow shoulder shoulders neck throat nape head face cheek cheeks chin jaw lip lips mouth tongue ear ears
+  forehead temple hair chest breast breasts nipple nipples heart waist hip hips thigh thighs leg legs knee
+  knees lap foot feet toes ankle ankles stomach belly navel side body skin spine collarbone ass butt groin
+  crotch gaze eye eyes glance stare attention focus
+  dress shirt t-shirt jeans pants trousers skirt robe gown nightgown pajamas pyjamas clothes clothing outfit
+  sweater hoodie jacket coat shoes heels boots socks stockings lingerie underwear panties bra bikini
+  swimsuit uniform costume blouse tights shorts leggings suit
+`);
+/** Figurative destinations ("come to an agreement", "bring her to the edge"): an idiom, never a place. */
+const SCENE_ABSTRACT_NOUNS = sceneWordSet(`
+  agreement understanding conclusion decision realization compromise stop halt standstill end close finish
+  edge brink point topic subject matter question idea truth senses terms rescue aid limit extreme
+`);
+
+interface SceneToken {
+  /** Lowercased. */
+  readonly text: string;
+  /** As written: capitalization is the one name signal a pure read has. */
+  readonly raw: string;
+  /** Character offset in the sentence. */
+  readonly index: number;
+  /** False for clause punctuation (`,` `;` `:` parentheses, dashes). */
+  readonly word: boolean;
+}
+
+const SCENE_TOKEN_RE = /[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*|[,;:()\u2013\u2014]|(?<=\s)-(?=\s)/gu;
+
+function sceneTokens(text: string): SceneToken[] {
+  const tokens: SceneToken[] = [];
+  for (const match of normalizeChatEvidenceText(text).matchAll(SCENE_TOKEN_RE)) {
+    if (match.index === undefined || !match[0]) continue;
+    const raw = match[0];
+    tokens.push({ text: raw.toLowerCase(), raw, index: match.index, word: /^[\p{L}\p{N}]/u.test(raw) });
+  }
+  return tokens;
+}
+
+function sceneIsBoundary(token: SceneToken): boolean {
+  return !token.word || SCENE_CLAUSE_CONJUNCTIONS.has(token.text);
+}
+
+function sceneIsCapitalized(token: SceneToken): boolean {
+  return /^\p{Lu}/u.test(token.raw);
+}
+
+/** "we're" → "we", "i'll" → "i"; "let's" stays itself. */
+function sceneBaseWord(text: string): string {
+  return text === "let's" ? text : text.replace(/'(?:s|re|ll|m|d|ve)$/u, "");
+}
+
+function sceneIsFunctionWord(word: string): boolean {
+  return (
+    SCENE_PERSONAL_PRONOUNS.has(word) ||
+    SCENE_NP_DETERMINERS.has(word) ||
+    SCENE_NP_STOP.has(word) ||
+    SCENE_CLAUSE_CONJUNCTIONS.has(word) ||
+    SCENE_SUBJECT_SKIP_WORDS.has(word) ||
+    SCENE_MOVE_VERBS.has(word)
+  );
+}
+
+type ScenePersonRole = "player" | "other";
+
+interface SceneReadContext {
+  readonly narratorInput: boolean;
+  /** Lowercased word sequences that name the player (full name, then a given-name form). */
+  readonly names: readonly (readonly string[])[];
+  /** Normalized names of established (non-stub) places. */
+  readonly established: ReadonlySet<string>;
+}
+
+function scenePlayerNameForms(names: readonly string[] | undefined): readonly (readonly string[])[] {
+  const forms: string[][] = [];
+  for (const name of names ?? []) {
+    const words = sceneTokens(name)
+      .filter((token) => token.word)
+      .map((token) => token.text);
+    const first = words[0];
+    if (first === undefined || (words.length === 1 && first.length < 2)) continue;
+    forms.push(words);
+    // A given name alone ("Brian" for "Brian Grubba") — never a function word ("the visitor").
+    if (words.length > 1 && first.length > 1 && !sceneIsFunctionWord(first)) forms.push([first]);
+  }
+  return forms;
+}
+
+/** How many tokens from `start` spell a player name (0 when none does). */
+function sceneNameLengthAt(tokens: readonly SceneToken[], start: number, read: SceneReadContext): number {
+  for (const form of read.names) {
+    const matches = form.every((word, offset) => {
+      const token = tokens[start + offset];
+      return token !== undefined && token.word && token.text === word;
+    });
+    const first = tokens[start];
+    if (!matches || first === undefined) continue;
+    // A one-word name that is also a function word ("Will") counts only as written, capitalized.
+    if (form.length === 1 && sceneIsFunctionWord(first.text) && !sceneIsCapitalized(first)) continue;
+    return form.length;
+  }
+  return 0;
+}
+
+function sceneNameEndsAt(tokens: readonly SceneToken[], end: number, read: SceneReadContext): boolean {
+  return read.names.some((form) => {
+    const start = end - form.length + 1;
+    return start >= 0 && sceneNameLengthAt(tokens, start, { ...read, names: [form] }) === form.length;
+  });
+}
 
 /**
- * Deterministic movement/arrival read of the player's input (chat scene memory): the
- * destination place ("kitchen", "outside", "back garden") the beat moves the scene to, or
- * null. Regex-first and pure like `detectChatCue`; the route feeds the result to
- * `switchScenePlace` BEFORE the prompt builds so this turn's Scene injection is right. A
- * false positive only mints a stub place the archivist then reconciles — a soft error.
+ * Whose word this is. Player input: I/me/we/us/let's are the player and "you" is the
+ * character (as the sensory read has it). Storyteller input is never the player's own POV,
+ * so there "you" is the player and every first-person word is the storyteller's.
  */
-export function detectSceneMovement(input: string): string | null {
-  for (const { text } of chatEvidenceSentences(input, ["narration"])) {
-    const candidates = [MOVE_DEST_RE, MOVE_BARE_RE]
-      .flatMap((pattern) => {
-        const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
-        return [...text.matchAll(new RegExp(pattern.source, flags))]
-          .filter((match) => match.index !== undefined && Boolean(match[1]))
-          .map((match) => ({ index: match.index ?? 0, destination: match[1] ?? "" }));
-      })
-      .sort((a, b) => a.index - b.index);
-    for (const candidate of candidates) {
-      const flags = chatEvidenceCandidateFlags(text, candidate.index);
-      if (flags.question || flags.negated || flags.irrealis || flags.historical) continue;
-      return candidate.destination.trim().replace(/\s+/g, " ").toLowerCase();
+function sceneWordRole(text: string, narratorInput: boolean): ScenePersonRole | null {
+  const word = sceneBaseWord(text);
+  if (narratorInput) {
+    if (word === "you") return "player";
+    return SCENE_PERSONAL_PRONOUNS.has(word) || word === "let's" ? "other" : null;
+  }
+  if (SCENE_PLAYER_SELF_WORDS.has(word)) return "player";
+  return SCENE_PERSONAL_PRONOUNS.has(word) ? "other" : null;
+}
+
+/** "(the two) of us", "(both) of us" within the next three words. */
+function sceneOfUsAfter(tokens: readonly SceneToken[], from: number): boolean {
+  for (let k = from; k < from + 3; k += 1) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token)) return false;
+    if (token.text === "of") return tokens[k + 1]?.text === "us";
+  }
+  return false;
+}
+
+/** The first index of the clause that ends at `end`: just past the nearest boundary. */
+function sceneClauseStart(tokens: readonly SceneToken[], end: number): number {
+  let k = end;
+  while (k >= 0) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token)) break;
+    k -= 1;
+  }
+  return k + 1;
+}
+
+/** A lowercase word a determiner opens within three words is a noun ("the old bartender"). */
+function sceneHeadsNounPhrase(tokens: readonly SceneToken[], k: number, from: number): boolean {
+  for (let j = k - 1; j >= Math.max(from, k - 3); j -= 1) {
+    const token = tokens[j];
+    if (token === undefined) return false;
+    if (SCENE_NP_DETERMINERS.has(token.text)) return true;
+    if (sceneWordRole(token.text, false) !== null || SCENE_SUBJECT_SKIP_WORDS.has(token.text) || SCENE_NP_STOP.has(token.text)) {
+      return false;
     }
   }
+  return false;
+}
+
+/**
+ * The subject of the verb's OWN clause (`from`..`to`, the words before the verb): the
+ * nearest nominal, read right to left — so "I watch the bartender walk" is the bartender's
+ * walk and "she watches me walk" is the player's. Adverbs and auxiliaries are read past, and
+ * so is an unknown lowercase word no determiner opens (a verb: "I decide to walk"). Null
+ * when the clause names no subject (a shared-subject predicate or an imperative).
+ */
+function sceneSubjectBeforeVerb(
+  tokens: readonly SceneToken[],
+  from: number,
+  to: number,
+  firstWord: number,
+  read: SceneReadContext,
+): ScenePersonRole | null {
+  for (let k = to; k >= from; k -= 1) {
+    const token = tokens[k];
+    if (token === undefined) continue;
+    if (sceneNameEndsAt(tokens, k, read)) return "player";
+    const role = sceneWordRole(token.text, read.narratorInput);
+    if (role !== null) return role;
+    if (SCENE_SUBJECT_SKIP_WORDS.has(sceneBaseWord(token.text))) continue;
+    // "Lets go outside": the apostrophe-less imperative contraction.
+    if (k === firstWord && token.text === "lets") return read.narratorInput ? "other" : "player";
+    // A name as written, a sentence-initial word right before the verb ("Emily walks"), or a
+    // determiner-opened noun phrase ("the bartender", "my friend") is a third party.
+    if (k === firstWord || sceneIsCapitalized(token) || SCENE_NP_DETERMINERS.has(token.text)) return "other";
+    if (sceneHeadsNounPhrase(tokens, k, from)) return "other";
+  }
   return null;
+}
+
+/** An "-ly"/"-ing" word a pronoun, determiner, or name follows is an adverb ("Slowly the bartender …"). */
+function sceneLeadingAdverb(tokens: readonly SceneToken[], k: number, narratorInput: boolean): boolean {
+  const token = tokens[k];
+  if (token === undefined || token.text.length < 5 || !/(?:ly|ing)$/u.test(token.text)) return false;
+  const next = tokens[k + 1];
+  return (
+    next !== undefined &&
+    next.word &&
+    (sceneWordRole(next.text, narratorInput) !== null || SCENE_NP_DETERMINERS.has(next.text) || sceneIsCapitalized(next))
+  );
+}
+
+/**
+ * A sentence-initial word with no determiner is a name ("Mara grabs her purse") unless an
+ * object follows it ("Grab my keys", "Turn around") or it stands alone before a conjunction
+ * ("Nod and walk …") — then it is an imperative verb. Alone before a comma it is a name
+ * ("Mara, sighing, walks …").
+ */
+function sceneInitialWordIsName(tokens: readonly SceneToken[], k: number, to: number): boolean {
+  const next = k < to ? tokens[k + 1] : undefined;
+  if (next === undefined) {
+    const after = tokens[to + 1];
+    return after !== undefined && !after.word;
+  }
+  return !SCENE_OBJECT_LEAD.has(sceneBaseWord(next.text));
+}
+
+/**
+ * The subject a PREVIOUS clause (`from`..`to`) shares with a later subjectless one — its
+ * leading nominal ("I grab my keys and walk …", "the bartender nods and walks …"). Null
+ * when the clause itself starts with its verb ("… sighing, …", "grab my keys and …").
+ */
+function sceneLeadingSubject(
+  tokens: readonly SceneToken[],
+  from: number,
+  to: number,
+  firstWord: number,
+  read: SceneReadContext,
+): ScenePersonRole | null {
+  for (let k = from; k <= to; k += 1) {
+    const token = tokens[k];
+    if (token === undefined) continue;
+    if (sceneNameLengthAt(tokens, k, read) > 0) return "player";
+    const role = sceneWordRole(token.text, read.narratorInput);
+    if (role !== null) return role;
+    if (SCENE_NP_DETERMINERS.has(token.text)) {
+      return !read.narratorInput && sceneOfUsAfter(tokens, k + 1) ? "player" : "other";
+    }
+    if (SCENE_SUBJECT_SKIP_WORDS.has(sceneBaseWord(token.text)) || sceneLeadingAdverb(tokens, k, read.narratorInput)) {
+      continue;
+    }
+    if (k === firstWord) return sceneInitialWordIsName(tokens, k, to) ? "other" : null;
+    return sceneIsCapitalized(token) ? "other" : null;
+  }
+  return null;
+}
+
+/** "Brian and Mara walk …": a bare player reference joined by "and" to the verb's own subject. */
+function sceneCoordinatedWithPlayer(tokens: readonly SceneToken[], ownStart: number, read: SceneReadContext): boolean {
+  if (tokens[ownStart - 1]?.text !== "and") return false;
+  const end = ownStart - 2;
+  const start = sceneClauseStart(tokens, end);
+  const length = end - start + 1;
+  const only = tokens[start];
+  if (length <= 0 || only === undefined) return false;
+  if (length === 1 && sceneWordRole(only.text, read.narratorInput) === "player") return true;
+  return sceneNameLengthAt(tokens, start, read) === length;
+}
+
+/**
+ * A sentence-opening participle takes its subject from the clause after the comma: "Walking
+ * into the kitchen, I grab a glass" is the player's move, "…, she grabs a glass" is not.
+ * Null when the verb is no participle, or that clause names no subject.
+ */
+function sceneParticipleSubject(
+  tokens: readonly SceneToken[],
+  v: number,
+  firstWord: number,
+  read: SceneReadContext,
+): ScenePersonRole | null {
+  if (!(tokens[v]?.text ?? "").endsWith("ing")) return null;
+  const comma = tokens.findIndex((token, k) => k > v && !token.word);
+  if (comma < 0) return null;
+  let end = comma;
+  for (let k = comma + 1; k < tokens.length; k += 1) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token)) break;
+    end = k;
+  }
+  return end > comma ? sceneLeadingSubject(tokens, comma + 1, end, firstWord, read) : null;
+}
+
+/**
+ * Is the player the subject of the verb at `v`? Its own clause's subject when it has one;
+ * otherwise the subject shared from the nearest earlier clause that names one; otherwise —
+ * nothing precedes the verb in its sentence — the subject after an opening participle, else
+ * an imperative or subject-dropped beat: the player's own in player input (never in
+ * storyteller input, which is not the player's POV).
+ */
+function sceneSubjectIsPlayer(tokens: readonly SceneToken[], v: number, firstWord: number, read: SceneReadContext): boolean {
+  const ownStart = sceneClauseStart(tokens, v - 1);
+  const own = sceneSubjectBeforeVerb(tokens, ownStart, v - 1, firstWord, read);
+  if (own === "player") return true;
+  if (own === "other") return sceneCoordinatedWithPlayer(tokens, ownStart, read);
+  let boundary = ownStart - 1;
+  while (boundary >= 0) {
+    const clauseStart = sceneClauseStart(tokens, boundary - 1);
+    if (clauseStart <= boundary - 1) {
+      const lead = sceneLeadingSubject(tokens, clauseStart, boundary - 1, firstWord, read);
+      if (lead !== null) return lead === "player";
+    }
+    boundary = clauseStart - 1;
+  }
+  const participle = sceneParticipleSubject(tokens, v, firstWord, read);
+  if (participle !== null) return participle === "player";
+  return !read.narratorInput;
+}
+
+/** The verb's direct object is the player ("she leads ME", "leads BRIAN", "leads the two of US"). */
+function sceneObjectIsPlayer(tokens: readonly SceneToken[], at: number, read: SceneReadContext): boolean {
+  const token = tokens[at];
+  if (token === undefined || !token.word) return false;
+  if (sceneNameLengthAt(tokens, at, read) > 0) return true;
+  if (sceneWordRole(token.text, read.narratorInput) === "player") return true;
+  return !read.narratorInput && SCENE_NP_DETERMINERS.has(token.text) && sceneOfUsAfter(tokens, at + 1);
+}
+
+/** Up to three words after a determiner, cut at the first function word or clause boundary. */
+function sceneNounPhrase(tokens: readonly SceneToken[], from: number): string[] {
+  const words: string[] = [];
+  for (let k = from; k < tokens.length && words.length < 3; k += 1) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token) || SCENE_NP_STOP.has(token.text)) break;
+    words.push(token.text);
+  }
+  while (words.length > 1) {
+    const last = words.at(-1);
+    if (last === undefined || !(SCENE_NP_TRAILING.has(last) || (last.length >= 5 && last.endsWith("ly")))) break;
+    words.pop();
+  }
+  return words;
+}
+
+/** "I move my hand …", "I follow her gaze …": the verb moves a body part, not a body. */
+function sceneObjectIsGesture(tokens: readonly SceneToken[], at: number): boolean {
+  const determiner = tokens[at];
+  if (determiner === undefined || !SCENE_NP_DETERMINERS.has(determiner.text)) return false;
+  const head = sceneNounPhrase(tokens, at + 1).at(-1);
+  return head !== undefined && SCENE_GESTURE_NOUNS.has(head);
+}
+
+/** "inside her", "inside of him": a preposition with a person object, never a destination. */
+function sceneBareIsIntoAPerson(tokens: readonly SceneToken[], from: number): boolean {
+  const at = tokens[from]?.text === "of" ? from + 1 : from;
+  const object = tokens[at];
+  if (object === undefined || !object.word) return false;
+  if (SCENE_OBJECT_PRONOUNS.has(object.text)) return true;
+  if (object.text !== "her") return false;
+  const after = tokens[at + 1];
+  return after === undefined || sceneIsBoundary(after) || SCENE_NP_STOP.has(after.text);
+}
+
+function sceneBareDestinationAt(tokens: readonly SceneToken[], k: number): string | null {
+  const token = tokens[k];
+  if (token === undefined) return null;
+  if (token.text === "out") {
+    const next = tokens[k + 1];
+    return next !== undefined && (next.text === "back" || next.text === "front") ? `out ${next.text}` : null;
+  }
+  if (!SCENE_BARE_DESTINATIONS.has(token.text)) return null;
+  return sceneBareIsIntoAPerson(tokens, k + 1) ? null : token.text;
+}
+
+interface SceneDestinationWords {
+  /** The noun phrase after the first destination preposition, or null. */
+  readonly phrase: readonly string[] | null;
+  /** An adverbial destination seen before it ("outside"), or null. */
+  readonly bare: string | null;
+}
+
+/** Scan forward from the verb, inside its clause, for its destination. */
+function sceneDestinationAfter(tokens: readonly SceneToken[], from: number): SceneDestinationWords {
+  let bare: string | null = null;
+  for (let k = from; k < tokens.length; k += 1) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token)) break;
+    if (SCENE_DEST_PREPOSITIONS.has(token.text)) {
+      const determiner = tokens[k + 1];
+      // "walk over to talk", "go to bed", "walk over to Wren": no destination phrase.
+      if (determiner === undefined || !SCENE_DEST_DETERMINERS.has(determiner.text)) break;
+      const phrase = sceneNounPhrase(tokens, k + 2);
+      // "move closer to her on the couch": a person, not a destination.
+      return { phrase: phrase.length > 0 ? phrase : null, bare };
+    }
+    bare ??= sceneBareDestinationAt(tokens, k);
+  }
+  return { phrase: null, bare };
+}
+
+type SceneDestinationKind = "place" | "within_place";
+
+/** Null for a gesture or an idiom (a body part, garment, or abstraction: no destination at all). */
+function sceneDestinationKind(words: readonly string[], read: SceneReadContext): SceneDestinationKind | null {
+  if (read.established.has(words.join(" "))) return "place";
+  const head = words.at(-1);
+  if (head === undefined || SCENE_GESTURE_NOUNS.has(head) || SCENE_ABSTRACT_NOUNS.has(head)) return null;
+  if (!SCENE_FIXTURE_NOUNS.has(head)) return "place";
+  const storey = head === "floor" && words.slice(0, -1).some((word) => SCENE_STOREY_MODIFIERS.has(word));
+  return storey ? "place" : "within_place";
+}
+
+function sceneEstablishedPlaceNames(places: readonly SceneMovementPlace[] | undefined): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const place of places ?? []) {
+    if (place.details.length === 0 && place.connections.length === 0) continue;
+    const words = sceneTokens(place.name)
+      .filter((token) => token.word)
+      .map((token) => token.text);
+    if (words.length === 0) continue;
+    names.add(words.join(" "));
+    // "The Rusty Anchor" is reached as "to the rusty anchor".
+    if (words[0] === "the" || words[0] === "a" || words[0] === "an") names.add(words.slice(1).join(" "));
+  }
+  return names;
+}
+
+/**
+ * A place phrase wins; then an adverbial ("we head outside to the bench" leaves the room);
+ * a furniture/fixture phrase is a within-place move only when nothing else names a place.
+ */
+function sceneChosenDestination(
+  words: SceneDestinationWords,
+  read: SceneReadContext,
+): { readonly name: string; readonly withinPlace: boolean } | null {
+  const { phrase, bare } = words;
+  const kind = phrase === null ? null : sceneDestinationKind(phrase, read);
+  if (phrase !== null && kind === "place") return { name: phrase.join(" "), withinPlace: false };
+  if (bare !== null) return { name: bare, withinPlace: false };
+  if (phrase !== null && kind === "within_place") return { name: phrase.join(" "), withinPlace: true };
+  return null;
+}
+
+/** The index of the first clause boundary at or after `from`: where that segment ends. */
+function sceneSegmentEnd(tokens: readonly SceneToken[], from: number): number {
+  let k = from;
+  while (k < tokens.length) {
+    const token = tokens[k];
+    if (token === undefined || sceneIsBoundary(token)) break;
+    k += 1;
+  }
+  return k;
+}
+
+/**
+ * Where the verbless segment continuing a verb's path begins, past the boundary at `at`
+ * ("I walk past her AND INTO the kitchen", "…, THEN THROUGH to the kitchen"), or null. Only a
+ * comma or dash, "and", or "then" joins one, and the segment must open on a path word — so a
+ * coordinated clause with its own subject ("and we head outside") or its own verb ("and lean
+ * against it") is never read as the same motion; it gets its own read.
+ */
+function scenePathContinuationAt(tokens: readonly SceneToken[], at: number): number | null {
+  let k = at;
+  while (k < tokens.length) {
+    const token = tokens[k];
+    if (token === undefined) return null;
+    if (!sceneIsBoundary(token)) break;
+    if (!SCENE_CONTINUATION_JOINS.has(token.text)) return null;
+    k += 1;
+  }
+  const first = tokens[k];
+  return first !== undefined && SCENE_PATH_WORDS.has(first.text) ? k : null;
+}
+
+/**
+ * Every destination one verb's motion reaches, in order: its own segment's, then each path
+ * continuation's ("I walk over to her desk and into the back room" → `desk`, `back room`).
+ */
+function sceneVerbDestinations(
+  tokens: readonly SceneToken[],
+  from: number,
+  read: SceneReadContext,
+): readonly { readonly name: string; readonly withinPlace: boolean }[] {
+  const destinations: { readonly name: string; readonly withinPlace: boolean }[] = [];
+  let start: number | null = from;
+  while (start !== null) {
+    const destination = sceneChosenDestination(sceneDestinationAfter(tokens, start), read);
+    if (destination !== null) destinations.push(destination);
+    start = scenePathContinuationAt(tokens, sceneSegmentEnd(tokens, start));
+  }
+  return destinations;
+}
+
+interface SceneMoveCandidate {
+  readonly destination: string;
+  readonly withinPlace: boolean;
+  /** The player's own body moves (subject or direct object) — not merely a third party's. */
+  readonly playerMoves: boolean;
+}
+
+function sceneMoveCandidatesAt(
+  sentence: string,
+  tokens: readonly SceneToken[],
+  v: number,
+  firstWord: number,
+  read: SceneReadContext,
+): readonly SceneMoveCandidate[] {
+  const verb = tokens[v];
+  if (verb === undefined) return [];
+  const makesWay =
+    SCENE_MAKE_WAY_VERBS.has(verb.text) &&
+    SCENE_POSSESSIVES.has(tokens[v + 1]?.text ?? "") &&
+    tokens[v + 2]?.text === "way";
+  if (!SCENE_MOVE_VERBS.has(verb.text) && !makesWay) return [];
+  const flags = chatEvidenceCandidateFlags(sentence, verb.index);
+  if (flags.question || flags.negated || flags.irrealis || flags.historical) return [];
+  const objectAt = makesWay ? null : v + 1;
+  if (objectAt !== null && sceneObjectIsGesture(tokens, objectAt)) return [];
+
+  const destinations = sceneVerbDestinations(tokens, makesWay ? v + 3 : v + 1, read);
+  if (destinations.length === 0) return [];
+
+  // One mover for the verb's whole path, continuations included.
+  const playerMoves =
+    (objectAt !== null && sceneObjectIsPlayer(tokens, objectAt, read)) || sceneSubjectIsPlayer(tokens, v, firstWord, read);
+  return destinations.map((destination) => ({
+    destination: destination.name,
+    withinPlace: destination.withinPlace,
+    playerMoves,
+  }));
+}
+
+/**
+ * The one read both exported detectors derive from, so they can never disagree: every
+ * movement verb in the line's narration, the last place change the line establishes, and —
+ * only when there is none — the player's last within-place move.
+ */
+function sceneMovementRead(
+  input: string,
+  context: SceneMovementContext,
+): { readonly place: string | null; readonly withinPlace: string | null } {
+  const read: SceneReadContext = {
+    narratorInput: context.narratorInput === true,
+    names: scenePlayerNameForms(context.playerNames),
+    established: sceneEstablishedPlaceNames(context.knownPlaces),
+  };
+  let place: string | null = null;
+  let withinPlace: string | null = null;
+  for (const { text } of chatEvidenceSentences(input, ["narration"])) {
+    const tokens = sceneTokens(text);
+    const firstWord = tokens.findIndex((token) => token.word);
+    for (let v = 0; v < tokens.length; v += 1) {
+      for (const candidate of sceneMoveCandidatesAt(text, tokens, v, firstWord, read)) {
+        if (candidate.withinPlace) {
+          if (candidate.playerMoves) withinPlace = candidate.destination;
+        } else if (candidate.playerMoves || read.narratorInput) {
+          place = candidate.destination;
+        }
+      }
+    }
+  }
+  return { place, withinPlace: place === null ? withinPlace : null };
+}
+
+/**
+ * Deterministic movement/arrival read of the turn's input (chat scene memory): the place
+ * ("kitchen", "outside", "back garden") the line moves the scene to, or null. The route feeds
+ * it to `switchScenePlace` BEFORE the prompt builds so this turn's Scene injection is right.
+ * In player input only the player's own move counts — an unrelated third party's errand
+ * narrated in passing ("the bartender walks back to the back room") settles nothing (#330);
+ * storyteller input is authorized scene authoring and may move the scene through anyone. A
+ * move onto furniture or a fixture within the current place ("I walk over to the desk") is
+ * never a place change (owner ruling on #330, 2026-09-27) — `detectWithinPlaceMovement`
+ * carries that signal instead.
+ */
+export function detectSceneMovement(input: string, context: SceneMovementContext = {}): string | null {
+  return sceneMovementRead(input, context).place;
+}
+
+/**
+ * The sibling read for the player's own move onto furniture or a fixture within the current
+ * place ("I walk over to the desk", "I carry my drink over to the counter") — its name, or
+ * null. The scene does NOT change (no stub place, no `current` switch), but the player's own
+ * body crossed the room: the route ends the player's held contacts and clears the player's
+ * pair proximity to unknown without a place change (owner ruling on #330, 2026-09-27). Null
+ * whenever the same line changes place (`detectSceneMovement` — that end is the blanket one),
+ * and in storyteller input unless the mover is the player ("you", the persona's name).
+ */
+export function detectWithinPlaceMovement(input: string, context: SceneMovementContext = {}): string | null {
+  return sceneMovementRead(input, context).withinPlace;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyEmptyNarratorCompletion,
+  isNarratorLengthStub,
   narratorCompletionLogFields,
   narratorEmptyRetryWorthwhile,
   narratorEmptyWasSilentStop,
+  narratorLengthStubFailure,
   type NarratorCompletion,
 } from "./narrator-completion";
 
@@ -204,6 +206,73 @@ describe("narratorEmptyWasSilentStop", () => {
   });
 });
 
+/**
+ * The one-token `length` stub: a completion that reports it exhausted its output
+ * budget after a single token, on a request whose budget was far larger. Measured on
+ * a Featherless narrator — one character of text, one output token, `length` — and
+ * delivered as a successful turn because it was not empty. The predicate is the
+ * contradiction in the metadata, never a minimum reply length.
+ */
+describe("the one-token length stub", () => {
+  const stub = (over: Partial<NarratorCompletion> = {}): NarratorCompletion =>
+    empty({
+      finishReason: "length",
+      outputTokens: 1,
+      maxOutputTokens: 1024,
+      rawTextLength: 1,
+      visibleTextLength: 1,
+      visibleTextChars: 1,
+      ...over,
+    });
+
+  it("records a one-token length finish under a larger cap as a withheld reply", () => {
+    const result = narratorLengthStubFailure(stub());
+    expect(result).toMatchObject({ code: "empty_reply", cause: "length_stub" });
+    expect(result?.detail).toContain("1 output token,");
+    expect(result?.detail).toContain("output budget of 1024 tokens");
+    expect(result?.detail).toContain("1-character fragment");
+  });
+
+  // No explicit cap leaves the host's own default (thousands of tokens) in force —
+  // an unknown budget, never a small one.
+  it("treats a request that carried no cap as a larger budget", () => {
+    const result = narratorLengthStubFailure(stub({ maxOutputTokens: undefined }));
+    expect(result?.cause).toBe("length_stub");
+    expect(result?.detail).toContain("the host's default output budget");
+  });
+
+  it.each<[string, Partial<NarratorCompletion>]>([
+    ["a one-character reply that finished normally", { finishReason: "stop" }],
+    ["a one-token reply that finished normally", { finishReason: "stop", rawTextLength: 3, visibleTextLength: 3 }],
+    ["a reply that ran into a real cap", { outputTokens: 1024, rawTextLength: 3_900, visibleTextLength: 3_900 }],
+    ["a request deliberately capped at one token", { maxOutputTokens: 1 }],
+  ])("never flags %s", (_label, over) => {
+    expect(isNarratorLengthStub(stub(over))).toBe(false);
+    expect(narratorLengthStubFailure(stub(over))).toBeNull();
+  });
+
+  // A provider that omits the total still gives equivalent evidence through the
+  // split, and one that reports no counter at all through the raw text: exactly one
+  // character is the smallest fragment a single token can be.
+  it("falls back to the text split, then to one character of raw text, when the total is missing", () => {
+    expect(isNarratorLengthStub(stub({ outputTokens: undefined, textTokens: 1 }))).toBe(true);
+    expect(isNarratorLengthStub(stub({ outputTokens: undefined, textTokens: 40 }))).toBe(false);
+    const uncounted = stub({ outputTokens: undefined });
+    expect(isNarratorLengthStub(uncounted)).toBe(true);
+    expect(narratorLengthStubFailure(uncounted)?.detail).toContain("no token count reported");
+    expect(isNarratorLengthStub(stub({ outputTokens: undefined, rawTextLength: 7, visibleTextLength: 7 }))).toBe(false);
+  });
+
+  // The SDK usage converters report a usage block that omits `completion_tokens` as
+  // a measured 0. A real reply that ran into its cap would then read as "length after
+  // zero tokens" — the text contradicts the count, and the text wins.
+  it("does not believe a tiny count that the raw text contradicts", () => {
+    const capped = stub({ outputTokens: 0, rawTextLength: 4_100, visibleTextLength: 4_100, visibleTextChars: 3_400 });
+    expect(isNarratorLengthStub(capped)).toBe(false);
+    expect(narratorLengthStubFailure(capped)).toBeNull();
+  });
+});
+
 describe("narratorCompletionLogFields", () => {
   it("carries counts and finish state and nothing else", () => {
     const fields = narratorCompletionLogFields(
@@ -231,5 +300,10 @@ describe("narratorCompletionLogFields", () => {
     expect(fields).not.toHaveProperty("textTokens");
     expect(fields).not.toHaveProperty("reasoningTokens");
     expect(fields).not.toHaveProperty("rawFinishReason");
+    expect(fields).not.toHaveProperty("maxOutputTokens");
+  });
+
+  it("carries the request's output cap when it sent one", () => {
+    expect(narratorCompletionLogFields(empty({ maxOutputTokens: 1024 })).maxOutputTokens).toBe(1024);
   });
 });

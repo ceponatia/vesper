@@ -13,7 +13,7 @@ A model does not need a page here to be selectable. The [narrator catalog](../..
 
 ## The provenance line
 
-Every page carries **exactly one dated line**, in the header block under the exact id:
+Every page carries **exactly one provenance line**, in the header block under the exact id:
 
 ```text
 **Provenance:** probed <YYYY-MM-DD> against `<host>` model record `<exact model id>`.
@@ -21,7 +21,7 @@ Every page carries **exactly one dated line**, in the header block under the exa
 
 That pairing is the whole claim: everything below it — the field table, the caps, the measured behavior — was read from that exact model on that host on that date. A date without a model record says nothing reproducible, and a record without a date cannot be aged, so the two only ever appear together.
 
-A re-probe **replaces** the line rather than adding a second one, and a recheck that changed nothing leaves no trace — if a recheck established a fact, the fact is stated in prose. **No other date appears on a page**, with one exception: a dated `Owner ruling <YYYY-MM-DD>: …` line, which records a decision rather than a measurement. Dates here identify evidence; they never mark rollout state.
+A re-probe **replaces** the line rather than adding a second one, and a recheck that changed nothing leaves no trace — if a recheck established a fact, the fact is stated in prose. **No other date appears on a page**, with two exceptions: a dated `Owner ruling <YYYY-MM-DD>: …` line, which records a decision rather than a measurement, and a dated **evidence record** — a later measurement of one runtime property on the same exact model and host (a probe that did not re-read the whole record, so it cannot replace the provenance line), which carries its date beside its results, states only what its sample supports, and is named as outside the provenance line's claim. Dates here identify evidence; they never mark rollout state.
 
 The header block is otherwise `**Exact id:**`, `**Host:**`, and an optional `**Adapter:**` naming the definition that carries the model's profile.
 

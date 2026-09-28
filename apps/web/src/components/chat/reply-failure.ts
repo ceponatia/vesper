@@ -3,7 +3,7 @@ import { NARRATIVE_MODELS, narrativeModelProvider } from "@/lib/narrative-models
 
 /**
  * Cause-specific popup copy for a reply that never arrived (reply-failure
- * surfacing — docs/character-chat/pipeline.md §Reply failures). The server
+ * surfacing — docs/character-chat/reply-failures.md). The server
  * classifies the failure into the closed ChatReplyFailureCode vocabulary and
  * persists it on the chat row; the post-exchange transcript refetch hands the
  * record here. A missing or stale record falls back to honest we-don't-know
@@ -70,7 +70,16 @@ const EMPTY_CAUSES: Record<ChatReplyFailureCause, string> = {
   length_capped: `The narrator model hit its output limit before it wrote any of the reply. ${RETRY_OR_SWITCH_ADVICE}`,
   hidden_output: `The narrator model generated a response that never arrived — the provider counted the output, but no text reached the server. ${RETRY_OR_SWITCH_ADVICE}`,
   normalizer_erased: `The narrator model did write a reply, but it was all discarded as repetition or stray formatting before it reached you. ${RETRY_ADVICE}`,
+  length_stub: `The narrator model broke off after a single token and reported that it had hit its output limit, so that fragment was discarded rather than kept as a reply. ${RETRY_OR_SWITCH_ADVICE}`,
 };
+
+/**
+ * The causes recorded for an exchange whose text DID stream to the player before the
+ * server withheld it. Every other failure means nothing streamed, so it can only
+ * explain a zero-token exchange; these are the verdicts that retract text the player
+ * already watched arrive.
+ */
+const WITHDRAWN_AFTER_STREAMING: ReadonlySet<ChatReplyFailureCause> = new Set(["length_stub"]);
 
 /** Failure classes where the provider's own words add signal beyond the class copy. */
 const QUOTE_DETAIL: ReadonlySet<ChatReplyFailureCode> = new Set([
@@ -119,6 +128,105 @@ export function replyFailureToast(
     description = `${description} (Provider said: “${detail}”)`;
   }
   return { title, description };
+}
+
+/**
+ * Whether the exchange that just finished withdrew text the player saw stream in
+ * (PURE; `now` is injectable for tests). The chat lane writes or clears the record on
+ * every exchange before its stream closes, so a fresh record carrying one of these
+ * causes is this exchange's verdict — its fragment was never persisted, the
+ * transcript refetch has already dropped the bubble, and the popup explains why. A
+ * missing, stale or zero-token verdict answers false: a reply that streamed text is a
+ * reply unless the server said otherwise.
+ */
+export function replyWithdrawnAfterStreaming(
+  failure: ChatReplyFailure | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!failure || isStale(failure, now)) return false;
+  return failure.code === "empty_reply" && failure.cause !== undefined && WITHDRAWN_AFTER_STREAMING.has(failure.cause);
+}
+
+/**
+ * How long the post-stream transcript reload waits before its one retry. A single
+ * failed GET is usually a transient blip; one short retry is what lets the client
+ * learn the exchange's verdict instead of guessing it.
+ */
+export const POST_STREAM_RELOAD_RETRY_MS = 1_000;
+
+/**
+ * What the player is told once a reply stream has closed cleanly (PURE; `now` is
+ * injectable for tests):
+ *
+ * - `reply_failed` — show `replyFailureToast`: nothing streamed, or the fresh record
+ *   says the server withdrew what did (`replyWithdrawnAfterStreaming`).
+ * - `reply_unconfirmed` — text streamed, but the transcript reload failed even after
+ *   its retry, so the client cannot tell a settled reply from a withheld fragment. The
+ *   bubble stays (retracting a reply that may well be saved would be worse), and a
+ *   neutral notice says it is unconfirmed instead of passing it off as settled.
+ * - `none` — text streamed and the reload confirmed nothing was withdrawn.
+ */
+export function postStreamNotice(input: {
+  received: boolean;
+  /** The post-stream transcript reload succeeded, after its one retry. */
+  reloaded: boolean;
+  failure: ChatReplyFailure | null | undefined;
+  now?: number;
+}): "none" | "reply_failed" | "reply_unconfirmed" {
+  if (!input.received) return "reply_failed";
+  if (!input.reloaded) return "reply_unconfirmed";
+  return replyWithdrawnAfterStreaming(input.failure, input.now) ? "reply_failed" : "none";
+}
+
+/**
+ * Whether the client must retract the fragment this exchange streamed (PURE; `now`
+ * is injectable for tests). True exactly when text streamed and a SUCCESSFUL reload
+ * returned a fresh verdict withdrawing it — whether or not that reload's lines were
+ * applied. `reloadTranscript` skips applying a GET while a newer exchange is sending,
+ * so the refetch alone cannot be trusted to have removed the bubble; the verdict can.
+ * A confirmed reply is never retracted, and neither is one whose reload failed: with
+ * no verdict, the bubble may be a saved reply (`reply_unconfirmed` explains instead).
+ */
+export function shouldRetractStreamedReply(input: {
+  received: boolean;
+  reloaded: boolean;
+  failure: ChatReplyFailure | null | undefined;
+  now?: number;
+}): boolean {
+  return input.received && input.reloaded && replyWithdrawnAfterStreaming(input.failure, input.now);
+}
+
+/**
+ * Remove a withdrawn fragment from the transcript lines (PURE). On a regenerate
+ * (`priorLine`) the row goes back to the take it replaced; otherwise this exchange's
+ * own temp bubble is dropped. Only a line that still carries this exchange's id AND
+ * exactly the text it streamed (`shown`) is touched, which makes it:
+ *
+ * - idempotent — once an applied reload replaced the lines, the temp id is gone and
+ *   the persisted row shows its stored take, so nothing matches;
+ * - blind to a newer exchange — its bubbles carry their own temp ids, and a newer
+ *   regenerate of the same row restarted it from empty, so its content differs.
+ */
+export function retractWithdrawnReply<L extends { id: string; content: string }>(
+  lines: readonly L[],
+  exchange: { assistantId: string; shown: string; priorLine?: L },
+): L[] {
+  const ours = (line: L) => line.id === exchange.assistantId && line.content === exchange.shown;
+  const prior = exchange.priorLine;
+  if (prior !== undefined) return lines.map((line) => (ours(line) ? prior : line));
+  return lines.filter((line) => !ours(line));
+}
+
+/**
+ * The neutral notice for `reply_unconfirmed`. It asserts neither success nor failure
+ * — only that the client could not check — and says how to see what was saved.
+ */
+export function replyUnconfirmedToast(who: string): { title: string; description: string } {
+  return {
+    title: `Couldn't confirm ${who}'s reply`,
+    description:
+      "The conversation didn't refresh after the reply finished, so what's shown may not match what was saved. Reload the page to see the saved conversation.",
+  };
 }
 
 function isStale(failure: ChatReplyFailure, now: number): boolean {

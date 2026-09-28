@@ -34,11 +34,24 @@ matching contacts (`withdrawn`), detects a player **departure** ("I step back", 
 pull away from her", "I walk across the room") — see below — and reads the same line
 for a plainly affectionate hand-to-shoulder/arm/back/hand/head touch.
 
-Two hooks end contacts before detection runs: a pending story-clock skip ends every active
-contact (`separated`; owner ruling 2026-07-31), and a scene-place change ends them as
-`scene_changed` — which is also the door "I walk over to her desk" comes through,
-since the contact detectors read that as furniture while `detectSceneMovement` reads
-a move, and a held touch does not survive the mover either way.
+Three hooks end contacts before detection runs. Two are BLANKET, ending every active
+contact for everyone in the room: a pending story-clock skip (`separated`; owner ruling
+2026-07-31), and a scene-place change (`scene_changed`). The third is scoped to the PLAYER
+alone: the player's own move onto furniture or a fixture WITHIN the current place
+(`detectWithinPlaceMovement`, `engine/chat-intent.ts`; #330, owner ruling 2026-09-27) —
+the door "I walk over to her desk" comes through: the contact detectors read it as
+furniture and state nothing, `detectSceneMovement` also reads it as furniture and does not
+switch the scene, but the player's own body still crossed the room, so a held touch does
+not survive the mover. It fires only when the same input has no place change (that end is
+the blanket one), never for a third party's move, and in storyteller input only when the
+mover is the player ("you" or the persona's name) — see [scene-memory.md](scene-memory.md)
+for how the read finds the mover and the destination. This reuses
+`applyChatContactDeparture`'s unnamed-departure semantics (every contact the PLAYER is a
+participant in, either end, reason `separated`), never the blanket sweep — two OTHER
+present characters holding hands must not be separated because the player walked to a desk.
+The skip and the place change clear EVERY pair's proximity to unknown (owner ruling
+2026-08-04); the within-place move clears only the player's own pair relations, for the
+same reason its contact end is scoped.
 
 A detected act is resolved by the shared contact core against the scene's reach, support,
 and material reads — a dressed body whose wardrobe published no coverage capture resolves

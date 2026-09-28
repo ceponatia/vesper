@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { chatReplyFailureCauses, chatReplyFailureCodes, type ChatReplyFailure } from "@/contracts";
-import { replyFailureToast } from "./reply-failure";
+import {
+  postStreamNotice,
+  replyFailureToast,
+  replyUnconfirmedToast,
+  replyWithdrawnAfterStreaming,
+  retractWithdrawnReply,
+  shouldRetractStreamedReply,
+} from "./reply-failure";
 
 const FABLE = "DavidAU/Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-NM-DAU-MTP";
 
@@ -112,7 +119,7 @@ describe("replyFailureToast", () => {
       const reasoning = replyFailureToast("Wren", failure({ code: "empty_reply", cause: "reasoning_spent" }), NOW);
       expect(reasoning.description).toContain("internal reasoning");
       expect(reasoning.description).not.toContain("without saying anything");
-      for (const cause of ["length_capped", "hidden_output"] as const) {
+      for (const cause of ["length_capped", "hidden_output", "length_stub"] as const) {
         const { description } = replyFailureToast("Wren", failure({ code: "empty_reply", cause }), NOW);
         expect(description).not.toMatch(/reasoning|thinking/i);
         expect(description).not.toContain("without saying anything");
@@ -128,6 +135,139 @@ describe("replyFailureToast", () => {
     it("keeps the plain copy for an empty reply with no recorded cause", () => {
       const { description } = replyFailureToast("Wren", failure({ code: "empty_reply" }), NOW);
       expect(description).toContain("without saying anything");
+    });
+  });
+});
+
+// The one verdict recorded for an exchange whose text DID stream: the server withheld a
+// one-token `length` stub instead of settling it. After a stream that delivered text,
+// the popup fires only on that verdict — every other record explains a zero-token
+// exchange and must not turn a reply the player can see into a "didn't reply".
+describe("replyWithdrawnAfterStreaming", () => {
+  it("is true only for a fresh withheld-stub record", () => {
+    expect(replyWithdrawnAfterStreaming(failure({ code: "empty_reply", cause: "length_stub" }), NOW)).toBe(true);
+    for (const cause of chatReplyFailureCauses.filter((c) => c !== "length_stub")) {
+      expect(replyWithdrawnAfterStreaming(failure({ code: "empty_reply", cause }), NOW), cause).toBe(false);
+    }
+    for (const code of chatReplyFailureCodes) {
+      expect(replyWithdrawnAfterStreaming(failure({ code }), NOW), code).toBe(false);
+    }
+  });
+
+  it("ignores a missing or stale record — streamed text stays a reply unless the server said otherwise", () => {
+    expect(replyWithdrawnAfterStreaming(null, NOW)).toBe(false);
+    expect(replyWithdrawnAfterStreaming(undefined, NOW)).toBe(false);
+    const stale = failure({ code: "empty_reply", cause: "length_stub", at: new Date(NOW - 3_600_000).toISOString() });
+    expect(replyWithdrawnAfterStreaming(stale, NOW)).toBe(false);
+  });
+
+  it("explains the withdrawal without claiming the model said nothing", () => {
+    const { title, description } = replyFailureToast("Wren", failure({ code: "empty_reply", cause: "length_stub" }), NOW);
+    expect(title).toBe("Wren didn't reply");
+    expect(description).toContain("discarded");
+    expect(description).not.toContain("without saying anything");
+  });
+});
+
+// What the player is told once the stream closes. The case this exists for: a
+// withheld stub streamed its fragment, then the transcript reload failed (after its
+// retry), so the client has no verdict — the fragment must not sit there presented
+// as a settled reply, and a genuine reply must not be called a failure either.
+describe("postStreamNotice", () => {
+  const stub = failure({ code: "empty_reply", cause: "length_stub" });
+
+  it("reports a failure whenever nothing streamed, reload or not", () => {
+    expect(postStreamNotice({ received: false, reloaded: true, failure: null, now: NOW })).toBe("reply_failed");
+    expect(postStreamNotice({ received: false, reloaded: false, failure: null, now: NOW })).toBe("reply_failed");
+  });
+
+  it("stays silent for a streamed reply the reload confirmed", () => {
+    for (const record of [null, failure({ code: "timeout" }), failure({ code: "empty_reply", cause: "model_silent" })]) {
+      expect(postStreamNotice({ received: true, reloaded: true, failure: record, now: NOW })).toBe("none");
+    }
+  });
+
+  it("reports the withdrawal when the reload shows the fragment was withheld", () => {
+    expect(postStreamNotice({ received: true, reloaded: true, failure: stub, now: NOW })).toBe("reply_failed");
+  });
+
+  it("flags a streamed reply as unconfirmed when the reload failed", () => {
+    expect(postStreamNotice({ received: true, reloaded: false, failure: null, now: NOW })).toBe("reply_unconfirmed");
+  });
+
+  it("words the unconfirmed notice neutrally and says how to see what was saved", () => {
+    const { title, description } = replyUnconfirmedToast("Wren");
+    expect(title).toContain("Wren");
+    expect(title).not.toContain("didn't reply");
+    expect(description).toContain("Reload the page");
+    expect(description).not.toMatch(/fail|error/i);
+  });
+});
+
+// Retracting a withdrawn fragment locally. `reloadTranscript` returns a successful GET
+// but skips applying its lines while a newer exchange is sending, so the verdict — not
+// the refetch — decides the retraction, and the retraction has to be safe both when
+// the reload already replaced the lines and when it did not.
+describe("retracting a withdrawn fragment", () => {
+  const stub = failure({ code: "empty_reply", cause: "length_stub" });
+  const line = (id: string, content: string, role: "user" | "assistant" = "assistant") => ({ id, role, content });
+
+  describe("shouldRetractStreamedReply", () => {
+    it("retracts when a successful reload withdrew what streamed", () => {
+      expect(shouldRetractStreamedReply({ received: true, reloaded: true, failure: stub, now: NOW })).toBe(true);
+    });
+
+    it("never retracts a confirmed reply", () => {
+      for (const record of [null, failure({ code: "timeout" }), failure({ code: "empty_reply", cause: "model_silent" })]) {
+        expect(shouldRetractStreamedReply({ received: true, reloaded: true, failure: record, now: NOW })).toBe(false);
+      }
+    });
+
+    it("never retracts an unconfirmed reply whose reload failed", () => {
+      expect(shouldRetractStreamedReply({ received: true, reloaded: false, failure: null, now: NOW })).toBe(false);
+    });
+
+    it("has nothing to retract when nothing streamed", () => {
+      expect(shouldRetractStreamedReply({ received: false, reloaded: true, failure: stub, now: NOW })).toBe(false);
+    });
+  });
+
+  describe("retractWithdrawnReply", () => {
+    it("drops this exchange's bubble when the reload was skipped", () => {
+      const lines = [line("m1", "earlier reply"), line("tmp-0", "hello", "user"), line("tmp-1", "I")];
+      expect(retractWithdrawnReply(lines, { assistantId: "tmp-1", shown: "I" })).toEqual([
+        line("m1", "earlier reply"),
+        line("tmp-0", "hello", "user"),
+      ]);
+    });
+
+    it("is a no-op once an applied reload already replaced the lines", () => {
+      const reloaded = [line("m1", "earlier reply"), line("m2", "hello", "user")];
+      expect(retractWithdrawnReply(reloaded, { assistantId: "tmp-1", shown: "I" })).toEqual(reloaded);
+      const regenerated = [line("m1", "the stored take")];
+      expect(
+        retractWithdrawnReply(regenerated, { assistantId: "m1", shown: "I", priorLine: line("m1", "the stored take") }),
+      ).toEqual(regenerated);
+    });
+
+    it("puts the prior take back on a regenerate whose reload was skipped", () => {
+      const prior = line("m1", "the stored take");
+      expect(retractWithdrawnReply([line("m1", "I")], { assistantId: "m1", shown: "I", priorLine: prior })).toEqual([
+        prior,
+      ]);
+    });
+
+    it("never touches a newer exchange's lines", () => {
+      const newerSend = [line("tmp-1", "I"), line("tmp-2", "next", "user"), line("tmp-3", "She")];
+      expect(retractWithdrawnReply(newerSend, { assistantId: "tmp-1", shown: "I" })).toEqual([
+        line("tmp-2", "next", "user"),
+        line("tmp-3", "She"),
+      ]);
+      // A newer regenerate of the same row restarted it from empty and is streaming anew.
+      const newerRetake = [line("m1", "She")];
+      expect(
+        retractWithdrawnReply(newerRetake, { assistantId: "m1", shown: "I", priorLine: line("m1", "the stored take") }),
+      ).toEqual(newerRetake);
     });
   });
 });

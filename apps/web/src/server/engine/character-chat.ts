@@ -138,7 +138,7 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
     // only when attempt 1 was a genuinely silent stop.
     const retryFloor =
       previous && narratorEmptyWasSilentStop(previous) ? narratorRetryFloor(modelId) : undefined;
-    const { stream, outcome } = narratorAttempt({
+    const { stream, outcome, maxOutputTokens } = narratorAttempt({
       modelId,
       system: input.system,
       messages,
@@ -171,6 +171,7 @@ export async function* streamCharacterChat(input: StreamCharacterChatInput): Asy
       visibleTextLength,
       visibleTextChars,
       attempts: attempt,
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
     };
     const retryable =
       visibleTextChars === 0 &&
@@ -208,7 +209,12 @@ function narratorAttempt(args: {
    * profile, because it is the one thing chosen for this single attempt.
    */
   retryFloor?: TextModelProfile;
-}): { stream: AsyncGenerator<string>; outcome: () => RawAttemptOutcome | null } {
+}): {
+  stream: AsyncGenerator<string>;
+  outcome: () => RawAttemptOutcome | null;
+  /** The output cap this attempt's request carried — absent when it sent none. */
+  maxOutputTokens?: number;
+} {
   let recorded: RawAttemptOutcome | null = null;
   // The whole call, built at the one model gateway (server/ai/model-adapters.ts):
   // this lane's narrator temperature, then the exact model's measured profile,
@@ -264,7 +270,11 @@ function narratorAttempt(args: {
       args.names,
     ),
   );
-  return { stream, outcome: () => recorded };
+  // The budget is what the gateway actually merged for this call, so a completion
+  // that reports a `length` finish can be judged against the cap it really ran
+  // under (`isNarratorLengthStub`) rather than against a guess.
+  const { maxOutputTokens } = call.settings;
+  return { stream, outcome: () => recorded, ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }) };
 }
 
 /**

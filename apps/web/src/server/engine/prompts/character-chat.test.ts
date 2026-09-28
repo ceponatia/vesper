@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ASMODEUS_24B_V3_ID } from "@vesper/text-models";
 import { emptyCharacterProfile, type CharacterProfile } from "@/contracts/world/profile";
 import type { ChatDrive } from "@/contracts/personality/drives";
 import type { RelationshipRecord } from "@/contracts/relationships/record";
@@ -374,6 +375,82 @@ describe("buildCharacterChatSystemPrompt", () => {
     expect(opening).toMatch(/Opening beat/);
     expect(opening).toMatch(/Begin the conversation yourself/);
     expect(systemPrompt()).not.toContain("Opening beat");
+  });
+
+  // --- #479: exact-model opening-directive hotfix (Asmodeus camera contract) ---
+
+  describe("opening-beat directive — exact-model override (#479)", () => {
+    // A representative sample of established, unprofiled narrators (Aion 3.0, GLM 5.2,
+    // DeepSeek 4 Flash) plus the absent case (no narratorModelId threaded at all —
+    // an older caller or a fixture that predates #479).
+    const UNPROFILED_IDS: (string | undefined)[] = [
+      undefined,
+      "aion-labs/aion-3.0",
+      "z-ai/glm-5.2",
+      "~deepseek/deepseek-v4-flash-latest",
+    ];
+
+    const defaultDirective =
+      'Opening beat: the player has not spoken yet. Begin the conversation yourself — open the scene in character, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.';
+    // The measured wording from #471's controlled run ("Open the scene as its narrator:
+    // Sabrina acts and speaks first, written in the third person …"), the character's
+    // name interpolated — no "never as I" clause, since that run's fp_out metric
+    // excluded quoted speech and never measured first-person pronouns inside it.
+    const asmodeusDirective =
+      'Opening beat: the player has not spoken yet. Begin the conversation yourself — open the scene as its narrator: Mara acts and speaks first, written in the third person, grounded in the scenario and your current state above. A line or two, ending on a present moment that invites them in. Do not narrate on their behalf.';
+
+    it("renders today's opening directive verbatim for every narrator without an override", () => {
+      const baseline = systemPrompt({ opening: true });
+      expect(baseline).toContain(defaultDirective);
+      for (const narratorModelId of UNPROFILED_IDS) {
+        expect(systemPrompt({ opening: true, narratorModelId })).toBe(baseline);
+      }
+    });
+
+    it("asks Asmodeus to narrate the opening beat in the third person, in the measured wording", () => {
+      const asmodeus = systemPrompt({ opening: true, narratorModelId: ASMODEUS_24B_V3_ID });
+      expect(asmodeus).toContain(asmodeusDirective);
+      // The controlled run's fix is the third-person camera instruction; everything the
+      // beat otherwise preserves (one opening beat, grounding, the player-agency close)
+      // survives unchanged in the same sentence.
+      expect(asmodeus).toContain("third person");
+      expect(asmodeus).not.toContain("open the scene in character");
+      // The run never measured first-person pronouns INSIDE quoted dialogue, so the
+      // override must not add a clause forbidding them there. Scoped to the retired
+      // clause's own punctuation (never bare "never as") because the standing
+      // player-address rule (charter.ts) legitimately says `never as "I"/"me"` on
+      // every turn — a bare substring check collides with that unrelated rule.
+      expect(asmodeus).not.toContain('(never as "I")');
+    });
+
+    it("changes ONLY Asmodeus's opening-directive line — every other rendered byte is unchanged", () => {
+      const baseline = promptParts({ opening: true });
+      const asmodeus = promptParts({ opening: true, narratorModelId: ASMODEUS_24B_V3_ID });
+      // The stable prefix never carries the opening directive — untouched by construction.
+      expect(asmodeus.prefix).toBe(baseline.prefix);
+      expect(baseline.tail).toContain(defaultDirective);
+      expect(asmodeus.tail).toContain(asmodeusDirective);
+      // Swapping the one changed sentence back recovers the baseline tail byte-for-byte.
+      expect(asmodeus.tail.replace(asmodeusDirective, defaultDirective)).toBe(baseline.tail);
+    });
+
+    it("does not affect a non-opening turn (no every-turn anchor)", () => {
+      // The byte-identity check IS the real proof (any leak of the override would
+      // change some byte). The second check is scoped to text unique to the override
+      // ("as its narrator:" appears nowhere else) rather than the bare phrase "third
+      // person" — charter.ts's own viewpoint rule says that on every turn, opening or
+      // not, so a bare substring check would fail here whether or not the override leaked.
+      expect(systemPrompt({ narratorModelId: ASMODEUS_24B_V3_ID })).toBe(systemPrompt());
+      expect(systemPrompt({ narratorModelId: ASMODEUS_24B_V3_ID })).not.toContain("as its narrator:");
+    });
+
+    it("contains no accidental /think trigger substring in the assembled opening prompt", () => {
+      // The host template treats a literal "/think" in the initial system message as a
+      // reasoning-scratchpad trigger (issue #471's superseding template review). Checked
+      // on the Asmodeus opening specifically, since that is the prompt this hotfix edits.
+      const asmodeus = systemPrompt({ opening: true, narratorModelId: ASMODEUS_24B_V3_ID });
+      expect(asmodeus).not.toContain("/think");
+    });
   });
 
   // --- Opportunistic sensory cues ---

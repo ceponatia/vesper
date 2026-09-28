@@ -11,11 +11,37 @@ derives from the story clock, never from extraction.
 
 The memory is maintained **deterministic-first**, then reconciled by the archivist:
 
-1. **Pre-prompt (movement).** `detectSceneMovement` (`engine/chat-intent.ts`, regex-first) reads a
-   movement/arrival in the player's input ("I follow her to the kitchen", "we head outside") and
-   the route calls `switchScenePlace` to switch `current` (minting a stub place on first mention)
-   **before** the prompt builds, so this turn's Scene injection is right. "Just changed" = a new
-   current place this turn, or a pending time skip.
+1. **Pre-prompt (movement).** `detectSceneMovement` (`engine/chat-intent.ts`, deterministic, no
+   model call) reads every movement verb in the turn's input ("I follow her to the kitchen", "we
+   head outside") and the route calls `switchScenePlace` to switch `current` (minting a stub place on
+   first mention) **before** the prompt builds, so this turn's Scene injection is right. Each verb is
+   read structurally for three things:
+   - **Destination** — the noun phrase after the verb's first destination preposition, cut at the
+     first function word ("to her desk and lean against it" reads `desk`, "to the table by the
+     window" reads `table`), or an adverbial destination ("outside", "upstairs"). A preposition
+     with no determiner after it ends the read ("walk over to talk", "go to bed", "walk over to
+     Wren"). A verbless coordinated segment that opens on a path word continues the same verb's
+     motion to its own destination ("I walk past her and into the kitchen", "…, then through to
+     the kitchen"); a coordinated clause with its own subject or verb gets its own read.
+   - **Kind** — a place; a position WITHIN the current place — furniture or a fixture, which never
+     mints a stub (owner ruling 2026-09-27: "I walk over to the desk" is not a place change); or no
+     destination at all — a body part, garment, or abstraction ("my hand to her thigh", "into my
+     dress", "to an agreement") is a gesture or an idiom. A destination named by an established
+     place — one with at least one detail or connection — is a place whatever its head noun; a bare
+     stub earns no such exemption.
+   - **Mover** — player input must move the player, so an unrelated third party's own errand
+     narrated in passing ("the bartender walks back to the back room") cannot relocate the shared
+     scene. The mover is the verb's own subject (I, we, let's, or the persona's name; "you" is the
+     character), else the subject shared from the previous clause ("the bartender nods and walks
+     to the back room" is the bartender's errand), else — only when nothing precedes the verb in its
+     sentence — the imperative player; a player direct object ("she leads me to the back room") also
+     moves the player. Storyteller (narrator-mode) input is authorized scene authoring: any
+     subject's movement relocates the scene, and there "you" is the player.
+
+   The last place change in the input wins. The sibling read `detectWithinPlaceMovement` reports the
+   player's own within-place move only when the input has no place change; the contact leg ends the
+   player's held contacts on it (`physical-legs.md`). "Just changed" = a new current place this
+   turn, or a pending time skip.
 2. **Injection.** The prompt builder renders the compact **Scene** block in the volatile tail
    (current place + details + connections + a directive that flips on "just changed"
    — see [narrator-craft.md](narrator-craft.md) §Character-chat reply discipline & scene
