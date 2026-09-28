@@ -204,7 +204,9 @@ def main(argv):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 64
     try:
-        with open(argv[1], encoding="utf-8") as fh:
+        # errors="replace" mirrors Node's readFileSync(path, "utf8"), which the
+        # gate uses: invalid bytes decode to U+FFFD instead of raising.
+        with open(argv[1], encoding="utf-8", errors="replace") as fh:
             gate = read_gate(fh.read())
     except OSError:
         gate = None
@@ -215,7 +217,7 @@ def main(argv):
     unsafe = 0
     for path in argv[2:]:
         try:
-            with open(path, encoding="utf-8") as fh:
+            with open(path, encoding="utf-8", errors="replace") as fh:
                 source = fh.read()
         except OSError:
             continue  # deleted in the working tree; the gate reads only present files

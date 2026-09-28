@@ -181,6 +181,17 @@ rc=0
 [ "$rc" -eq 2 ] || fail "a missing gate file exited $rc, not 2"
 echo 'ok  an unreadable gate exits 2 instead of passing every route'
 
+# The gate reads routes with readFileSync(path, "utf8"), which decodes invalid bytes to
+# U+FFFD. A strict decode would raise instead, and scan-diff would then drop its
+# prediction for every changed route. The file must be judged like any other.
+rm -rf "$UNIT"
+BAD='apps/web/src/app/api/chats/[chatId]/route.ts'
+mkdir -p "$UNIT/$(dirname "$BAD")"
+printf 'export const GET = withUser(async (user, _req, ctx) => {\n  // \xff\xfe not utf-8\n  return jsonOk({});\n});\n' >"$UNIT/$BAD"
+rc=0; out=$(cd "$UNIT" && python3 "$SKILL_DIR/route-authz.py" --gate "$GATE" "$BAD") || rc=$?
+[ "$rc" -eq 1 ] && [ "$out" = "$BAD" ] || fail "a route that is not valid utf-8 exited $rc with '$out', not judged unsafe"
+echo 'ok  a route that is not valid utf-8 is decoded as the gate decodes it and judged'
+
 # --- scan-diff.sh end to end ----------------------------------------------------------------
 g() {
   git -C "$REPO" -c user.name=fixture -c user.email=fixture@example.invalid \
