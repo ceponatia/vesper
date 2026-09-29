@@ -1,5 +1,5 @@
 import { attributeRegistry, boundCharacterCreationBrief, traitRegistry } from "@/contracts";
-import { type CharacterDraft } from "@/lib/client/api";
+import type { CharacterDraft } from "@/lib/client/api";
 import { describeProposalValue } from "./character-proposals";
 
 /** Capture the original concept before any rewriting can remove it. This also
