@@ -9,7 +9,6 @@ import {
 import {
   generationCacheKey,
   generationProjectionReceipt,
-  generationRecordsForAbandonment,
   matchesGeneration,
   needsGenerationProjection,
   readGenerationCache,
@@ -26,7 +25,7 @@ export interface CharacterGenerationDecisionResult {
   readonly appliedDraft: CharacterDraft | null;
 }
 
-interface DecisionOptions { expectedAuthoringRevision?: number; currentDraft?: CharacterDraft }
+interface DecisionOptions { expectedAuthoringRevision?: number }
 
 export interface CharacterGenerationCompletionActions {
   decide: (
@@ -82,7 +81,6 @@ export function useCharacterGeneration(
   const mounted = useRef(true);
   const processing = useRef(new Set<string>());
   const starting = useRef(false);
-  const abandoning = useRef(false);
   const retryingRoots = useRef(new Set<string>());
   const settlements = useRef(new Map<string, Promise<CharacterGeneration | null>>());
   const projectionRetryTimer = useRef<number | null>(null);
@@ -188,7 +186,7 @@ export function useCharacterGeneration(
     void Promise.resolve().then(async () => {
       for (const record of recordsRef.current) {
         const receipt = generationProjectionReceipt(record);
-        if (cancelled || abandoning.current || !needsGenerationProjection(record, projectedReceiptsRef.current)
+        if (cancelled || !needsGenerationProjection(record, projectedReceiptsRef.current)
           || processing.current.has(record.id)) continue;
         processing.current.add(record.id);
         let received = false;
@@ -212,7 +210,7 @@ export function useCharacterGeneration(
   ), []);
 
   const start = async (input: GenerationInput, replacesId?: string): Promise<boolean> => {
-    if (!ready || blocked || abandoning.current || starting.current || hasActiveWork(recordsRef.current)) return false;
+    if (!ready || blocked || starting.current || hasActiveWork(recordsRef.current)) return false;
     starting.current = true;
     const requestId = crypto.randomUUID();
     const pending = optimistic(ownerId, { kind, id }, requestId, input);
@@ -236,7 +234,7 @@ export function useCharacterGeneration(
   };
 
   const retry = async (record: CharacterGeneration): Promise<boolean> => {
-    if (blocked || !ready || abandoning.current || retryingRoots.current.has(record.rootRunId)
+    if (blocked || !ready || retryingRoots.current.has(record.rootRunId)
       || !matchesGeneration(record, ownerId, { kind, id })
       || hasActiveWork(recordsRef.current)) return false;
     retryingRoots.current.add(record.rootRunId);
@@ -276,39 +274,17 @@ export function useCharacterGeneration(
     return result !== null;
   };
 
-  const abandon = async (): Promise<boolean> => {
-    if (abandoning.current) return false;
-    abandoning.current = true;
-    const captured = [...recordsRef.current];
-    const inFlight = [...settlements.current.entries()];
-    try {
-      const settled = await Promise.all(inFlight.map(async ([requestId, settlement]) => ({ requestId, run: await settlement })));
-      const outstanding = generationRecordsForAbandonment(captured, recordsRef.current, settled);
-      for (const record of outstanding) if (!(await dismiss(record))) return false;
-      return true;
-    } catch {
-      return false;
-    } finally {
-      abandoning.current = false;
-    }
-  };
-
   const active = records.find((record) => record.status === "pending")
     ?? records.find((record) => needsGenerationProjection(record, projectedReceipts))
     ?? null;
-  const settling = records.some((record) => needsGenerationProjection(record, projectedReceipts));
   return {
     records,
     active,
-    settling,
     unavailable,
     isRunning: () => hasActiveWork(recordsRef.current),
-    hasOutstanding: () => recordsRef.current.some((record) => record.status === "pending" || record.status === "failed" || record.proposal.status === "unresolved"),
-    recordsNow: () => recordsRef.current,
     start,
     retry,
     dismiss,
-    abandon,
     decide,
     refresh,
   };

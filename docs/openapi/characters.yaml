@@ -49,7 +49,10 @@ paths:
     post:
       tags: [Characters]
       summary: Create a character
-      description: Supports an optional stable creationRequestId for durable create intent replay.
+      description: >-
+        Creates the character and materializes its suggested items in one transaction. A profile with
+        no attributes is seeded with the registry's core-visual defaults and the body configuration
+        they imply. The body is strict; unknown fields are refused with invalid_body.
       x-vesper-source: apps/web/src/app/api/characters/route.ts
       requestBody:
         required: true
@@ -57,21 +60,27 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/CharacterCreateRequest' }
       responses:
-        '200':
-          description: Idempotent replay of a previously completed create.
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
         '201':
-          description: Character created.
+          description: Character created, with diagnostics and the index-to-item receipt for suggestedItems.
           content:
             application/json:
-              schema: { type: object, additionalProperties: true }
-        '409':
-          description: creationRequestId was already committed for a different payload.
-          content:
-            application/json:
-              schema: { type: object, additionalProperties: true }
+              schema:
+                type: object
+                required: [character, diagnostics, materializedSuggestions]
+                properties:
+                  character: { $ref: '#/components/schemas/Character' }
+                  diagnostics:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+                  materializedSuggestions:
+                    type: array
+                    items:
+                      type: object
+                      required: [index, itemId]
+                      properties:
+                        index: { type: integer, minimum: 0 }
+                        itemId: { type: string }
+        '400': { $ref: '#/components/responses/Error' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/characters/{id}:
@@ -185,6 +194,192 @@ paths:
                   diagnostics:
                     type: array
                     items: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/authoring-runs:
+    get:
+      tags: [Authoring]
+      summary: List a saved character's persisted authoring runs
+      description: >-
+        The newest 25 runs for one owned saved character, excluding dismissed runs. A stored run whose
+        payload cannot be read is omitted with an authoring.run.malformed diagnostic. Saved characters
+        are the only target; the retired creation kind always returns no runs and one
+        authoring.run.unsupported_target warning, so a page loaded before the change stops polling.
+      x-vesper-source: apps/web/src/app/api/characters/authoring-runs/route.ts
+      parameters:
+        - in: query
+          name: targetKind
+          required: true
+          schema: { type: string, enum: [character, creation] }
+        - in: query
+          name: targetId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: Runs, newest first, and read diagnostics.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs, diagnostics]
+                properties:
+                  runs:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuthoringRun' }
+                  diagnostics:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        '400':
+          description: invalid_query for a missing or unknown targetKind or targetId.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      tags: [Authoring]
+      summary: Start a persisted Forge, completion, rewrite or portrait-read run on a saved character
+      description: >-
+        requestId is the idempotency key: repeating the same request returns the stored run without
+        new provider work, and a different request under the same id is refused. The server reserves
+        the character at source.authoringRevision and reconstructs base from that row; the browser
+        base is ignored. For a create run it also derives creationStart and ignores the browser's
+        creationStart.draft and initialPreview. The run forges from the character's saved
+        creationBrief when present, otherwise from creationStart.prompt, and a changed prompt is a
+        different request. With neither brief the start is refused before admission. The brief
+        reaches the character only when the result is accepted.
+      x-vesper-source: apps/web/src/app/api/characters/authoring-runs/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartAuthoringRunRequest' }
+      responses:
+        '202':
+          description: The run was started or an identical request was replayed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run]
+                properties:
+                  run: { $ref: '#/components/schemas/AuthoringRun' }
+        '400':
+          description: >-
+            invalid_body, including a create run when neither the character nor creationStart.prompt
+            carries a brief.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '404':
+          description: not_found; the character is not owned by the caller or no longer exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '409':
+          description: >-
+            authoring_revision_changed, portrait_changed or portrait_source_changed (with the current
+            authoringRevision and avatarImageId), invalid_source, admission_pending or
+            idempotency_conflict.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '429':
+          description: Concurrent-job cap or daily text budget reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '503':
+          description: The text provider lane is unhealthy or the work queue is saturated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/authoring-runs/{runId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    patch:
+      tags: [Authoring]
+      summary: Accept, reject, undo or dismiss a run's proposal
+      description: >-
+        Compares the proposal revision and, except for dismiss, the saved character's authoring
+        revision inside one transaction. Accept applies a three-way merge against the run's base;
+        overlapping saved edits return authoring_conflict with the conflicting changes. Accepting a
+        create run also stores its brief when the character has none. A stored run that cannot be read,
+        including one from the removed creation draft, returns invalid_run.
+      x-vesper-source: apps/web/src/app/api/characters/authoring-runs/[runId]/decision/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideAuthoringRunRequest' }
+      responses:
+        '200':
+          description: The decided run.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run]
+                properties:
+                  run: { $ref: '#/components/schemas/AuthoringRun' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: >-
+            invalid_run, proposal_changed, portrait_source_changed, invalid_source, or
+            authoring_conflict with conflicts and the current authoringRevision.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/authoring-runs/{runId}/retry:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    post:
+      tags: [Authoring]
+      summary: Retry a run from its immutable accepted source
+      description: >-
+        Starts a new run linked to the same root with the original base, create snapshot and source.
+        Concurrent retries of one root coalesce. A portrait read is refused when the portrait or its
+        relevant appearance facts changed.
+      x-vesper-source: apps/web/src/app/api/characters/authoring-runs/[runId]/retry/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId]
+              properties:
+                requestId: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '202':
+          description: The retry run.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run]
+                properties:
+                  run: { $ref: '#/components/schemas/AuthoringRun' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: admission_pending, invalid_source, portrait_source_changed or idempotency_conflict.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '429':
+          description: Concurrent-job cap or daily text budget reached.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        '503':
+          description: The text provider lane is unhealthy or the work queue is saturated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
         default: { $ref: '#/components/responses/Error' }
 
   /api/characters/{id}/relationships:
@@ -302,6 +497,11 @@ components:
       name: id
       required: true
       schema: { type: string }
+    RunId:
+      in: path
+      name: runId
+      required: true
+      schema: { type: string }
   responses:
     Error:
       description: Error response.
@@ -358,7 +558,6 @@ components:
       additionalProperties: false
       required: [name]
       properties:
-        creationRequestId: { type: string, format: uuid }
         name: { type: string, minLength: 1, maxLength: 200 }
         profile: { type: object, additionalProperties: true }
         tags:
@@ -387,3 +586,111 @@ components:
           maxItems: 50
           items: { type: object, additionalProperties: true }
       additionalProperties: false
+    AuthoringRunTarget:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { type: string, const: character }
+        id: { type: string, minLength: 1, maxLength: 128 }
+    AuthoringSource:
+      type: object
+      required: [authoringRevision, imageId]
+      properties:
+        authoringRevision: { type: integer, minimum: 1, maximum: 2147483647 }
+        imageId: { type: [string, 'null'] }
+        imageContentHash: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+        authoringFingerprint: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$' }
+    CreationStart:
+      type: object
+      required: [draft, prompt, initialPreview]
+      properties:
+        draft: { type: object, additionalProperties: true }
+        prompt: { type: string }
+        initialPreview: { type: boolean }
+    StartAuthoringRunRequest:
+      type: object
+      required: [requestId, target, operation, scope, label, base, creationStart, source]
+      properties:
+        requestId: { type: string, minLength: 8, maxLength: 128 }
+        target: { $ref: '#/components/schemas/AuthoringRunTarget' }
+        operation: { type: string, enum: [create, fill, redraft, portrait] }
+        scope:
+          type: [string, 'null']
+          description: Character-sheet scope; required for redraft.
+        label: { type: string, minLength: 1, maxLength: 160 }
+        base:
+          type: object
+          additionalProperties: true
+          description: Ignored; the server reads the reserved character row.
+        creationStart:
+          description: >-
+            Required for create and ignored otherwise. Only prompt is read; draft and initialPreview
+            are replaced by the server.
+          oneOf:
+            - $ref: '#/components/schemas/CreationStart'
+            - type: 'null'
+        source:
+          description: The saved authoring revision the run reserves; imageId is required for portrait.
+          allOf:
+            - $ref: '#/components/schemas/AuthoringSource'
+    AuthoringRun:
+      type: object
+      required: [id, ownerId, target, operation, scope, label, base, creationStart, source, status, result, error, retryOf, rootRunId, persisted, proposal, createdAt, startedAt, finishedAt]
+      properties:
+        id: { type: string }
+        ownerId: { type: string }
+        target: { $ref: '#/components/schemas/AuthoringRunTarget' }
+        operation: { type: string, enum: [create, fill, redraft, portrait] }
+        scope: { type: [string, 'null'] }
+        label: { type: string }
+        base:
+          type: object
+          additionalProperties: true
+          description: The reserved character content the run started from.
+        creationStart:
+          description: >-
+            Create runs only. prompt is the brief the run forges from. initialPreview is true only
+            when the character was an untouched blank at start (authoring revision 1, no saved brief,
+            and profile and tags exactly as a blank create stores them) and the result, once present,
+            is not degraded: no forge leg recorded a degraded, timeout, parse_failed or api_error
+            line and nothing recorded an error. A client may then accept an unresolved completed
+            result without review, sending source.authoringRevision as expectedAuthoringRevision, so
+            any edit made meanwhile returns authoring_conflict. A degraded result is an ordinary
+            proposal that can still be accepted or rejected.
+          oneOf:
+            - $ref: '#/components/schemas/CreationStart'
+            - type: 'null'
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/AuthoringSource'
+            - type: 'null'
+        status: { type: string, enum: [pending, completed, failed] }
+        result:
+          type: [object, 'null']
+          additionalProperties: true
+          description: proposed draft, diagnostics and, for portrait reads, portrait evidence.
+        error: { type: [string, 'null'] }
+        errorCode: { type: [string, 'null'] }
+        retryOf: { type: [string, 'null'] }
+        rootRunId: { type: string }
+        persisted: { type: boolean, const: true }
+        proposal:
+          type: object
+          additionalProperties: true
+          description: revision, status (unresolved, accepted, rejected, undone, dismissed), decidedAt, choices, appliedDraft and undo.
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    DecideAuthoringRunRequest:
+      type: object
+      required: [action, expectedProposalRevision]
+      properties:
+        action: { type: string, enum: [accept, reject, undo, dismiss] }
+        expectedProposalRevision: { type: integer, minimum: 1 }
+        expectedAuthoringRevision:
+          type: integer
+          minimum: 1
+          description: Required for accept, reject and undo.
+        choices:
+          type: object
+          additionalProperties: { type: string, enum: [current, proposed] }

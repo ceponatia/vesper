@@ -6,7 +6,7 @@ import { apiGet, apiPatch, apiPost, withQuery } from "./http";
 import { characterDetailSchema, characterDraftSchema } from "./library";
 
 export const characterAuthoringTargetSchema = z.object({
-  kind: z.enum(["creation", "character"]),
+  kind: z.literal("character"),
   id: z.string().min(1),
 });
 
@@ -107,6 +107,5 @@ export const characterAuthoringRunsApi = {
     expectedProposalRevision: number;
     expectedAuthoringRevision?: number;
     choices?: Record<string, "current" | "proposed">;
-    currentDraft?: z.infer<typeof characterDraftSchema>;
   }) => apiPatch(decisionEnvelopeSchema, `/api/characters/authoring-runs/${runId}/decision`, body),
 };

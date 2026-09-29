@@ -1,8 +1,7 @@
-import type { Metadata } from "next";
-import { CharacterForgePage } from "@/components/characters/character-forge-page";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Character forge" };
-
+/** Forge creates a blank character and opens it directly (`use-forge-character.ts`);
+ * this route creates nothing. */
 export default function CharactersForgeRoute() {
-  return <CharacterForgePage />;
+  redirect("/characters");
 }

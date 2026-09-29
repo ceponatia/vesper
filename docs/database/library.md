@@ -22,11 +22,10 @@ The owner-scoped definition rows: who the account is, and the reusable entities 
   remix provenance), `authoring_revision` (monotonic content version), `search_embedding` vector.
   A database trigger advances the authoring revision only when `name`, `profile`, or `tags`
   changes. Portrait pointers, acceptance, visibility, and operational settings retain it.
-- **`character_creation_requests`** — one immutable receipt per (`owner_id`,
-  `request_id`) creation intent: canonical payload hash, character id, successful HTTP status and
-  replayable response JSON. The receipt is written in the same transaction as its character and
-  materialized suggestions. Reusing a request id with different content is refused; deleting the
-  character cascades its receipt.
+- **`character_creation_requests`** — retained receipts from the retired replayable character
+  create: one row per (`owner_id`, `request_id`) with a payload hash, character id, HTTP status and
+  response JSON. No code path reads or writes the table. Deleting a character still cascades its
+  rows.
 - **`character_relationships` / `character_relationship_versions`** — directed, owner-validated
   library defaults from one character to another plus one revision row per authored source set.
   A revision compare-and-swap and the complete edge replacement share one transaction, including
