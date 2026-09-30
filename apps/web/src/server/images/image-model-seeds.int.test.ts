@@ -6,6 +6,16 @@ import type { ImageExecutionContext } from "@vesper/image-core";
 import { createReplicateClient, DEFAULT_PREDICTION_TIMEOUT_MS, type ProbeResult } from "@vesper/image-replicate";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
+import {
+  CIVITAI_QWEN21_ASPECTS,
+  CIVITAI_QWEN21_BANDS,
+  CIVITAI_QWEN21_DEFAULTS,
+  CIVITAI_QWEN21_RESOLUTION_TIERS,
+  CIVITAI_QWEN21_SAMPLERS,
+  CIVITAI_QWEN21_SCHEDULERS,
+  CIVITAI_QWEN_IMAGE_21_SLUG,
+  CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+} from "../ai";
 import { db, imageLoras, imageModelProfiles, imageModels } from "../db";
 import { imageModelProbeFields } from "./identity-trial-model-versions";
 import { type ImageLoraResolution, listImageLoras, loadImageLora, resolveImageLoraForRender } from "./image-loras";
@@ -379,6 +389,8 @@ afterAll(async () => {
   // And for the row 0139 seeds: its guard cases delete it outright, and
   // `image-generator.int.test.ts` reads the registry after this file runs.
   if (ready && !(await kontextIntact())) await restoreKontextRow();
+  // And for the row 0151 seeds, whose guard cases delete it outright.
+  if (ready && !(await qwen21Intact())) await restoreQwen21Row();
   await endTestPool();
 });
 
@@ -2398,5 +2410,232 @@ describe.skipIf(!ready)("migration 0141 — the capability record on a migrated 
       .from(imageModels)
       .where(eq(imageModels.id, target.id));
     expect(restored?.caps).toMatchObject({ controls: { guidance: { field: "cfg" } } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Migration 0151 — the Civitai Qwen Image 2.1 bench row
+// ---------------------------------------------------------------------------
+
+const QWEN21_MIGRATION_TAG = "0151_civitai-qwen-image-2-1";
+const QWEN21_MIGRATION_FILE = `drizzle/${QWEN21_MIGRATION_TAG}.sql`;
+const QWEN21_MODEL_ID = "imgmdlcivqwen21aaaaaaaa";
+
+/** 0151's shipped INSERT statement. */
+function qwen21SeedStatements(): Promise<string[]> {
+  return insertStatements(QWEN21_MIGRATION_FILE);
+}
+
+/** Re-run 0151's own statement. Idempotent by its two guards — that is what is under test. */
+async function reapplyQwen21Seed(): Promise<void> {
+  const statements = await qwen21SeedStatements();
+  expect(statements, `${QWEN21_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/** Put the migrated state back: drop whatever a case planted for the slug, then re-seed. */
+async function restoreQwen21Row(): Promise<void> {
+  // Read and validate the statement BEFORE deleting anything, so an unreadable
+  // migration file fails this suite instead of stripping the registry row.
+  expect(await qwen21SeedStatements(), `${QWEN21_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
+  await db().delete(imageModels).where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
+  await reapplyQwen21Seed();
+}
+
+/** True when the migrated state is already in place, untouched. */
+async function qwen21Intact(): Promise<boolean> {
+  const [row] = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
+  return row !== undefined;
+}
+
+/**
+ * 0151 seeds the row the Civitai Qwen Image 2.1 transport runs. Beyond the seeded
+ * values, the claim only a migrated database can check is that the hand-written
+ * catalog and the transport agree: the enums and defaults the Generator renders
+ * from the descriptors are the ones the transport accepts and sends for a blank
+ * control, and the bands the bindings declare are the ones it refuses outside.
+ * Expectations are read from the transport's own exports, not restated.
+ */
+describe.skipIf(!ready)("migration 0151 — the Civitai Qwen Image 2.1 bench row", () => {
+  async function seededModel() {
+    const sink = new DiagnosticCollector();
+    const model = (await loadImageModels(sink)).find((candidate) => candidate.id === QWEN21_MODEL_ID);
+    return { model, sink };
+  }
+
+  it("seeds the bench row, and it parses through parseRegistryRows", async () => {
+    const { model, sink } = await seededModel();
+
+    expect(model).toMatchObject({
+      slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+      label: "Qwen Image 2.1 (Civitai)",
+      canGenerate: true,
+      canEdit: true,
+      referenceField: "images",
+      referenceArity: "array",
+      referenceTransport: "data_url",
+      maxReferences: 10,
+      aspectMode: "aspect_ratio",
+      supportedAspects: [...CIVITAI_QWEN21_ASPECTS],
+      outputFormat: null,
+      extraInput: {},
+      probedVersionId: CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+      editKind: "unknown",
+      identityPreservation: "unknown",
+      // Bench only: no legacy surface flag, and no profile below.
+      forPortrait: false,
+      forVariant: false,
+      forScene: false,
+      builtin: true,
+    });
+    // `loadImageModels` DROPS an unparseable row with a diagnostic rather than
+    // throwing, so "it came back" and "nothing was skipped" are two assertions.
+    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
+    const profiles = await db()
+      .select({ id: imageModelProfiles.id })
+      .from(imageModelProfiles)
+      .where(eq(imageModelProfiles.imageModelId, QWEN21_MODEL_ID));
+    expect(profiles).toEqual([]);
+  });
+
+  it("warns the operator that the account, the LoRA path and the quality are unverified", async () => {
+    const { model } = await seededModel();
+    expect(model?.operatorWarning).toMatch(/bench lane only/i);
+    expect(model?.operatorWarning).toMatch(/account entitlement.*unverified/i);
+    expect(model?.operatorWarning).toContain("As of 2026-09-30 Civitai had enabled generation for no Qwen 2.1 LoRA");
+    expect(model?.operatorWarning).toContain("20B LoRA is refused before spend");
+  });
+
+  it("binds every control to the lane's wire field inside the transport's own bands", async () => {
+    const { model } = await seededModel();
+    const capabilities = model?.advancedCapabilities;
+
+    expect(capabilities?.prompt).toEqual({ field: "prompt", maxChars: 10_000 });
+    expect(capabilities?.controls).toEqual({
+      seed: { field: "seed", type: "integer" },
+      negativePrompt: { field: "negativePrompt", type: "string" },
+      guidance: { field: "cfgScale", type: "number", ...CIVITAI_QWEN21_BANDS.cfgScale },
+      steps: { field: "steps", type: "integer", ...CIVITAI_QWEN21_BANDS.steps },
+      resolutionTier: { field: "resolution", type: "enum", enumValues: [...CIVITAI_QWEN21_RESOLUTION_TIERS] },
+      loraWeights: { field: "civitai_lora_version", type: "string" },
+      loraScale: { field: "civitai_lora_strength", type: "number", ...CIVITAI_QWEN21_BANDS.loraStrength },
+    });
+    expect(capabilities?.additionalImageInputs).toEqual([]);
+    expect(capabilities?.output).toEqual({ arity: "single", supportsMultiple: false });
+    expect([...(capabilities?.knownInputFields ?? [])].sort()).toEqual([
+      "aspect_ratio", "cfgScale", "civitai_lora_strength", "civitai_lora_version", "negativePrompt",
+      "prompt", "resolution", "sampler", "scheduler", "seed", "steps",
+    ]);
+  });
+
+  it("describes each provider input with the transport's enums and blank-control defaults", async () => {
+    const { model } = await seededModel();
+    const inputs = model?.advancedCapabilities.providerInputs ?? [];
+    const byField = new Map(inputs.map((descriptor) => [descriptor.field, descriptor]));
+
+    // Only sampler and scheduler are raw Advanced model inputs; the render path
+    // writes every other field, so the bag may not reach them.
+    expect(inputs.filter((descriptor) => !descriptor.reserved).map((descriptor) => descriptor.field).sort())
+      .toEqual(["sampler", "scheduler"]);
+    expect(byField.get("sampler")).toMatchObject({
+      type: "enum", enumValues: [...CIVITAI_QWEN21_SAMPLERS], default: CIVITAI_QWEN21_DEFAULTS.sampler,
+    });
+    expect(byField.get("scheduler")).toMatchObject({
+      type: "enum", enumValues: [...CIVITAI_QWEN21_SCHEDULERS], default: CIVITAI_QWEN21_DEFAULTS.scheduler,
+    });
+    // A descriptor default the form shows is the value the transport sends when
+    // the control is blank — the official recipe, not the provider's own 25 steps.
+    expect(byField.get("cfgScale")).toMatchObject({
+      type: "number", reserved: true, default: CIVITAI_QWEN21_DEFAULTS.cfgScale, ...CIVITAI_QWEN21_BANDS.cfgScale,
+    });
+    expect(byField.get("steps")).toMatchObject({
+      type: "integer", reserved: true, default: CIVITAI_QWEN21_DEFAULTS.steps, ...CIVITAI_QWEN21_BANDS.steps,
+    });
+    expect(byField.get("resolution")).toMatchObject({
+      type: "enum", reserved: true, default: CIVITAI_QWEN21_DEFAULTS.resolution,
+      enumValues: [...CIVITAI_QWEN21_RESOLUTION_TIERS],
+    });
+    expect(byField.get("aspect_ratio")).toMatchObject({
+      type: "enum", reserved: true, default: "1:1", enumValues: [...CIVITAI_QWEN21_ASPECTS],
+    });
+    expect(byField.get("negativePrompt")).toMatchObject({ type: "string", reserved: true });
+    expect(byField.get("negativePrompt")?.default).toBeUndefined();
+    expect(byField.get("prompt")).toMatchObject({ type: "string", required: true, reserved: true });
+    // The `description` is hint copy beside a separately rendered default, so it
+    // never restates one.
+    expect(byField.get("scheduler")?.description).toBeUndefined();
+  });
+
+  it("is the unique ordered entry after every earlier migration and carries no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number; breakpoints: boolean }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === QWEN21_MIGRATION_TAG);
+    expect(entry).toMatchObject({ idx: 151, breakpoints: true });
+    expect(journal.entries.filter((candidate) => candidate.idx === 151)).toHaveLength(1);
+    // The migrator skips an entry stamped below one a database already applied,
+    // so this must be later than the whole history, not just its predecessor.
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 151).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0151_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+describe.skipIf(!ready)("migration 0151 — guards over an existing row", () => {
+  const OPERATOR_ID = "imgmdlcivqwen21operatora";
+
+  afterAll(async () => {
+    if (!ready) return;
+    await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
+    if (!(await qwen21Intact())) await restoreQwen21Row();
+  });
+
+  it("re-running the shipped statement against the migrated state changes nothing, timestamps included", async () => {
+    const snapshot = () => db().select().from(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
+
+    const before = await snapshot();
+    expect(before).toHaveLength(1);
+    await reapplyQwen21Seed();
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("preserves an operator's curated row for the slug rather than overwriting it", async () => {
+    // Both guards must be no-ops here: `WHERE NOT EXISTS` on the slug, and
+    // `ON CONFLICT ("slug") DO NOTHING` behind it. A seed that re-asserted its
+    // values would undo a reference cap or a label an operator chose.
+    await db().delete(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
+    await db()
+      .insert(imageModels)
+      .values({
+        id: OPERATOR_ID,
+        slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+        label: "Qwen Image 2.1 (operator-tuned)",
+        canGenerate: true,
+        canEdit: true,
+        referenceField: "images",
+        referenceArity: "array",
+        maxReferences: 4,
+        probedVersionId: CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+      });
+
+    await reapplyQwen21Seed();
+
+    const rows = await db()
+      .select({ id: imageModels.id, label: imageModels.label, maxReferences: imageModels.maxReferences })
+      .from(imageModels)
+      .where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
+    expect(rows).toEqual([{ id: OPERATOR_ID, label: "Qwen Image 2.1 (operator-tuned)", maxReferences: 4 }]);
+    // And the seeded id is genuinely absent rather than written as a second row.
+    expect(await qwen21Intact()).toBe(false);
+
+    await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
+    await restoreQwen21Row();
+    expect(await qwen21Intact()).toBe(true);
   });
 });
