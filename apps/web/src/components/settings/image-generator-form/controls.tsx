@@ -428,7 +428,7 @@ export function GeneratorControls({
                     )}
                   </Field>
                   {selectedLora !== null ? (
-                    <Field label={labels.loraScale} hint={reservedFieldHint(selectedModel, bindings.loraScale?.field) || undefined}>
+                    <Field label={labels.loraScale} hint={reservedFieldHint(selectedModel, bindings.loraScale?.field).trim() || undefined}>
                       {(id) => (
                         <Input
                           id={id}
