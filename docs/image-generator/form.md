@@ -49,10 +49,10 @@ not image-model endpoints, so the model type and provider suffix do not apply to
   a bound field can be a transport alias (the LoRA pair's `civitai_lora_version` /
   `civitai_lora_strength` travel inside the wire `loras` map), or compose into a different payload
   shape depending on the operation (a resolution tier goes out as `width`/`height` on a create).
-  The normalized English meaning that used to sit in the label moves into the hint instead,
-  alongside whatever the binding itself declares (its range, worded `Range min–max` rather than
-  `Provider range`, since a band can be Vesper's own cost rail rather than the provider's real
-  ceiling) and whatever "blank sends" fact is actually knowable for that control: Vesper's own
+  The normalized English meaning lives in the hint, alongside whatever the binding itself
+  declares (its range, worded `Range min–max`, since a band can be Vesper's own cost rail rather
+  than the provider's real ceiling) and whatever "blank sends" fact is actually knowable for that
+  control: Vesper's own
   reviewed default when one exists for this control on this model
   (`withReviewedProfileDefaults`/`REVIEWED_IMAGE_QUALITY` — the same table the Image Generator's
   own synthetic bench profile is built through), printed as `Blank sends Vesper's reviewed
