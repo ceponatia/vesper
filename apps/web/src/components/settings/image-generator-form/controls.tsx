@@ -63,7 +63,7 @@ export function AdvancedInputField({
       <Field label={descriptor.field} hint={hint}>
         {(id) => (
           <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
-            <option value="">— Provider default —</option>
+            <option value="">— Default —</option>
             {options.map((option) => (
               <option key={option} value={option}>
                 {option}
@@ -325,7 +325,7 @@ export function GeneratorControls({
                       value={fastMode}
                       onChange={(e) => setFastMode(e.target.value as "" | "on" | "off")}
                     >
-                      <option value="">— Provider default —</option>
+                      <option value="">— Default —</option>
                       <option value="on">On</option>
                       <option value="off">Off</option>
                     </Select>
@@ -360,7 +360,7 @@ export function GeneratorControls({
                       value={resolution}
                       onChange={(e) => setResolution(e.target.value as ImageResolutionTier | "")}
                     >
-                      <option value="">— Provider default —</option>
+                      <option value="">— Default —</option>
                       {offeredResolutionTiers(bindings.resolutionTier).map((tier) => (
                         <option key={tier} value={tier}>
                           {tier}

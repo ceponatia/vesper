@@ -1,4 +1,5 @@
 import type { ImageModel } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import {
   CIVITAI_CFG_SCALE_FIELD,
@@ -37,15 +38,6 @@ import {
  * never claims one as executed.
  */
 
-/**
- * The registry slug this lane serves.
- *
- * `@vesper/image-models` exports the same string as
- * `CIVITAI_QWEN_IMAGE_21_SLUG`; this module defines it locally so the transport
- * builds without that registration, and switches to the package export when
- * both are integrated, so the provider mapping and this lane share one spelling.
- */
-export const CIVITAI_QWEN_IMAGE_21_SLUG = "civitai/qwen-image-2.1";
 
 /** The hosted checkpoint's Civitai model-version id — the catalog row's `probed_version_id`. */
 export const CIVITAI_QWEN_IMAGE_21_VERSION_ID = "3352534";

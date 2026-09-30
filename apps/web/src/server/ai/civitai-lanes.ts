@@ -1,5 +1,5 @@
 import type { ImageModel } from "@vesper/image-core";
-import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG, CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import {
   CIVITAI_KLEIN_LEGACY_VERSION_ID,
@@ -7,7 +7,6 @@ import {
   runCivitaiLegacyKleinImageModel,
 } from "./civitai-legacy-runtime";
 import {
-  CIVITAI_QWEN_IMAGE_21_SLUG,
   CIVITAI_QWEN_IMAGE_21_VERSION_ID,
   civitaiQwen21SentShape,
   previewCivitaiQwen21Request,

@@ -3,6 +3,7 @@ import path from "node:path";
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ImageExecutionContext } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { createReplicateClient, DEFAULT_PREDICTION_TIMEOUT_MS, type ProbeResult } from "@vesper/image-replicate";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
@@ -13,7 +14,6 @@ import {
   CIVITAI_QWEN21_RESOLUTION_TIERS,
   CIVITAI_QWEN21_SAMPLERS,
   CIVITAI_QWEN21_SCHEDULERS,
-  CIVITAI_QWEN_IMAGE_21_SLUG,
   CIVITAI_QWEN_IMAGE_21_VERSION_ID,
 } from "../ai";
 import { db, imageLoras, imageModelProfiles, imageModels } from "../db";

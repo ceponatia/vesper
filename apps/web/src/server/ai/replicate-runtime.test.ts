@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { imageModelSchema } from "@vesper/image-core";
-import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG } from "@vesper/image-models";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG, CIVITAI_QWEN_IMAGE_21_SLUG, FAL_QWEN3_EDIT_SLUG } from "@vesper/image-models";
 import {
   DEFAULT_PREDICTION_TIMEOUT_MS,
   MAX_PREDICTION_TIMEOUT_MS,
@@ -10,7 +10,6 @@ import { CIVITAI_KLEIN_LEGACY_VERSION_ID } from "./civitai-legacy-runtime";
 import {
   CIVITAI_QWEN21_SAMPLERS,
   CIVITAI_QWEN21_SCHEDULERS,
-  CIVITAI_QWEN_IMAGE_21_SLUG,
   CIVITAI_QWEN_IMAGE_21_VERSION_ID,
 } from "./civitai-qwen21-runtime";
 import { CIVITAI_KLEIN_4B_VERSION_ID } from "./civitai-runtime";

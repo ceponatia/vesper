@@ -114,8 +114,11 @@ multiple of 32 and at most 2048:
 
 - An edit sends the tier as `resolution` — an output pixel budget of 1024 (1K)
   or 2048 (2K). The provider derives an edit's `width` and `height` from the
-  reference's aspect and ignores an explicit pair, so an edit sends none and the
-  aspect control is inert there.
+  reference's aspect and ignores an explicit pair, so an edit sends none. A
+  chosen aspect is not a provider input on an edit: the render path applies it
+  afterwards as Vesper's own crop of the reference-shaped output, the same
+  post-render crop every lane performs
+  ([../../images/providers/render-intents.md](../../images/providers/render-intents.md)).
 - The checkpoint's native non-square 2K sizes exceed Civitai's 2048 cap; the 2K
   column is the largest 32-aligned fit of each ratio.
 
