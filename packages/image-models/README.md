@@ -64,7 +64,9 @@ work rather than the first one somebody happened to list.
 
 `adapterForImageModel(slug)` resolves through the model's **base** slug, so a
 row pinned to `owner/name:version` for reproducibility keeps its family
-behavior. The Qwen family, the FLUX.2 klein bench-onboarding endpoints and the
+behavior — for Replicate pins only: a Vesper-owned Civitai or fal identity is
+registered verbatim and a `:`-suffixed spelling of one resolves nothing
+([docs/image-models/README.md](../../docs/image-models/README.md) owns the rule). The Qwen family, the FLUX.2 klein bench-onboarding endpoints and the
 FLUX.1 Kontext Dev endpoint and both Seedream endpoints are registered; the
 production Flux checkpoints, Wan and SDXL use the generic path.
 

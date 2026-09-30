@@ -2,7 +2,8 @@
 
 **Slug:** `civitai/qwen-image-2.1`
 
-**Provenance:** probed 2026-09-30 against pinned version `3352534`.
+**Provenance:** probed 2026-09-30 against hosted checkpoint version `3352534` — the
+row's identity; the workflow itself pins no checkpoint (§Provider identity).
 
 Civitai hosts Qwen Image 2.1 — a 7B single-stream DiT with a Qwen3-VL text
 encoder — on its Orchestration v2 comfy lane. One checkpoint generates from a
