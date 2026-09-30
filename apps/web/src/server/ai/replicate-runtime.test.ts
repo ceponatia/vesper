@@ -456,11 +456,12 @@ describe("provider-aware image routing", () => {
     });
     expect(create.sentShape).toEqual({ field: "width,height", value: "2048x1344" });
 
+    // An edit takes no output shape: the provider sizes it from the reference.
     const edit = previewImageModelRequest({
       model: qwen21Model,
       prompt: "change the jacket",
       referenceCount: 2,
-      aspect: "3:2",
+      aspect: null,
       controlInput: { resolution: "2K" },
     });
     expect(edit.request).toMatchObject({

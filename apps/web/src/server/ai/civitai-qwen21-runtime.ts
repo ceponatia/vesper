@@ -29,7 +29,8 @@ import {
  * edits: zero references send `createImage` with an explicit `width`/`height`,
  * and one to ten send `editImage` with `images` and a `resolution` pixel
  * budget — on edit the provider derives the output shape from the reference,
- * so an explicit width/height pair is ignored there and none is sent.
+ * so an explicit width/height pair is ignored there and none is sent. A chosen
+ * output shape on an edit is refused rather than recorded and not applied.
  *
  * The workflow omits `diffusionModel`, as Civitai's own generator does for the
  * hosted default checkpoint (Civitai model 2954443, version 3352534). That
@@ -285,8 +286,8 @@ export function validateCivitaiQwen21Request(model: Pick<ImageModel, "slug">, re
     throw new Error(`${LANE_NAME} LoRA strength must be between ${String(strengthBand.minimum)} and ${String(strengthBand.maximum)}`);
   }
   const sampling = resolveCivitaiQwen21Sampling(request.controlInput);
-  // Judged on both operations so a value outside the row's aspects is refused
-  // rather than silently dropped; only create sends it.
+  // Membership is judged on every request. Whether a chosen aspect may be sent
+  // at all depends on the reference count, which only the builder knows.
   civitaiQwen21Dimensions(request.aspect, sampling.resolution);
 }
 
@@ -299,6 +300,13 @@ export function civitaiQwen21Workflow(
   validateCivitaiQwen21Request(model, request);
   if (references.length > MAX_REFERENCES) {
     throw new Error(`${LANE_NAME} accepts at most ${String(MAX_REFERENCES)} reference images`);
+  }
+  // Refused, not ignored. An edit sends no size — the provider sizes it from
+  // the reference and ignores an explicit width/height — and a ratio in the
+  // lane's supported set needs no local crop, so a chosen shape would be
+  // neither sent nor applied while the run record still claimed it.
+  if (references.length > 0 && request.aspect !== null && request.aspect !== undefined) {
+    throw new Error(`${LANE_NAME} sizes an edit from its reference; clear the output shape or remove the references`);
   }
   const seed = request.controlInput?.seed;
   const sampling = resolveCivitaiQwen21Sampling(request.controlInput);
