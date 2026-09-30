@@ -17,6 +17,20 @@ export type CivitaiCode = `civitai_http_${number}`
   | "civitai_output_empty"
   | "civitai_output_transport_failure";
 
+/**
+ * A stable reason a provider validation refusal carries, retained in place of
+ * the provider's own sentence.
+ *
+ * `resource_not_enabled`: Civitai refused a selected model version — a LoRA or
+ * a checkpoint pin — because it is not enabled for generation (the
+ * `canGenerate` flag on `GET /api/v1/model-versions/mini/{id}`). The provider
+ * answers HTTP 400 with `errors.messages[]` naming the resource in prose, and
+ * that prose is not retained; this token is what tells the operator the request
+ * was well-formed and the resource itself is what the provider will not run.
+ * Measured 2026-09-30 on every sampled Qwen Image 2.1 LoRA.
+ */
+export type CivitaiValidationReason = "resource_not_enabled";
+
 export interface CivitaiFailure {
   code: CivitaiCode;
   retry: CivitaiRetryDisposition;
@@ -24,7 +38,13 @@ export interface CivitaiFailure {
   httpStatus?: number;
   validationPaths?: readonly string[];
   automaticRetriesExhausted?: boolean;
+  reason?: CivitaiValidationReason;
 }
+
+const VALIDATION_REASON_TEXT: Record<CivitaiValidationReason, string> = {
+  resource_not_enabled:
+    "Civitai has not enabled a selected resource for generation; choose a generation-enabled LoRA or model version.",
+};
 
 const DOCUMENTED_ASYNC_REASONS = new Set([
   "no_provider_available",
@@ -36,6 +56,7 @@ const DOCUMENTED_ASYNC_REASONS = new Set([
 ]);
 
 function messageFor(failure: CivitaiFailure): string {
+  const reason = failure.reason ? ` reason=${failure.reason}: ${VALIDATION_REASON_TEXT[failure.reason]}` : "";
   const paths = failure.validationPaths?.length ? ` paths=${failure.validationPaths.join(",")}.` : "";
   const retry = failure.retry === "automatic"
     ? failure.automaticRetriesExhausted ? " Automatic read retries are exhausted; the provider is temporarily unavailable." : " The provider is temporarily unavailable; Vesper retries this read automatically."
@@ -44,7 +65,7 @@ function messageFor(failure: CivitaiFailure): string {
       : failure.retry === "reconcile"
         ? " Refresh workflow status before deciding whether to replace it."
         : " Do not repeat this request with the same input.";
-  return `Civitai ${failure.stage.replaceAll("_", " ")} failed (${failure.code}; retry=${failure.retry}).${paths}${retry}`;
+  return `Civitai ${failure.stage.replaceAll("_", " ")} failed (${failure.code}; retry=${failure.retry}).${reason}${paths}${retry}`;
 }
 
 /** Provider-facing failure with a closed, redacted code and retry disposition. */
@@ -55,6 +76,7 @@ export class CivitaiError extends Error implements CivitaiFailure {
   readonly httpStatus: number | undefined;
   readonly validationPaths: readonly string[] | undefined;
   readonly automaticRetriesExhausted: boolean | undefined;
+  readonly reason: CivitaiValidationReason | undefined;
 
   constructor(failure: CivitaiFailure) {
     super(messageFor(failure));
@@ -65,6 +87,7 @@ export class CivitaiError extends Error implements CivitaiFailure {
     this.httpStatus = failure.httpStatus;
     this.validationPaths = failure.validationPaths;
     this.automaticRetriesExhausted = failure.automaticRetriesExhausted;
+    this.reason = failure.reason;
   }
 }
 
@@ -74,6 +97,7 @@ export function civitaiHttpFailure(
   readOnly = true,
   validationPaths: readonly string[] = [],
   automaticRetriesExhausted = false,
+  reason?: CivitaiValidationReason,
 ): CivitaiError {
   const retry: CivitaiRetryDisposition = (status === 429 || status >= 500 && status <= 599)
     ? readOnly ? "automatic" : "deliberate"
@@ -81,7 +105,10 @@ export function civitaiHttpFailure(
       ? "reconcile"
       : "never";
   const code = `civitai_http_${String(status)}` as `civitai_http_${number}`;
-  return new CivitaiError({ code, retry, stage, httpStatus: status, validationPaths, automaticRetriesExhausted });
+  return new CivitaiError({
+    code, retry, stage, httpStatus: status, validationPaths, automaticRetriesExhausted,
+    ...(reason === undefined ? {} : { reason }),
+  });
 }
 
 export function civitaiTransportFailure(
@@ -148,6 +175,27 @@ export function civitaiReasonCodes(value: unknown): string[] {
 
 
 const VALIDATION_PATH = /^[a-z][a-z0-9_]{0,63}(?:(?:\.[a-z][a-z0-9_]{0,63})|(?:\[(?:0|[1-9]\d*)\]))*$/;
+
+const RESOURCE_NOT_ENABLED = /is not enabled for generation/i;
+const MAX_SCANNED_VALIDATION_MESSAGES = 20;
+
+/**
+ * The stable reason an RFC7807 validation body carries, read from its
+ * `errors.messages[]` prose and returned as a token — never the prose itself,
+ * which names the provider's resource and version in free text.
+ */
+export function civitaiValidationReason(value: unknown): CivitaiValidationReason | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const errors = (value as Record<string, unknown>).errors;
+  if (typeof errors !== "object" || errors === null || Array.isArray(errors)) return undefined;
+  const messages = (errors as Record<string, unknown>).messages;
+  if (!Array.isArray(messages)) return undefined;
+  return messages
+    .slice(0, MAX_SCANNED_VALIDATION_MESSAGES)
+    .some((message) => typeof message === "string" && RESOURCE_NOT_ENABLED.test(message))
+    ? "resource_not_enabled"
+    : undefined;
+}
 
 /** Retain field locations from RFC7807 errors maps, never their untrusted values. */
 export function civitaiValidationPaths(value: unknown): string[] {

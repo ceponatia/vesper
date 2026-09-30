@@ -13,4 +13,5 @@ export * from "./errors";
 export * from "./replicate-runtime";
 export * from "./fal-runtime";
 export * from "./civitai-runtime";
+export * from "./civitai-qwen21-runtime";
 export * from "./image-providers";

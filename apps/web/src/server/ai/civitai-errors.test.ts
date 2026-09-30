@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyImageFailureMessage } from "@vesper/image-core";
-import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths } from "./civitai-errors";
+import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 describe("Civitai error contract", () => {
   it("classifies HTTP failures without provider response text", () => {
@@ -79,5 +79,41 @@ describe("Civitai error contract", () => {
     expect(civitaiReasonCodes([" ", "\n"])).toEqual([]);
     expect(JSON.stringify(reasons)).not.toContain("secret");
     expect(JSON.stringify(reasons)).not.toContain("prompt=");
+  });
+
+  /**
+   * PROTECTS: a resource Civitai has not enabled for generation (every Qwen
+   * Image 2.1 LoRA on 2026-09-30) surfaces as a stable reason token on the
+   * `civitai_http_400`, so an operator learns WHY the request was refused while
+   * the provider's sentence — which names the resource — is still never kept.
+   */
+  it("retains resource_not_enabled from a 400 validation body without its prose", () => {
+    const body = {
+      title: "One or more validation errors occurred.",
+      errors: {
+        messages: [
+          "Private Test LoRA - v1.0 is not enabled for generation. Please contact support@civitai.com if you believe this to be an error.",
+        ],
+      },
+    };
+
+    expect(civitaiValidationReason(body)).toBe("resource_not_enabled");
+    const failure = civitaiHttpFailure(400, "preflight", false, civitaiValidationPaths(body), false, civitaiValidationReason(body));
+    expect(failure).toMatchObject({
+      code: "civitai_http_400", retry: "never", stage: "preflight", reason: "resource_not_enabled",
+    });
+    expect(failure.message).toContain("reason=resource_not_enabled");
+    expect(failure.message).toContain("paths=messages");
+    expect(failure.message).not.toContain("Private Test LoRA");
+    expect(failure.message).not.toContain("support@civitai.com");
+    // Not a moderation verdict and not worth an automatic retry.
+    expect(classifyImageFailureMessage(failure.message)).toBe("other");
+
+    // Only the documented sentence earns the token, and only from a list.
+    expect(civitaiValidationReason({ errors: { messages: ["prompt must not exceed 10000 characters"] } })).toBeUndefined();
+    expect(civitaiValidationReason({ errors: { messages: "X is not enabled for generation" } })).toBeUndefined();
+    expect(civitaiValidationReason({ detail: "X is not enabled for generation" })).toBeUndefined();
+    expect(civitaiValidationReason(null)).toBeUndefined();
+    expect(civitaiHttpFailure(400, "preflight", false).reason).toBeUndefined();
   });
 });

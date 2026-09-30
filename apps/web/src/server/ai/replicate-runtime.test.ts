@@ -7,6 +7,12 @@ import {
   providerInputViolations,
 } from "@vesper/image-replicate";
 import { CIVITAI_KLEIN_LEGACY_VERSION_ID } from "./civitai-legacy-runtime";
+import {
+  CIVITAI_QWEN21_SAMPLERS,
+  CIVITAI_QWEN21_SCHEDULERS,
+  CIVITAI_QWEN_IMAGE_21_SLUG,
+  CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+} from "./civitai-qwen21-runtime";
 import { CIVITAI_KLEIN_4B_VERSION_ID } from "./civitai-runtime";
 import {
   disableSafetyChecker,
@@ -360,5 +366,140 @@ describe("provider-aware image routing", () => {
       },
     });
     expect(urls[1]).toContain("https://orchestration.civitai.com/v2/consumer/workflows?whatif=true&wait=0");
+  });
+
+  /**
+   * Qwen Image 2.1 rides the same provider branch as Klein, so these cases pin
+   * that the ONE Civitai entry picks the lane from the slug: the 2.1 row reaches
+   * the comfy workflow and the Klein row still reaches flux2.
+   */
+  const qwen21Model = imageModelSchema.parse({
+    id: "civitai-qwen21",
+    slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+    label: "Qwen Image 2.1 (Civitai)",
+    canGenerate: true,
+    canEdit: true,
+    referenceField: "images",
+    maxReferences: 10,
+    probedVersionId: CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+  });
+
+  it("dispatches a Qwen Image 2.1 row to the comfy lane and a Klein row to flux2", async () => {
+    withEnv({ CIVITAI_API_TOKEN: "civitai_live" });
+    const inputs: Record<string, unknown>[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/v2/consumer/workflows?")) throw new Error(`unexpected Civitai URL: ${href}`);
+      const body = JSON.parse(String(init?.body)) as {
+        allowMatureContent: boolean;
+        currencies: string[];
+        upgradeMode: string;
+        steps: { input: Record<string, unknown> }[];
+      };
+      const step = body.steps[0];
+      if (!step) throw new Error("expected Civitai v2 image step");
+      inputs.push(step.input);
+      return Response.json({
+        id: "estimate-insufficient",
+        status: "unassigned",
+        allowMatureContent: body.allowMatureContent,
+        currencies: body.currencies,
+        upgradeMode: body.upgradeMode,
+        transactions: { insufficientBuzz: true },
+        steps: [{ $type: "imageGen", input: { ...step.input, modelVariant: "klein" }, output: { images: [] } }],
+      });
+    });
+
+    const qwen21 = await replicateClient().runRegistryImageModel(qwen21Model, {
+      prompt: "adult studio portrait",
+      aspect: "3:2",
+      versionId: CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+    });
+    const klein = await replicateClient().runRegistryImageModel(civitaiModel, {
+      prompt: "adult studio portrait",
+      aspect: "2:3",
+      versionId: CIVITAI_KLEIN_4B_VERSION_ID,
+    });
+
+    expect(qwen21).toMatchObject({ ok: false, error: expect.stringMatching(/insufficient yellow Buzz/i) as unknown });
+    expect(klein).toMatchObject({ ok: false, error: expect.stringMatching(/insufficient yellow Buzz/i) as unknown });
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toMatchObject({
+      engine: "comfy", ecosystem: "qwen", model: "2.1", operation: "createImage", width: 1216, height: 832,
+    });
+    expect(inputs[1]).toMatchObject({ engine: "flux2", model: "klein", modelVersion: "4b" });
+  });
+
+  it("refuses a Qwen Image 2.1 row whose stored version is not the hosted checkpoint, before any provider call", async () => {
+    withEnv({ CIVITAI_API_TOKEN: "civitai_live" });
+    const fetch = vi.spyOn(globalThis, "fetch");
+    const repinned = imageModelSchema.parse({ ...qwen21Model, probedVersionId: "9999999" });
+
+    const result = await replicateClient().runRegistryImageModel(repinned, { prompt: "studio portrait" });
+
+    expect(result).toEqual({ ok: false, error: "Civitai Qwen Image 2.1 has no supported stored transport version" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("previews a Qwen Image 2.1 create by size and an edit by pixel budget", () => {
+    const create = previewImageModelRequest({
+      model: qwen21Model,
+      prompt: "studio portrait",
+      referenceCount: 0,
+      aspect: "3:2",
+      controlInput: { resolution: "2K", sampler: "dpmpp_2m" },
+    });
+    expect(create.request).toMatchObject({
+      allowMatureContent: true,
+      currencies: ["yellow"],
+      upgradeMode: "manual",
+      steps: [{ input: { engine: "comfy", operation: "createImage", width: 2048, height: 1344, sampler: "dpmpp_2m" } }],
+    });
+    expect(create.sentShape).toEqual({ field: "width,height", value: "2048x1344" });
+
+    const edit = previewImageModelRequest({
+      model: qwen21Model,
+      prompt: "change the jacket",
+      referenceCount: 2,
+      aspect: "3:2",
+      controlInput: { resolution: "2K" },
+    });
+    expect(edit.request).toMatchObject({
+      steps: [{ input: {
+        operation: "editImage",
+        resolution: 2048,
+        images: ["https://placeholder.invalid/reference-1", "https://placeholder.invalid/reference-2"],
+      } }],
+    });
+    expect(edit.sentShape).toEqual({ field: "resolution", value: 2048 });
+  });
+
+  it("passes the Qwen Image 2.1 step input, edit pixel budget included, through the strict descriptor gate", () => {
+    // The row declares `resolution` as the 1K/2K TIER, while an edit's step
+    // input carries the pixel budget it became. The strict gate proves only what
+    // it can: a number under a string enum is unprovable, not wrong.
+    const descriptorModel = imageModelSchema.parse({
+      ...qwen21Model,
+      advancedCapabilities: {
+        providerInputs: [
+          { field: "prompt", type: "string", required: true, reserved: true },
+          { field: "steps", type: "integer", required: false, default: 40, minimum: 1, maximum: 60, reserved: true },
+          { field: "resolution", type: "enum", required: false, default: "1K", enumValues: ["1K", "2K"], reserved: true },
+          { field: "sampler", type: "enum", required: false, default: "euler", enumValues: [...CIVITAI_QWEN21_SAMPLERS], reserved: false },
+          { field: "scheduler", type: "enum", required: false, default: "simple", enumValues: [...CIVITAI_QWEN21_SCHEDULERS], reserved: false },
+        ],
+      },
+    });
+    const edit = previewImageModelRequest({
+      model: descriptorModel,
+      prompt: "change the jacket",
+      referenceCount: 1,
+      aspect: null,
+      controlInput: { resolution: "2K", sampler: "dpmpp_2m", scheduler: "karras" },
+    });
+    const providerInput = providerInputRequest(descriptorModel, edit.request);
+
+    expect(providerInput).toMatchObject({ prompt: "change the jacket", resolution: 2048, steps: 40, sampler: "dpmpp_2m" });
+    expect(providerInputViolations(descriptorModel, providerInput)).toEqual([]);
   });
 });
