@@ -113,16 +113,16 @@ multiple of 32 and at most 2048:
 | `9:16` | 576×1024  | 1152×2048 |
 
 - An edit sends the tier as `resolution` — an output pixel budget of 1024 (1K)
-  or 2048 (2K). The provider derives an edit's `width` and `height` from the
-  reference's aspect and ignores an explicit pair, so an edit sends none. A
-  chosen aspect is not a provider input on an edit: the render path applies it
-  afterwards as Vesper's own crop of the reference-shaped output, the same
-  post-render crop every lane performs
-  ([../../images/providers/render-intents.md](../../images/providers/render-intents.md)).
+  or 2048 (2K) — and no size: the provider derives an edit's `width` and
+  `height` from the reference and ignores an explicit pair, so the output keeps
+  the reference's aspect.
+- An edit with a chosen output shape is refused before any preflight. The shape
+  could be neither sent nor applied, so running it would record a shape the
+  output does not have; clear the shape or remove the references.
 - The checkpoint's native non-square 2K sizes exceed Civitai's 2048 cap; the 2K
   column is the largest 32-aligned fit of each ratio.
 - The 2048 cap bounds create inputs, not edit outputs: an edit at the 2K tier
-  from an 832×1216 reference was echoed at 1696×2464 (preflight, 2026-09-30),
+  from an 832×1216 reference was echoed at 1696×2464 at the provenance probe,
   priced at the same four-megapixel factor as a 2048×2048 create.
 
 ## Cost
@@ -169,8 +169,8 @@ Every preflight at the provenance probe settled `accountType: "yellow"` with
 - **Coverage at the provenance probe:** Civitai had enabled generation for none
   of 80 sampled Qwen 2.1 LoRAs (newest, highest-rated and most-downloaded,
   mature included) and for no community 2.1 checkpoint pin; each was refused as
-  not enabled for generation. The hosted default renders because the workflow
-  pins no checkpoint.
+  not enabled for generation. The hosted default passes the preflight because
+  the workflow pins no checkpoint.
 
 ## Evidence boundary
 
