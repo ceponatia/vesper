@@ -81,11 +81,11 @@ Klein 4B is a DISTILLED checkpoint: Black Forest Labs' reference usage for
 `Flux2KleinPipeline` is `guidance_scale=1.0, num_inference_steps=4`. Those are
 the defaults, and an operator overrides them per render.
 
-| Control | Provider field | Default | Band |
-| --- | --- | --- | --- |
-| `guidance` | `cfgScale` | 1 | 1–8 |
-| `steps` | `steps` | 4 | 1–40 |
-| `negativePrompt` | `negativePrompt` | unset | ≤ 2,000 characters |
+| Control          | Provider field   | Default | Band               |
+| ---------------- | ---------------- | ------- | ------------------ |
+| `guidance`       | `cfgScale`       | 1       | 1–8                |
+| `steps`          | `steps`          | 4       | 1–40               |
+| `negativePrompt` | `negativePrompt` | unset   | ≤ 2,000 characters |
 
 A value outside a band is refused rather than clamped. The bands are cost rails
 as well: the provider prices off both knobs, and guidance above 1 runs a second
