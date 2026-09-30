@@ -144,20 +144,45 @@ function reservedProviderInput(model: ImageModel | null, field: string | undefin
 }
 
 /**
+ * Whether a reserved descriptor's `default` is worth stating. `undefined` and
+ * `null` are absence; an empty string, an empty array, and an empty object
+ * are the shapes several provider schemas use for "nothing declared" rather
+ * than a real value (FLUX.2 klein's `negative_prompt` default is `""`) — none
+ * of those are a fact a hint should print. `0` and `false` ARE real defaults
+ * and stay.
+ */
+function isStatableDefault(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === "string") return value !== "";
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+
+/** A statable default as hint prose — unquoted for a string, so `"1K"` reads as `1K`, matching every other primitive's bare rendering. */
+function formatDefault(value: unknown): string {
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+/**
  * Hint copy appended after a normalized control's fixed meaning sentence: the
- * concrete value the row sends when the box is blank, then the row's own
- * reviewed note for that field — the same per-field capability-record fact
- * `advancedInputHint` already reads for a non-reserved field
- * (`image-generator-form/controls.tsx`), extended here to the reserved fields
- * a normalized control renders instead of an advanced input. Empty when the
- * row recorded neither, which is every model registered before this existed,
- * so every existing hint reads back unchanged.
+ * row's own reserved provider-input descriptor's `default`, worded neutrally
+ * (`Default: 1K.`) rather than claiming Vesper sends it — a blank box leaves
+ * the field OUT of the request; it is the PROVIDER that applies its own
+ * default, and several probed rows already declare one for a reserved field
+ * (FLUX.2 klein's `steps` default `4`, several Replicate rows' `height`,
+ * `max_images`, `disable_safety_checker`). Then the row's own reviewed note
+ * for that field, exactly as `advancedInputHint` already reads a
+ * non-reserved field's `description` (`image-generator-form/controls.tsx`),
+ * extended here to the reserved fields a normalized control renders instead
+ * of an advanced input. Empty when the row recorded neither a statable
+ * default nor a description.
  */
 export function reservedFieldHint(model: ImageModel | null, field: string | undefined): string {
   const descriptor = reservedProviderInput(model, field);
   if (descriptor === undefined) return "";
   const parts: string[] = [];
-  if (descriptor.default !== undefined) parts.push(`Blank sends ${JSON.stringify(descriptor.default)}.`);
+  if (isStatableDefault(descriptor.default)) parts.push(`Default: ${formatDefault(descriptor.default)}.`);
   if (descriptor.description !== undefined && descriptor.description.trim() !== "") {
     parts.push(descriptor.description.trim());
   }

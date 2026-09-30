@@ -49,14 +49,15 @@ not image-model endpoints, so the model type and provider suffix do not apply to
   never a Vesper-authored word. The normalized English meaning that used to sit in the label moves
   into the hint instead, alongside whatever the binding itself declares (its range, through the
   existing `bindingRangeHint`) and whatever the row's own **reserved** provider-input descriptor
-  records for that same field — a `default` renders as the concrete value blank sends, and a
-  `description` renders verbatim as a reviewed note, exactly like the Advanced-inputs editor already
-  reads a **non-reserved** descriptor's `description`. A resolution-tier control is the clearest
-  case: on a lane whose edit operation sizes the output from the reference rather than an explicit
-  aspect, that fact lives on the row's own `resolution`-bound descriptor and surfaces in the
-  Resolution control's hint, never as a special case in this form. The lookup is generic over every
-  model — keyed only by the field name a control is bound to — so nothing here ever branches on a
-  slug to decide what a hint says.
+  records for that same field — a `default` renders as `Default: <value>` (empty defaults — `""`,
+  `[]`, `{}` — are not shown, since that is the shape several provider schemas use for "nothing
+  declared"), and a `description` renders verbatim as a reviewed note, exactly like the
+  Advanced-inputs editor already reads a **non-reserved** descriptor's `description`. A
+  resolution-tier control is the clearest case: on a lane whose edit operation sizes the output
+  from the reference rather than an explicit aspect, that fact lives on the row's own
+  `resolution`-bound descriptor and surfaces in the Resolution control's hint, never as a special
+  case in this form. The lookup is generic over every model — keyed only by the field name a
+  control is bound to — so nothing here ever branches on a slug to decide what a hint says.
 - **The LoRA picker** offers every enabled library row, and pre-fills one case: selecting
   `qwen/qwen-image-edit-2511` fills in the curated "Qwen Image Edit 2511 NSFW all inclusive
   v2.0" row once, because the Generator mirrors the production intimate pairing so an operator
