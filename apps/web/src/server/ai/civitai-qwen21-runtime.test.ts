@@ -142,12 +142,12 @@ describe("Civitai Qwen Image 2.1 workflow", () => {
   it("edits with the references, a pixel budget from the tier, and no width or height", () => {
     const body = civitaiQwen21Workflow(
       MODEL,
-      { ...request, aspect: "16:9", controlInput: { resolution: "2K", seed: 7 } },
+      { ...request, controlInput: { resolution: "2K", seed: 7 } },
       TWO_REFERENCES,
       { [QWEN21_LORA_AIR]: 0.8 },
     );
-    // The aspect is inert on edit: the provider follows the reference, and an
-    // explicit width/height pair would be ignored, so none is sent.
+    // The provider sizes an edit from the reference and ignores an explicit
+    // width/height pair, so none is sent.
     expect(body.steps[0].input).toEqual({
       engine: "comfy",
       ecosystem: "qwen",
@@ -168,6 +168,29 @@ describe("Civitai Qwen Image 2.1 workflow", () => {
     expect(civitaiQwen21Workflow(MODEL, request, TWO_REFERENCES.slice(0, 1)).steps[0].input).toMatchObject({
       operation: "editImage", resolution: 1024,
     });
+  });
+
+  /**
+   * PROTECTS: a shape the operator chose on an edit is refused before spend
+   * rather than recorded and silently not applied. An edit sends no size, and
+   * a ratio in the row's supported set needs no local crop, so the output kept
+   * the reference's aspect while the run record claimed the chosen one.
+   */
+  it("refuses a chosen output shape on an edit, in the workflow and the preview, while a create still sizes from it", () => {
+    const refusal = /sizes an edit from its reference; clear the output shape or remove the references/;
+    expect(() => civitaiQwen21Workflow(MODEL, { ...request, aspect: "16:9" }, TWO_REFERENCES)).toThrow(refusal);
+    // The row's own default ratio is still a choice: only "no shape" passes.
+    expect(() => civitaiQwen21Workflow(MODEL, { ...request, aspect: "1:1" }, TWO_REFERENCES.slice(0, 1))).toThrow(refusal);
+    expect(() => previewCivitaiQwen21Request(MODEL, { ...request, aspect: "16:9" }, 2)).toThrow(refusal);
+
+    expect(civitaiQwen21Workflow(MODEL, { ...request, aspect: null }, TWO_REFERENCES).steps[0].input)
+      .toMatchObject({ operation: "editImage", resolution: 1024 });
+    expect(previewCivitaiQwen21Request(MODEL, { ...request, aspect: null }, 2))
+      .toMatchObject({ steps: [{ input: { operation: "editImage", resolution: 1024 } }] });
+    expect(civitaiQwen21Workflow(MODEL, { ...request, aspect: "3:4" }).steps[0].input)
+      .toMatchObject({ operation: "createImage", width: 768, height: 1024 });
+    expect(previewCivitaiQwen21Request(MODEL, { ...request, aspect: "3:4" }, 0))
+      .toMatchObject({ steps: [{ input: { operation: "createImage", width: 768, height: 1024 } }] });
   });
 
   it("carries every operator sampling control under its wire name", () => {
@@ -355,7 +378,6 @@ describe("Civitai Qwen Image 2.1 transport", () => {
 
     const result = await runCivitaiQwen21ImageModel(MODEL, {
       ...request,
-      aspect: "3:4",
       controlInput: {
         seed: 9, cfgScale: 2, sampler: "dpmpp_2m", scheduler: "karras", negativePrompt: "blurry",
         civitai_lora_version: "3400001", civitai_lora_strength: 0.8,
@@ -445,6 +467,20 @@ describe("Civitai Qwen Image 2.1 transport", () => {
     // The provider accepts a 20B LoRA on this lane, so this read is the only
     // request that may happen: no what-if, no submit.
     expect(urls).toEqual(["https://civitai.com/api/v1/model-versions/3160956"]);
+  });
+
+  it("refuses an edit with a chosen output shape before any provider request", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch");
+
+    const result = await runCivitaiQwen21ImageModel(MODEL, { ...request, aspect: "16:9", references });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Civitai Qwen Image 2.1 sizes an edit from its reference; clear the output shape or remove the references",
+    });
+    // No preflight and no submit. (A selected LoRA's free metadata read runs
+    // before the workflow is built, so this case selects none.)
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("does not submit when the preflight echoes a different sampler", async () => {
