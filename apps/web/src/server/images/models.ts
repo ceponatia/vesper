@@ -414,6 +414,9 @@ export async function renderWithModel(
     model,
     aspect: typeof aspectValue === "string" ? aspectValue : null,
     ...(input.controlInput ? { controlInput: input.controlInput } : {}),
+    // An edit on a lane that sends a pixel budget instead of a size (Civitai
+    // Qwen Image 2.1) records that budget, not the create size it never sent.
+    referenceCount: references?.length ?? 0,
   });
   // Spread rather than assigned, so a run the provider never got a prediction id
   // (or never echoed a version, or never reached the transport's send) for

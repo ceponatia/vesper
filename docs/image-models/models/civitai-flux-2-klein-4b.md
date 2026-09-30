@@ -10,7 +10,10 @@ request policy for that variant.
 ## Owns / does not own
 
 - **Owns:** this endpoint's operation, variant identity, input limits, mature
-  policy, credentials, and evidence boundary.
+  policy, credentials, and evidence boundary, and the Civitai transport rules
+  every Civitai lane shares — the payment policy and the execution and
+  diagnostics sections below. [Qwen Image 2.1](civitai-qwen-image-2-1.md) owns
+  only its own lane.
 - **Does not own:** the [curated LoRA library](../../images/providers/loras.md),
   [catalog lifecycle](../../images/providers/registry.md), or
   [render/reference planning](../../images/providers/render-intents.md).
@@ -53,6 +56,10 @@ request policy for that variant.
   before a paid workflow is submitted.
 - A compatible curated LoRA reaches the provider's `loras` map as an AIR resource
   and its selected strength. The map and reference images coexist in one step.
+- Before any preflight, the LoRA's `GET https://civitai.com/api/v1/model-versions/{id}`
+  metadata must report `model.type` `LORA` and `baseModel` `Flux.2 Klein 4B`;
+  any other resource or family is refused before spend, naming what the
+  metadata reports.
 - A Civitai LoRA AIR identifies both its model and immutable model-version id;
   a bare download URL is not the workflow's LoRA input.
 - The prompt is limited to 1,000 characters. The adapter does not import
@@ -151,6 +158,11 @@ characters unchanged.
   plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
   backed off with jitter, and apply only to idempotent metadata or workflow-status reads; a paid submission and what-if
   POST are never repeated automatically.
+- A `civitai_http_400` whose RFC7807 `errors.messages[]` says a selected
+  resource "is not enabled for generation" also carries
+  `reason=resource_not_enabled`: the request was well formed, and Civitai will
+  not run that LoRA or checkpoint version (its `canGenerate` flag is false). The
+  provider's sentence, which names the resource, is not retained.
 - A documented `steps[].jobs[].reason` or `blockedReason` determines the async
   classification when present. A terminal workflow with no documented reason
   reports `civitai_async_unknown_terminal` and requires one deliberate

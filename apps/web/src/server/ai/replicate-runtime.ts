@@ -9,18 +9,12 @@ import {
 } from "@vesper/image-replicate";
 import { imageAspectInputField, type ImageModel, type ImageRenderPolicy } from "@vesper/image-core";
 import { imageModelProvider } from "@vesper/image-models";
+import { hasCivitai } from "./civitai-runtime";
 import {
-  CIVITAI_KLEIN_4B_VERSION_ID,
-  civitaiKleinDimensions,
-  hasCivitai,
-  previewCivitaiKleinRequest,
-  runCivitaiKleinImageModel,
-} from "./civitai-runtime";
-import {
-  CIVITAI_KLEIN_LEGACY_VERSION_ID,
-  previewCivitaiLegacyKleinRequest,
-  runCivitaiLegacyKleinImageModel,
-} from "./civitai-legacy-runtime";
+  civitaiImageModelSentShape,
+  previewCivitaiImageModelRequest,
+  runCivitaiImageModel,
+} from "./civitai-lanes";
 import {
   falQwen3PayloadFromUrls,
   hasFal,
@@ -100,21 +94,9 @@ export function replicateClient(): ReplicateClient {
     safetyCheckerDisabled: target.safetyCheckerDisabled,
     runRegistryImageModel: async (model, request, sink) => {
       const provider = imageModelProvider(model.slug);
-      if (provider === "civitai") {
-        if ((request.controlReferences?.length ?? 0) > 0) {
-          return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
-        }
-        if (request.versionId !== undefined && request.versionId !== model.probedVersionId) {
-          return { ok: false, error: "Civitai request version does not match its captured catalog version" };
-        }
-        if (model.probedVersionId === CIVITAI_KLEIN_LEGACY_VERSION_ID) {
-          return runCivitaiLegacyKleinImageModel(model, request);
-        }
-        if (model.probedVersionId === CIVITAI_KLEIN_4B_VERSION_ID) {
-          return runCivitaiKleinImageModel(model, request);
-        }
-        return { ok: false, error: "Civitai Klein has no supported stored transport version" };
-      }
+      // Every Civitai-provider row goes through the one Civitai entry, which
+      // picks the lane from the slug and the captured version.
+      if (provider === "civitai") return runCivitaiImageModel(model, request);
       if (isFalQwen3Slug(model.slug)) {
         if ((request.controlReferences?.length ?? 0) > 0) {
           return { ok: false, error: `${model.slug} does not expose dedicated structural image inputs` };
@@ -206,23 +188,21 @@ export function providerInputRequest(
     : request;
 }
 
-/** The provider field/value pair the final transport writes for image shape. */
+/**
+ * The provider field/value pair the final transport writes for image shape.
+ *
+ * `referenceCount` matters where the operation changes the shape field — Qwen
+ * Image 2.1 on Civitai sends a size to create and a pixel budget to edit — and
+ * is read as zero when absent.
+ */
 export function imageModelSentShape(input: {
   model: ImageModel;
   aspect: string | null;
   controlInput?: Readonly<Record<string, unknown>>;
+  referenceCount?: number;
 }): ImageModelSentShape {
   const provider = imageModelProvider(input.model.slug);
-  if (provider === "civitai") {
-    if (input.model.probedVersionId === CIVITAI_KLEIN_LEGACY_VERSION_ID) {
-      return { field: "aspectRatio", value: input.aspect ?? "1:1" };
-    }
-    if (input.model.probedVersionId !== CIVITAI_KLEIN_4B_VERSION_ID) {
-      throw new Error("Civitai Klein has no supported stored transport version");
-    }
-    const { width, height } = civitaiKleinDimensions(input.aspect);
-    return { field: "width,height", value: `${String(width)}x${String(height)}` };
-  }
+  if (provider === "civitai") return civitaiImageModelSentShape(input);
   if (provider === "fal") {
     const tier = input.controlInput?.["image_size"] === "2K" ? "2K" : "1K";
     return { field: "image_size", value: qwen3ImageSize(input.aspect, tier) };
@@ -236,39 +216,7 @@ export function imageModelSentShape(input: {
 export function previewImageModelRequest(input: PreviewImageModelRequest): PreviewedImageModelRequest {
   const provider = imageModelProvider(input.model.slug);
   if (provider === "civitai") {
-    if ((input.controlReferences?.length ?? 0) > 0) {
-      throw new Error(`${input.model.slug} does not expose dedicated structural image inputs`);
-    }
-    if (input.model.probedVersionId === CIVITAI_KLEIN_LEGACY_VERSION_ID) {
-      if (input.referenceCount > 0) {
-        throw new Error(`${input.model.slug} is registered for text-to-image generation only on its legacy version`);
-      }
-      return {
-        request: previewCivitaiLegacyKleinRequest(input.model, {
-          prompt: input.prompt,
-          aspect: input.aspect,
-          controlInput: input.controlInput,
-          versionId: CIVITAI_KLEIN_LEGACY_VERSION_ID,
-        }),
-        sentShape: imageModelSentShape(input),
-      };
-    }
-    if (input.model.probedVersionId !== CIVITAI_KLEIN_4B_VERSION_ID) {
-      throw new Error("Civitai Klein has no supported stored transport version");
-    }
-    return {
-      request: previewCivitaiKleinRequest(
-        input.model,
-        {
-          prompt: input.prompt,
-          aspect: input.aspect,
-          controlInput: input.controlInput,
-          versionId: input.model.probedVersionId ?? undefined,
-        },
-        input.referenceCount,
-      ),
-      sentShape: imageModelSentShape(input),
-    };
+    return { request: previewCivitaiImageModelRequest(input), sentShape: imageModelSentShape(input) };
   }
   if (provider === "fal") {
     if ((input.controlReferences?.length ?? 0) > 0) {

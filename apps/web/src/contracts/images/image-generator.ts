@@ -32,7 +32,7 @@ export const imageGeneratorRunStatusSchema = z.enum(imageGeneratorRunStatuses);
 export type ImageGeneratorRunStatus = (typeof imageGeneratorRunStatuses)[number];
 
 /** Conservative app cap on explicit primary references; the UI states it. */
-export const IMAGE_GENERATOR_MAX_PRIMARY = 6;
+export const IMAGE_GENERATOR_MAX_PRIMARY = 10;
 export const IMAGE_GENERATOR_PROMPT_MAX = 10_000;
 /** Advanced provider values are an escape hatch, not a payload builder. */
 export const IMAGE_GENERATOR_MAX_PROVIDER_INPUTS = 32;

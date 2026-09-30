@@ -3,7 +3,7 @@ import type { ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { civitaiApiToken } from "../images/lora-credentials";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiTransportFailure, civitaiValidationPaths } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -61,7 +61,7 @@ const CIVITAI_STEPS_RANGE = { minimum: 1, maximum: 40 } as const;
  * binding constraint is Vesper's own contract. An earlier 1000 here was copied
  * from the positive-prompt cap without provider evidence.
  */
-const CIVITAI_MAX_NEGATIVE_PROMPT_CHARS = 2000;
+export const CIVITAI_MAX_NEGATIVE_PROMPT_CHARS = 2000;
 
 /**
  * The sampling recipe the DISTILLED Klein 4B checkpoint was trained to expect.
@@ -110,15 +110,84 @@ const PENDING_STATUSES = new Set(["unassigned", "preparing", "scheduled", "proce
 const FAILED_STATUSES = new Set(["failed", "expired", "canceled"]);
 
 type JsonRecord = Record<string, unknown>;
-type KleinRequest = Pick<RegistryModelRequest, "prompt" | "aspect" | "controlInput" | "versionId">;
 
-export interface CivitaiKleinWorkflow {
+/** The request facts a lane validates and builds from; references travel separately. */
+export type CivitaiLaneRequest = Pick<RegistryModelRequest, "prompt" | "aspect" | "controlInput" | "versionId">;
+type KleinRequest = CivitaiLaneRequest;
+
+/**
+ * One Civitai orchestration workflow: the fixed payment and mature-content
+ * policy around exactly one `imageGen` step. Every lane sends this envelope;
+ * only the step input differs between engines.
+ */
+export interface CivitaiWorkflow {
   externalId: string;
   allowMatureContent: true;
   currencies: readonly ["yellow"];
   upgradeMode: "manual";
   tags: readonly ["vesper", "image-generator"];
   steps: readonly [{ $type: "imageGen"; input: JsonRecord }];
+}
+export type CivitaiKleinWorkflow = CivitaiWorkflow;
+
+/**
+ * The curated-LoRA family a lane accepts, judged against Civitai's own
+ * model-version metadata before any preflight or spend.
+ *
+ * Civitai's orchestrator does NOT enforce this itself: a Qwen-Image 20B LoRA
+ * submitted to the Qwen Image 2.1 lane was accepted and priced (measured
+ * 2026-09-30). A mis-curated library row would therefore render a LoRA trained
+ * for different weights under a record naming it, and this gate is the only
+ * thing that stops it.
+ */
+export interface CivitaiLoraFamily {
+  /** The exact `baseModel` the LoRA's `/api/v1/model-versions/{id}` metadata must report. */
+  readonly baseModel: string;
+  /** The AIR ecosystem segment: `urn:air:<airEcosystem>:lora:civitai:<modelId>@<versionId>`. */
+  readonly airEcosystem: string;
+  /** Operator-facing descriptions of sibling families a mis-curated row is likely to carry. */
+  readonly siblings?: Readonly<Record<string, string>>;
+}
+
+/**
+ * What one Civitai engine lane contributes beside the transport every lane
+ * shares — submit, what-if preflight, the workflow-policy echo, polling, blob
+ * download and diagnostics.
+ */
+export interface CivitaiLane {
+  /** Operator-facing name, used in every refusal the lane raises. */
+  readonly name: string;
+  readonly maxReferences: number;
+  readonly loraFamily: CivitaiLoraFamily;
+  /** Refuses (throws) a request this lane cannot send; never clamps. */
+  validate(model: Pick<ImageModel, "slug">, request: CivitaiLaneRequest): void;
+  /** The workflow this request becomes, references as data URLs and LoRAs as an AIR map. */
+  workflow(
+    model: Pick<ImageModel, "slug">,
+    request: CivitaiLaneRequest,
+    references: readonly string[],
+    loras?: Readonly<Record<string, number>>,
+  ): CivitaiWorkflow;
+  /**
+   * The lane-specific half of the preflight echo check: the engine identity and
+   * every sampling/shape field the lane sends. The shared half — seed, negative
+   * prompt, reference count and LoRA map — runs after it for every lane.
+   */
+  stepEcho(echoed: JsonRecord | null, wanted: JsonRecord): string | null;
+  /** The version the provider's echo confirms ran; absent when the echo cannot confirm one. */
+  readonly executedVersionId?: string;
+}
+
+/** Wrap one step input in the fixed workflow policy, with a fresh external id. */
+export function civitaiWorkflowEnvelope(input: JsonRecord): CivitaiWorkflow {
+  return {
+    externalId: randomUUID(),
+    allowMatureContent: true,
+    currencies: ["yellow"],
+    upgradeMode: "manual",
+    tags: ["vesper", "image-generator"],
+    steps: [{ $type: "imageGen", input }],
+  };
 }
 
 export interface CivitaiWorkflowResult {
@@ -175,7 +244,8 @@ function loraVersionId(value: unknown): string | null {
   }
 }
 
-function selectedLora(controls: KleinRequest["controlInput"]): { version: string; strength: number } | null {
+/** The curated LoRA a request selected, as its model-version id and strength; null when none. */
+export function civitaiSelectedLora(controls: CivitaiLaneRequest["controlInput"]): { version: string; strength: number } | null {
   const locator = controls?.[CIVITAI_LORA_VERSION_FIELD];
   const strength = controls?.[CIVITAI_LORA_STRENGTH_FIELD];
   if (locator === undefined && strength === undefined) return null;
@@ -250,7 +320,7 @@ export function validateCivitaiKleinRequest(model: Pick<ImageModel, "slug">, req
   if (seed !== undefined && (typeof seed !== "number" || !Number.isSafeInteger(seed))) {
     throw new Error("Civitai Klein seed must be a safe integer");
   }
-  selectedLora(request.controlInput);
+  civitaiSelectedLora(request.controlInput);
   resolveCivitaiKleinSampling(request.controlInput);
   civitaiKleinDimensions(request.aspect);
 }
@@ -265,35 +335,25 @@ export function civitaiKleinWorkflow(
   if (references.length > MAX_REFERENCES) throw new Error("Civitai Klein accepts at most 2 reference images");
   const seed = request.controlInput?.seed;
   const sampling = resolveCivitaiKleinSampling(request.controlInput);
-  return {
-    externalId: randomUUID(),
-    allowMatureContent: true,
-    currencies: ["yellow"],
-    upgradeMode: "manual",
-    tags: ["vesper", "image-generator"],
-    steps: [{
-      $type: "imageGen",
-      input: {
-        engine: "flux2",
-        model: "klein",
-        modelVersion: CIVITAI_KLEIN_4B_VERSION_ID,
-        operation: references.length > 0 ? "editImage" : "createImage",
-        prompt: request.prompt,
-        ...civitaiKleinDimensions(request.aspect),
-        quantity: 1,
-        cfgScale: sampling.cfgScale,
-        steps: sampling.steps,
-        sampleMethod: "euler",
-        schedule: "simple",
-        outputFormat: "jpeg",
-        enablePromptExpansion: false,
-        loras: loras ?? {},
-        ...(sampling.negativePrompt === null ? {} : { [CIVITAI_NEGATIVE_PROMPT_FIELD]: sampling.negativePrompt }),
-        ...(seed === undefined ? {} : { seed }),
-        ...(references.length === 0 ? {} : { images: references }),
-      },
-    }],
-  };
+  return civitaiWorkflowEnvelope({
+    engine: "flux2",
+    model: "klein",
+    modelVersion: CIVITAI_KLEIN_4B_VERSION_ID,
+    operation: references.length > 0 ? "editImage" : "createImage",
+    prompt: request.prompt,
+    ...civitaiKleinDimensions(request.aspect),
+    quantity: 1,
+    cfgScale: sampling.cfgScale,
+    steps: sampling.steps,
+    sampleMethod: "euler",
+    schedule: "simple",
+    outputFormat: "jpeg",
+    enablePromptExpansion: false,
+    loras: loras ?? {},
+    ...(sampling.negativePrompt === null ? {} : { [CIVITAI_NEGATIVE_PROMPT_FIELD]: sampling.negativePrompt }),
+    ...(seed === undefined ? {} : { seed }),
+    ...(references.length === 0 ? {} : { images: references }),
+  });
 }
 
 /** Metadata lookup happens only at send; previews identify that unresolved AIR dependency. */
@@ -306,7 +366,7 @@ export function previewCivitaiKleinRequest(
   if (!Number.isInteger(referenceCount) || referenceCount < 0 || referenceCount > MAX_REFERENCES) {
     throw new Error("Civitai Klein accepts zero, one, or two reference images");
   }
-  const selected = selectedLora(request.controlInput);
+  const selected = civitaiSelectedLora(request.controlInput);
   const references = Array.from({ length: referenceCount }, (_unused, index) =>
     `https://placeholder.invalid/reference-${String(index + 1)}`);
   return {
@@ -369,6 +429,7 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
     if (!response.ok) {
       const failure = civitaiHttpFailure(
         response.status, stage, method === "GET", civitaiValidationPaths(value), attempt >= MAX_GET_RETRIES,
+        response.status === 400 ? civitaiValidationReason(value) : undefined,
       );
       if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
         if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
@@ -423,7 +484,45 @@ export function parseCivitaiWorkflow(value: unknown, context = "Civitai workflow
   };
 }
 
-export function validateCivitaiPreflightEcho(actual: CivitaiWorkflowResult, expected: CivitaiKleinWorkflow): string | null {
+/**
+ * Klein's half of the echo check: the variant identity and every sampling and
+ * shape field the Klein builder sends.
+ */
+function kleinStepEcho(echoed: JsonRecord | null, wanted: JsonRecord): string | null {
+  if (!echoed || (echoed.modelVariant ?? echoed.model) !== "klein") {
+    return "Civitai preflight did not echo the requested Klein variant";
+  }
+  for (const key of ["engine", "modelVersion", "operation", "width", "height", "quantity", "cfgScale", "steps", "sampleMethod", "schedule", "outputFormat", "enablePromptExpansion"] as const) {
+    if (echoed[key] !== wanted[key]) return `Civitai preflight changed or omitted requested field ${key}`;
+  }
+  return null;
+}
+
+/** The Klein 4B lane: `engine: "flux2"`, `model: "klein"`, `modelVersion: "4b"`. */
+const CIVITAI_KLEIN_LANE: CivitaiLane = {
+  name: "Civitai Klein",
+  maxReferences: MAX_REFERENCES,
+  loraFamily: { baseModel: "Flux.2 Klein 4B", airEcosystem: "flux2" },
+  validate: validateCivitaiKleinRequest,
+  workflow: civitaiKleinWorkflow,
+  stepEcho: kleinStepEcho,
+  executedVersionId: CIVITAI_KLEIN_4B_VERSION_ID,
+};
+
+/**
+ * Whether a zero-Buzz what-if answer admits the paid submit of exactly the
+ * workflow that was asked for: sufficient yellow Buzz, the fixed workflow
+ * policy echoed back, then the lane's own step fields, then the fields every
+ * lane shares. Any difference refuses before spend.
+ *
+ * `lane` defaults to Klein so the Klein-only callers that predate the lane seam
+ * keep their meaning.
+ */
+export function validateCivitaiPreflightEcho(
+  actual: CivitaiWorkflowResult,
+  expected: CivitaiWorkflow,
+  lane: Pick<CivitaiLane, "stepEcho"> = CIVITAI_KLEIN_LANE,
+): string | null {
   if (actual.insufficient === true) return "Civitai billing: insufficient yellow Buzz; generation was not submitted";
   if (actual.insufficient === null) return "Civitai preflight did not confirm sufficient yellow Buzz; generation was not submitted";
   if (FAILED_STATUSES.has(actual.status) || actual.errors.length > 0) {
@@ -434,12 +533,9 @@ export function validateCivitaiPreflightEcho(actual: CivitaiWorkflowResult, expe
   }
   const wanted = expected.steps[0].input;
   const echoed = actual.input;
-  if (!echoed || (echoed.modelVariant ?? echoed.model) !== "klein") {
-    return "Civitai preflight did not echo the requested Klein variant";
-  }
-  for (const key of ["engine", "modelVersion", "operation", "width", "height", "quantity", "cfgScale", "steps", "sampleMethod", "schedule", "outputFormat", "enablePromptExpansion"] as const) {
-    if (echoed[key] !== wanted[key]) return `Civitai preflight changed or omitted requested field ${key}`;
-  }
+  const laneRefusal = lane.stepEcho(echoed, wanted);
+  if (laneRefusal) return laneRefusal;
+  if (!echoed) return "Civitai preflight did not echo the requested workflow input";
   if (wanted.seed !== undefined && echoed.seed !== wanted.seed) return "Civitai preflight changed the requested seed";
   // Checked by presence as well as value: the provider discards a negative
   // prompt it does not recognize instead of rejecting it, so an omission here is
@@ -457,21 +553,58 @@ export function validateCivitaiPreflightEcho(actual: CivitaiWorkflowResult, expe
   return null;
 }
 
-async function resolveLoras(request: KleinRequest, token: string): Promise<Record<string, number> | undefined> {
-  const selected = selectedLora(request.controlInput);
-  if (!selected) return undefined;
-  const value = await requestJson(`${MODEL_VERSIONS_URL}/${selected.version}`, { method: "GET" }, token, "lora_metadata");
-  const metadata = asRecord(value);
-  const model = asRecord(metadata?.model);
-  const modelId = metadata?.modelId;
-  if (!metadata || metadata.id !== Number(selected.version) || metadata.baseModel !== "Flux.2 Klein 4B" ||
-      model?.type !== "LORA" || typeof modelId !== "number" || !Number.isSafeInteger(modelId) || modelId < 1) {
-    throw new Error("Civitai LoRA metadata is not the requested Flux.2 Klein 4B LoRA; refusing before spend");
-  }
-  return { [`urn:air:flux2:lora:civitai:${String(modelId)}@${selected.version}`]: selected.strength };
+/**
+ * A short metadata token fit to name in a refusal, or null.
+ *
+ * Civitai's `baseModel` and `model.type` are catalog vocabulary ("Qwen 2.1",
+ * "LORA"), but they arrive from a provider response, so anything that is not
+ * plainly such a token is described rather than echoed.
+ */
+function civitaiMetadataToken(value: unknown): string | null {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,47}$/.test(value) ? value : null;
 }
 
-async function sendWorkflow(body: CivitaiKleinWorkflow, token: string, whatif: boolean): Promise<unknown> {
+/**
+ * The selected curated LoRA as this lane's AIR map entry, after proving from
+ * Civitai's own model-version metadata that it is a LoRA of the lane's family.
+ *
+ * Runs at send time only, before the what-if preflight: a refusal here costs
+ * one metadata read and no Buzz. The refusal names the family the metadata
+ * actually reports, because "wrong LoRA" is only actionable when the operator
+ * can see which family the curated row really points at.
+ */
+async function resolveLoras(
+  request: CivitaiLaneRequest,
+  token: string,
+  lane: Pick<CivitaiLane, "name" | "loraFamily">,
+): Promise<Record<string, number> | undefined> {
+  const selected = civitaiSelectedLora(request.controlInput);
+  if (!selected) return undefined;
+  const family = lane.loraFamily;
+  const value = await requestJson(`${MODEL_VERSIONS_URL}/${selected.version}`, { method: "GET" }, token, "lora_metadata");
+  const metadata = asRecord(value);
+  if (!metadata || metadata.id !== Number(selected.version)) {
+    throw new Error(`Civitai metadata did not describe LoRA model version ${selected.version}; refusing before spend`);
+  }
+  const type = asRecord(metadata.model)?.type;
+  if (type !== "LORA") {
+    const named = civitaiMetadataToken(type);
+    throw new Error(`Civitai model version ${selected.version} is ${named === null ? "not" : `a \`${named}\` resource, not`} a LoRA; refusing before spend`);
+  }
+  if (metadata.baseModel !== family.baseModel) {
+    const base = civitaiMetadataToken(metadata.baseModel);
+    const sibling = base === null ? undefined : family.siblings?.[base];
+    const actual = base === null ? "a LoRA for an unrecognized base model" : `a \`${base}\`${sibling === undefined ? "" : ` (${sibling})`} LoRA`;
+    throw new Error(`Civitai LoRA ${selected.version} is ${actual}; the ${lane.name} lane needs baseModel "${family.baseModel}"; refusing before spend`);
+  }
+  const modelId = metadata.modelId;
+  if (typeof modelId !== "number" || !Number.isSafeInteger(modelId) || modelId < 1) {
+    throw new Error(`Civitai metadata for LoRA ${selected.version} carried no usable model id; refusing before spend`);
+  }
+  return { [`urn:air:${family.airEcosystem}:lora:civitai:${String(modelId)}@${selected.version}`]: selected.strength };
+}
+
+async function sendWorkflow(body: CivitaiWorkflow, token: string, whatif: boolean): Promise<unknown> {
   return requestJson(`${WORKFLOWS_URL}?whatif=${String(whatif)}&wait=0`, {
     method: "POST",
     body: JSON.stringify(body),
@@ -629,23 +762,39 @@ async function downloadOutput(blobId: string, token: string): Promise<Buffer> {
 }
 
 export async function runCivitaiKleinImageModel(model: ImageModel, request: RegistryModelRequest): Promise<ReplicateImageResult> {
+  return runCivitaiLane(CIVITAI_KLEIN_LANE, model, request);
+}
+
+/**
+ * One render through one lane: refuse what the lane cannot send, gate the
+ * curated LoRA's family, preflight at zero Buzz, refuse any echo that differs
+ * from the request, then submit the identical workflow under a fresh external
+ * id, poll it inside the budget, and download the first usable blob.
+ */
+export async function runCivitaiLane(
+  lane: CivitaiLane,
+  model: ImageModel,
+  request: RegistryModelRequest,
+): Promise<ReplicateImageResult> {
   const token = civitaiApiToken();
   if (!token) return { ok: false, error: "Civitai API token is not configured" };
   let predictionId: string | undefined;
   try {
-    validateCivitaiKleinRequest(model, request);
-    if ((request.controlReferences?.length ?? 0) > 0) throw new Error("Civitai Klein does not expose dedicated structural image inputs");
-    if ((request.references?.length ?? 0) > MAX_REFERENCES) throw new Error("Civitai Klein accepts at most 2 reference images");
+    lane.validate(model, request);
+    if ((request.controlReferences?.length ?? 0) > 0) throw new Error(`${lane.name} does not expose dedicated structural image inputs`);
+    if ((request.references?.length ?? 0) > lane.maxReferences) {
+      throw new Error(`${lane.name} accepts at most ${String(lane.maxReferences)} reference images`);
+    }
     const references = (request.references ?? []).map((reference) =>
       `data:${reference.mediaType};base64,${reference.bytes.toString("base64")}`);
-    const loras = await resolveLoras(request, token);
-    const preflightRequest = civitaiKleinWorkflow(model, request, references, loras);
+    const loras = await resolveLoras(request, token, lane);
+    const preflightRequest = lane.workflow(model, request, references, loras);
     const preflight = parseCivitaiWorkflow(await sendWorkflow(preflightRequest, token, true), "Civitai generation preflight");
     if (preflight.insufficient === true) throw civitaiInsufficientBuzzFailure();
     if (FAILED_STATUSES.has(preflight.status) || preflight.errors.length > 0) {
       throw civitaiAsyncFailure(preflight.status, preflight.errors, preflight.blocked);
     }
-    const refusal = validateCivitaiPreflightEcho(preflight, preflightRequest);
+    const refusal = validateCivitaiPreflightEcho(preflight, preflightRequest, lane);
     if (refusal) return { ok: false, error: refusal };
 
     // Reusing a what-if externalId can retrieve the unexecuted estimate. Only
@@ -682,7 +831,7 @@ export async function runCivitaiKleinImageModel(model: ImageModel, request: Regi
       ok: true,
       image: await downloadOutput(image.id, token),
       predictionId,
-      executedVersionId: CIVITAI_KLEIN_4B_VERSION_ID,
+      ...(lane.executedVersionId === undefined ? {} : { executedVersionId: lane.executedVersionId }),
       sentReferenceCount: references.length,
     };
   } catch (error) {

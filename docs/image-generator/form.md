@@ -33,7 +33,7 @@ not image-model endpoints, so the model type and provider suffix do not apply to
 
 - **Primary references** appear only on a model that can edit. They enter the planner in caller
   order under the neutral `reference` role; an optional per-reference **purpose** is recorded
-  provenance only and never changes routing. Explicit primaries are capped at 6 app-side, further
+  provenance only and never changes routing. Explicit primaries are capped at 10 app-side, further
   bounded by the model's own reference capacity.
 - **Dedicated structural inputs** (pose / depth / edge / mask / control) appear only for the roles
   the version's probed `additionalImageInputs` bind to their own provider fields. An explicitly
@@ -44,6 +44,36 @@ not image-model endpoints, so the model type and provider suffix do not apply to
   stay deliberately absent, and the server refuses any that arrive: they are **provider** inputs
   asking one prediction to return a set, no registered version declares one, and the bench's own
   image count is a different request ([runs.md](runs.md) §Several images from one request).
+- **Every normalized control's label is the field it is bound to** in the active version's own
+  capability record (owner ruling 2026-09-30), not always the literal wire name a request sends —
+  a bound field can be a transport alias (the LoRA pair's `civitai_lora_version` /
+  `civitai_lora_strength` travel inside the wire `loras` map), or compose into a different payload
+  shape depending on the operation (a resolution tier goes out as `width`/`height` on a create).
+  The normalized English meaning lives in the hint, alongside whatever the binding itself
+  declares (its range, worded `Range min–max`, since a band can be Vesper's own cost rail rather
+  than the provider's real ceiling) and whatever "blank sends" fact is actually knowable for that
+  control: Vesper's own
+  reviewed default when one exists for this control on this model
+  (`withReviewedProfileDefaults`/`REVIEWED_IMAGE_QUALITY` — the same table the Image Generator's
+  own synthetic bench profile is built through), printed as `Blank sends Vesper's reviewed
+  <value>`; otherwise the row's own **reserved** provider-input descriptor's `default`, printed as
+  `Default: <value>` (empty defaults — `""`, `[]`, `{}` — are not shown, since that is the shape
+  several provider schemas use for "nothing declared"; the reviewed branch has no such gate, because
+  a reviewed empty string can be the deliberate value). Whichever fact is known REPLACES the
+  control's own generic "blank is the provider default" wording rather than sitting beside it —
+  printing both would state two different things about the same blank box, which is exactly how
+  `qwen/qwen-image-edit-2511` used to claim its probed `go_fast` default (`true`) while actually
+  sending its reviewed correction (`false`). Either way, whatever `description` the descriptor
+  records renders verbatim as a reviewed note afterward, exactly like the Advanced-inputs editor
+  already reads a **non-reserved** descriptor's `description`. A resolution-tier control is the
+  clearest descriptor-note case: on a lane whose edit operation sizes the output from the reference
+  rather than an explicit aspect, that fact lives on the row's own `resolution`-bound descriptor and
+  surfaces in the Resolution control's hint. The Output-shape control's own aspect-field descriptor
+  note (`aspect_ratio` or `size`, from `imageAspectInputField`) surfaces the same way, appended
+  after its own fixed "nothing is sent" wording rather than replacing it, since that wording states
+  a Generator transport fact no default can contradict. The lookup is generic over every model —
+  keyed only by the control and the field it is bound to — so nothing here ever branches on a slug
+  to decide what a hint says.
 - **The LoRA picker** offers every enabled library row, and pre-fills one case: selecting
   `qwen/qwen-image-edit-2511` fills in the curated "Qwen Image Edit 2511 NSFW all inclusive
   v2.0" row once, because the Generator mirrors the production intimate pairing so an operator

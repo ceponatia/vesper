@@ -64,7 +64,9 @@ work rather than the first one somebody happened to list.
 
 `adapterForImageModel(slug)` resolves through the model's **base** slug, so a
 row pinned to `owner/name:version` for reproducibility keeps its family
-behavior. The Qwen family, the FLUX.2 klein bench-onboarding endpoints and the
+behavior — for Replicate pins only: a Vesper-owned Civitai or fal identity is
+registered verbatim and a `:`-suffixed spelling of one resolves nothing
+([docs/image-models/README.md](../../docs/image-models/README.md) owns the rule). The Qwen family, the FLUX.2 klein bench-onboarding endpoints and the
 FLUX.1 Kontext Dev endpoint and both Seedream endpoints are registered; the
 production Flux checkpoints, Wan and SDXL use the generic path.
 
@@ -88,13 +90,29 @@ needs a home:
 | --- | --- |
 | `qwen/qwen-image-edit-2511` | Current instruction editor. Numbered references and one runtime custom LoRA when the active probed version exposes `lora_weights`/`lora_scale`. |
 | `qwen/qwen-image-2512` | Text-to-image generator arm. Takes guidance; **ignores its negative field**. |
+| `civitai/qwen-image-2.1` | Civitai's native Qwen Image 2.1 lane (`engine: "comfy"`, `ecosystem: "qwen"`, `model: "2.1"`). True-CFG guidance and steps, a negative prompt that acts when guidance is engaged, up to ten references, and a LoRA map. |
 
-Both share the family's reference conventions, and the editor speaks its prompt
-dialect, which words Vesper's provider-neutral identity sentence in Qwen's
-numbered form. Any prompt preparation an adapter contributes is **idempotent**,
-and that is load-bearing: the render plan hashes the prepared prompt and the
-transport prepares again on the way out, so a second pass that changed the text
-would make a render refuse against its own compiled prompt.
+Both 20B endpoints share the family's reference conventions, and the editor
+speaks its prompt dialect, which words Vesper's provider-neutral identity
+sentence in Qwen's numbered form. Any prompt preparation an adapter
+contributes is **idempotent**, and that is load-bearing: the render plan
+hashes the prepared prompt and the transport prepares again on the way out,
+so a second pass that changed the text would make a render refuse against its
+own compiled prompt.
+
+**The family boundary is the checkpoint, not the provider account.** Qwen
+Image 2.1 sits in this same family string (`qwen-image`) because `QWEN_IMAGE_FAMILY`
+names the checkpoint family, not a provider path — it belongs here for the same
+reason `qwen/qwen-image-edit-2511` and `qwen/qwen-image-2512` do, despite
+reaching Vesper through a different provider (Civitai, not Replicate). It is
+still its own adapter with its own feature composition (`qwenImage21Features()`,
+`families/qwen/image-2-1.ts`) rather than a variant of `qwenEditFeatures()`:
+2.1 is a 7B single-stream DiT sampled with true CFG and a real step count, one
+checkpoint that both generates and edits with up to ten references, and its
+LoRAs (Civitai `baseModel: "Qwen 2.1"`, AIR ecosystem `qwen21`) are not
+cross-compatible with the 20B family's (`baseModel: "Qwen"`, AIR ecosystem
+`qwen`) — a fact the provider does not enforce, so Vesper's own render-time
+gate is what tells them apart.
 
 The edit adapter composes the semantic LoRA feature. The probed registry row is
 still the authority on the actual provider fields: if a future version drops or

@@ -168,6 +168,42 @@ describe("renderWithModel dimension negotiation", () => {
       value: { width: 1536, height: 2048 },
     });
   });
+
+  /**
+   * PROTECTS: the wiring this wrapper added for #660 — `referenceCount:
+   * references?.length ?? 0` handed to `imageModelSentShape` — not the Civitai
+   * Qwen Image 2.1 field mapping itself, which `civitai-qwen21-runtime.test.ts`
+   * ("reports a create's size and an edit's pixel budget as the sent shape")
+   * and `replicate-runtime.test.ts` ("previews a Qwen Image 2.1 create by size
+   * and an edit by pixel budget") already prove against the real function with
+   * that lane's own model row. `imageModelSentShape` is mocked in this file, so
+   * what is provable here is only that this wrapper computes the count from the
+   * PREPARED references (never the raw input length) and passes it through
+   * unchanged into `result.shape`. Before this field existed, a lane whose sent
+   * shape depends on whether the render is a create or an edit (Qwen Image 2.1
+   * sends a size to one and a pixel budget to the other) had no way to tell
+   * them apart here, and a stored run would have recorded whichever shape the
+   * mock happened to return regardless of what was actually sent.
+   */
+  it("passes the prepared reference count to imageModelSentShape, so an edit's shape can differ from a create's", async () => {
+    vi.mocked(imageModelSentShape).mockImplementation(({ referenceCount }) =>
+      referenceCount !== undefined && referenceCount > 0
+        ? { field: "resolution", value: 1024 }
+        : { field: "width,height", value: "1024x1024" },
+    );
+
+    const created = await renderWithModel({ model: wan(), prompt: "a portrait" });
+    expect(created.shape).toMatchObject({ field: "width,height", value: "1024x1024" });
+    expect(imageModelSentShape).toHaveBeenLastCalledWith(expect.objectContaining({ referenceCount: 0 }));
+
+    const edited = await renderWithModel({
+      model: wan(),
+      prompt: "change the jacket",
+      references: [Buffer.from("a"), Buffer.from("b")],
+    });
+    expect(edited.shape).toMatchObject({ field: "resolution", value: 1024 });
+    expect(imageModelSentShape).toHaveBeenLastCalledWith(expect.objectContaining({ referenceCount: 2 }));
+  });
 });
 
 describe("renderWithModel reference roles and sent count", () => {
