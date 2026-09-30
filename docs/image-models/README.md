@@ -30,7 +30,7 @@ The package is private (`@vesper/image-models`, version `0.0.0`) and publishes o
 
 The **Qwen Image family** (including the Civitai Qwen Image 2.1 lane), the **FLUX.2 klein** bench-onboarding endpoints, the **FLUX.1 Kontext Dev** endpoint, and both **Seedream** endpoints are implemented in the adapter registry. Models without an adapter — including the production Flux checkpoints (`flux-dev`, `flux-2-dev`, `flux-2-pro`, `aisha-ai-official/nsfw-flux-dev`), Wan and SDXL — use the generic path. For those models, `adapterForImageModel(slug)` returns `null`; that is the normal fallback, not an error.
 
-The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`.
+The registry keys adapters by the model's **base slug**, so a reproducibility pin such as `owner/name:version` still receives the behavior registered for `owner/name`. That fallback is for Replicate pins only: a Vesper-owned Civitai or fal identity is registered verbatim, and a `:`-suffixed spelling of one resolves no adapter (`EXACT_ONLY_SLUGS`, `registry.ts`), matching `imageModelProvider`, which already routes such a spelling to Replicate.
 
 ### Registered Qwen adapters
 
