@@ -266,26 +266,45 @@ record remain the place to state moderation behavior that cannot be controlled.
 
 ## Qwen composition
 
-| Feature          | Edit 2511 | Image 2512 |
-| ---------------- | :-------: | :--------: |
-| `prompt`         |    yes    |    yes     |
-| `multiReference` |    yes    |     no     |
-| `aspectRatio`    |    yes    |    yes     |
-| `seed`           |    yes    |    yes     |
-| `guidance`       |    no     |    yes     |
-| `fastMode`       |    yes    |    yes     |
-| `negativePrompt` |    no     |     no     |
-| `lora`           |    yes    |     no     |
-| `outputFormat`   |    yes    |    yes     |
-| `outputQuality`  |    yes    |    yes     |
-| `safetyToggle`   |    yes    |    yes     |
+| Feature          | Edit 2511 | Image 2512 | Civitai Qwen Image 2.1 |
+| ---------------- | :-------: | :--------: | :--------------------: |
+| `prompt`         |    yes    |    yes     |           yes          |
+| `multiReference` |    yes    |     no     |           yes          |
+| `aspectRatio`    |    yes    |    yes     |           yes          |
+| `seed`           |    yes    |    yes     |           yes          |
+| `guidance`       |    no     |    yes     |           yes          |
+| `steps`          |    no     |     no     |           yes          |
+| `fastMode`       |    yes    |    yes     |           no           |
+| `negativePrompt` |    no     |     no     |           yes          |
+| `lora`           |    yes    |     no     |           yes          |
+| `outputFormat`   |    yes    |    yes     |           no           |
+| `outputQuality`  |    yes    |    yes     |           no           |
+| `safetyToggle`   |    yes    |    yes     |           no           |
 
 An exported feature is vocabulary, not proof that a Qwen adapter composes it.
 `negativePrompt` is the clearest example: the package can represent families that genuinely
 act on negative conditioning, while Qwen Image 2512 omits the feature because its declared
-negative field does not steer output. `fastMode` is the mirror case — both adapters compose
-it because both endpoints genuinely offer the accelerated sampling path, and whether Vesper
-*should* ask for it is a reviewed judgment held elsewhere.
+negative field does not steer output, and the Civitai Qwen Image 2.1 lane composes it
+because the official pipeline documents `negative_prompt` as acting once `true_cfg_scale > 1`
+— a real, gated, steering effect rather than the 2512 endpoint's measured no-op. `fastMode` is
+the mirror case for the 20B pair — both adapters compose it because both endpoints genuinely
+offer the accelerated sampling path, and whether Vesper *should* ask for it is a reviewed
+judgment held elsewhere.
+
+**Qwen Image 2.1 is a separate architecture sharing the family string, not a third 20B
+endpoint.** It is a 7B single-stream DiT, not the 20B checkpoint the edit/generator pair
+above runs, so its row is read on its own rather than as "what the 20B pair is missing":
+it composes `steps` and a conditionally-acting `negativePrompt` that neither 20B endpoint
+expresses, and composes none of `fastMode`, `outputFormat`, `outputQuality`, or
+`safetyToggle` because its accepted-input schema (`ComfyQwen21ImageGenInput`) declares none
+of those — not because Vesper chose to omit a capability the schema offers, the way the
+`negativePrompt` omission above works for 2512. Its LoRA binding is the same SCALAR pair shape the 2511 edit endpoint uses — just over
+Civitai's own field names (`civitai_lora_version`/`civitai_lora_strength`) rather than
+Replicate's (`lora_weights`/`lora_scale`) — but the two endpoints' actual LoRAs are not
+interchangeable: a Qwen 2.1 LoRA (Civitai `baseModel: "Qwen 2.1"`, AIR ecosystem `qwen21`)
+and a 20B LoRA (`baseModel: "Qwen"`, AIR ecosystem `qwen`) are different resources that the
+provider accepts on either lane without complaint, so only Vesper's own render-time gate
+keeps them apart.
 
 ## FLUX.2 klein composition
 

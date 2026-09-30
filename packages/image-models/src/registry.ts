@@ -1,6 +1,7 @@
 import { baseImageModelSlug } from "@vesper/image-core";
 import type { ImageModelAdapter } from "./composer";
 import {
+  civitaiQwenImage21,
   fluxKleinBase,
   fluxKleinBaseLora,
   fluxKleinCivitaiDistilledLora,
@@ -13,7 +14,12 @@ import {
   seedream45,
   seedream5Lite,
 } from "./families";
-import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } from "./provider";
+import {
+  CIVITAI_FLUX2_KLEIN4B_SLUG,
+  CIVITAI_QWEN_IMAGE_21_SLUG,
+  FAL_QWEN3_EDIT_SLUG,
+  FAL_QWEN3_TEXT_SLUG,
+} from "./provider";
 
 /**
  * Every model whose family behavior Vesper has written down, keyed by BASE
@@ -33,10 +39,10 @@ import { CIVITAI_FLUX2_KLEIN4B_SLUG, FAL_QWEN3_EDIT_SLUG, FAL_QWEN3_TEXT_SLUG } 
  * `baseImageModelSlug`, whose `owner/name[:version]` grammar belongs to
  * Replicate. The lookup handles those exact routes first.
  *
- * The Qwen family, the FLUX.2 klein bench-onboarding endpoints (#567), and the
- * FLUX.1 Kontext Dev endpoint (#574), and both Seedream endpoints are here.
- * Other families (the production Flux checkpoints, Wan, SDXL) use the
- * generic path, which is why the answer below
+ * The Qwen family, the FLUX.2 klein bench-onboarding endpoints (#567), the
+ * FLUX.1 Kontext Dev endpoint (#574), the Civitai Qwen Image 2.1 lane (#660),
+ * and both Seedream endpoints are here. Other families (the production Flux
+ * checkpoints, Wan, SDXL) use the generic path, which is why the answer below
  * is nullable rather than exhaustive.
  */
 const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
@@ -45,6 +51,10 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
   [FAL_QWEN3_TEXT_SLUG]: qwenImage3TextToImage,
   [FAL_QWEN3_EDIT_SLUG]: qwenImage3Edit,
   [CIVITAI_FLUX2_KLEIN4B_SLUG]: fluxKleinCivitaiDistilledLora,
+  // Civitai Qwen Image 2.1 (#660): a Vesper-owned exact provider identity,
+  // registered verbatim like the klein slug above — not a Replicate
+  // owner/name[:version] slug, so it never passes through `baseImageModelSlug`.
+  [CIVITAI_QWEN_IMAGE_21_SLUG]: civitaiQwenImage21,
   // FLUX.2 klein (#567): 4B/9B parameter-count twins share one variant object.
   // Registering the 9B slugs is code support only — no 9B database row exists,
   // and adding one is #564's decision, not this registry's.
@@ -64,6 +74,20 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
 };
 
 /**
+ * Vesper-owned exact provider identities (Civitai, fal): registered verbatim
+ * above, and never Replicate's `owner/name[:version]` grammar. A colon
+ * appended to one of these is not a reproducibility pin — Civitai and fal
+ * have no such suffix convention on these routes — so it must not fall back
+ * onto the identity it was appended to.
+ */
+const EXACT_ONLY_SLUGS: ReadonlySet<string> = new Set([
+  CIVITAI_FLUX2_KLEIN4B_SLUG,
+  CIVITAI_QWEN_IMAGE_21_SLUG,
+  FAL_QWEN3_TEXT_SLUG,
+  FAL_QWEN3_EDIT_SLUG,
+]);
+
+/**
  * The adapter for a registered model, or null when Vesper has nothing special
  * to say about it.
  *
@@ -72,9 +96,17 @@ const IMAGE_MODEL_ADAPTERS: Readonly<Record<string, ImageModelAdapter>> = {
  * null as "no prompt dialect, no extra validation, no execution hints" and
  * carries on. If this ever started throwing or logging on a miss, every
  * unmigrated family would look broken while behaving perfectly.
+ *
+ * The base-slug fallback exists for Replicate's `owner/name:version` pins.
+ * When stripping a suffix would land on one of the `EXACT_ONLY_SLUGS` above —
+ * a Vesper-owned Civitai/fal identity — the fallback is refused instead: a
+ * colon suffix on an exact provider identity is not that identity pinned, it
+ * is an unrecognized spelling.
  */
 export function adapterForImageModel(slug: string): ImageModelAdapter | null {
   const exact = IMAGE_MODEL_ADAPTERS[slug];
   if (exact) return exact;
-  return IMAGE_MODEL_ADAPTERS[baseImageModelSlug(slug)] ?? null;
+  const base = baseImageModelSlug(slug);
+  if (base !== slug && EXACT_ONLY_SLUGS.has(base)) return null;
+  return IMAGE_MODEL_ADAPTERS[base] ?? null;
 }

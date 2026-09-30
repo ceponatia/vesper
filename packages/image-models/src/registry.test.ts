@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  civitaiQwenImage21,
   fluxKleinBase,
   fluxKleinBaseLora,
   fluxKleinCivitaiDistilledLora,
@@ -15,6 +16,7 @@ import {
 import { adapterForImageModel } from "./registry";
 import {
   CIVITAI_FLUX2_KLEIN4B_SLUG,
+  CIVITAI_QWEN_IMAGE_21_SLUG,
   FAL_QWEN3_EDIT_SLUG,
   FAL_QWEN3_TEXT_SLUG,
   imageModelProvider,
@@ -172,12 +174,53 @@ describe("adapterForImageModel: FLUX.1 Kontext Dev (#574)", () => {
   });
 });
 
+/**
+ * Civitai Qwen Image 2.1 (#660): a Vesper-owned exact provider identity like
+ * the klein slug above, and likewise not a Replicate `owner/name[:version]`
+ * slug. A `:`-suffixed spelling of it is not a reproducibility pin — Civitai
+ * has no such convention on this lane — so it must not resolve through the
+ * generic base-slug fallback the way a pinned Replicate slug does.
+ */
+describe("adapterForImageModel: Civitai Qwen Image 2.1 (#660)", () => {
+  it("resolves the exact bare slug to its own adapter", () => {
+    expect(adapterForImageModel(CIVITAI_QWEN_IMAGE_21_SLUG)).toBe(civitaiQwenImage21);
+    expect(civitaiQwenImage21.capabilities).toEqual([
+      "prompt",
+      "multiReference",
+      "aspectRatio",
+      "seed",
+      "guidance",
+      "steps",
+      "negativePrompt",
+      "lora",
+    ]);
+  });
+
+  it("does not resolve a :version-suffixed spelling — Civitai identities carry no such pin", () => {
+    expect(adapterForImageModel(`${CIVITAI_QWEN_IMAGE_21_SLUG}:v1`)).toBeNull();
+  });
+
+  it("does not resolve a closest-named sibling spelling, only the exact registered slug", () => {
+    expect(adapterForImageModel("civitai/qwen-image-2.1-turbo")).toBeNull();
+    expect(adapterForImageModel("civitai/qwen-image-2")).toBeNull();
+    expect(adapterForImageModel("qwen/qwen-image-2.1")).toBeNull();
+  });
+
+  it("is a different object from every klein variant and every 20B Qwen adapter", () => {
+    expect(civitaiQwenImage21).not.toBe(fluxKleinCivitaiDistilledLora);
+    expect(civitaiQwenImage21).not.toBe(qwenImageEdit2511);
+    expect(civitaiQwenImage21).not.toBe(qwenImage2512);
+  });
+});
+
 describe("imageModelProvider", () => {
   it("classifies only reviewed exact non-Replicate identities away from Replicate", () => {
     expect(imageModelProvider(CIVITAI_FLUX2_KLEIN4B_SLUG)).toBe("civitai");
+    expect(imageModelProvider(CIVITAI_QWEN_IMAGE_21_SLUG)).toBe("civitai");
     expect(imageModelProvider(FAL_QWEN3_TEXT_SLUG)).toBe("fal");
     expect(imageModelProvider(FAL_QWEN3_EDIT_SLUG)).toBe("fal");
     expect(imageModelProvider("alibaba/qwen-image-3")).toBe("replicate");
     expect(imageModelProvider("qwen/qwen-image-2512:version")).toBe("replicate");
+    expect(imageModelProvider(`${CIVITAI_QWEN_IMAGE_21_SLUG}:v1`)).toBe("replicate");
   });
 });
