@@ -133,7 +133,7 @@ describe("Civitai Klein v2 payload", () => {
     // the zero-Buzz answer must refuse the paid submit rather than pass through.
     const reworded = workflowFrom(sent, "estimate", "unassigned");
     (reworded.steps as [{ input: Record<string, unknown> }])[0].input.prompt = `${request.prompt}, rewritten`;
-    expect(validateCivitaiPreflightEcho(parseCivitaiWorkflow(reworded), expected)).toContain("prompt");
+    expect(validateCivitaiPreflightEcho(parseCivitaiWorkflow(reworded), expected)).toMatch(/field prompt/);
   });
 
   it("carries operator sampling controls and refuses values outside the curated band", () => {

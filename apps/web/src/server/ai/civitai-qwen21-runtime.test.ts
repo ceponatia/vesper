@@ -127,7 +127,15 @@ describe("Civitai Qwen Image 2.1 workflow", () => {
       for (const aspect of CIVITAI_QWEN21_ASPECTS) {
         const input = civitaiQwen21Workflow(MODEL, { ...request, aspect, controlInput: { resolution: tier } }).steps[0].input;
         const expected = sizes[tier]?.[aspect];
-        expect(expected, `${tier} ${aspect} must have a size`).toBeDefined();
+        // Exactness, not only the pinned literal: 1216×832 once passed this loop as
+        // `3:2` because the table pinned the same near-miss value the code sent, and
+        // the render path plans no crop for a catalog ratio, so the run recorded a
+        // shape the image did not have.
+        const [ratioWidth, ratioHeight] = aspect.split(":").map(Number);
+        if (expected === undefined || ratioWidth === undefined || ratioHeight === undefined) {
+          throw new Error(`no pinned size or ratio for ${tier} ${aspect}`);
+        }
+        expect(expected[0] * ratioHeight).toBe(expected[1] * ratioWidth);
         expect([input.width, input.height], `${tier} ${aspect}`).toEqual(expected);
         // The lane's own bounds: multiples of 32, never above 2048.
         expect(Number(input.width) % 32).toBe(0);

@@ -121,8 +121,8 @@ const LANE_NAME = "Civitai Qwen Image 2.1";
  * plans no crop for them (`chooseDimensions`) and returns the provider output
  * as-is — a near-miss size (1216×832 is 1.46:1, not 3:2) would be recorded as
  * `3:2` while the image was not. Non-square 2K sizes are therefore the largest
- * exact-ratio, 32-aligned sizes inside the cap (1920×1280 for 3:2), which sit
- * below the checkpoint's native non-square 2K.
+ * exact-ratio sizes on a 64-pixel grid inside the cap (1920×1280 for 3:2),
+ * which sit below the checkpoint's native non-square 2K.
  */
 const CREATE_SIZES: Record<CivitaiQwen21ResolutionTier, Record<CivitaiQwen21Aspect, { width: number; height: number }>> = {
   "1K": {

@@ -123,7 +123,8 @@ near-miss size would be recorded as a ratio the image does not have:
   could be neither sent nor applied, so running it would record a shape the
   output does not have; clear the shape or remove the references.
 - The checkpoint's native non-square 2K sizes exceed Civitai's 2048 cap; the 2K
-  column is the largest exact-ratio, 32-aligned fit of each ratio inside the cap.
+  column is the largest exact-ratio fit of each ratio on a 64-pixel grid inside
+  the cap.
 - The 2048 cap bounds create inputs, not edit outputs: an edit at the 2K tier
   from an 832×1216 reference was echoed at 1696×2464 at the provenance probe,
   priced at the same four-megapixel factor as a 2048×2048 create.
@@ -159,8 +160,8 @@ Every preflight at the provenance probe settled `accountType: "yellow"` with
   ceiling that page explains.
 - The preflight echo must return, field by field, `engine`, `ecosystem`,
   `model`, `operation`, the `prompt` verbatim, `quantity`, `cfgScale`, `steps`,
-  `sampler`, `scheduler`, and `outputFormat`, plus `width` and `height` on a create or `resolution` on an
-  edit. It must also return the seed when one was set, the negative prompt by
+  `sampler`, `scheduler`, and `outputFormat`, plus `width` and `height` on a
+  create or `resolution` on an edit. It must also return the seed when one was set, the negative prompt by
   presence and value, the same number of `images`, and the `loras` map key for
   key with each strength. Any difference refuses before the paid submit, which
   is how one request is shown to carry both the LoRA and the references.
