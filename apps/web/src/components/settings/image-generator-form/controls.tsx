@@ -1,6 +1,5 @@
 import {
   baseImageModelSlug,
-  imageResolutionTiers,
   type ImageInputBinding,
   type ImageModel,
   type ImageProviderInputDescriptor,
@@ -13,7 +12,12 @@ import { Select } from "@/components/ui/select";
 import { imageLoraOptionLabel } from "@/lib/image-model-option-label";
 import { Textarea } from "@/components/ui/textarea";
 import { NumberField } from "../image-admin-shared";
-import type { GeneratorModelView } from "./model";
+import {
+  generatorControlLabels,
+  offeredResolutionTiers,
+  reservedFieldHint,
+  type GeneratorModelView,
+} from "./model";
 
 /** A numeric binding's declared range, as hint copy — absent means undeclared, never unbounded. */
 function bindingRangeHint(binding: ImageInputBinding, lead: string): string {
@@ -188,6 +192,7 @@ export function GeneratorControls({
   loraVersionMismatch: boolean;
   effectiveVersionId: string | null;
 }) {
+  const labels = generatorControlLabels(bindings);
   return (
     <>
         {selectedModel !== null &&
@@ -205,15 +210,17 @@ export function GeneratorControls({
             <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Controls</h3>
             <p className="text-xs text-paper-500">
               {"Only what the active probed version binds is offered, and everything starts unset — the provider’s "}
-              {"own defaults rule until you change a value. An explicitly set value that cannot be represented "}
-              {"refuses the run before any spend rather than being dropped."}
+              {"own defaults rule until you change a value. Each control below is labelled with the exact field "}
+              {"name the active version sends it under, never a Vesper-authored name — the normalized meaning "}
+              {"lives in its hint instead. An explicitly set value that cannot be represented refuses the run "}
+              {"before any spend rather than being dropped."}
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {bindings.seed !== undefined ? (
                 <div className="flex flex-col gap-1">
                   <NumberField
-                    label="Seed"
-                    hint="Blank is random. A set seed is what makes a duplicate reproducible."
+                    label={labels.seed}
+                    hint={`Blank is random. A set seed is what makes a duplicate reproducible.${reservedFieldHint(selectedModel, bindings.seed.field)}`}
                     value={seed}
                     min={0}
                     step={1}
@@ -230,8 +237,8 @@ export function GeneratorControls({
               {bindings.guidance !== undefined ? (
                 <div className="flex flex-col gap-1">
                   <NumberField
-                    label="Guidance"
-                    hint={bindingRangeHint(bindings.guidance, "Blank is the provider default.")}
+                    label={labels.guidance}
+                    hint={`${bindingRangeHint(bindings.guidance, "Blank is the provider default.")}${reservedFieldHint(selectedModel, bindings.guidance.field)}`}
                     value={guidance}
                     min={bindings.guidance.minimum}
                     max={bindings.guidance.maximum}
@@ -249,8 +256,8 @@ export function GeneratorControls({
               {bindings.steps !== undefined ? (
                 <div className="flex flex-col gap-1">
                   <NumberField
-                    label="Steps"
-                    hint={bindingRangeHint(bindings.steps, "Blank is the provider default.")}
+                    label={labels.steps}
+                    hint={`${bindingRangeHint(bindings.steps, "Blank is the provider default.")}${reservedFieldHint(selectedModel, bindings.steps.field)}`}
                     value={steps}
                     min={bindings.steps.minimum ?? 1}
                     max={bindings.steps.maximum}
@@ -268,8 +275,8 @@ export function GeneratorControls({
               {bindings.editStrength !== undefined ? (
                 <div className="flex flex-col gap-1">
                   <NumberField
-                    label="Edit strength"
-                    hint={bindingRangeHint(bindings.editStrength, "How far the render may move from its source; blank is the provider default.")}
+                    label={labels.editStrength}
+                    hint={`${bindingRangeHint(bindings.editStrength, "How far the render may move from its source; blank is the provider default.")}${reservedFieldHint(selectedModel, bindings.editStrength.field)}`}
                     value={editStrength}
                     min={bindings.editStrength.minimum ?? 0}
                     max={bindings.editStrength.maximum ?? 1}
@@ -285,7 +292,10 @@ export function GeneratorControls({
                 </div>
               ) : null}
               {bindings.thinkingMode !== undefined ? (
-                <Field label="Thinking mode" hint="Unchecked is the provider default — the switch is only sent when ticked.">
+                <Field
+                  label={labels.thinkingMode}
+                  hint={`Unchecked is the provider default — the switch is only sent when ticked.${reservedFieldHint(selectedModel, bindings.thinkingMode.field)}`}
+                >
                   {(id) => (
                     <label htmlFor={id} className="flex items-center gap-2 text-sm text-paper-300">
                       <input
@@ -301,11 +311,12 @@ export function GeneratorControls({
               ) : null}
               {bindings.fastMode !== undefined ? (
                 <Field
-                  label="Fast mode"
+                  label={labels.fastMode}
                   hint={
                     "Blank sends nothing, so whatever this model already runs with stands — the provider’s default, " +
                     "or Vesper’s reviewed correction where one exists. On asks for the accelerated sampling path; " +
-                    "Off refuses it."
+                    "Off refuses it." +
+                    reservedFieldHint(selectedModel, bindings.fastMode.field)
                   }
                 >
                   {(id) => (
@@ -338,8 +349,11 @@ export function GeneratorControls({
                   )}
                 </Field>
               ) : null}
-              {resolutionTierOffered ? (
-                <Field label="Resolution" hint="Blank is the provider default tier.">
+              {resolutionTierOffered && bindings.resolutionTier !== undefined ? (
+                <Field
+                  label={labels.resolutionTier}
+                  hint={`Blank is the provider default tier.${reservedFieldHint(selectedModel, bindings.resolutionTier.field)}`}
+                >
                   {(id) => (
                     <Select
                       id={id}
@@ -347,17 +361,11 @@ export function GeneratorControls({
                       onChange={(e) => setResolution(e.target.value as ImageResolutionTier | "")}
                     >
                       <option value="">— Provider default —</option>
-                      {imageResolutionTiers
-                        .filter(
-                          (tier) =>
-                            bindings.resolutionTier?.enumValues === undefined ||
-                            bindings.resolutionTier.enumValues.includes(tier),
-                        )
-                        .map((tier) => (
-                          <option key={tier} value={tier}>
-                            {tier}
-                          </option>
-                        ))}
+                      {offeredResolutionTiers(bindings.resolutionTier).map((tier) => (
+                        <option key={tier} value={tier}>
+                          {tier}
+                        </option>
+                      ))}
                     </Select>
                   )}
                 </Field>
@@ -375,10 +383,11 @@ export function GeneratorControls({
                   16 of 16 paired renders kept what the negative field excluded. */}
             {bindings.negativePrompt !== undefined ? (
               <Field
-                label="Negative prompt"
+                label={labels.negativePrompt}
                 hint={
                   "What the render should avoid. Blank sends nothing. A model declaring this field is not a promise " +
-                  "it acts on one — check the model’s page under docs/image-models before trusting an exclusion."
+                  "it acts on one — check the model’s page under docs/image-models before trusting an exclusion." +
+                  reservedFieldHint(selectedModel, bindings.negativePrompt.field)
                 }
               >
                 {(id) => (
@@ -397,13 +406,14 @@ export function GeneratorControls({
               <>
                 <div className="grid gap-4 sm:grid-cols-[1fr_9rem]">
                   <Field
-                    label="LoRA"
+                    label={labels.loraWeights}
                     hint={
-                      enabledLoras.length === 0
+                      (enabledLoras.length === 0
                         ? "None in the library yet. Curate one in the LoRA library on the Image models page — only enabled rows are offered here."
                         : loraPrefilled
                           ? "Pre-filled because this is the pairing intimate scenes run on in production. Change or clear it like any other pick."
-                          : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at."
+                          : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at.") +
+                      reservedFieldHint(selectedModel, bindings.loraWeights?.field)
                     }
                   >
                     {(id) => (
@@ -418,7 +428,7 @@ export function GeneratorControls({
                     )}
                   </Field>
                   {selectedLora !== null ? (
-                    <Field label="Scale">
+                    <Field label={labels.loraScale} hint={reservedFieldHint(selectedModel, bindings.loraScale?.field) || undefined}>
                       {(id) => (
                         <Input
                           id={id}

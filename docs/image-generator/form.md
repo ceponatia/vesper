@@ -33,7 +33,7 @@ not image-model endpoints, so the model type and provider suffix do not apply to
 
 - **Primary references** appear only on a model that can edit. They enter the planner in caller
   order under the neutral `reference` role; an optional per-reference **purpose** is recorded
-  provenance only and never changes routing. Explicit primaries are capped at 6 app-side, further
+  provenance only and never changes routing. Explicit primaries are capped at 10 app-side, further
   bounded by the model's own reference capacity.
 - **Dedicated structural inputs** (pose / depth / edge / mask / control) appear only for the roles
   the version's probed `additionalImageInputs` bind to their own provider fields. An explicitly
@@ -44,6 +44,19 @@ not image-model endpoints, so the model type and provider suffix do not apply to
   stay deliberately absent, and the server refuses any that arrive: they are **provider** inputs
   asking one prediction to return a set, no registered version declares one, and the bench's own
   image count is a different request ([runs.md](runs.md) §Several images from one request).
+- **Every normalized control's label is the field it is bound to** (owner ruling 2026-09-30) — the
+  exact name the active version's own schema uses (`cfgScale`, `steps`, `civitai_lora_version` …),
+  never a Vesper-authored word. The normalized English meaning that used to sit in the label moves
+  into the hint instead, alongside whatever the binding itself declares (its range, through the
+  existing `bindingRangeHint`) and whatever the row's own **reserved** provider-input descriptor
+  records for that same field — a `default` renders as the concrete value blank sends, and a
+  `description` renders verbatim as a reviewed note, exactly like the Advanced-inputs editor already
+  reads a **non-reserved** descriptor's `description`. A resolution-tier control is the clearest
+  case: on a lane whose edit operation sizes the output from the reference rather than an explicit
+  aspect, that fact lives on the row's own `resolution`-bound descriptor and surfaces in the
+  Resolution control's hint, never as a special case in this form. The lookup is generic over every
+  model — keyed only by the field name a control is bound to — so nothing here ever branches on a
+  slug to decide what a hint says.
 - **The LoRA picker** offers every enabled library row, and pre-fills one case: selecting
   `qwen/qwen-image-edit-2511` fills in the curated "Qwen Image Edit 2511 NSFW all inclusive
   v2.0" row once, because the Generator mirrors the production intimate pairing so an operator
