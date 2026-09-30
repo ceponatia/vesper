@@ -1,17 +1,20 @@
 import { imageGeneratorRoleLabel } from "../image-generator-copy";
 import {
+  baseImageModelSlug,
   chooseAspect,
   imageResolutionTiers,
   isImageControlReferenceRole,
   parseAspectValue,
   pinnedImageModelVersion,
   referenceCapacity,
+  reviewedImageQualityPolicy,
   type ImageInputBinding,
   type ImageModel,
   type ImageModelControlBindings,
   type ImageProviderInputDescriptor,
   type ImageResolutionTier,
   type ImageUriBinding,
+  type ReviewedImageControlDefaults,
 } from "@vesper/image-core";
 import { IMAGE_GENERATOR_MAX_PRIMARY, type ImageGeneratorDedicatedRole } from "@/contracts/images/image-generator";
 
@@ -65,11 +68,15 @@ export function editableProviderInputs(model: ImageModel | null): ImageProviderI
 }
 
 /**
- * Every normalized control's label, as the exact field the active version
- * binds it to (owner ruling 2026-09-30: the label IS the provider's own wire
- * name — `cfgScale`, `civitai_lora_version` — never a Vesper-authored word;
- * the normalized English meaning moves into the hint instead). Generic over
- * every model: the lookup is the binding's own `field`, never a slug.
+ * Every normalized control's label, as the field the active version's own
+ * capability record binds it to (owner ruling 2026-09-30: the label is the
+ * BOUND field — `cfgScale`, `civitai_lora_version` — never a Vesper-authored
+ * word). Not always the literal wire name a request sends: a bound field can
+ * be a transport alias (the LoRA pair travels inside the wire `loras` map)
+ * or compose into a different payload shape depending on the operation (a
+ * resolution tier goes out as `width`/`height` on a create). The normalized
+ * English meaning moves into the hint instead. Generic over every model: the
+ * lookup is the binding's own `field`, never a slug.
  *
  * A control this version does not bind keeps its normalized fallback name
  * only because nothing ever renders that fallback — the Generator offers a
@@ -150,6 +157,11 @@ function reservedProviderInput(model: ImageModel | null, field: string | undefin
  * than a real value (FLUX.2 klein's `negative_prompt` default is `""`) — none
  * of those are a fact a hint should print. `0` and `false` ARE real defaults
  * and stay.
+ *
+ * This gate is deliberately NOT applied to a reviewed policy's own value
+ * ({@link reviewedControlDefault}): a reviewed `negativePrompt` can genuinely
+ * BE the empty string (the Pony ruling sends it on purpose, to displace a
+ * wrapper's hidden negative), so that branch tests `!== undefined` alone.
  */
 function isStatableDefault(value: unknown): boolean {
   if (value === undefined || value === null) return false;
@@ -159,33 +171,98 @@ function isStatableDefault(value: unknown): boolean {
   return true;
 }
 
-/** A statable default as hint prose — unquoted for a string, so `"1K"` reads as `1K`, matching every other primitive's bare rendering. */
-function formatDefault(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
+/** A default value as hint prose — unquoted for a string, so `"1K"` reads as `1K`, and a genuinely empty string reads as words rather than nothing. */
+function describeValue(value: unknown): string {
+  if (typeof value === "string") return value === "" ? "an empty value" : value;
+  return JSON.stringify(value);
 }
 
 /**
- * Hint copy appended after a normalized control's fixed meaning sentence: the
- * row's own reserved provider-input descriptor's `default`, worded neutrally
- * (`Default: 1K.`) rather than claiming Vesper sends it — a blank box leaves
- * the field OUT of the request; it is the PROVIDER that applies its own
- * default, and several probed rows already declare one for a reserved field
- * (FLUX.2 klein's `steps` default `4`, several Replicate rows' `height`,
- * `max_images`, `disable_safety_checker`). Then the row's own reviewed note
- * for that field, exactly as `advancedInputHint` already reads a
- * non-reserved field's `description` (`image-generator-form/controls.tsx`),
- * extended here to the reserved fields a normalized control renders instead
- * of an advanced input. Empty when the row recorded neither a statable
- * default nor a description.
+ * The normalized control keys a REVIEWED policy can state a default for —
+ * the intersection of {@link ReviewedImageControlDefaults} and the controls
+ * this form renders as a plain text/number/boolean field. `resolution` /
+ * `width` / `height` are excluded: that trio is the CUSTOM-DIMENSIONS gate
+ * (`withReviewedProfileDefaults`'s own module), a different mechanism from
+ * this form's `resolutionTier`, and the form does not render Width/Height at
+ * all yet (see the comment beside `offeredResolutionTiers`'s caller).
  */
-export function reservedFieldHint(model: ImageModel | null, field: string | undefined): string {
+export type ReviewedControlKey = "steps" | "guidance" | "negativePrompt" | "fastMode";
+
+/**
+ * This model's reviewed default for one control, or `undefined` when the
+ * model carries no reviewed policy, the policy states nothing for this
+ * control, or the caller passes no control at all (a control the reviewed
+ * vocabulary has no word for, such as `resolutionTier` or the LoRA pair).
+ * Reads the SAME table `withReviewedProfileDefaults` merges into every
+ * profile-shaped configuration built in code, including the Image
+ * Generator's own synthetic bench profile — so a blank box here states
+ * exactly what that merge will actually send, not a guess parallel to it.
+ */
+function reviewedControlDefault(model: ImageModel | null, control: ReviewedControlKey | null): unknown {
+  if (model === null || control === null) return undefined;
+  const policy = reviewedImageQualityPolicy(baseImageModelSlug(model.slug));
+  if (policy === null) return undefined;
+  const defaults: Readonly<ReviewedImageControlDefaults> = policy.controlDefaults;
+  return defaults[control];
+}
+
+/** The two facts {@link reservedFieldHint} and a replaced-lead caller both need about one control's bound field. */
+export interface ControlDefaultFacts {
+  /**
+   * Whichever "what blank sends" fact is knowable, worded as a complete
+   * sentence, or `null` when neither source states one. Vesper's reviewed
+   * default outranks the row's own descriptor default when both exist,
+   * because `withReviewedProfileDefaults` applies the reviewed value FIRST —
+   * a blank box on `qwen/qwen-image-edit-2511` sends the reviewed `false`,
+   * never the descriptor's probed `go_fast` default of `true`.
+   */
+  defaultClause: string | null;
+  /** The row's own reviewed note for the field, trimmed, or `null` when absent. */
+  note: string | null;
+}
+
+/**
+ * The shared read behind every "what does blank send, and what does the row
+ * say about this field" question a control's hint answers. Generic over
+ * every model and every control — the lookups are the control key and the
+ * bound field name, never a slug.
+ */
+export function controlDefaultFacts(
+  model: ImageModel | null,
+  control: ReviewedControlKey | null,
+  field: string | undefined,
+): ControlDefaultFacts {
   const descriptor = reservedProviderInput(model, field);
-  if (descriptor === undefined) return "";
-  const parts: string[] = [];
-  if (isStatableDefault(descriptor.default)) parts.push(`Default: ${formatDefault(descriptor.default)}.`);
-  if (descriptor.description !== undefined && descriptor.description.trim() !== "") {
-    parts.push(descriptor.description.trim());
-  }
+  const reviewedValue = reviewedControlDefault(model, control);
+  const defaultClause =
+    reviewedValue !== undefined
+      ? `Blank sends Vesper's reviewed ${describeValue(reviewedValue)}.`
+      : descriptor !== undefined && isStatableDefault(descriptor.default)
+        ? `Default: ${describeValue(descriptor.default)}.`
+        : null;
+  const note =
+    descriptor?.description !== undefined && descriptor.description.trim() !== "" ? descriptor.description.trim() : null;
+  return { defaultClause, note };
+}
+
+/**
+ * Hint copy appended after a normalized control's fixed meaning sentence, for
+ * a control whose own fixed wording makes no single-value "blank is X" claim
+ * a concrete default could contradict (Output shape's "nothing is sent" is
+ * true regardless of what default a descriptor states; a LoRA field's
+ * curation note is not a claim about a value at all). A control whose fixed
+ * wording DOES make that claim (guidance, steps, …) must instead read
+ * {@link controlDefaultFacts} directly and choose its OWN lead once the
+ * default clause is known — printing both would state two different things
+ * about the same blank box.
+ */
+export function reservedFieldHint(
+  model: ImageModel | null,
+  control: ReviewedControlKey | null,
+  field: string | undefined,
+): string {
+  const facts = controlDefaultFacts(model, control, field);
+  const parts = [facts.defaultClause, facts.note].filter((part): part is string => part !== null);
   return parts.length > 0 ? ` ${parts.join(" ")}` : "";
 }
 

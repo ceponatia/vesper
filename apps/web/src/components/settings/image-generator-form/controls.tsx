@@ -1,5 +1,6 @@
 import {
   baseImageModelSlug,
+  imageAspectInputField,
   type ImageInputBinding,
   type ImageModel,
   type ImageProviderInputDescriptor,
@@ -13,18 +14,30 @@ import { imageLoraOptionLabel } from "@/lib/image-model-option-label";
 import { Textarea } from "@/components/ui/textarea";
 import { NumberField } from "../image-admin-shared";
 import {
+  controlDefaultFacts,
   generatorControlLabels,
   offeredResolutionTiers,
   reservedFieldHint,
   type GeneratorModelView,
 } from "./model";
 
-/** A numeric binding's declared range, as hint copy — absent means undeclared, never unbounded. */
+/**
+ * A numeric binding's declared range, as hint copy — absent means undeclared,
+ * never unbounded. Worded "Range", not "Provider range": the band can be
+ * Vesper's own cost rail rather than the provider's real ceiling (the Qwen
+ * 2.1 `steps` binding's 1–60 is Vesper's, the provider's own schema allows
+ * 1–150), and this function has no way to tell those apart.
+ */
 function bindingRangeHint(binding: ImageInputBinding, lead: string): string {
   if (binding.minimum === undefined && binding.maximum === undefined) return lead;
   const min = binding.minimum === undefined ? "…" : String(binding.minimum);
   const max = binding.maximum === undefined ? "…" : String(binding.maximum);
-  return `${lead} Provider range ${min}–${max}.`;
+  return `${lead} Range ${min}–${max}.`;
+}
+
+/** Non-empty hint fragments, space-joined — used to assemble a control's final hint from pieces that may or may not apply. */
+function joinHintParts(...parts: (string | null)[]): string {
+  return parts.filter((part): part is string => part !== null && part !== "").join(" ");
 }
 
 /** Everything the provider schema said about one advanced field, as one hint line. */
@@ -193,6 +206,87 @@ export function GeneratorControls({
   effectiveVersionId: string | null;
 }) {
   const labels = generatorControlLabels(bindings);
+
+  // Each hint below answers "what does blank send" ONCE, then states it once:
+  // `controlDefaultFacts` resolves Vesper's reviewed default (applied by
+  // `withReviewedProfileDefaults`, which the Image Generator's own synthetic
+  // bench profile goes through) ahead of the row's own descriptor default, and
+  // whichever is known REPLACES the control's generic "blank is the provider
+  // default" wording rather than sitting beside it — the self-contradiction a
+  // reviewer caught on `qwen/qwen-image-edit-2511` (reviewed `fastMode: false`
+  // beside a probed `go_fast` default of `true`) and on this lane's own
+  // `steps` (Vesper's own 40 beside a naive "provider default" claim).
+  const seedHint = (() => {
+    const binding = bindings.seed;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, null, binding.field);
+    return joinHintParts(
+      facts.defaultClause ?? "Blank is random.",
+      "A set seed is what makes a duplicate reproducible.",
+      facts.note,
+    );
+  })();
+  const guidanceHint = (() => {
+    const binding = bindings.guidance;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, "guidance", binding.field);
+    return joinHintParts(bindingRangeHint(binding, facts.defaultClause ?? "Blank is the provider default."), facts.note);
+  })();
+  const stepsHint = (() => {
+    const binding = bindings.steps;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, "steps", binding.field);
+    return joinHintParts(bindingRangeHint(binding, facts.defaultClause ?? "Blank is the provider default."), facts.note);
+  })();
+  const editStrengthHint = (() => {
+    const binding = bindings.editStrength;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, null, binding.field);
+    const lead = facts.defaultClause ?? "blank is the provider default.";
+    return joinHintParts(bindingRangeHint(binding, `How far the render may move from its source; ${lead}`), facts.note);
+  })();
+  const thinkingModeHint = (() => {
+    const binding = bindings.thinkingMode;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, null, binding.field);
+    return joinHintParts(
+      facts.defaultClause ?? "Unchecked is the provider default.",
+      "The switch is only sent when ticked.",
+      facts.note,
+    );
+  })();
+  const fastModeHint = (() => {
+    const binding = bindings.fastMode;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, "fastMode", binding.field);
+    const lead =
+      facts.defaultClause ??
+      "Blank sends nothing, so whatever this model already runs with stands — the provider’s default, " +
+        "or Vesper’s reviewed correction where one exists.";
+    return joinHintParts(lead, "On asks for the accelerated sampling path; Off refuses it.", facts.note);
+  })();
+  const resolutionTierHint = (() => {
+    const binding = bindings.resolutionTier;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, null, binding.field);
+    return joinHintParts(facts.defaultClause ?? "Blank is the provider default tier.", facts.note);
+  })();
+  const negativePromptHint = (() => {
+    const binding = bindings.negativePrompt;
+    if (binding === undefined) return "";
+    const facts = controlDefaultFacts(selectedModel, "negativePrompt", binding.field);
+    return joinHintParts(
+      "What the render should avoid.",
+      facts.defaultClause ?? "Blank sends nothing.",
+      "A model declaring this field is not a promise it acts on one — check the model’s page under " +
+        "docs/image-models before trusting an exclusion.",
+      facts.note,
+    );
+  })();
+  const outputShapeHint =
+    "Blank sends no shape at all — the model answers at its own default, and nothing is cropped afterwards." +
+    (selectedModel === null ? "" : reservedFieldHint(selectedModel, null, imageAspectInputField(selectedModel)));
+
   return (
     <>
         {selectedModel !== null &&
@@ -210,17 +304,17 @@ export function GeneratorControls({
             <h3 className="text-xs font-medium tracking-wide text-paper-400 uppercase">Controls</h3>
             <p className="text-xs text-paper-500">
               {"Only what the active probed version binds is offered, and everything starts unset — the provider’s "}
-              {"own defaults rule until you change a value. Each control below is labelled with the exact field "}
-              {"name the active version sends it under, never a Vesper-authored name — the normalized meaning "}
-              {"lives in its hint instead. An explicitly set value that cannot be represented refuses the run "}
-              {"before any spend rather than being dropped."}
+              {"own defaults rule until you change a value. Each control below is labelled with the field it is "}
+              {"bound to in the active version’s capability record — the normalized meaning lives in its hint "}
+              {"instead. An explicitly set value that cannot be represented refuses the run before any spend "}
+              {"rather than being dropped."}
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {bindings.seed !== undefined ? (
                 <div className="flex flex-col gap-1">
                   <NumberField
                     label={labels.seed}
-                    hint={`Blank is random. A set seed is what makes a duplicate reproducible.${reservedFieldHint(selectedModel, bindings.seed.field)}`}
+                    hint={seedHint}
                     value={seed}
                     min={0}
                     step={1}
@@ -238,7 +332,7 @@ export function GeneratorControls({
                 <div className="flex flex-col gap-1">
                   <NumberField
                     label={labels.guidance}
-                    hint={`${bindingRangeHint(bindings.guidance, "Blank is the provider default.")}${reservedFieldHint(selectedModel, bindings.guidance.field)}`}
+                    hint={guidanceHint}
                     value={guidance}
                     min={bindings.guidance.minimum}
                     max={bindings.guidance.maximum}
@@ -257,7 +351,7 @@ export function GeneratorControls({
                 <div className="flex flex-col gap-1">
                   <NumberField
                     label={labels.steps}
-                    hint={`${bindingRangeHint(bindings.steps, "Blank is the provider default.")}${reservedFieldHint(selectedModel, bindings.steps.field)}`}
+                    hint={stepsHint}
                     value={steps}
                     min={bindings.steps.minimum ?? 1}
                     max={bindings.steps.maximum}
@@ -276,7 +370,7 @@ export function GeneratorControls({
                 <div className="flex flex-col gap-1">
                   <NumberField
                     label={labels.editStrength}
-                    hint={`${bindingRangeHint(bindings.editStrength, "How far the render may move from its source; blank is the provider default.")}${reservedFieldHint(selectedModel, bindings.editStrength.field)}`}
+                    hint={editStrengthHint}
                     value={editStrength}
                     min={bindings.editStrength.minimum ?? 0}
                     max={bindings.editStrength.maximum ?? 1}
@@ -292,10 +386,7 @@ export function GeneratorControls({
                 </div>
               ) : null}
               {bindings.thinkingMode !== undefined ? (
-                <Field
-                  label={labels.thinkingMode}
-                  hint={`Unchecked is the provider default — the switch is only sent when ticked.${reservedFieldHint(selectedModel, bindings.thinkingMode.field)}`}
-                >
+                <Field label={labels.thinkingMode} hint={thinkingModeHint}>
                   {(id) => (
                     <label htmlFor={id} className="flex items-center gap-2 text-sm text-paper-300">
                       <input
@@ -310,15 +401,7 @@ export function GeneratorControls({
                 </Field>
               ) : null}
               {bindings.fastMode !== undefined ? (
-                <Field
-                  label={labels.fastMode}
-                  hint={
-                    "Blank sends nothing, so whatever this model already runs with stands — the provider’s default, " +
-                    "or Vesper’s reviewed correction where one exists. On asks for the accelerated sampling path; " +
-                    "Off refuses it." +
-                    reservedFieldHint(selectedModel, bindings.fastMode.field)
-                  }
-                >
+                <Field label={labels.fastMode} hint={fastModeHint}>
                   {(id) => (
                     <Select
                       id={id}
@@ -333,10 +416,7 @@ export function GeneratorControls({
                 </Field>
               ) : null}
               {shapeOptions.length > 0 ? (
-                <Field
-                  label="Output shape"
-                  hint="Blank sends no shape at all — the model answers at its own default, and nothing is cropped afterwards."
-                >
+                <Field label="Output shape" hint={outputShapeHint}>
                   {(id) => (
                     <Select id={id} value={aspect} onChange={(e) => setAspect(e.target.value)}>
                       <option value="">— Model default —</option>
@@ -350,10 +430,7 @@ export function GeneratorControls({
                 </Field>
               ) : null}
               {resolutionTierOffered && bindings.resolutionTier !== undefined ? (
-                <Field
-                  label={labels.resolutionTier}
-                  hint={`Blank is the provider default tier.${reservedFieldHint(selectedModel, bindings.resolutionTier.field)}`}
-                >
+                <Field label={labels.resolutionTier} hint={resolutionTierHint}>
                   {(id) => (
                     <Select
                       id={id}
@@ -382,14 +459,7 @@ export function GeneratorControls({
                   schema cannot promise. Qwen Image 2512 is the measured case —
                   16 of 16 paired renders kept what the negative field excluded. */}
             {bindings.negativePrompt !== undefined ? (
-              <Field
-                label={labels.negativePrompt}
-                hint={
-                  "What the render should avoid. Blank sends nothing. A model declaring this field is not a promise " +
-                  "it acts on one — check the model’s page under docs/image-models before trusting an exclusion." +
-                  reservedFieldHint(selectedModel, bindings.negativePrompt.field)
-                }
-              >
+              <Field label={labels.negativePrompt} hint={negativePromptHint}>
                 {(id) => (
                   <Textarea
                     id={id}
@@ -413,7 +483,7 @@ export function GeneratorControls({
                         : loraPrefilled
                           ? "Pre-filled because this is the pairing intimate scenes run on in production. Change or clear it like any other pick."
                           : "Optional. Blends a curated weights file into this run — the library row decides which models and strengths it may run at.") +
-                      reservedFieldHint(selectedModel, bindings.loraWeights?.field)
+                      reservedFieldHint(selectedModel, null, bindings.loraWeights?.field)
                     }
                   >
                     {(id) => (
@@ -428,7 +498,7 @@ export function GeneratorControls({
                     )}
                   </Field>
                   {selectedLora !== null ? (
-                    <Field label={labels.loraScale} hint={reservedFieldHint(selectedModel, bindings.loraScale?.field).trim() || undefined}>
+                    <Field label={labels.loraScale} hint={reservedFieldHint(selectedModel, null, bindings.loraScale?.field).trim() || undefined}>
                       {(id) => (
                         <Input
                           id={id}

@@ -1,6 +1,6 @@
 import { imageModelSchema, imageResolutionTiers, type ImageModel } from "@vesper/image-core";
 import { describe, expect, it } from "vitest";
-import { generatorControlLabels, offeredResolutionTiers, reservedFieldHint } from "./model";
+import { controlDefaultFacts, generatorControlLabels, offeredResolutionTiers, reservedFieldHint } from "./model";
 
 /**
  * Owner ruling 2026-09-30: a normalized control's label IS the provider
@@ -93,21 +93,21 @@ function descriptor(overrides: Record<string, unknown>) {
   return { field: "cfgScale", type: "number", required: false, reserved: true, ...overrides };
 }
 
-describe("reservedFieldHint", () => {
-  it("is empty for a model with no matching reserved descriptor", () => {
-    expect(reservedFieldHint(model(), "cfgScale")).toBe("");
-    expect(reservedFieldHint(null, "cfgScale")).toBe("");
-    expect(reservedFieldHint(model(), undefined)).toBe("");
+describe("controlDefaultFacts", () => {
+  it("is empty for a model with no matching reserved descriptor and no reviewed policy", () => {
+    expect(controlDefaultFacts(model(), null, "cfgScale")).toEqual({ defaultClause: null, note: null });
+    expect(controlDefaultFacts(null, null, "cfgScale")).toEqual({ defaultClause: null, note: null });
+    expect(controlDefaultFacts(model(), "guidance", undefined)).toEqual({ defaultClause: null, note: null });
   });
 
-  it("states a default neutrally — the provider applies it, not Vesper", () => {
+  it("states a descriptor default neutrally — the provider applies it, not Vesper", () => {
     const withDefault = model({
       advancedCapabilities: {
         controls: { guidance: { field: "cfgScale", type: "number" } },
         providerInputs: [descriptor({ default: 1 })],
       },
     });
-    expect(reservedFieldHint(withDefault, "cfgScale")).toBe(" Default: 1.");
+    expect(controlDefaultFacts(withDefault, "guidance", "cfgScale").defaultClause).toBe("Default: 1.");
   });
 
   it("renders a string default unquoted", () => {
@@ -117,14 +117,14 @@ describe("reservedFieldHint", () => {
         providerInputs: [descriptor({ field: "resolution", type: "enum", default: "1K" })],
       },
     });
-    expect(reservedFieldHint(withStringDefault, "resolution")).toBe(" Default: 1K.");
+    expect(controlDefaultFacts(withStringDefault, null, "resolution").defaultClause).toBe("Default: 1K.");
   });
 
   it("keeps 0 and false — real defaults, not absence", () => {
     const withZero = model({
       advancedCapabilities: { controls: {}, providerInputs: [descriptor({ default: 0 })] },
     });
-    expect(reservedFieldHint(withZero, "cfgScale")).toBe(" Default: 0.");
+    expect(controlDefaultFacts(withZero, null, "cfgScale").defaultClause).toBe("Default: 0.");
 
     const withFalse = model({
       advancedCapabilities: {
@@ -132,10 +132,10 @@ describe("reservedFieldHint", () => {
         providerInputs: [descriptor({ field: "disable_safety_checker", type: "boolean", default: false })],
       },
     });
-    expect(reservedFieldHint(withFalse, "disable_safety_checker")).toBe(" Default: false.");
+    expect(controlDefaultFacts(withFalse, null, "disable_safety_checker").defaultClause).toBe("Default: false.");
   });
 
-  it("omits the default clause for an empty string, an empty array, or an empty object", () => {
+  it("omits the descriptor default for an empty string, an empty array, or an empty object", () => {
     // FLUX.2 klein's probed `negative_prompt` default is exactly this case —
     // "" is the schema's way of declaring no default, not a real value a
     // blank box would send.
@@ -145,20 +145,20 @@ describe("reservedFieldHint", () => {
         providerInputs: [descriptor({ field: "negative_prompt", type: "string", default: "" })],
       },
     });
-    expect(reservedFieldHint(withEmptyString, "negative_prompt")).toBe("");
+    expect(controlDefaultFacts(withEmptyString, "negativePrompt", "negative_prompt").defaultClause).toBeNull();
 
     const withEmptyArray = model({
       advancedCapabilities: { controls: {}, providerInputs: [descriptor({ default: [] })] },
     });
-    expect(reservedFieldHint(withEmptyArray, "cfgScale")).toBe("");
+    expect(controlDefaultFacts(withEmptyArray, null, "cfgScale").defaultClause).toBeNull();
 
     const withEmptyObject = model({
       advancedCapabilities: { controls: {}, providerInputs: [descriptor({ default: {} })] },
     });
-    expect(reservedFieldHint(withEmptyObject, "cfgScale")).toBe("");
+    expect(controlDefaultFacts(withEmptyObject, null, "cfgScale").defaultClause).toBeNull();
   });
 
-  it("omits the default clause and states only the note when the default is absent", () => {
+  it("carries the row's own reviewed note regardless of which branch stated a default", () => {
     const noteOnly = model({
       advancedCapabilities: {
         controls: { resolutionTier: { field: "resolution", type: "enum", enumValues: ["1K", "2K"] } },
@@ -172,12 +172,90 @@ describe("reservedFieldHint", () => {
         ],
       },
     });
-    expect(reservedFieldHint(noteOnly, "resolution")).toBe(
-      " 1K ≈ 1 MP, 2K ≈ 4 MP and ~4× the Buzz; on an edit the output follows the reference’s aspect.",
-    );
+    expect(controlDefaultFacts(noteOnly, null, "resolution")).toEqual({
+      defaultClause: null,
+      note: "1K ≈ 1 MP, 2K ≈ 4 MP and ~4× the Buzz; on an edit the output follows the reference’s aspect.",
+    });
   });
 
-  it("appends the row's own reviewed note after a statable default, exactly as recorded", () => {
+  it("never reads a non-reserved descriptor for the same field", () => {
+    // A field name can appear twice — once reserved (owned by a normalized
+    // control), once not — only in a hand-built fixture; a real probe never
+    // emits that. This still pins the reserved-only filter so a reserved
+    // control's hint can never pick up an unrelated advanced-input note.
+    const withUnreservedOnly = model({
+      advancedCapabilities: {
+        controls: {},
+        providerInputs: [descriptor({ description: "not this one", reserved: false })],
+      },
+    });
+    expect(controlDefaultFacts(withUnreservedOnly, null, "cfgScale")).toEqual({ defaultClause: null, note: null });
+  });
+
+  describe("a reviewed policy's own default", () => {
+    // `qwen/qwen-image-edit-2511` is a REAL row in the reviewed table
+    // (`packages/image-core/src/models/reviewed-profile-controls.ts`):
+    // production runs it with `fastMode: false` because its provider default
+    // optimizes speed on a surface where fidelity matters. This is the exact
+    // P2-1 defect a reviewer caught: the row's probed `go_fast` descriptor
+    // can carry `default: true` (drizzle/0119) while the actual run sends
+    // `false` — so the hint must state the REVIEWED value, never the
+    // descriptor's, whenever both exist.
+    function qwenEdit2511(providerInputs: unknown[]) {
+      return model({
+        slug: "qwen/qwen-image-edit-2511",
+        advancedCapabilities: {
+          controls: { fastMode: { field: "go_fast", type: "boolean" } },
+          providerInputs,
+        },
+      });
+    }
+
+    it("states Vesper's reviewed value, worded as a fact about what blank sends", () => {
+      const row = qwenEdit2511([descriptor({ field: "go_fast", type: "boolean", reserved: true })]);
+      expect(controlDefaultFacts(row, "fastMode", "go_fast").defaultClause).toBe("Blank sends Vesper's reviewed false.");
+    });
+
+    it("outranks the row's own descriptor default when both exist", () => {
+      const row = qwenEdit2511([descriptor({ field: "go_fast", type: "boolean", default: true, reserved: true })]);
+      // Not "Default: true." — a blank box on this row sends the reviewed
+      // false, never the descriptor's probed true, so only one clause may
+      // ever print.
+      expect(controlDefaultFacts(row, "fastMode", "go_fast").defaultClause).toBe("Blank sends Vesper's reviewed false.");
+    });
+
+    it("never fires for a control the reviewed vocabulary has no word for, or a model with no reviewed policy", () => {
+      const row = qwenEdit2511([descriptor({ field: "go_fast", type: "boolean", default: true, reserved: true })]);
+      // Passing null (the caller's own choice for seed/editStrength/resolutionTier/LoRA)
+      // skips the reviewed lookup even on a row that HAS a policy, falling
+      // through to the descriptor default.
+      expect(controlDefaultFacts(row, null, "go_fast").defaultClause).toBe("Default: true.");
+      // An unreviewed model never reaches the reviewed branch regardless of
+      // which control key is asked for.
+      expect(controlDefaultFacts(model(), "fastMode", "cfgScale").defaultClause).toBeNull();
+    });
+
+    it("states an empty reviewed value in words, unlike an empty descriptor default", () => {
+      // `aisha-ai-official/likereality-pony-v1` reviews `negativePrompt: ""`
+      // ON PURPOSE (it displaces the wrapper's hidden "nsfw, naked" default),
+      // so — unlike the descriptor branch's emptiness gate — this must still
+      // print.
+      const row = model({
+        slug: "aisha-ai-official/likereality-pony-v1",
+        advancedCapabilities: {
+          controls: { negativePrompt: { field: "negative_prompt", type: "string" } },
+          providerInputs: [],
+        },
+      });
+      expect(controlDefaultFacts(row, "negativePrompt", "negative_prompt").defaultClause).toBe(
+        "Blank sends Vesper's reviewed an empty value.",
+      );
+    });
+  });
+});
+
+describe("reservedFieldHint", () => {
+  it("composes controlDefaultFacts into one appendable, space-prefixed string", () => {
     const withBoth = model({
       advancedCapabilities: {
         controls: { resolutionTier: { field: "resolution", type: "enum", enumValues: ["1K", "2K"] } },
@@ -192,22 +270,14 @@ describe("reservedFieldHint", () => {
         ],
       },
     });
-    expect(reservedFieldHint(withBoth, "resolution")).toBe(
+    expect(reservedFieldHint(withBoth, null, "resolution")).toBe(
       " Default: 1K. 1K ≈ 1 MP, 2K ≈ 4 MP and ~4× the Buzz; on an edit the output follows the reference’s aspect.",
     );
   });
 
-  it("never reads a non-reserved descriptor for the same field", () => {
-    // A field name can appear twice — once reserved (owned by a normalized
-    // control), once not — only in a hand-built fixture; a real probe never
-    // emits that. This still pins the reserved-only filter so a reserved
-    // control's hint can never pick up an unrelated advanced-input note.
-    const withUnreservedOnly = model({
-      advancedCapabilities: {
-        controls: {},
-        providerInputs: [descriptor({ description: "not this one", reserved: false })],
-      },
-    });
-    expect(reservedFieldHint(withUnreservedOnly, "cfgScale")).toBe("");
+  it("is empty when controlDefaultFacts has neither a default clause nor a note", () => {
+    expect(reservedFieldHint(model(), null, "cfgScale")).toBe("");
+    expect(reservedFieldHint(null, null, "cfgScale")).toBe("");
+    expect(reservedFieldHint(model(), null, undefined)).toBe("");
   });
 });
