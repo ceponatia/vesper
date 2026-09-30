@@ -130,7 +130,8 @@ characters unchanged.
   `https://orchestration.civitai.com/v2/consumer/workflows`.
 - The preflight uses `whatif=true`; only a successful, validated preflight permits
   an actual submission. Both calls carry the same model, LoRA, references, and
-  mature-content/payment policy.
+  mature-content/payment policy. The preflight's echo is compared field by field —
+  the prompt verbatim included — and any difference refuses the paid submit.
 - A what-if response can be `unassigned`: no rendering has occurred. Its policy,
   model identity, payment evidence, and errors determine whether it admits a paid
   request; it need not claim a completed generation.

@@ -116,17 +116,21 @@ const LANE_NAME = "Civitai Qwen Image 2.1";
 
 /**
  * `aspect_ratio` × tier → create `width`/`height`: multiples of 32, never above
- * the lane's 2048 cap. Non-square 2K sizes are the largest 32-aligned sizes of
- * the ratio inside that cap, which is below the checkpoint's native non-square
- * 2K.
+ * the lane's 2048 cap, and EXACTLY the advertised ratio. Exactness is load-
+ * bearing: the catalog offers these as exact ratio options, so the render path
+ * plans no crop for them (`chooseDimensions`) and returns the provider output
+ * as-is — a near-miss size (1216×832 is 1.46:1, not 3:2) would be recorded as
+ * `3:2` while the image was not. Non-square 2K sizes are therefore the largest
+ * exact-ratio, 32-aligned sizes inside the cap (1920×1280 for 3:2), which sit
+ * below the checkpoint's native non-square 2K.
  */
 const CREATE_SIZES: Record<CivitaiQwen21ResolutionTier, Record<CivitaiQwen21Aspect, { width: number; height: number }>> = {
   "1K": {
     "1:1": { width: 1024, height: 1024 },
     "4:3": { width: 1024, height: 768 },
     "3:4": { width: 768, height: 1024 },
-    "3:2": { width: 1216, height: 832 },
-    "2:3": { width: 832, height: 1216 },
+    "3:2": { width: 1152, height: 768 },
+    "2:3": { width: 768, height: 1152 },
     "16:9": { width: 1024, height: 576 },
     "9:16": { width: 576, height: 1024 },
   },
@@ -134,8 +138,8 @@ const CREATE_SIZES: Record<CivitaiQwen21ResolutionTier, Record<CivitaiQwen21Aspe
     "1:1": { width: 2048, height: 2048 },
     "4:3": { width: 2048, height: 1536 },
     "3:4": { width: 1536, height: 2048 },
-    "3:2": { width: 2048, height: 1344 },
-    "2:3": { width: 1344, height: 2048 },
+    "3:2": { width: 1920, height: 1280 },
+    "2:3": { width: 1280, height: 1920 },
     "16:9": { width: 2048, height: 1152 },
     "9:16": { width: 1152, height: 2048 },
   },
@@ -159,16 +163,19 @@ const ALLOWED_CONTROLS = new Set<string>([
 /**
  * The fields the preflight must echo back unchanged, per operation.
  *
+ * `prompt` is compared verbatim on both: a provider that normalized, truncated
+ * or dropped the prompt in its zero-Buzz answer would otherwise pass this gate
+ * and reach the paid submit with text nobody authored.
  * `width`/`height` are compared on create only: on edit they are read-only and
  * inferred from the reference's aspect, so the echo carries values nobody sent.
  * `resolution` is compared on edit only, the one operation that sends it.
  */
 const CREATE_ECHO_FIELDS = [
-  "engine", "ecosystem", "model", "operation", "width", "height", "quantity",
+  "engine", "ecosystem", "model", "operation", "prompt", "width", "height", "quantity",
   "cfgScale", "steps", "sampler", "scheduler", "outputFormat",
 ] as const;
 const EDIT_ECHO_FIELDS = [
-  "engine", "ecosystem", "model", "operation", "resolution", "quantity",
+  "engine", "ecosystem", "model", "operation", "prompt", "resolution", "quantity",
   "cfgScale", "steps", "sampler", "scheduler", "outputFormat",
 ] as const;
 

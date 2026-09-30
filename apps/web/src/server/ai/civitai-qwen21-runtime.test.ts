@@ -115,12 +115,12 @@ describe("Civitai Qwen Image 2.1 workflow", () => {
   it("sizes a create from the aspect and the resolution tier", () => {
     const sizes: Record<string, Record<string, [number, number]>> = {
       "1K": {
-        "1:1": [1024, 1024], "4:3": [1024, 768], "3:4": [768, 1024], "3:2": [1216, 832],
-        "2:3": [832, 1216], "16:9": [1024, 576], "9:16": [576, 1024],
+        "1:1": [1024, 1024], "4:3": [1024, 768], "3:4": [768, 1024], "3:2": [1152, 768],
+        "2:3": [768, 1152], "16:9": [1024, 576], "9:16": [576, 1024],
       },
       "2K": {
-        "1:1": [2048, 2048], "4:3": [2048, 1536], "3:4": [1536, 2048], "3:2": [2048, 1344],
-        "2:3": [1344, 2048], "16:9": [2048, 1152], "9:16": [1152, 2048],
+        "1:1": [2048, 2048], "4:3": [2048, 1536], "3:4": [1536, 2048], "3:2": [1920, 1280],
+        "2:3": [1280, 1920], "16:9": [2048, 1152], "9:16": [1152, 2048],
       },
     };
     for (const tier of CIVITAI_QWEN21_RESOLUTION_TIERS) {
@@ -284,7 +284,7 @@ describe("Civitai Qwen Image 2.1 workflow", () => {
 
   it("reports a create's size and an edit's pixel budget as the sent shape", () => {
     expect(civitaiQwen21SentShape({ aspect: "3:2", controlInput: { resolution: "2K" }, referenceCount: 0 }))
-      .toEqual({ field: "width,height", value: "2048x1344" });
+      .toEqual({ field: "width,height", value: "1920x1280" });
     expect(civitaiQwen21SentShape({ aspect: null, referenceCount: 0 }))
       .toEqual({ field: "width,height", value: "1024x1024" });
     expect(civitaiQwen21SentShape({ aspect: "3:2", controlInput: { resolution: "2K" }, referenceCount: 2 }))
@@ -305,6 +305,8 @@ describe("Civitai Qwen Image 2.1 preflight echo", () => {
   });
 
   it.each([
+    ["a normalized prompt", "create", (input: Record<string, unknown>) => { input.prompt = `${String(input.prompt)}.`; }, /field prompt/],
+    ["a dropped prompt on an edit", "edit", (input: Record<string, unknown>) => { delete input.prompt; }, /field prompt/],
     ["a dropped negative prompt", "create", (input: Record<string, unknown>) => { delete input.negativePrompt; }, /negative prompt/],
     ["a changed sampler", "create", (input: Record<string, unknown>) => { input.sampler = "euler"; }, /field sampler/],
     ["a changed scheduler", "create", (input: Record<string, unknown>) => { input.scheduler = "simple"; }, /field scheduler/],

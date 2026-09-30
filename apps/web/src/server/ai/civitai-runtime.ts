@@ -492,7 +492,9 @@ function kleinStepEcho(echoed: JsonRecord | null, wanted: JsonRecord): string | 
   if (!echoed || (echoed.modelVariant ?? echoed.model) !== "klein") {
     return "Civitai preflight did not echo the requested Klein variant";
   }
-  for (const key of ["engine", "modelVersion", "operation", "width", "height", "quantity", "cfgScale", "steps", "sampleMethod", "schedule", "outputFormat", "enablePromptExpansion"] as const) {
+  // `prompt` is compared verbatim: a normalized, truncated or dropped prompt in
+  // the zero-Buzz answer must refuse the paid submit, not pass through it.
+  for (const key of ["engine", "modelVersion", "operation", "prompt", "width", "height", "quantity", "cfgScale", "steps", "sampleMethod", "schedule", "outputFormat", "enablePromptExpansion"] as const) {
     if (echoed[key] !== wanted[key]) return `Civitai preflight changed or omitted requested field ${key}`;
   }
   return null;
