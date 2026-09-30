@@ -58,6 +58,7 @@ export {
 export type { ImageFeature, ImageModelRequestFacts } from "./features";
 export {
   QWEN_IMAGE_FAMILY,
+  civitaiQwenImage21,
   qwenEditFeatures,
   qwenImage2512,
   qwenImageEdit2511,
@@ -65,6 +66,7 @@ export {
 export { adapterForImageModel } from "./registry";
 export {
   CIVITAI_FLUX2_KLEIN4B_SLUG,
+  CIVITAI_QWEN_IMAGE_21_SLUG,
   FAL_QWEN3_EDIT_SLUG,
   FAL_QWEN3_TEXT_SLUG,
   imageModelProvider,
