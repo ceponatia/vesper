@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { imageModelSchema, type ImageModel } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 
 vi.mock("../images/lora-credentials", () => ({
   civitaiApiToken: () => "civitai-test-token",
@@ -8,7 +9,6 @@ vi.mock("../images/lora-credentials", () => ({
 import {
   CIVITAI_QWEN21_ASPECTS,
   CIVITAI_QWEN21_RESOLUTION_TIERS,
-  CIVITAI_QWEN_IMAGE_21_SLUG,
   CIVITAI_QWEN_IMAGE_21_VERSION_ID,
   civitaiQwen21SentShape,
   civitaiQwen21Workflow,

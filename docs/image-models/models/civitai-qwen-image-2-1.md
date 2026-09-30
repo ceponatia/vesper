@@ -121,6 +121,9 @@ multiple of 32 and at most 2048:
   ([../../images/providers/render-intents.md](../../images/providers/render-intents.md)).
 - The checkpoint's native non-square 2K sizes exceed Civitai's 2048 cap; the 2K
   column is the largest 32-aligned fit of each ratio.
+- The 2048 cap bounds create inputs, not edit outputs: an edit at the 2K tier
+  from an 832×1216 reference was echoed at 1696×2464 (preflight, 2026-09-30),
+  priced at the same four-megapixel factor as a 2048×2048 create.
 
 ## Cost
 
