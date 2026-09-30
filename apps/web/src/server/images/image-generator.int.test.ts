@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it } from "vitest";
-import type { RenderAdvisory } from "@vesper/image-core";
+import { resolveImageLoraArtifactLocator, type RenderAdvisory } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
@@ -22,7 +23,7 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { disableSafetyChecker } from "../ai";
+import { CIVITAI_QWEN_IMAGE_21_VERSION_ID, disableSafetyChecker } from "../ai";
 import { db, imageGeneratorRuns, imageLoras, imageModels, images } from "../db";
 import { createImageAsset, imageMeta, saveImageBuffer, type ImageKind } from "./asset-storage";
 import { setImageGeneratorRendererForTesting, type GeneratorRenderRequest } from "./image-generator-render";
@@ -2736,6 +2737,212 @@ describe.skipIf(!ready)("image generator over the seeded FLUX.1 Kontext Dev row"
     const payload = await runImageGeneratorRun(id, ownerId, sink);
     expect(payload.status).toBe("succeeded");
     expect(captured[0]?.intent.prompt).toBe(prompt);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The seeded Civitai Qwen Image 2.1 row (#660)
+// ---------------------------------------------------------------------------
+
+/**
+ * Migration 0151 seeds this row. NOT planted by this suite — the same
+ * evidence-through-migration pattern the klein and Kontext blocks above use:
+ * the acceptance question is whether the migrated database's own bare-slug
+ * row is selectable and runnable on the Generator bench, and a fixture copy
+ * would answer a different question. `image-model-seeds.int.test.ts` owns the
+ * row's own probe-shaped columns; this proves the Generator's cross-stack
+ * machinery reaches them.
+ *
+ * The case below kills two defects at once: a curated `civitai_model_version`
+ * library row silently failing to resolve to anything sendable, and this
+ * lane's own edit-shape refusal (`civitaiQwen21Workflow`,
+ * `apps/web/src/server/ai/civitai-qwen21-runtime.ts` — "a chosen output shape
+ * on an edit is refused rather than recorded and not applied", fixed 2026-09-30)
+ * tripping on the Generator's ordinary default of asking for none.
+ */
+const CIVITAI_QWEN21_ID = "imgmdlcivqwen21aaaaaaaa";
+const CIVITAI_QWEN21_LORA_ID = "imgloracivqwen21compataa";
+const CIVITAI_QWEN21_LORA_LOCATOR = "2222222";
+/** Curated for a model this row never names — the #660 incompatible-slug case. */
+const CIVITAI_QWEN21_LORA_INCOMPATIBLE_ID = "imgloracivqwen21incompaa";
+
+describe.skipIf(!ready)("image generator over the seeded Civitai Qwen Image 2.1 row (#660)", () => {
+  /**
+   * A renderer that answers with the version it was ASKED for, the same
+   * pattern the klein and Kontext blocks' own stubs use — the suite's shared
+   * stub returns a constant, which cannot tell a recorded pin apart from a
+   * recorded answer.
+   */
+  function stubCivitaiQwen21Renderer(): void {
+    setImageGeneratorRendererForTesting(async (request) => {
+      captured.push(request);
+      const requested = request.intent.versionId;
+      const recordedVersionId = requested ?? null;
+      return {
+        ok: true,
+        image: await testPngBuffer(),
+        predictionId: "pred_civitai_qwen21_1",
+        executedVersionId: requested,
+        attempt: {
+          shape: null,
+          modelId: CIVITAI_QWEN21_ID,
+          modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG,
+          profileId: "image-generator/run",
+          task: "item",
+          promptStrategy: "text_to_image_description",
+          requestedVersionId: recordedVersionId,
+          seed: null,
+          appliedControls: {},
+          droppedControls: [],
+          sentReferenceRoles: [],
+          predictionId: "pred_civitai_qwen21_1",
+          executedVersionId: recordedVersionId,
+        },
+      };
+    });
+  }
+
+  beforeAll(async () => {
+    if (!ready) return;
+    // Fail here rather than through a confusing refusal in each case: the row
+    // comes from migration 0151, so a database that lacks it is unmigrated.
+    const rows = await db()
+      .select({ id: imageModels.id })
+      .from(imageModels)
+      .where(eq(imageModels.id, CIVITAI_QWEN21_ID));
+    expect(
+      rows,
+      "migration 0151 must have seeded the Civitai Qwen Image 2.1 row — re-run pnpm db:migrate",
+    ).toHaveLength(1);
+
+    // Curated for this LoRA arm specifically. Planted delete-first like every
+    // other global registry fixture in this suite.
+    await db()
+      .delete(imageLoras)
+      .where(inArray(imageLoras.id, [CIVITAI_QWEN21_LORA_ID, CIVITAI_QWEN21_LORA_INCOMPATIBLE_ID]));
+    await db()
+      .insert(imageLoras)
+      .values([
+        {
+          id: CIVITAI_QWEN21_LORA_ID,
+          label: "Civitai Qwen 2.1 Fixture LoRA",
+          locatorType: "civitai_model_version",
+          locator: CIVITAI_QWEN21_LORA_LOCATOR,
+          compatibleModelSlugs: [CIVITAI_QWEN_IMAGE_21_SLUG],
+          // Pinned to the hosted checkpoint's own version — this lane's
+          // identity IS its `probed_version_id` rather than a `version`
+          // selected per request.
+          compatibleVersionIds: [CIVITAI_QWEN_IMAGE_21_VERSION_ID],
+          defaultScale: 0.8,
+          minimumScale: 0.5,
+          maximumScale: 1,
+          allowedTasks: ["scene"],
+        },
+        {
+          // Same lane, same scale band — curated for a slug this row never
+          // names, so the mechanical `compatibleModelSlugs` gate
+          // (`evaluateImageLoraForRender`,
+          // packages/image-core/src/loras/image-loras.ts) is the only thing
+          // the refusal case below can be testing.
+          id: CIVITAI_QWEN21_LORA_INCOMPATIBLE_ID,
+          label: "Civitai Qwen 2.1 Fixture LoRA (wrong model)",
+          locatorType: "civitai_model_version",
+          locator: "3333333",
+          compatibleModelSlugs: ["civitai/some-other-checkpoint"],
+          compatibleVersionIds: [],
+          defaultScale: 0.8,
+          minimumScale: 0.5,
+          maximumScale: 1,
+          allowedTasks: ["scene"],
+        },
+      ]);
+  });
+
+  afterAll(async () => {
+    // Only the LoRA fixtures — the seeded model row is migration 0151's, never
+    // this suite's to remove.
+    if (ready) {
+      await db()
+        .delete(imageLoras)
+        .where(inArray(imageLoras.id, [CIVITAI_QWEN21_LORA_ID, CIVITAI_QWEN21_LORA_INCOMPATIBLE_ID]));
+    }
+  });
+
+  it("runs a curated LoRA at its chosen scale through the edit lane, two references, no chosen shape (#660)", async () => {
+    stubCivitaiQwen21Renderer();
+    const first = await seedReadyImage();
+    const second = await seedReadyImage();
+    const prompt = "A weathered sea captain studying charts by lantern light.";
+    const { id, sink } = await createRun({
+      modelId: CIVITAI_QWEN21_ID,
+      prompt,
+      inputs: { primary: [{ imageId: first }, { imageId: second }], dedicated: [] },
+      controls: { lora: { id: CIVITAI_QWEN21_LORA_ID, scale: 0.8 } },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    // The exact address `compileProfileRenderPlan`
+    // (packages/image-core/src/render-kernel/compile-profile-plan.ts) copies
+    // verbatim into `controlInput.civitai_lora_version` — the field this row's
+    // `advancedCapabilities.controls.loraWeights` binds
+    // (drizzle/0151_civitai-qwen-image-2-1.sql) — is exactly what
+    // `resolveImageLoraArtifactLocator` builds for a `civitai_model_version`
+    // locator. Proven on the intent rather than the persisted record: the AIR
+    // string Civitai's wire format actually needs is only built inside
+    // `runCivitaiLane`, which this stubbed renderer never reaches.
+    expect(captured[0]?.intent.resolvedLora).toMatchObject({
+      id: CIVITAI_QWEN21_LORA_ID,
+      locator: resolveImageLoraArtifactLocator({
+        locatorType: "civitai_model_version",
+        locator: CIVITAI_QWEN21_LORA_LOCATOR,
+      }),
+      scale: 0.8,
+    });
+    expect(captured[0]?.intent.references).toHaveLength(2);
+    // Raw, unrewritten: this family composes no `preparePrompt`
+    // (packages/image-models/src/families/qwen/image-2-1.ts).
+    expect(captured[0]?.intent.prompt).toBe(prompt);
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.failureCode).toBeNull();
+    // The persisted provenance names the LoRA and the reference count.
+    // `appliedControls`/`primaryInputs`, not `providerRequest`, are this
+    // case's provenance evidence: `providerRequest` runs through
+    // `sanitizedProviderRequest`'s generic object catch-all
+    // (`image-generator-provenance.test.ts`'s "existing catch-all,
+    // unregressed"), which — pre-existing and by design, not something this
+    // lane broke — collapses this lane's nested Civitai workflow envelope
+    // (`steps`, `loraAirResolution`) to `"[omitted]"` rather than reporting
+    // its fields.
+    const effectiveRequest = imageMeta((await storedRow(id))?.meta)["effectiveRequest"] as
+      | { appliedControls?: Record<string, unknown>; primaryInputs?: unknown[] }
+      | undefined;
+    expect(effectiveRequest?.appliedControls).toMatchObject({ lora: { id: CIVITAI_QWEN21_LORA_ID, scale: 0.8 } });
+    expect(effectiveRequest?.primaryInputs).toHaveLength(2);
+  });
+
+  it("refuses a curated LoRA whose library row does not name this slug, before spend (#660)", async () => {
+    // The mechanical `compatibleModelSlugs` gate (`evaluateImageLoraForRender`,
+    // packages/image-core/src/loras/image-loras.ts) runs before any render —
+    // a mis-curated row must never reach the renderer under a record naming a
+    // LoRA that was never sent.
+    stubCivitaiQwen21Renderer();
+    const first = await seedReadyImage();
+    const second = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: CIVITAI_QWEN21_ID,
+      inputs: { primary: [{ imageId: first }, { imageId: second }], dedicated: [] },
+      controls: { lora: { id: CIVITAI_QWEN21_LORA_INCOMPATIBLE_ID, scale: 0.8 } },
+    });
+
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const row = await storedRow(id);
+    expect(row?.status).toBe("failed");
+    expect(row?.failureCode).toBe("image_lora.incompatible");
+    expect(captured).toHaveLength(0);
   });
 });
 
