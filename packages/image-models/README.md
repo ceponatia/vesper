@@ -99,17 +99,18 @@ so a second pass that changed the text would make a render refuse against its
 own compiled prompt.
 
 **The family boundary is the checkpoint, not the provider account.** Qwen
-Image 2.1 sits in this same family string (`qwen-image`) because it shares
-nothing about the provider it composes through — it shares the family's
-identity as a Qwen checkpoint. It is still its own adapter with its own
-feature composition (`qwenImage21Features()`, `families/qwen/image-2-1.ts`)
-rather than a variant of `qwenEditFeatures()`: 2.1 is a 7B single-stream DiT
-sampled with true CFG and a real step count, one checkpoint that both
-generates and edits with up to ten references, and its LoRAs (Civitai
-`baseModel: "Qwen 2.1"`, AIR ecosystem `qwen21`) are not cross-compatible with
-the 20B family's (`baseModel: "Qwen"`, AIR ecosystem `qwen`) — a fact the
-provider does not enforce, so Vesper's own render-time gate is what tells
-them apart.
+Image 2.1 sits in this same family string (`qwen-image`) because `QWEN_IMAGE_FAMILY`
+names the checkpoint family, not a provider path — it belongs here for the same
+reason `qwen/qwen-image-edit-2511` and `qwen/qwen-image-2512` do, despite
+reaching Vesper through a different provider (Civitai, not Replicate). It is
+still its own adapter with its own feature composition (`qwenImage21Features()`,
+`families/qwen/image-2-1.ts`) rather than a variant of `qwenEditFeatures()`:
+2.1 is a 7B single-stream DiT sampled with true CFG and a real step count, one
+checkpoint that both generates and edits with up to ten references, and its
+LoRAs (Civitai `baseModel: "Qwen 2.1"`, AIR ecosystem `qwen21`) are not
+cross-compatible with the 20B family's (`baseModel: "Qwen"`, AIR ecosystem
+`qwen`) — a fact the provider does not enforce, so Vesper's own render-time
+gate is what tells them apart.
 
 The edit adapter composes the semantic LoRA feature. The probed registry row is
 still the authority on the actual provider fields: if a future version drops or
