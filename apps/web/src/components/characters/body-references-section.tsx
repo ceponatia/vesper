@@ -19,6 +19,7 @@ import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { PortraitCropUploadDialog } from "./avatar-upload-dialog";
 import {
+  BODY_REFERENCE_BUILDING,
   BODY_REFERENCE_CHANGE_EFFECT,
   BODY_REFERENCE_REAL_PERSON_NOTE,
   BODY_REFERENCE_UNCLOTHED_REFUSED,
@@ -51,6 +52,12 @@ export interface BodyReferencesSectionProps {
   characterId: string;
   name: string;
   body: BodyReferenceSet;
+  /**
+   * A reference-view build is live or being submitted. Every body-image write
+   * is refused meanwhile (the build's renders would land stale), so the
+   * controls wait and say why.
+   */
+  building: boolean;
   /** Called after any write — the panel refetches the set and the views together. */
   onChanged: () => void;
 }
@@ -62,13 +69,15 @@ interface UploadTarget {
   readonly tag: BodyReferenceTag;
 }
 
-export function BodyReferencesSection({ characterId, name, body, onChanged }: BodyReferencesSectionProps) {
+export function BodyReferencesSection({ characterId, name, body, building, onChanged }: BodyReferencesSectionProps) {
   const toast = useToast();
   const headingId = useId();
   const [busySlot, setBusySlot] = useState<BodyReferenceSlot | null>(null);
   const [upload, setUpload] = useState<UploadTarget | null>(null);
   const [removing, setRemoving] = useState<BodyReferenceSummary | null>(null);
   const bySlot = new Map(body.images.map((image) => [image.slot, image]));
+  // Every write waits while the sheet builds: the server refuses one as `busy`.
+  const locked = building || busySlot !== null;
 
   /** The tag a new image in this slot starts with, never one the adult gate refuses. */
   const startingTag = (slot: BodyReferenceSlot, current: BodyReferenceSummary | undefined): BodyReferenceTag => {
@@ -142,6 +151,11 @@ export function BodyReferencesSection({ characterId, name, body, onChanged }: Bo
           Optional. Give up to two full-body images and every view is built with them, so the views follow this
           character&apos;s real body. The face still comes from the accepted portrait.
         </p>
+        {building ? (
+          <p role="status" className="text-xs text-paper-400">
+            {BODY_REFERENCE_BUILDING}
+          </p>
+        ) : null}
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {bodyReferenceSlots.map((slot) => {
@@ -170,8 +184,8 @@ export function BodyReferencesSection({ characterId, name, body, onChanged }: Bo
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Replace image", onSelect: () => openUpload(slot), disabled: busySlot !== null },
-                        { label: "Remove", onSelect: () => setRemoving(image), danger: true, disabled: busySlot !== null },
+                        { label: "Replace image", onSelect: () => openUpload(slot), disabled: locked },
+                        { label: "Remove", onSelect: () => setRemoving(image), danger: true, disabled: locked },
                       ]}
                     />
                   ) : null}
@@ -182,14 +196,14 @@ export function BodyReferencesSection({ characterId, name, body, onChanged }: Bo
                       legend={`What ${label.toLowerCase()} shows`}
                       value={image.tag}
                       unclothedAllowed={body.unclothedAllowed}
-                      disabled={busy || busySlot !== null}
+                      disabled={locked}
                       onChange={(tag) => void retag(image, tag)}
                     />
                     {image.withheld ? <p className="text-xs leading-relaxed text-danger-300">{BODY_REFERENCE_UNCLOTHED_REFUSED}</p> : null}
                   </>
                 ) : (
                   <div className="mt-auto">
-                    <Button size="sm" busy={busy} disabled={busySlot !== null} onClick={() => openUpload(slot)}>
+                    <Button size="sm" busy={busy} disabled={locked} title={building ? BODY_REFERENCE_BUILDING : undefined} onClick={() => openUpload(slot)}>
                       Add body image
                     </Button>
                   </div>
@@ -215,7 +229,7 @@ export function BodyReferencesSection({ characterId, name, body, onChanged }: Bo
                 legend="This image shows the body"
                 value={upload.tag}
                 unclothedAllowed={body.unclothedAllowed}
-                disabled={busySlot !== null}
+                disabled={locked}
                 onChange={(tag) => setUpload({ ...upload, tag })}
               />
               <BodyAttributeSummary body={body} />

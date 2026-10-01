@@ -401,6 +401,9 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
           characterId={characterId}
           name={name}
           body={views.data?.bodyReferences ?? emptyBodyReferenceSet()}
+          // A body image changed mid-build strands that build's renders, so the
+          // server refuses it; the controls wait with the sheet.
+          building={inFlight || submitting}
           onChanged={refetch}
         />
       ) : null}

@@ -12,7 +12,6 @@ import {
   type BodyReferenceImage,
   type BodyReferenceSet,
   type BodyReferenceSlot,
-  type BodyReferenceTag,
   type CharacterProfile,
 } from "@/contracts";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
@@ -21,16 +20,14 @@ import { characterBodyReferences, characters, db, images } from "../db";
 import { readImageBytes } from "./asset-storage";
 
 /**
- * A character's BODY REFERENCE IMAGES — every write to
- * `character_body_references`, and the reads the reference-view build, the
+ * A character's BODY REFERENCE IMAGES — the reads of
+ * `character_body_references` the reference-view build, the
  * sheet's staleness projection and the studio share
- * (`docs/images/pipelines/reference-views.md` §Body reference images).
+ * (`docs/images/pipelines/body-reference-images.md`).
  *
  * The rules live in `contracts/images/body-references.ts`; this module supplies
- * them with rows. Every write runs under the CHARACTER row lock — the same lock
- * the reference-view store takes — so a change of body images and a view's
- * reservation cannot interleave: a reservation sees the set its worker read, or
- * refuses.
+ * them with rows. The writes are `body-reference-writes.ts`, which needs the
+ * reference-view store's live-build check and so sits above both stores.
  *
  * Refusals are values. A character that is not the caller's reads as one with
  * no images, the same not-yours ≡ gone indistinguishability every character
@@ -44,7 +41,7 @@ export const BODY_REFERENCE_UNKNOWN = "images.body_references.unknown_row";
 export const BODY_REFERENCE_UNREADABLE = "images.body_references.unreadable";
 
 export type BodyReferenceRow = typeof characterBodyReferences.$inferSelect;
-type BodyReferenceTransaction = Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0];
+export type BodyReferenceTransaction = Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0];
 export type BodyReferenceExecutor = ReturnType<typeof db> | BodyReferenceTransaction;
 
 function slotOf(value: number): BodyReferenceSlot | null {
@@ -59,7 +56,7 @@ function imageOf(row: BodyReferenceRow): BodyReferenceImage | null {
 }
 
 /** Every current row for this character, slot order. */
-async function currentBodyReferenceRows(characterId: string, executor: BodyReferenceExecutor): Promise<BodyReferenceRow[]> {
+export async function currentBodyReferenceRows(characterId: string, executor: BodyReferenceExecutor): Promise<BodyReferenceRow[]> {
   return executor
     .select()
     .from(characterBodyReferences)
@@ -106,7 +103,7 @@ export async function currentSendableBodyReferences(
 }
 
 /** The owner's character with its parsed profile, or undefined when it is not theirs. */
-async function readOwnedProfile(
+export async function readOwnedBodyReferenceProfile(
   characterId: string,
   ownerId: string,
   executor: BodyReferenceExecutor,
@@ -133,11 +130,11 @@ export async function readBodyReferenceEligibility(
   ownerId: string,
   sink?: DiagnosticSink,
 ): Promise<{ readonly unclothedAllowed: boolean } | undefined> {
-  const profile = await readOwnedProfile(characterId, ownerId, db(), sink);
+  const profile = await readOwnedBodyReferenceProfile(characterId, ownerId, db(), sink);
   return profile === undefined ? undefined : { unclothedAllowed: imageAgeAllowsIntimate(profile) };
 }
 
-function summarize(rows: readonly BodyReferenceRow[], profile: CharacterProfile): BodyReferenceSet {
+export function summarizeBodyReferences(rows: readonly BodyReferenceRow[], profile: CharacterProfile): BodyReferenceSet {
   return {
     images: rows.flatMap((row) => {
       const image = imageOf(row);
@@ -161,9 +158,9 @@ export async function getBodyReferenceSet(
   sink?: DiagnosticSink,
   executor: BodyReferenceExecutor = db(),
 ): Promise<BodyReferenceSet> {
-  const profile = await readOwnedProfile(characterId, ownerId, executor, sink);
+  const profile = await readOwnedBodyReferenceProfile(characterId, ownerId, executor, sink);
   if (profile === undefined) return emptyBodyReferenceSet();
-  return summarize(await currentBodyReferenceRows(characterId, executor), profile);
+  return summarizeBodyReferences(await currentBodyReferenceRows(characterId, executor), profile);
 }
 
 // ---------------------------------------------------------------------------
@@ -222,111 +219,6 @@ export async function loadBodyReferencesForBuild(input: {
     loaded.push({ ...image, buffer });
   }
   return { sendable, loaded };
-}
-
-// ---------------------------------------------------------------------------
-// Writes
-// ---------------------------------------------------------------------------
-
-/** Why a write did nothing. `changed`: the slot no longer holds the image the owner saw. */
-export type BodyReferenceWriteRefusal = "not_found" | "ineligible" | "changed";
-
-export type BodyReferenceWriteResult =
-  | { status: "written"; set: BodyReferenceSet }
-  | { status: BodyReferenceWriteRefusal };
-
-/**
- * One body-image write under the character row lock, answering with the set it
- * left behind. The lock is the reference-view store's own, so a reservation
- * reading the set and this write changing it are serialized.
- */
-function withBodyReferenceLock(
-  characterId: string,
-  ownerId: string,
-  operation: (
-    tx: BodyReferenceTransaction,
-    profile: CharacterProfile,
-    current: BodyReferenceRow[],
-  ) => Promise<BodyReferenceWriteRefusal | null>,
-): Promise<BodyReferenceWriteResult> {
-  return db().transaction(async (tx): Promise<BodyReferenceWriteResult> => {
-    const profile = await readOwnedProfile(characterId, ownerId, tx, undefined, true);
-    if (profile === undefined) return { status: "not_found" };
-    const refusal = await operation(tx, profile, await currentBodyReferenceRows(characterId, tx));
-    if (refusal !== null) return { status: refusal };
-    return { status: "written", set: summarize(await currentBodyReferenceRows(characterId, tx), profile) };
-  });
-}
-
-/** An `unclothed` tag on a character the adult gate refuses — the bare views' own refusal. */
-function tagRefused(tag: BodyReferenceTag, profile: CharacterProfile): boolean {
-  return bodyReferenceWithheld({ tag }, profile);
-}
-
-/**
- * Put an already-saved `body_reference` asset in a slot: fill an empty one, or
- * replace the image the owner saw there (`expectedImageId`, null for empty).
- * The replaced row is RETIRED, not rewritten — its asset is collected by the
- * sweep after the retention window. Nothing is rendered: the views read stale
- * until the owner builds them.
- */
-export function installBodyReference(input: {
-  characterId: string;
-  ownerId: string;
-  slot: BodyReferenceSlot;
-  imageId: string;
-  tag: BodyReferenceTag;
-  expectedImageId: string | null;
-}): Promise<BodyReferenceWriteResult> {
-  return withBodyReferenceLock(input.characterId, input.ownerId, async (tx, profile, current) => {
-    if (tagRefused(input.tag, profile)) return "ineligible";
-    const occupant = current.find((row) => row.slot === input.slot);
-    if ((occupant?.imageId ?? null) !== input.expectedImageId) return "changed";
-    if (occupant !== undefined) {
-      await tx.update(characterBodyReferences).set({ current: false }).where(eq(characterBodyReferences.id, occupant.id));
-    }
-    await tx.insert(characterBodyReferences).values({
-      characterId: input.characterId,
-      slot: input.slot,
-      imageId: input.imageId,
-      tag: input.tag,
-      current: true,
-    });
-    return null;
-  });
-}
-
-/** Change the tag of exactly the image the owner saw. The same tag again writes nothing. */
-export function retagBodyReference(input: {
-  characterId: string;
-  ownerId: string;
-  slot: BodyReferenceSlot;
-  tag: BodyReferenceTag;
-  expectedImageId: string;
-}): Promise<BodyReferenceWriteResult> {
-  return withBodyReferenceLock(input.characterId, input.ownerId, async (tx, profile, current) => {
-    if (tagRefused(input.tag, profile)) return "ineligible";
-    const occupant = current.find((row) => row.slot === input.slot);
-    if (occupant === undefined || occupant.imageId !== input.expectedImageId) return "changed";
-    if (occupant.tag === input.tag) return null;
-    await tx.update(characterBodyReferences).set({ tag: input.tag }).where(eq(characterBodyReferences.id, occupant.id));
-    return null;
-  });
-}
-
-/** Retire exactly the image the owner saw; its asset waits out the retention window. */
-export function removeBodyReference(input: {
-  characterId: string;
-  ownerId: string;
-  slot: BodyReferenceSlot;
-  expectedImageId: string;
-}): Promise<BodyReferenceWriteResult> {
-  return withBodyReferenceLock(input.characterId, input.ownerId, async (tx, _profile, current) => {
-    const occupant = current.find((row) => row.slot === input.slot);
-    if (occupant === undefined || occupant.imageId !== input.expectedImageId) return "changed";
-    await tx.update(characterBodyReferences).set({ current: false }).where(eq(characterBodyReferences.id, occupant.id));
-    return null;
-  });
 }
 
 // ---------------------------------------------------------------------------

@@ -36,6 +36,13 @@ export const BODY_REFERENCE_UNCLOTHED_REFUSED =
 
 export const BODY_REFERENCE_UNCLOTHED_UNAVAILABLE = "Needs a recognized adult apparent age.";
 
+/**
+ * Why the body-image controls wait: a change mid-build would strand that
+ * build's renders, so the server refuses it as `busy` until the sheet settles.
+ */
+export const BODY_REFERENCE_BUILDING =
+  "Reference views are building. Body images can be changed once they finish, so no render already paid for is wasted.";
+
 /** What any change of body images does, said once wherever one is made. */
 export const BODY_REFERENCE_CHANGE_EFFECT =
   "The reference views made from the previous images now read out of date. Nothing is rebuilt until you build them.";

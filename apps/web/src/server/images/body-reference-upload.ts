@@ -6,7 +6,9 @@ import { log } from "@/server/log";
 import { createImageAsset, saveImageBuffer, SHARP_DECODE_LIMITS } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
 import { decodeDataUrl } from "./upload";
-import { installBodyReference, readBodyReferenceEligibility, type BodyReferenceWriteResult } from "./body-reference-store";
+import { readBodyReferenceEligibility } from "./body-reference-store";
+import { installBodyReference, type BodyReferenceWriteResult } from "./body-reference-writes";
+import { referenceViewBuildLive } from "./reference-view-store";
 
 /**
  * An owner-supplied full-body image for one body-reference slot (#671).
@@ -48,10 +50,11 @@ export async function uploadBodyReference(input: UploadBodyReferenceInput): Prom
   }
   if (decoded.buffer.byteLength > MAX_DECODED_BYTES) return { status: "rejected", error: "that image is too large" };
 
-  // Cheap refusals before any bytes are processed. The install repeats both
-  // under the character lock; these only spare a decode nobody can use.
+  // Cheap refusals before any bytes are processed. The install repeats all
+  // three under the character lock; these only spare a decode nobody can use.
   const eligibility = await readBodyReferenceEligibility(input.characterId, input.ownerId, input.sink);
   if (eligibility === undefined) return { status: "not_found" };
+  if (await referenceViewBuildLive(input.characterId, input.ownerId)) return { status: "busy" };
   if (input.tag === "unclothed" && !eligibility.unclothedAllowed) return { status: "ineligible" };
 
   const asset = await createImageAsset({

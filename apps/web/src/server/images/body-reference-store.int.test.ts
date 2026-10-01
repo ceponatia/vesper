@@ -7,10 +7,8 @@ import { createImageAsset, saveImageBuffer } from "./asset-storage";
 import {
   currentSendableBodyReferences,
   getBodyReferenceSet,
-  installBodyReference,
-  removeBodyReference,
-  retagBodyReference,
 } from "./body-reference-store";
+import { installBodyReference, removeBodyReference, retagBodyReference } from "./body-reference-writes";
 import { referenceViewSweepPass } from "./reference-view-maintenance";
 import {
   claimReferenceViewLeases,
@@ -160,6 +158,36 @@ describe.skipIf(!ready)("body reference writes", () => {
     await db().update(characters).set({ profile: profileWithAge("teen") }).where(eq(characters.id, adult.characterId));
     const set = await getBodyReferenceSet(adult.characterId, ownerId);
     expect(set).toMatchObject({ unclothedAllowed: false, images: [{ slot: 1, tag: "unclothed", withheld: true }] });
+  });
+
+  /**
+   * A body-image write during a live build would strand its renders — the ones
+   * not yet reserved are charged and render nothing, the ones rendering land
+   * stale — so every write waits, exactly as the view upload does.
+   */
+  it.each(["queued", "running"] as const)("refuses every write while a %s reference-view build holds a lease", async (status) => {
+    const state = await fixture();
+    const first = await state.addBody(1, "clothed");
+    const [job] = await db().insert(jobs).values({
+      ownerId, type: "reference_views", status, payload: {
+        characterId: state.characterId, targets: [`${ROOT.angle}:${ROOT.wardrobe}`], leases: [{ ...ROOT, attemptId: null }],
+      },
+    }).returning({ id: jobs.id });
+    if (!job) throw new Error("fixture job insert failed");
+    try {
+      expect((await state.addBody(2, "clothed")).result.status).toBe("busy");
+      expect((await state.addBody(1, "clothed", first.image.id)).result.status).toBe("busy");
+      expect((await retagBodyReference({ characterId: state.characterId, ownerId, slot: 1, tag: "unclothed", expectedImageId: first.image.id })).status)
+        .toBe("busy");
+      expect((await removeBodyReference({ characterId: state.characterId, ownerId, slot: 1, expectedImageId: first.image.id })).status)
+        .toBe("busy");
+      expect((await bodyRows(state.characterId)).filter((row) => row.current).map((row) => [row.imageId, row.tag]))
+        .toEqual([[first.image.id, "clothed"]]);
+    } finally {
+      await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, job.id));
+    }
+    // Settled, the same write goes through.
+    expect((await state.addBody(2, "clothed")).result.status).toBe("written");
   });
 
   it("answers a foreign owner as a character with no images", async () => {

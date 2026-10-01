@@ -425,6 +425,23 @@ async function buildingReferenceViewSlots(
 }
 
 /**
+ * Whether any reference-view build is live for this character — a slot leased
+ * by a heartbeat-live job, or a pending current attempt. A body-image write
+ * waits while this is true: every view it renders sends, or records, the body
+ * images, so changing them mid-build strands the renders already admitted and
+ * charged. Read on the caller's connection, so a write under the character lock
+ * sees what the lock serializes.
+ */
+export async function referenceViewBuildLive(
+  characterId: string,
+  ownerId: string,
+  executor: ReferenceViewExecutor = db(),
+  now: Date = new Date(),
+): Promise<boolean> {
+  return (await buildingReferenceViewSlots(executor, characterId, ownerId, now)).length > 0;
+}
+
+/**
  * Whether replacing this slot's view must wait: the slot itself belongs to a
  * live build, or a view built from it — directly or through another — is
  * building (`referenceViewDescendantBusy`). Replacing the upstream mid-render

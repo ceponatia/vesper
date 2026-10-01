@@ -33,6 +33,7 @@ export function parseSlotParam(params: { slot: string }): BodyReferenceSlot | nu
 /** What the owner reads when a body-image write did nothing. */
 export const bodyReferenceWriteMessages = {
   not_found: "This character is no longer available.",
+  busy: "Reference views are still being built. Wait for them to finish, then change the body images again.",
   ineligible:
     "Undressed body images require a recognized adult apparent age. Update the character profile, or tag the image Clothed.",
   changed: "This body image changed elsewhere. Refresh, then try again.",

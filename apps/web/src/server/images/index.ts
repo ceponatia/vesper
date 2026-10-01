@@ -191,11 +191,13 @@ export {
   BODY_REFERENCE_UNKNOWN,
   BODY_REFERENCE_UNREADABLE,
   getBodyReferenceSet,
+} from "./body-reference-store";
+export {
   removeBodyReference,
   retagBodyReference,
   type BodyReferenceWriteRefusal,
   type BodyReferenceWriteResult,
-} from "./body-reference-store";
+} from "./body-reference-writes";
 export {
   uploadBodyReference,
   type UploadBodyReferenceInput,
