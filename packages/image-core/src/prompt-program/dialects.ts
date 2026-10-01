@@ -49,6 +49,7 @@ import type { ImageOperationContract,
 export const imagePromptDialectIds = [
   "qwen_2512_description",
   "qwen_2511_delta_edit",
+  "qwen_21_instruction_edit",
   "seedream_45_prose",
   "seedream_5_lite_prose",
   "wan_27_prose",

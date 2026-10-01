@@ -294,6 +294,7 @@ export {
   qwenImage2512NegativePhrase,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
+  qwenImage21Dialect,
   qwenImageEdit2511Dialect,
   // The current-look lock scope/coverage predicate (issue #551 Codex finding):
   // the one question the dialect and `character-prompt-program.ts` must answer

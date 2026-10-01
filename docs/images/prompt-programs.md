@@ -306,6 +306,14 @@ therefore declares `unsupported`, so every exclusion drops with the reason
 cannot change that. On an endpoint like this the positive channel is the only one
 that steers, and exclusions that matter have to become affirmative claims.
 
+**A field that exists can also be worse than useless.** `civitai/qwen-image-2.1`
+exposes `negativePrompt`, and the official pipeline applies it only under true
+CFG — but every bound profile on this endpoint runs at the blank `cfgScale` of
+1, where the lane REFUSES a negative prompt outright rather than silently
+ignoring it. Sending one there would not waste budget the way 2512's does; it
+would fail the render. Its dialect declares `none`/`unsupported` for that
+reason and drops every exclusion with `endpoint_negative_refused_at_operating_cfg`.
+
 A binding naming a dialect with no registered compiler **refuses**. Falling back
 to a generic prompt would silently drop every guarantee this layer provides.
 
@@ -330,6 +338,7 @@ its own forks out without disturbing its former siblings.
 | ---------- | ---------------- | ------------ | ---------------------------------------------------------------- |
 | Qwen 2512  | natural language | none         | the description generator                                        |
 | Qwen edit  | natural language | numbered     | the delta editor                                                 |
+| Qwen 2.1   | natural language | numbered     | the reference-view and chat-scene editor (`civitai/qwen-image-2.1`) |
 | Prose      | natural language | role labels  | Seedream, Wan, SD 3.5 Large, FLUX Dev, P-Image                   |
 | Tag        | comma tags       | none         | LikeReality Pony (Compel weights), SDXL PuLID                    |
 
@@ -338,6 +347,26 @@ property of taking a reference array. Seedream and Wan accept ordered arrays and
 document no numbering convention, so the prose family names each reference by
 its role and the person or place it shows, and asserts no slot number. A prompt
 that never says "Image 2" cannot say it about the wrong image.
+
+**Qwen 2.1 is its own compiler, not a shared implementation with the delta
+editor.** Both speak the family's numbered references, but 2.1 is one
+checkpoint that both generates (zero references) and edits (one to ten), where
+the delta editor is edit-only and refuses a compile with no reference at all;
+and 2.1's identity-preserve lock is a single/grouped-only shape, carrying no
+2511-style multi-person cast binding or reference-authority declaration —
+neither evidenced by any 2.1 trial yet. **It is also the one dialect that
+states nudity in words**: no Qwen 2.1 LoRA is generation-enabled on Civitai
+(owner ruling 2026-09-30/2026-10-01), so a fully bare subject — torso and
+pelvis both reading `bare`, the same threshold `selectReferenceView` uses for
+its `bare` reference-view wardrobe — gets an explicit nudity clause ("naked",
+"nude", "no clothes") alongside the ordinary exposure and intimate-anatomy
+wording, never in place of it and never for a partial undress. Every other
+dialect leaves nudity to the computed exposure facts alone. It also carries no
+negative channel at all: the probed endpoint's `negativePrompt` field is real
+but is REFUSED by the lane at the blank `cfgScale` every bound profile runs at,
+so sending one would fail the render rather than merely waste budget — see
+[the model page](../image-models/models/civitai-qwen-image-2-1.md) §Generation
+settings.
 
 ### Reference slots
 
