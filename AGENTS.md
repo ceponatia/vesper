@@ -172,15 +172,19 @@ Subagents never run on the session's own model when that model is Fable.
 ## Image-model requirements
 
 - Do not recommend, onboard, or use fal.ai-hosted image models for Vesper.
-- Every image model must support all three mandatory capabilities: runtime LoRAs, NSFW generation,
-  and reference-image inputs. LoRAs and reference images must work together in the same request.
+- Every image model must support two mandatory capabilities: NSFW generation and reference-image
+  inputs, including NSFW output from a reference edit.
+- Runtime LoRA support is not required (owner ruling 2026-10-01: a model that renders NSFW reference
+  edits without a LoRA needs none). When an endpoint supports LoRAs, integrate them through the curated
+  LoRA library, and verify a LoRA together with references on the exact endpoint before any production
+  route sends one.
 - Verify these capabilities on the exact provider endpoint and model version, including the provider's
   content policy and account restrictions. A model-family claim or a safety-toggle field alone is not proof.
 - Treat missing or unverified requirements as blockers to model suitability. Distinguish provider
   limitations from unfinished Vesper integration; do not silently relax these requirements.
 - An explicitly unverified model may remain selectable only in the admin Image Generator bench
   to collect the missing live evidence. Keep production profiles disabled and label the account,
-  combined LoRA/reference behavior, and output quality as unverified until tested on the exact
+  NSFW and reference behavior, and output quality as unverified until tested on the exact
   endpoint and variant. This bench access does not establish model suitability.
 
 ## Database changes
