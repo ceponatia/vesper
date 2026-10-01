@@ -91,7 +91,7 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  * plain exhaustive switch, no per-compile voice/grouping state beyond the
  * reference-slot bookkeeping numbering needs — reusing every wording helper
  * `dialect-qwen-2512.ts` and `dialect-qwen-2511.ts` already share
- * (`./dialect-qwen-prose`), with three endpoint-specific additions:
+ * (`./dialect-qwen-prose`), with four endpoint-specific additions:
  *
  * 1. `operation.reference_role` numbers the send slots (Qwen family
  *    convention) instead of 2512's "no reference syntax" stub.
@@ -111,6 +111,15 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  *    coverage alone never earns it: a minor's wardrobe, a `clothed` reference
  *    view, or an ordinary (non-`nsfw test`) variant reads the same bare
  *    coverage without the permission and states only the exposure sentences.
+ * 4. Every subject-naming call site reads {@link subjectPhrase}, not the raw
+ *    projection label: a cast member the scene naming policy left unnamed
+ *    because they are bound to a reference (`CHARACTER_LANE_SUBJECT_NAMING`,
+ *    #544 F2) gets "the person in Image N" rather than the shared placeholder
+ *    `"the subject"` every unlabelled cast member's claim would otherwise
+ *    carry alike (Codex review, PR #668: two unlabelled ensemble subjects
+ *    compiled indistinguishable "Use Image 1/2 for the subject's face"
+ *    instructions). See {@link subjectPhrase}'s own doc for what is and is not
+ *    reused from 2511's own naming apparatus.
  *
  * **No negative channel at all** (acceptance #3): the probed schema exposes
  * `negativePrompt`, but every bound profile runs at the blank `cfgScale` (1),
@@ -223,6 +232,60 @@ function identitySlotsFor(input: ImageDialectPositiveInput, ref: string | undefi
     .filter((slot) => slot.role === "identity" && slot.subjectRef === ref)
     .slice()
     .sort((left, right) => left.position - right.position);
+}
+
+/**
+ * The placeholder the SUBJECT PROJECTION writes for a person the application
+ * named nothing (`apps/web` `character-prompt-program.ts`
+ * `CHARACTER_LANE_SUBJECT_NAMING`, #544 F2) — never a real name. Recognised
+ * exactly as `dialect-qwen-2511.ts`'s own `UNNAMED_SUBJECT_LABEL` is: the scene
+ * lane deliberately supplies no label for a reference-anchored subject, and a
+ * dialect that read the placeholder as though it were one is how a scene once
+ * compiled "The subject … the subject's …" beside a numbered photograph of the
+ * very person it had declined to name.
+ */
+const UNNAMED_SUBJECT_PLACEHOLDER = "the subject";
+
+/** The subject's own display name, or null when the projection withheld one — see {@link UNNAMED_SUBJECT_PLACEHOLDER}. */
+function subjectName(input: ImageDialectPositiveInput, ref: string | undefined): string | null {
+  const name = label(input, ref);
+  return name === null || name.toLowerCase() === UNNAMED_SUBJECT_PLACEHOLDER ? null : name;
+}
+
+/**
+ * How this dialect refers to one entity once a claim is ready to name it: its
+ * own display label when the projection gave it one, or — for a SUBJECT the
+ * projection left unnamed because they are bound to a reference — a phrase
+ * naming the Image they are bound to, so two unlabelled cast members in one
+ * render are never called the same thing (Codex review, PR #668: a default
+ * ensemble scene compiled "Use Image 1 for the subject's face" beside "Use
+ * Image 2 for the subject's face", making the two indistinguishable and
+ * identity blending likely).
+ *
+ * Several identity images of one subject (a reference view beside the anchor)
+ * use the FIRST — the primary, lowest `position` — consistently, the same
+ * choice {@link identityLockSentence} already makes for the lock sentence
+ * itself: "the person in Image 1" names one photograph, not the pair.
+ *
+ * Reuses {@link identitySlotsFor} rather than re-deriving a lookup —
+ * `dialect-qwen-2511.ts`'s own naming apparatus (`subjectVoices`,
+ * `identitySlotFor`) is NOT reused whole: this dialect carries none of its
+ * pronoun resolution or multi-person grouping (see the module doc), so the
+ * generic noun "person" stands in for 2511's pronoun-derived "woman"/"man" —
+ * the honest answer when no pronoun set is read at all.
+ *
+ * Null only for an entity with neither a name nor any identity reference —
+ * an item, a location, or a cast member the payload carries no photograph of
+ * — where every call site's own `"the subject"`/`"The subject"` fallback
+ * (`prefixed`, or a literal check) answers exactly as it did before this
+ * function existed.
+ */
+function subjectPhrase(input: ImageDialectPositiveInput, ref: string | undefined): string | null {
+  const name = subjectName(input, ref);
+  if (name !== null) return name;
+  if (ref === undefined) return null;
+  const primary = identitySlotsFor(input, ref)[0];
+  return primary === undefined ? null : `the person in Image ${primary.position}`;
 }
 
 /**
@@ -395,8 +458,8 @@ function renderClaim(
     return null;
   }
   const value = describe(claim.value);
-  const subject = label(input, claim.subjectRef);
-  const object = label(input, claim.objectRef);
+  const subject = subjectPhrase(input, claim.subjectRef);
+  const object = subjectPhrase(input, claim.objectRef);
 
   switch (claim.concept) {
     // --- Operation ------------------------------------------------------------

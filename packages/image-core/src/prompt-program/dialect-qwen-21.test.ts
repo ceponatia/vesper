@@ -287,6 +287,95 @@ describe("numbered references drive the identity lock (owner ruling 2026-08-24: 
   });
 });
 
+/**
+ * Reference-bound subjects with no display label are named distinctly
+ * (Codex review, PR #668): the scene naming policy withholds a real label for
+ * a subject bound to a required identity reference and supplies the literal
+ * placeholder `"the subject"` instead (`apps/web`
+ * `character-prompt-program.ts` `CHARACTER_LANE_SUBJECT_NAMING`, #544 F2) —
+ * simulated here with that exact string rather than an absent `entityLabels`
+ * entry, so the fixture matches what a real ensemble scene's digest actually
+ * carries, not merely the easier "no entry at all" case.
+ */
+describe("reference-bound subjects with no display label are named distinctly", () => {
+  const UNNAMED = "the subject";
+
+  const twoSubjectDigest = () =>
+    world({
+      subjects: [
+        entity("subject", "nyx", [identityFact("nyx")]),
+        entity("subject", "vex", [identityFact("vex", "a man with a beard")]),
+      ],
+      references: [referenceFact("nyx"), referenceFact("vex")],
+      operation: operation({ subjectCount: 2 }),
+    });
+
+  const TWO_SLOTS = [
+    { position: 1, role: "identity" as const, subjectRef: "nyx" },
+    { position: 2, role: "identity" as const, subjectRef: "vex" },
+  ];
+
+  it("gives two identity-anchored unlabelled subjects two distinct Image-N phrases, never a shared 'the subject'", () => {
+    const compiled = compilePositive(twoSubjectDigest(), TWO_SLOTS, { nyx: UNNAMED, vex: UNNAMED });
+    expect(compiled.text).toContain("Image 1 shows the person in Image 1.");
+    expect(compiled.text).toContain("Image 2 shows the person in Image 2.");
+    expect(compiled.text).toContain("Use Image 1 for the person in Image 1's face");
+    expect(compiled.text).toContain("Use Image 2 for the person in Image 2's face");
+    // Every mention is bound to its own image; the shared, ambiguous
+    // placeholder survives nowhere in the compiled prompt.
+    expect(compiled.text.toLowerCase()).not.toMatch(/\bthe subject\b/);
+  });
+
+  it("keeps a labelled subject's real name beside an unlabelled sibling's Image-N phrase", () => {
+    const compiled = compilePositive(twoSubjectDigest(), TWO_SLOTS, { nyx: "Nyx", vex: UNNAMED });
+    expect(compiled.text).toContain("Use Image 1 for Nyx's face");
+    expect(compiled.text).toContain("Use Image 2 for the person in Image 2's face");
+    expect(compiled.text.toLowerCase()).not.toMatch(/\bthe subject\b/);
+  });
+
+  it("recognizes the projection's literal placeholder label, not only an absent entityLabels entry", () => {
+    const digest = world({
+      subjects: [entity("subject", "nyx", [identityFact("nyx")])],
+      references: [referenceFact("nyx")],
+    });
+    const compiled = compilePositive(digest, [{ position: 1, role: "identity", subjectRef: "nyx" }], { nyx: UNNAMED });
+    expect(compiled.text).toContain("Use Image 1 for the person in Image 1's face");
+  });
+
+  it("names a single unlabelled-but-referenced subject 'the person in Image 1' (intended change from the shared placeholder)", () => {
+    // Pinned rather than left at the pre-fix "the subject": applying one rule
+    // to every reference-bound unlabelled subject, single or ensemble, is
+    // simpler than two behaviors that diverge only once a second cast member
+    // appears — and the single-subject case carried the same placeholder-leak
+    // risk this fix closes, it simply had no second subject to collide with.
+    const digest = world({
+      subjects: [entity("subject", "nyx", [identityFact("nyx")])],
+      references: [referenceFact("nyx")],
+    });
+    const compiled = compilePositive(digest, [{ position: 1, role: "identity", subjectRef: "nyx" }]);
+    expect(compiled.text).toContain("Image 1 shows the person in Image 1.");
+    expect(compiled.text).toContain("Use Image 1 for the person in Image 1's face, skin tone and apparent age, exactly as shown");
+  });
+
+  it("the nudity-reinforcement clause also names each unlabelled subject distinctly", () => {
+    const digest = world({
+      subjects: [
+        entity("subject", "nyx", [identityFact("nyx"), exposureFact("nyx", "torso", "bare"), exposureFact("nyx", "pelvis", "bare")]),
+        entity("subject", "vex", [
+          identityFact("vex", "a man with a beard"),
+          exposureFact("vex", "torso", "bare"),
+          exposureFact("vex", "pelvis", "bare"),
+        ]),
+      ],
+      references: [referenceFact("nyx"), referenceFact("vex")],
+      operation: operation({ subjectCount: 2 }),
+    });
+    const compiled = compilePositive(digest, TWO_SLOTS, { nyx: UNNAMED, vex: UNNAMED }, true);
+    expect(compiled.text).toContain("the person in Image 1 is completely naked");
+    expect(compiled.text).toContain("the person in Image 2 is completely naked");
+  });
+});
+
 describe("no negative channel at all (acceptance #3)", () => {
   it("declares none/unsupported", () => {
     expect(dialect().negativeSyntax).toBe("none");
