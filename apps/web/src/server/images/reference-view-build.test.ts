@@ -8,6 +8,7 @@ import {
 } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { allReferenceViews, referenceViewAngles, type ReferenceView } from "@/contracts";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import {
   identityCandidateFixture as candidate,
@@ -91,7 +92,11 @@ import { db } from "../db";
 import type { ImageRow } from "./asset-storage";
 import { runImagePipeline, type ImagePipelineOptions } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
-import { buildCharacterPromptProgram, type CharacterPromptProgram } from "./character-prompt-program";
+import {
+  buildCharacterPromptProgram,
+  type CharacterPromptProgram,
+  IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
+} from "./character-prompt-program";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { resolveImageLoraForRender } from "./image-loras";
 import { resolveImageProfileForTask } from "./model-profiles";
@@ -492,5 +497,39 @@ describe("the age gate in front of the intimate route", () => {
     expect(mockModels).not.toHaveBeenCalled();
     expect(mockResolveLora).not.toHaveBeenCalled();
     expect(pipelineCalls.every((call) => !("intimateRoute" in (call.asset.meta ?? {})))).toBe(true);
+  });
+});
+
+/**
+ * NO NON-ADULT IS DRAWN UNDRESSED, NOT EVEN ON A `clothed` VIEW (owner ruling
+ * 2026-10-01). A character with no saved outfit reads bare on the clothed axis
+ * too, and exposure facts are stated on every route — so a minor's `clothed`
+ * view would describe them bare on any model. The prompt seam refuses it; this
+ * runs the REAL compiler (the suite stubs it elsewhere) to pin that the view's
+ * row fails before spend with the seam's words, which name the fix.
+ */
+describe("a minor's clothed view with no saved outfit", () => {
+  const FRONT_CLOTHED: ReferenceView = { angle: "front_full", wardrobe: "clothed" };
+
+  it("fails that view before spend, saying a saved outfit is needed", async () => {
+    const actual = await vi.importActual<typeof import("./character-prompt-program")>("./character-prompt-program");
+    mockProgram.mockImplementation(actual.buildCharacterPromptProgram);
+    stubCharacter(profileWithAge("teen"));
+    const sink = new DiagnosticCollector();
+
+    const report = await buildReferenceViews({
+      jobId: "job-1",
+      characterId: "chr-nyx",
+      ownerId: "usr-1",
+      targets: [FRONT_CLOTHED],
+      sink,
+    });
+
+    expect(report).toMatchObject({ built: 0, failed: 1 });
+    expect(mockIntent).not.toHaveBeenCalled();
+    const failure = vi.mocked(failReferenceView).mock.calls[0]?.[0].failureMessage;
+    expect(failure).toContain("does not resolve to an adult");
+    expect(failure).toContain("saved outfit");
+    expect(sink.items.some((item) => item.code === IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED)).toBe(true);
   });
 });
