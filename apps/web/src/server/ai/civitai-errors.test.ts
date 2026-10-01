@@ -56,6 +56,24 @@ describe("Civitai error contract", () => {
     expect(civitaiHttpFailure(400, "preflight", false).message).not.toContain("already reposted");
   });
 
+  /**
+   * PROTECTS (#672, PR #675 review): a spent preflight retry must not read as
+   * transient to the scene chain. `executeSceneChain` (scene.ts) reruns the
+   * same rung once when `runSceneProvider` classifies a failure as
+   * `transient`. That rerun would start a fresh preflight pair — four POSTs
+   * and up to ~8 minutes on one rung — for a failure whose disposition
+   * already says the next replacement is deliberate. The message reaches the
+   * classifier verbatim (runCivitaiLane returns `error.message`), so the
+   * contract is pinned on the message itself: a wording change that added
+   * "temporarily", "timeout" or a bare status code would fail here.
+   */
+  it("keeps a spent-retry preflight failure non-transient, so the scene chain falls back instead of rerunning the rung", () => {
+    expect(classifyImageFailureMessage(civitaiTransportFailure("preflight", false, true, true).message)).toBe("other");
+    for (const status of [429, 500, 502, 503, 504]) {
+      expect(classifyImageFailureMessage(civitaiHttpFailure(status, "preflight", false, [], true, undefined, true).message)).toBe("other");
+    }
+  });
+
   it("uses documented job reasons and an explicit terminal fallback", () => {
     expect(civitaiAsyncFailure("failed", ["no_provider_available"])).toMatchObject({
       code: "civitai_async_no_provider_available", retry: "deliberate",
