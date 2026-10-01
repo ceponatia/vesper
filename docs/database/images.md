@@ -8,7 +8,8 @@ the two admin bench run records.
 - **`images`** — `owner_id`, `kind`
   (`avatar` / `portrait_variant` / `scene` / `entity` / `chat_upload` / `chat_look` /
   `chat_place` / `identity_face_crop` / `identity_trial_output` / `lab_control` / `lab_output` /
-  `generator_output`). The chat kinds are chat-private and hard-deleted with the chat; which kinds
+  `generator_output` / `reference_view` / `body_reference`). The chat kinds are chat-private and
+  hard-deleted with the chat; which kinds
   are hidden derived assets, and what `HIDDEN_IMAGE_KINDS` subtracts from every user surface, is
   owned by [../images/asset-registry.md](../images/asset-registry.md). Also `entity_kind?`
   (`character`/`location`/`item` — set for `entity` images; always `character` for
@@ -87,10 +88,23 @@ the two admin bench run records.
   the owner's ruling on this attempt, written by a review or an upload and never cleared, because
   retiring a row overwrites `status` with `superseded` and would otherwise erase every ruling but
   the newest), `reviewed_by_user_id?` (→ `users`, no cascade — the audit survives the reviewer),
-  `reviewed_at?`. One slot of a character's reference view set: attempts are rows, and exactly one
-  per (character, angle, wardrobe) may be `current`
-  (a partial unique index). See
+  `reviewed_at?`, `upstream_view_id?` (the lineage of the upstream slot's attempt this view was
+  rendered from — no foreign key; null for a root view, an upload, and every row built before the
+  build order), `origin_attempt_id?` (for a restored copy, the attempt it copies — that attempt's
+  own origin when it was itself a copy; a row's lineage is `origin_attempt_id ?? id`; no foreign
+  key; null for every rendered and uploaded row),
+  `body_reference_set?` (the body-image set the view was rendered against — the id and tag, in slot
+  order, of the images routed to its wardrobe; null is the empty set, which every row built before
+  body images records, and what an upload stores). One
+  slot of a character's reference view set: attempts are rows, and exactly one per (character,
+  angle, wardrobe) may be `current` (a partial unique index). See
   [../images/pipelines/reference-views.md](../images/pipelines/reference-views.md).
+- **`character_body_references`** — `character_id` (→ `characters`, **FK-cascade**), `slot`
+  (CHECK `1` or `2`), `image_id` (→ `images`, **FK-cascade** — the hidden `body_reference` asset; a
+  purged image takes its row with it), `tag` (`clothed`/`unclothed`), `current`. A character's
+  full-body images: exactly one `current` row per (character, slot) (a partial unique index), and a
+  replaced or removed image's row is retired rather than rewritten, until the reference-view sweep
+  collects it. See [../images/pipelines/body-reference-images.md](../images/pipelines/body-reference-images.md).
 - **`image_identity_lora_bindings`** — `identity_pack_id` (→ `image_identity_packs`,
   **FK-cascade**), `lora_id` (→ `image_loras`, **FK-cascade**), `base_checkpoint`,
   `dataset_fingerprint`, `dataset_image_count`, `training_recipe_id`, `training_recipe_revision`,

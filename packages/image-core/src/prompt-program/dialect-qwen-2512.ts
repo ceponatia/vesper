@@ -521,6 +521,7 @@ export const qwenImage2512Dialect: ImagePromptDialectDefinition = {
   // The single `image` input is strength-based image-to-image rather than a
   // numbered composition slot, so this endpoint has no reference syntax to speak.
   referenceSyntax: "none",
+  bindsBodyReferences: false,
   supportsWeights: false,
   supportsLiteralQuotes: true,
   hiddenPromptSources: HIDDEN_SOURCES,

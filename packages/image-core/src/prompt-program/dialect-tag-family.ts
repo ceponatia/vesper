@@ -784,6 +784,7 @@ function tagDialect(spec: TagDialectSpec): ImagePromptDialectDefinition {
     // Neither endpoint composes from numbered or role-labelled slots — see
     // `operation.reference_role` above.
     referenceSyntax: "none",
+    bindsBodyReferences: false,
     supportsWeights: spec.positiveSyntax === "compel_tags",
     supportsLiteralQuotes: false,
     hiddenPromptSources: spec.hiddenPromptSources,

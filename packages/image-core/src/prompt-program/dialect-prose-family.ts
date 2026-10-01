@@ -250,6 +250,9 @@ function referenceIntroduction(
     case "reference":
       // The neutral role makes no semantic claim, so neither does its sentence.
       return "A reference image is provided.";
+    // Unreachable: the family declares `bindsBodyReferences: false`, so the
+    // character seam never plans a body image onto it.
+    case "body":
     case "mask":
     case "pose":
     case "depth":
@@ -640,6 +643,9 @@ function proseDialect(spec: ProseDialectSpec): ImagePromptDialectDefinition {
     negativeSyntax: "none",
     negativeTransport: "unsupported",
     referenceSyntax: spec.referenceSyntax,
+    // No member of the family has reviewed wording for a full-body image; the
+    // character seam drops one before it reaches these dialects.
+    bindsBodyReferences: false,
     supportsWeights: false,
     supportsLiteralQuotes: spec.supportsLiteralQuotes,
     hiddenPromptSources: spec.hiddenPromptSources,

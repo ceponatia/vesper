@@ -12,6 +12,7 @@ import {
   planIntentReferences,
   IMAGE_PROMPT_PROGRAM_META_KEY,
   IMAGE_WORLD_STATE_META_KEY,
+  type DroppedImageReference,
   type ImageConceptId,
   type ImageDialectReference,
   type ImageOperationContract,
@@ -127,6 +128,17 @@ import "./packs-qwen-21";
  * result, REFUSES a numbering dialect whose plan renumbered
  * ({@link IMAGE_CHARACTER_PROMPT_REFERENCES_RENUMBERED}), and hands back the
  * planned list so the caller sends the same one it just described.
+ *
+ * ## Body references
+ *
+ * A `body` reference (#671) is a full-body image of a cast member, sent for
+ * the body alone; the portrait owns the face. It travels as its own role so it
+ * never joins the identity slots a dialect's lock binds, carries its subject
+ * like an identity image does (whose body it is), is never `required`, and
+ * plays no part in the appearance-authority selection — text attributes are
+ * never superseded by a body image. A resolved dialect that does not declare it
+ * words the role (`bindsBodyReferences`) never receives one: the reference is
+ * dropped before planning and reported in {@link CharacterPromptProgram.droppedReferences}.
  */
 
 /** The binding table's task for a character lane — the profile-task vocabulary. */
@@ -365,6 +377,19 @@ export interface CharacterPromptProgramInput {
   readonly sink?: DiagnosticSink;
 }
 
+/**
+ * Why a reference the lane offered is not in {@link CharacterPromptProgram.sentReferences}:
+ * the planner's own three answers (the profile's policy, a per-role cap, the
+ * model's capacity), or `dialect_unbound` — a `body` reference the resolved
+ * dialect has no wording for.
+ */
+export type CharacterPromptReferenceDropReason = DroppedImageReference<ImageRenderReference>["reason"] | "dialect_unbound";
+
+export interface CharacterPromptDroppedReference {
+  readonly reference: ImageRenderReference;
+  readonly reason: CharacterPromptReferenceDropReason;
+}
+
 /** A compiled program, plus what the compile learned on the way. */
 export interface CharacterPromptProgram {
   readonly kind: "compiled";
@@ -383,6 +408,12 @@ export interface CharacterPromptProgram {
   readonly sentReferences: readonly ImageRenderReference[];
   /** The primary field's images alone, which are the slots the prompt numbers. */
   readonly numberedReferences: readonly ImageRenderReference[];
+  /**
+   * Every offered reference the send list leaves out, with why — the same
+   * objects the lane handed in, so a lane can tell which of its own optional
+   * images went missing and say so.
+   */
+  readonly droppedReferences: readonly CharacterPromptDroppedReference[];
   /** The assembly's aggregated missing anchors — empty unless the compile tolerated them. */
   readonly missingRequired: readonly string[];
   /** The assembled subject slices, pre-build: the facts the prompt was compiled from. */
@@ -539,6 +570,15 @@ export function characterPromptNonAdultExposureRefusal(
 const PATH = "images.character_prompt";
 
 /**
+ * The roles that show ONE cast member and therefore carry that member's
+ * subject ref: an identity image (whose face), and a body image (whose body).
+ * Every other role's image is not of a person in the cast.
+ */
+function bindsSubject(role: ImageRenderReference["role"]): boolean {
+  return role === "identity" || role === "body";
+}
+
+/**
  * The identity/location reference FACTS the digest records for the send list.
  *
  * Derived from what is actually SENT — the numbered slots plus the images bound
@@ -552,7 +592,7 @@ function referenceFacts(
   references: readonly ImageRenderReference[],
 ): ImageReferenceFact[] {
   return references.map((reference, index) => {
-    const subjectId = reference.role === "identity" ? subjectOf(reference) : undefined;
+    const subjectId = bindsSubject(reference.role) ? subjectOf(reference) : undefined;
     return {
       role: reference.role,
       ...(subjectId === undefined ? {} : { subjectRef: `subject.${subjectId}` }),
@@ -593,7 +633,7 @@ function dialectReferences(
   references: readonly ImageRenderReference[],
 ): ImageDialectReference[] {
   return references.map((reference, index) => {
-    const subjectId = reference.role === "identity" ? subjectOf(reference) : undefined;
+    const subjectId = bindsSubject(reference.role) ? subjectOf(reference) : undefined;
     const description = describe(reference);
     const preservation = preserve(reference);
     return {
@@ -803,6 +843,38 @@ function selectRequestAwareAppearance(
   return { subjects: nextSubjects, suppressions: [...suppressions, ...dropped] };
 }
 
+/** Whether a binding's dialect words a `body` slot — the seam's own drop rule. */
+function dialectBindsBodyReferences(binding: ImagePromptProfileBinding): boolean {
+  return imagePromptDialectForBinding(binding)?.bindsBodyReferences === true;
+}
+
+/**
+ * Whether a render on this resolved profile would SEND a body image — the
+ * question Portrait Studio asks before it tells an owner their images are in
+ * use, answered by the same rules a compile applies rather than a second copy:
+ * the binding this seam would resolve must name a dialect that words the role
+ * (it drops one otherwise), and the profile's reference policy must admit the
+ * role — an empty allowlist admits every role, as reference planning reads it,
+ * and a per-role cap of zero admits none. Capacity is not asked: a body image
+ * is an optional reference a full model cuts, which is not "never sent".
+ */
+export function characterPromptSendsBodyReferences(input: {
+  readonly profile: ResolvedImageProfile;
+  readonly task: CharacterPromptTask;
+  readonly bindingProfileKey?: string;
+}): boolean {
+  const binding = activeImagePromptBinding({
+    modelSlug: baseImageModelSlug(input.profile.model.slug),
+    task: input.task,
+    ...(input.bindingProfileKey === undefined ? {} : { profileKey: input.bindingProfileKey }),
+  });
+  if (binding === null || !dialectBindsBodyReferences(binding)) return false;
+  const policy = input.profile.profile.referencePolicy;
+  const allowed = new Set<string>([...policy.allowedRoles, ...policy.requiredRoles]);
+  if (allowed.size > 0 && !allowed.has("body")) return false;
+  return policy.maxPerRole?.body !== 0;
+}
+
 /**
  * Resolve, assemble, compile — the whole semantic path, once.
  *
@@ -887,10 +959,21 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // Recovered by object identity for the same reason the subject is: planning
   // returns the same objects, so nothing has to re-derive which slot was which.
   const describe = (reference: ImageRenderReference): string | undefined => descriptionByReference.get(reference);
-  const supplied = input.references.map((entry) => entry.reference);
+  const dialect = imagePromptDialectForBinding(binding);
+  // A body image reaches only a dialect that words it; on any other it is
+  // dropped HERE, before planning, so neither the prompt nor the payload
+  // carries an image the program could not describe honestly.
+  const unworded = dialectBindsBodyReferences(binding)
+    ? []
+    : input.references.filter((entry) => entry.reference.role === "body");
+  const supplied = input.references.filter((entry) => !unworded.includes(entry)).map((entry) => entry.reference);
   const planned = planIntentReferences(profile.model, profile.profile.referencePolicy, supplied);
   const sentReferences = [...planned.primary, ...planned.dedicated.flatMap((field) => field.references)];
-  const numbersSlots = imagePromptDialectForBinding(binding)?.referenceSyntax === "numbered_images";
+  const droppedReferences: CharacterPromptDroppedReference[] = [
+    ...unworded.map((entry) => ({ reference: entry.reference, reason: "dialect_unbound" as const })),
+    ...planned.dropped,
+  ];
+  const numbersSlots = dialect?.referenceSyntax === "numbered_images";
   if (numbersSlots && planned.renumbered) {
     const context = {
       binding: binding.id,
@@ -1128,6 +1211,7 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     binding,
     sentReferences,
     numberedReferences: planned.primary,
+    droppedReferences,
     missingRequired: preview.missingRequired,
     subjects,
     keptClaimIds: compiled.compiled.promptProgramProvenance.positiveClaimIds,

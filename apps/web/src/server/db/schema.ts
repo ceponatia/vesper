@@ -80,6 +80,7 @@ import { simulationLods } from "@vesper/simulation-core/contracts/lod";
 import { newId } from "@/lib/ids";
 import { imageGeneratorRunStatuses } from "@/contracts/images/image-generator";
 import { referenceViewMethods, referenceViewStatuses, referenceViewVerdicts } from "@/contracts/images/reference-views";
+import { bodyReferenceTags } from "@/contracts/images/body-references";
 import {
   visualExtractionProposalStatuses,
   visualExtractionRunStatuses,
@@ -1570,7 +1571,12 @@ export const images = pgTable(
     // strip, from clones, from the public file widening and from the storage quota,
     // and deleted with its character. Its owner reads it through the ordinary owner
     // file route, which is how the studio's view grid displays it.
-    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output", "generator_output", "reference_view"] }).notNull(),
+    // `body_reference`: one of a character's (at most two) full-body images
+    // (`character_body_references`) — an owner-supplied INPUT to the reference-view
+    // build, never a scene reference and never a Gallery asset. Hidden exactly like
+    // `reference_view`, deleted with its character, and read by its owner through the
+    // owner file route, which is how Portrait Studio's body-image area displays it.
+    kind: text("kind", { enum: ["avatar", "portrait_variant", "scene", "entity", "chat_upload", "chat_look", "chat_place", "identity_face_crop", "identity_trial_output", "lab_control", "lab_output", "generator_output", "reference_view", "body_reference"] }).notNull(),
     entityKind: text("entity_kind", { enum: ["character", "location", "item", "world"] }),
     entityId: text("entity_id"),
     /**
@@ -2097,6 +2103,49 @@ export const characterReferenceViews = pgTable(
      * when the reviewer's account goes is not one. */
     reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /**
+     * The upstream slot's attempt this view was rendered FROM — the approved view
+     * whose bytes rode the render as its body reference (`referenceViewUpstream`
+     * in `contracts/images/reference-views.ts`). Read-time staleness compares it
+     * with that slot's approved current attempt, exactly as `source_image_id` is
+     * compared with the accepted portrait. It names the upstream's LINEAGE
+     * (`origin_attempt_id ?? id`), so a restored copy of that attempt still counts
+     * as the view this one was rendered from.
+     *
+     * Null for the root view, for an upload, for a render whose model had no room
+     * for the upstream image, and for every row built before the build order
+     * existed — none of them was rendered from an upstream view, so none of them
+     * can go stale by one. Not a foreign key: rows are deleted only with their
+     * character, and an id that matches no approved attempt already reads stale.
+     */
+    upstreamViewId: text("upstream_view_id"),
+    /**
+     * The character's body-image set this view was rendered against
+     * (`bodyReferenceSetKey` in `contracts/images/body-references.ts`: each sendable
+     * image's id and tag, in slot order). Read-time staleness compares it with the
+     * character's set now, so adding, replacing, removing or re-tagging a body image
+     * marks the rendered views out of date without a write.
+     *
+     * Null is the EMPTY set: every row built before body images existed was
+     * rendered against none, so a character that never adds one sees no change and
+     * a character's first image makes its rendered views stale. An upload is exempt
+     * from the comparison and stores null. Not a foreign key, for `upstream_view_id`'s
+     * reason: a set that matches nothing current already reads stale.
+     */
+    bodyReferenceSet: text("body_reference_set"),
+    /**
+     * The attempt whose bytes this row is a copy of — set only by "Use this
+     * version", to the original's own lineage (`origin_attempt_id ?? id`), so a
+     * chain of restorations still names the attempt that was actually rendered.
+     * A row's LINEAGE is `origin_attempt_id ?? id`, and that is what a view built
+     * from it records as `upstream_view_id`: restoring the attempt a dependent was
+     * rendered from revives the dependent exactly as Undo then Approve does.
+     *
+     * Null for a rendered or uploaded row — its lineage is its own id — and for
+     * every row restored before the column existed, whose dependents read stale
+     * as they did before. Not a foreign key, for `upstream_view_id`'s reason.
+     */
+    originAttemptId: text("origin_attempt_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -2112,6 +2161,55 @@ export const characterReferenceViews = pgTable(
     // The per-slot history read, newest first — and its leading column doubles as the
     // per-character lookup index (the house ruling recorded on `personas`).
     index("character_reference_views_slot_idx").on(t.characterId, t.angleId, t.wardrobe, t.createdAt),
+  ],
+);
+
+/**
+ * A character's full-body images (#671): at most two, each in a fixed slot with
+ * a tag saying whether it shows the body dressed or undressed
+ * (`contracts/images/body-references.ts`). They are inputs to the reference-view
+ * build — sent beside the identity pack for body shape, proportions and height —
+ * and nothing else reads them.
+ *
+ * A table rather than columns on `characters`, for the retention discipline the
+ * other hidden kinds keep: replacing or removing an image RETIRES its row
+ * (`current = false`, which bumps `updated_at`), and the reference-view sweep
+ * collects a retired row's asset — and with it, through the cascade, the row —
+ * a week later. Two slot columns on the character could only forget the old id
+ * the instant it was replaced. Setting an image is not an approval step: a
+ * current row is in use, and each view built from it is reviewed as any view is.
+ */
+export const characterBodyReferences = pgTable(
+  "character_body_references",
+  {
+    id: id(),
+    characterId: text("character_id")
+      .notNull()
+      .references(() => characters.id, { onDelete: "cascade" }),
+    /** A `bodyReferenceSlots` member — 1 or 2, held by the check below. */
+    slot: integer("slot").notNull(),
+    /**
+     * The `body_reference` asset. Cascades: an image deleted by any path takes its
+     * row with it, so a slot can never point at bytes that are gone — and the
+     * sweep's purge of a retired image is also the delete of its row.
+     */
+    imageId: text("image_id")
+      .notNull()
+      .references(() => images.id, { onDelete: "cascade" }),
+    /** What the image shows; the owner may change it after upload. */
+    tag: text("tag", { enum: bodyReferenceTags }).notNull(),
+    /** In use. A replaced or removed image's row is retired, never rewritten. */
+    current: boolean("current").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    // At most ONE current image per slot, at the storage layer — the guard that
+    // makes a third image unrepresentable rather than merely unoffered.
+    uniqueIndex("character_body_references_one_current_per_slot")
+      .on(t.characterId, t.slot)
+      .where(sql`current`),
+    check("character_body_references_slot_range", sql`${t.slot} IN (1, 2)`),
   ],
 );
 

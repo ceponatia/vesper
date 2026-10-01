@@ -181,11 +181,29 @@ export {
 } from "./reference-view-consume";
 export {
   buildReferenceViews,
+  REFERENCE_VIEW_BODY_REFERENCE_DROPPED,
   REFERENCE_VIEW_BUILD_FAILED,
+  referenceViewBodyRoutes,
   referenceViewInstruction,
   type BuildReferenceViewsInput,
   type ReferenceViewBuildReport,
 } from "./reference-view-build";
+export {
+  BODY_REFERENCE_UNKNOWN,
+  BODY_REFERENCE_UNREADABLE,
+  getBodyReferenceSet,
+} from "./body-reference-store";
+export {
+  removeBodyReference,
+  retagBodyReference,
+  type BodyReferenceWriteRefusal,
+  type BodyReferenceWriteResult,
+} from "./body-reference-writes";
+export {
+  uploadBodyReference,
+  type UploadBodyReferenceInput,
+  type UploadBodyReferenceResult,
+} from "./body-reference-upload";
 export {
   uploadReferenceView,
   type UploadReferenceViewInput,
