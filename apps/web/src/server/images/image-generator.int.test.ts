@@ -2944,6 +2944,48 @@ describe.skipIf(!ready)("image generator over the seeded Civitai Qwen Image 2.1 
     expect(row?.failureCode).toBe("image_lora.incompatible");
     expect(captured).toHaveLength(0);
   });
+
+  it("honors an explicit shape on an edit by cropping locally, rather than refusing it (#663)", async () => {
+    // Falsified against the pre-#663 guard: `plannedShapeInput` resolves this
+    // lane's edit to no aspect key at all (`imageModelEditSizesFromReference`,
+    // `chooseDimensions`), and the guard used to read that "no shape" answer as
+    // the operator's own explicit pick being silently substituted — refusing
+    // `control_refused` even though "3:4" is one of this version's own declared
+    // members. The exemption for a null `plannedShape.value` on an edit is what
+    // this case proves: the run succeeds, sends no provider shape field, and
+    // records the pick as a local crop target instead.
+    stubCivitaiQwen21Renderer();
+    const first = await seedReadyImage();
+    const second = await seedReadyImage();
+    const { id, sink } = await createRun({
+      modelId: CIVITAI_QWEN21_ID,
+      inputs: { primary: [{ imageId: first }, { imageId: second }], dedicated: [] },
+      controls: { aspect: "3:4" },
+    });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+
+    expect(payload.status).toBe("succeeded");
+    const row = await storedRow(id);
+    expect(row?.failureCode).toBeNull();
+    const effectiveRequest = imageMeta(row?.meta)["effectiveRequest"] as
+      | { shape?: Record<string, unknown>; postprocess?: Record<string, unknown> }
+      | undefined;
+    // No provider field was ever asked for: the request names "3:4" and the
+    // resolved field/value are both null, the same answer a native request
+    // with no explicit shape at all would record.
+    expect(effectiveRequest?.shape).toMatchObject({
+      mode: "explicit",
+      requestedAspect: "3:4",
+      field: null,
+      value: null,
+      expectedAspect: null,
+    });
+    // `willCrop` (`image-generator-provenance.ts`) fires because the aspect was
+    // requested but nothing was sent to reach it: the pick is honored by a
+    // postprocess crop toward the ratio instead.
+    expect(effectiveRequest?.postprocess).toEqual({ cropTarget: 3 / 4 });
+  });
 });
 
 // ---------------------------------------------------------------------------
