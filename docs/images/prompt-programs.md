@@ -338,7 +338,7 @@ its own forks out without disturbing its former siblings.
 | ---------- | ---------------- | ------------ | ---------------------------------------------------------------- |
 | Qwen 2512  | natural language | none         | the description generator                                        |
 | Qwen edit  | natural language | numbered     | the delta editor                                                 |
-| Qwen 2.1   | natural language | numbered     | the reference-view and chat-scene editor (`civitai/qwen-image-2.1`) |
+| Qwen 2.1   | natural language | numbered     | the reference-view and chat-scene editor                         |
 | Prose      | natural language | role labels  | Seedream, Wan, SD 3.5 Large, FLUX Dev, P-Image                   |
 | Tag        | comma tags       | none         | LikeReality Pony (Compel weights), SDXL PuLID                    |
 
