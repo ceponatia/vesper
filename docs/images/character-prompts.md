@@ -453,10 +453,15 @@ them. No adapter in `@vesper/image-models` touches prompt text, so a prompt
 reaches the provider exactly as it was compiled and hashed.
 
 **`civitai/qwen-image-2.1`'s dialect locks the same way, with a narrower
-repertoire.** It merges the lock into the same numbered binding sentence and
-preserves the same set — face, skin tone and apparent age, leaving hair,
-build, wardrobe and pose to the text — but speaks only the single- and
-grouped-reference forms: its two bound lanes (`variant-standard`,
+repertoire.** Unlike the Qwen edit dialect, it does NOT merge the lock into its
+numbered reference sentence: the "Image N shows …" introduction
+(`operation.reference_role`) and the preserve clause (`subject.identity`) are
+two independent claims rendering two independent sentences, since no
+2.1-specific evidence yet justifies fusing them the way 2511's own trials
+justified fusing its binding. It preserves the same set — face, skin tone and
+apparent age, leaving hair, build, wardrobe and pose to the text — but speaks
+only the single- and grouped-reference forms: its two bound lanes
+(`variant-standard`,
 `scene-standard`) are single-subject, so it carries none of the several-people
 cast binding the Qwen edit dialect's third form exists for. It also declares no reference-authority aspects of its own in
 `CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT` (below), unlike the Qwen edit

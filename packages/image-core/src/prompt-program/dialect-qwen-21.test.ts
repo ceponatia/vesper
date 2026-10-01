@@ -20,14 +20,16 @@ import {
  * What this file is under test for, and nothing else: that the dialect is
  * registered under its own id; that it never carries a negative prompt,
  * whatever constraints a pack hands it (acceptance #3); that it states
- * nudity explicitly, twice, in the owner's vocabulary, exactly when the
- * render's route permits intimate content AND the subject's own exposure
- * claims read fully bare — never on bare coverage alone, never for a partial
- * undress, never for a clothed subject (acceptance #4, and the owner's
- * age-gate ruling of the same day); and that a numbered
- * reference drives both the reference introduction and the identity-preserve
- * lock, while a zero-reference compile (the scene chain's bare-prompt rung)
- * falls back to a plain descriptive identity sentence.
+ * "naked"/"nude" exactly when the render's route permits intimate content AND
+ * the subject's own exposure claims read fully bare — never on bare coverage
+ * alone, never for a partial undress, never for a clothed subject (acceptance
+ * #4, and the owner's age-gate ruling of the same day) — and that "no
+ * clothes" rides along only when NOTHING is worn at all, never beside a
+ * wardrobe claim (stockings, heels) or a non-bare exposure region elsewhere
+ * on the same subject; and that a numbered reference drives both the
+ * reference introduction and the identity-preserve lock, while a
+ * zero-reference compile (the scene chain's bare-prompt rung) falls back to a
+ * plain descriptive identity sentence.
  *
  * Fixture helpers are local copies of `prompt-program.test.ts`'s own
  * (`fact`/`entity`/`operation`/`world`): that file's are module-private, and a
@@ -109,6 +111,10 @@ const exposureFact = (subjectRef: string, region: "torso" | "pelvis", coverage: 
     priority: 1,
   });
 
+/** A worn-garment fact — stockings, heels, any item still on the subject. */
+const wardrobeFact = (subjectRef: string, value: string): ImageWorldFact =>
+  fact({ key: `${subjectRef}.wardrobe`, concept: "subject.wardrobe", value, subjectRef });
+
 function compilePositive(
   worldDigest: ImageWorldDigest,
   references: readonly { position: number; role: "identity"; subjectRef?: string; description?: string }[] = [],
@@ -182,9 +188,13 @@ describe("nudity reinforcement (acceptance #4, owner rulings 2026-10-01)", () =>
   });
 
   it("never states it on bare coverage alone — the route did not permit intimate content", () => {
-    // A minor's bare wardrobe, an adult's clothed view with no saved outfit, an
-    // ordinary variant or a non-intimate scene all read exactly like this: the
-    // ordinary exposure sentences every dialect states, and nothing more.
+    // A minor's bare wardrobe, an adult's `clothed` reference view, or an
+    // ordinary (non-`nsfw test`) variant all read exactly like this: bare
+    // coverage with no permission, so only the ordinary exposure sentences
+    // every dialect states. This is NOT about whether a scene is "intimate" —
+    // a chat scene's own edit rung carries the permission for an adult cast
+    // whatever the staging (`scene.ts` `allowIntimateFor`); it is the lane and
+    // the age gate that decide it, never the scene's content.
     const compiled = compilePositive(fullyBareDigest());
     expect(compiled.text).toContain("bare at the torso");
     expect(compiled.text).toContain("bare at the pelvis");
@@ -202,6 +212,33 @@ describe("nudity reinforcement (acceptance #4, owner rulings 2026-10-01)", () =>
       ],
     });
     expect(nudityWords(compilePermitted(digest).text)).toEqual([]);
+  });
+
+  it("states naked/nude but never 'no clothes' when the subject still wears something (stockings, torso and pelvis still both bare)", () => {
+    const digest = world({
+      subjects: [
+        entity("subject", "nyx", [
+          identityFact("nyx"),
+          exposureFact("nyx", "torso", "bare"),
+          exposureFact("nyx", "pelvis", "bare"),
+          wardrobeFact("nyx", "sheer black stockings"),
+        ]),
+      ],
+    });
+    const compiled = compilePermitted(digest);
+    expect(compiled.text).toContain("sheer black stockings");
+    const words = nudityWords(compiled.text);
+    expect(words).toContain("naked");
+    expect(words).toContain("nude");
+    expect(words).not.toContain("no clothes");
+  });
+
+  it("states all three — naked, nude, no clothes — only when nothing at all is worn", () => {
+    // fullyBareDigest carries no `subject.wardrobe` claim and no exposure
+    // region reading anything but bare, so "no clothes" is true rather than an
+    // overclaim beside a garment sentence this same prompt also carries.
+    const compiled = compilePermitted(fullyBareDigest());
+    expect(nudityWords(compiled.text)).toEqual(["naked", "nude", "no clothes"]);
   });
 });
 
