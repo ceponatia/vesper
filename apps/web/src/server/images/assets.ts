@@ -191,20 +191,17 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
  * Best-effort like that heartbeat too: a failed write is swallowed, and a lease
  * the database stops taking simply ages until the sweep reclaims the row, as it
  * would for a render whose process died; if this render then lands after all,
- * the save takes the late-landing path (`saveImageBuffer`). A beat never
- * overlaps the one before it, so a stalled database queues no pile of them.
+ * the save takes the late-landing path (`saveImageBuffer`). Each beat is
+ * independent, as there: one stuck on a dead connection or an exhausted pool
+ * (the client sets no query timeout) never holds back the next, and beats that
+ * overlap are harmless because each is the same guarded, idempotent write.
  */
 async function holdRenderLease(imageId: string): Promise<() => void> {
-  let beating = false;
   const beat = async (): Promise<void> => {
-    if (beating) return;
-    beating = true;
     try {
       await refreshRenderLease(imageId, Date.now());
     } catch {
       // Heartbeats are best-effort. The lease expires if the database remains unavailable.
-    } finally {
-      beating = false;
     }
   };
   await beat();

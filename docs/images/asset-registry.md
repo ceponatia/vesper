@@ -126,8 +126,8 @@ warnings. What it reclaims:
   that lease has been silent for **15 minutes** (`JOB_STALE_MS`), however long the render itself
   runs — a Civitai queue wait, every rung of a scene chain. A row with no lease was reserved by a
   direct `createImageAsset` caller (the image lab, the Image Generator settle, identity-pack trial
-  and derive, reference-view upload and copy, uploads), which reserves once its bytes are in hand;
-  it is failed once it is **2 hours** old.
+  and derive, reference-view upload and copy, body-reference upload, uploads), which reserves once
+  its bytes are in hand; it is failed once it is **2 hours** old.
 - A file with no row, or a crash-leftover `*.pending.webp` temp, is removed once its mtime is
   **10 minutes** old.
 
@@ -135,15 +135,17 @@ warnings. What it reclaims:
 re-checks `status = 'pending'` and the lease (or, for an unleased row, its age) — never a row the
 sweep read earlier — so a save or a heartbeat that commits first wins, and the sweep counts only the
 rows that statement actually failed. Its failure stamp (`error`, `failedAt`) merges into `meta` in
-SQL, and a lease value that is not a JSON number reads as no lease rather than failing the statement.
+SQL, and a lease value that is not a JSON number reads as no lease rather than failing the
+statement.
 
 **The render lease** is `meta.renderLeaseAtMs`, epoch milliseconds. `runImagePipeline` stamps it on
 its own row as generation starts, then every 30 seconds (`JOB_HEARTBEAT_INTERVAL_MS`) until the
 render settles — saved, failed or thrown. Each beat merges that one key into `meta` in SQL, guarded
 by `status = 'pending'`, so it never overwrites what a save or a failure wrote and never touches a
-row that already left `pending`. Beats are best-effort: a failed write is swallowed, and a lease that
-stops beating — a crashed process, a database that stays unreachable — ages until a sweep reclaims
-the row. Only a `pending` row carries a lease; saving and failing remove it.
+row that already left `pending`. Beats are best-effort and independent: a failed write is
+swallowed, a beat stuck on a dead connection never holds back the next one, and a lease that stops
+beating — a crashed process, a database that stays unreachable — ages until a sweep reclaims the
+row. Only a `pending` row carries a lease; saving and failing remove it.
 
 **A late landing is a save.** When a render lands on a row that is already `failed` — the sweep
 reclaimed it while the render was still running — the image is real, so the save marks the row
@@ -192,8 +194,8 @@ paint a "this render failed" tile from one — and garbage afterwards: no file, 
 The clock is `meta.failedAt`, stamped wherever a failure is recorded — `failImage`, and the sweep's
 pending reclaim through the same `failureStamp` — because `created_at` is when the row was
 *reserved*: a row that was `ready` for a month before its file vanished fails today, and ageing it
-by creation would erase the tile in the same tick it appeared. Rows failed before that stamp existed fall back to `created_at` and are past the
-window by definition.
+by creation would erase the tile in the same tick it appeared. Rows failed before that stamp
+existed fall back to `created_at` and are past the window by definition.
 
 Retirement runs LAST, so a row this pass just marked failed always survives it. It goes through
 `purgeImagesWhere` like every other delete path (identity-pack derivations invalidated, any stray

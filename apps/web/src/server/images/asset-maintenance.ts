@@ -39,10 +39,10 @@ const ORPHAN_FILE_GRACE_MS = 10 * 60_000;
  *
  * An unleased row was reserved outside `runImagePipeline`, by a direct
  * `createImageAsset` caller — the image lab, the Image Generator settle, the
- * identity-pack trial and derive, reference-view upload and copy, uploads —
- * which does not beat. Each of those reserves its row once the bytes are already
- * in hand, so its age is the only signal left and two hours is far beyond any
- * such write.
+ * identity-pack trial and derive, reference-view upload and copy, body-reference
+ * upload, uploads — which does not beat. Each of those reserves its row once the
+ * bytes are already in hand, so its age is the only signal left and two hours is
+ * far beyond any such write.
  */
 const UNLEASED_PENDING_ROW_GRACE_MS = 2 * 60 * 60_000;
 

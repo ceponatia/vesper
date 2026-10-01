@@ -418,6 +418,9 @@ describe("runImagePipeline", () => {
       expect(stampsWhenProduceStarted).toEqual([1]);
       expect(stamps()).toEqual([{ imageId: RESERVED.id, atMs: t0 }]);
       // …then refreshed on the job heartbeat's cadence for as long as it runs.
+      // The first refresh never settles — a dead connection, an exhausted pool —
+      // and must not hold back the one after it: beats are independent.
+      lease.mockImplementationOnce(() => new Promise<boolean>(() => undefined));
       await vi.advanceTimersByTimeAsync(JOB_HEARTBEAT_INTERVAL_MS);
       await vi.advanceTimersByTimeAsync(JOB_HEARTBEAT_INTERVAL_MS);
       expect(stamps()).toEqual([

@@ -212,14 +212,23 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     const silent = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);
     const unleasedHour = await pendingRowAt(ownerId, now, 60 * MINUTE);
     const unleasedOld = await pendingRowAt(ownerId, now, 3 * 60 * MINUTE);
+    // A lease that is not a JSON number reads as no lease — the 2 h rule — and
+    // never fails the one statement that judges every row beside it.
+    const malformedHour = await pendingRowAt(ownerId, now, 60 * MINUTE);
+    const malformedOld = await pendingRowAt(ownerId, now, 3 * 60 * MINUTE);
+    await db()
+      .update(images)
+      .set({ meta: { render: { seed: 7 }, [RENDER_LEASE_META_KEY]: "x" } })
+      .where(inArray(images.id, [malformedHour, malformedOld]));
 
     const result = await sweepOrphans({ ownerId, now });
 
     expect(result.errors).toEqual([]);
-    expect(result.rowsMarkedFailed).toBe(2);
+    expect(result.rowsMarkedFailed).toBe(3);
     expect((await imageRow(running))?.status).toBe("pending");
     expect((await imageRow(unleasedHour))?.status).toBe("pending");
-    for (const id of [silent, unleasedOld]) {
+    expect((await imageRow(malformedHour))?.status).toBe("pending");
+    for (const id of [silent, unleasedOld, malformedOld]) {
       const row = await imageRow(id);
       expect(row?.status).toBe("failed");
       // The same stamp failImage writes — retention's clock is the sweep's own now.
@@ -231,10 +240,11 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     }
   });
 
-  it("the pending reclaim judges each row at write time: a save or a heartbeat that lands first wins", async () => {
+  it("the pending reclaim leaves alone a row a save or a heartbeat already settled", async () => {
     // Every row below reads as dead to anyone who looked a moment ago — reserved
-    // 40 min back, lease silent for 20. The reclaim's decision lives in its own
-    // UPDATE, so the writes that land before it are what it judges.
+    // 40 min back, lease silent for 20. This pins the predicate against the
+    // committed row, not an interleaving: atomicity is structural, because the
+    // reclaim is one guarded UPDATE that Postgres re-checks on the row it writes.
     const ownerId = await sweepOwner("images-int-reclaim");
     const now = new Date();
     const landed = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);

@@ -226,6 +226,14 @@ export function imageMeta(meta: unknown): Record<string, unknown> {
  * land on a row that is already `failed` — the sweep reclaimed it while the
  * render was still running — and the image is real and paid for, so the row
  * becomes `ready` anyway, cleanly, with an `images.save_late_landing` warning.
+ *
+ * The warning reads the status this save SELECTed, without a lock, so it is
+ * missed when the sweep's reclaim commits between that read and the UPDATE
+ * below. The row still ends `ready` and clean — the UPDATE writes the status
+ * and the whole of `meta` from the pre-reclaim read, so the reclaim's `error`
+ * and `failedAt` do not survive it — and the gap is reachable only once the
+ * row's lease has already been silent for 15 minutes (`JOB_STALE_MS`), or an
+ * unleased row is already 2 hours old, while this process is mid-save.
  */
 export async function saveImageBuffer(
   imageId: string,
