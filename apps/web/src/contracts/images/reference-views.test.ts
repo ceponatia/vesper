@@ -29,6 +29,7 @@ import {
   referenceViewQueueOutcomeSchema,
   referenceViewHistoryVerdict,
   referenceViewLineageId,
+  referenceViewLineBusy,
   referenceViewsReadyToBuild,
   referenceViewsWaitingInBatch,
   referenceViewUpstream,
@@ -467,6 +468,17 @@ describe("a batch that names a view and a view built from it", () => {
     expect(referenceViewDescendantBusy(LEFT, [LEFT_BARE])).toBe(true);
     expect(referenceViewDescendantBusy(LEFT, [RIGHT, ROOT])).toBe(false);
     expect(referenceViewDescendantBusy(LEFT, [LEFT])).toBe(false);
+  });
+
+  // The lease claim's rule: two slots on one line never build at once, in
+  // either direction and at any depth; siblings are not on one line.
+  it("calls a slot busy when a view on its line — above or below it — is building", () => {
+    expect(referenceViewLineBusy(LEFT_BARE, [ROOT])).toBe(true);
+    expect(referenceViewLineBusy(ROOT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewLineBusy(LEFT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewLineBusy(LEFT, [RIGHT])).toBe(false);
+    expect(referenceViewLineBusy(LEFT_BARE, [RIGHT])).toBe(false);
+    expect(referenceViewLineBusy(LEFT, [LEFT])).toBe(false);
   });
 
   it("reads ancestors and descendants off the one build order", () => {

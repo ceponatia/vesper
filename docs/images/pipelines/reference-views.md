@@ -191,6 +191,12 @@ approval and opening the bytes.
 - **Each slot has one heartbeat-backed lease.** A request may claim every requested slot that has no
   live lease while another job continues on disjoint slots. An overlapping slot converges on the
   current attempt and reports `busy`; partial admission reports one result per requested target.
+- **One line of the build order builds at a time.** The claim, under the character lock, also
+  reports `busy` — unleased and uncharged — for a slot whose upstream or whose dependent, at any
+  depth, holds a live lease or a pending attempt, or was claimed earlier in the same request
+  (`referenceViewLineBusy`). Two requests that each passed the routes' own checks therefore never
+  both lease an upstream and a view built from it; siblings are not on one line, so an approval's
+  dependents and a build of the root alone claim as before.
 - **A view is not replaced while views built from it are rendering.** Regenerating, uploading or
   restoring a slot is refused as `busy` while any slot built from it — directly or through another
   — holds a live lease or a pending attempt (`referenceViewDescendantBusy`; each slot's

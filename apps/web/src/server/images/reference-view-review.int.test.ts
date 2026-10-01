@@ -335,8 +335,8 @@ describe.skipIf(!ready)("reference review and recovery", () => {
   // The build order's guard at the storage layer: a view rendered from an
   // upstream attempt that is no longer that slot's approved current one reads
   // stale, cannot be approved (it would build its own dependents from a stale
-  // body), and cannot be rebuilt from the old upstream — the reservation
-  // refuses before any provider call.
+  // body), and cannot be rebuilt while that upstream renders — the lease claim
+  // refuses it under the character lock, so nothing is charged.
   it("stales, refuses approval of, and refuses to rebuild a view whose upstream was replaced", async () => {
     const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
     const state = await fixture(back);
@@ -351,8 +351,27 @@ describe.skipIf(!ready)("reference review and recovery", () => {
       .toMatchObject({ state: "stale", consumable: false, waitingOn: view });
     expect((await reviewReferenceView({ ...state.input, attemptId: state.first.id, expectedRevision: 0, verdict: "approve" })).status)
       .toBe("incompatible");
+    const [backJob] = await db().insert(jobs).values({
+      ownerId, type: "reference_views", status: "running", payload: { characterId: state.input.characterId, targets: [], leases: [] },
+    }).returning({ id: jobs.id });
+    if (!backJob) throw new Error("fixture job insert failed");
+    expect(await claimReferenceViewLeases({ characterId: state.input.characterId, ownerId, jobId: backJob.id, targets: [back] }))
+      .toEqual({ claimed: [], busy: [back] });
+    expect((await currentReferenceViewRow(state.input.characterId, back))?.id).toBe(state.first.id);
+  });
+
+  // Defense in depth behind the claim: if the upstream ever stops being the
+  // approved attempt AFTER a dependent's lease was claimed — by any path that
+  // bypasses the routes' guards — the reservation still refuses before any
+  // provider call, and says so: a worker never loses a charge in silence.
+  it("refuses, and reports, a reservation whose upstream moved after its lease was claimed", async () => {
+    const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+    const state = await fixture(back);
     const backJob = await state.claimSlot();
-    // Refused before spend, and said: a worker never loses a charge in silence.
+    // The approved front is un-approved underneath the live lease, bypassing the review guard.
+    await db().update(characterReferenceViews)
+      .set({ verdict: null, reviewedAt: null, reviewedByUserId: null })
+      .where(eq(characterReferenceViews.id, state.upstreamViewId ?? ""));
     const sink = new DiagnosticCollector();
     expect(await reserveReferenceView({ ...state.reserve, jobId: backJob, sink })).toBeNull();
     expect(sink.items.map((item) => item.code)).toContain(REFERENCE_VIEW_UPSTREAM_UNAPPROVED);

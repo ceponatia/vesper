@@ -17,6 +17,7 @@ import {
   referenceViewBuildsOnApproval,
   referenceViewDescendantBusy,
   referenceViewHistoryVerdict,
+  referenceViewLineBusy,
   referenceViewFeedbackSchema,
   referenceViewLineageId,
   referenceViewsReadyToBuild,
@@ -346,14 +347,21 @@ export function claimReferenceViewLeases(input: {
       .for("update");
     if (!job) return { claimed: [], busy: [...input.targets] };
 
-    const occupied = new Set(
-      (await liveReferenceViewLeaseJobs(tx, input.characterId, now, input.ownerId, input.jobId))
-        .flatMap((row) => payloadLeases(row.payload).map(slotKey)),
-    );
+    const others = leasedSlots(await liveReferenceViewLeaseJobs(tx, input.characterId, now, input.ownerId, input.jobId));
+    const occupied = new Set(others.map(slotKey));
+    // Every slot building now, as the lock serializes it: other live leases,
+    // and pending attempts (reconciliation above has already failed every
+    // pending attempt no live lease owns).
+    const building = [...others, ...(await pendingReferenceViewSlots(tx, input.characterId))];
     const claimed: ReferenceViewLease[] = [];
     const busy: ReferenceView[] = [];
     for (const target of input.targets) {
-      if (occupied.has(slotKey(target))) busy.push(target);
+      // The build order, under the same lock as the claim: a slot whose
+      // upstream (at any depth) or whose dependent (at any depth) is building
+      // — or was just claimed by this same request — is `busy`, never leased,
+      // so it is never charged. Two requests that each passed the route's
+      // pre-admission checks cannot both lease one line of the sheet.
+      if (occupied.has(slotKey(target)) || referenceViewLineBusy(target, [...building, ...claimed])) busy.push(target);
       else claimed.push({ ...target, attemptId: null });
     }
     const payload = objectPayload(job.payload);
@@ -406,6 +414,11 @@ async function buildingReferenceViewSlots(
   now: Date = new Date(),
 ): Promise<ReferenceView[]> {
   const leased = leasedSlots(await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId));
+  return [...leased, ...(await pendingReferenceViewSlots(executor, characterId))];
+}
+
+/** The slots holding a pending current attempt, on the caller's connection. */
+async function pendingReferenceViewSlots(executor: ReferenceViewExecutor, characterId: string): Promise<ReferenceView[]> {
   const pending = await executor
     .select({ angleId: characterReferenceViews.angleId, wardrobe: characterReferenceViews.wardrobe })
     .from(characterReferenceViews)
@@ -414,14 +427,11 @@ async function buildingReferenceViewSlots(
       eq(characterReferenceViews.current, true),
       eq(characterReferenceViews.status, "pending"),
     ));
-  return [
-    ...leased,
-    ...pending.flatMap((row) => {
-      const angle = parseOrNull(referenceViewAngleIdSchema, row.angleId);
-      const wardrobe = parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
-      return angle === null || wardrobe === null ? [] : [{ angle, wardrobe }];
-    }),
-  ];
+  return pending.flatMap((row) => {
+    const angle = parseOrNull(referenceViewAngleIdSchema, row.angleId);
+    const wardrobe = parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
+    return angle === null || wardrobe === null ? [] : [{ angle, wardrobe }];
+  });
 }
 
 /**

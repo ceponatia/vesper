@@ -395,6 +395,25 @@ export function referenceViewDescendantBusy(view: ReferenceView, busy: readonly 
   return referenceViewDescendants(view).some((descendant) => busy.some((slot) => sameReferenceView(slot, descendant)));
 }
 
+/**
+ * Whether a view on this one's line — a view it is built from, or a view built
+ * from it, directly or through another — is in `busy`. The slot itself is
+ * not this question; its own lease is the ordinary per-slot `busy`.
+ *
+ * Two slots on one line may never build at once. A view built from a view
+ * that is rendering would reserve against the attempt being replaced and land
+ * stale, or be refused after its charge; a view rendering beneath one being
+ * replaced is stranded the same way. The lease claim answers it under the
+ * character lock, so two requests racing past the route's own checks cannot
+ * both be admitted. PURE.
+ */
+export function referenceViewLineBusy(view: ReferenceView, busy: readonly ReferenceView[]): boolean {
+  return (
+    referenceViewDescendantBusy(view, busy) ||
+    referenceViewAncestors(view).some((ancestor) => busy.some((slot) => sameReferenceView(slot, ancestor)))
+  );
+}
+
 /** Every view, each one after the view it is built from; registry order within a level. */
 export function referenceViewBuildOrder(): readonly ReferenceView[] {
   return [...allReferenceViews()].sort(

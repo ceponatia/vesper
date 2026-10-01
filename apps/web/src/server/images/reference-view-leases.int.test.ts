@@ -45,6 +45,8 @@ const ready = await probeIntegrationDb("reference view leases.int.test", "charac
 const front: ReferenceView = { angle: "front_full", wardrobe: "clothed" };
 const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
 const side: ReferenceView = { angle: "side_left", wardrobe: "clothed" };
+const sideBare: ReferenceView = { angle: "side_left", wardrobe: "bare" };
+const right: ReferenceView = { angle: "side_right", wardrobe: "clothed" };
 let ownerId = "";
 let temp: TempDataRoot | undefined;
 
@@ -161,24 +163,64 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
       referenceViewAttemptIds: [winnerAttempt],
     }));
 
-    const partialJob = await job(state.characterId);
+    // Partial and disjoint admission, on a sheet whose building slot is a side
+    // view: every slot is built from the front, so a building front would put
+    // the whole sheet on its line (the build-order case below).
+    const sideState = await fixture();
+    const sideJob = await job(sideState.characterId);
+    expect((await claimReferenceViewLeases({
+      characterId: sideState.characterId, ownerId, jobId: sideJob, targets: [side],
+    })).claimed).toHaveLength(1);
+
+    const partialJob = await job(sideState.characterId);
     const partial = await claimReferenceViewLeases({
-      characterId: state.characterId,
+      characterId: sideState.characterId,
       ownerId,
       jobId: partialJob,
-      targets: [front, back],
+      targets: [side, back],
     });
-    expect(partial.busy).toEqual([front]);
+    expect(partial.busy).toEqual([side]);
     expect(partial.claimed).toEqual([{ ...back, attemptId: null }]);
 
-    const disjointJob = await job(state.characterId);
+    const disjointJob = await job(sideState.characterId);
     const disjoint = await claimReferenceViewLeases({
-      characterId: state.characterId,
+      characterId: sideState.characterId,
       ownerId,
       jobId: disjointJob,
-      targets: [side],
+      targets: [right],
     });
-    expect(disjoint.claimed).toEqual([{ ...side, attemptId: null }]);
+    expect(disjoint.claimed).toEqual([{ ...right, attemptId: null }]);
+  });
+
+  // The build order under the claim's own lock (#670 review): two requests that
+  // each passed the route's pre-admission checks — one rebuilding an approved
+  // upstream, one its dependent — used to lease both, because only identical
+  // slots conflicted. The dependent then rendered against the upstream being
+  // replaced (paid, and stale on arrival) or was refused after its charge.
+  it("never leases two slots on one line of the build order at once, whoever claims first", async () => {
+    const state = await fixture();
+    const upstreamJob = await job(state.characterId);
+    const dependentJob = await job(state.characterId);
+    const [upstream, dependent] = await Promise.all([
+      claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: upstreamJob, targets: [front] }),
+      claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: dependentJob, targets: [back] }),
+    ]);
+    expect([upstream.claimed.length, dependent.claimed.length].sort()).toEqual([0, 1]);
+
+    // Through every level, in both directions: the side view building blocks
+    // the view built from it and the view it is built from, and leaves an
+    // unrelated angle alone.
+    const lineState = await fixture();
+    const sideJob = await job(lineState.characterId);
+    expect((await claimReferenceViewLeases({
+      characterId: lineState.characterId, ownerId, jobId: sideJob, targets: [side],
+    })).claimed).toHaveLength(1);
+    const lineJob = await job(lineState.characterId);
+    const line = await claimReferenceViewLeases({
+      characterId: lineState.characterId, ownerId, jobId: lineJob, targets: [sideBare, front, back],
+    });
+    expect(line.busy).toEqual([sideBare, front]);
+    expect(line.claimed).toEqual([{ ...back, attemptId: null }]);
   });
 
   it("reclaims an expired attempt and fences its late finalization behind the newer current row", async () => {
@@ -260,7 +302,7 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
       characterId: state.characterId,
       ownerId,
       jobId: blocker,
-      targets: [front],
+      targets: [side],
     })).claimed).toHaveLength(1);
     const before = await readDailyUsage(ownerId, "provider_image_day");
 
@@ -271,7 +313,8 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
         method: "POST",
       }),
       user: { id: ownerId },
-      targets: [front, back],
+      // `sideBare` is on the building side view's line: busy, and not charged.
+      targets: [side, back, sideBare],
       planned: 8,
     });
     const after = await readDailyUsage(ownerId, "provider_image_day");
@@ -281,8 +324,9 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
       reason: null,
       admitted: 1,
       targets: [
-        { ...front, state: "busy" },
+        { ...side, state: "busy" },
         { ...back, state: "queued" },
+        { ...sideBare, state: "busy" },
       ],
     });
     expect(after.used - before.used).toBe(1);
@@ -377,9 +421,12 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
     await expectApiError(response, 409, "waiting");
 
     expect((await readDailyUsage(ownerId, "provider_image_day")).used).toBe(before.used);
-    const afterJob = await job(state.characterId);
-    expect(
-      (await claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: afterJob, targets: [front, back] })).claimed,
-    ).toEqual([{ ...front, attemptId: null }, { ...back, attemptId: null }]);
+    // Refused before admission: no build job exists for this character at all,
+    // so neither slot was leased.
+    const live = await db()
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.ownerId, ownerId), eq(jobs.type, "reference_views"), inArray(jobs.status, ["queued", "running"])));
+    expect(live).toEqual([]);
   });
 });
