@@ -50,7 +50,7 @@ import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type 
 import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";
-import { STAGED_PROGRAM_UNBOUND } from "./image-lab-staged";
+import { STAGED_AGE_REFUSAL, STAGED_PROGRAM_UNBOUND } from "./image-lab-staged";
 import {
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
@@ -666,6 +666,8 @@ interface StagedSceneOptions {
   extraControl?: boolean;
   /** Replace the ordered inputs outright — `[]` is the no-reference refusal. */
   inputs?: ImageLabInput[];
+  /** Stage a different sheet than the lane-probe adult — the age gate's cases. */
+  profile?: CharacterProfile;
 }
 
 /**
@@ -685,7 +687,7 @@ async function createStagedScene(
   // settle as `image_prompt_program.missing_required_fact` before the bench
   // ever reached the provider. The parity pin (`image-lab-staged.test.ts`)
   // compiles this same sheet for every staging in the catalog.
-  const characterId = await seedOwnedCharacter(STAGED_SUBJECT, laneProbeProfile());
+  const characterId = await seedOwnedCharacter(STAGED_SUBJECT, opts.profile ?? laneProbeProfile());
   const faceId = await seedCharacterFace(opts.faceOf ?? characterId);
   const control = opts.extraControl ? await seedControlFixture("pose") : null;
   const inputs: ImageLabInput[] = opts.inputs ?? [
@@ -1904,6 +1906,43 @@ describe.skipIf(!ready)("image lab staged scenes", () => {
       dropped: [],
       renumbered: false,
     });
+  });
+
+  /**
+   * THE AGE GATE (owner ruling 2026-10-01): the adult floor the reference-view
+   * plan, the anatomy bench and the chat scene lane apply, on the sheet the cut
+   * would be built from. Refused before the image bytes are read, the LoRA
+   * library is asked or the provider is called — the success case above is the
+   * adult control, on the same lane-probe sheet with its adult band.
+   */
+  it.each([
+    ["a minor apparent-age band", "teen"],
+    ["no resolvable apparent age", null],
+  ])("refuses a staged scene on a character with %s, before any spend", async (_label, band) => {
+    stubSuccessfulRenderer();
+    const adult = laneProbeProfile();
+    const profile: CharacterProfile = {
+      ...adult,
+      attributes:
+        band === null
+          ? adult.attributes.filter((entry) => entry.id !== "identity.apparent_age")
+          : adult.attributes.map((entry) => (entry.id === "identity.apparent_age" ? { ...entry, value: band } : entry)),
+    };
+    const { id, sink } = await createStagedScene({ profile });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_age_gated"));
+    // The lab's own WARN, carrying the owner-facing reason the row records.
+    const gated = sink.items.find((item) => item.code === imageLabDiagnosticCode("subject_age_gated"));
+    expect(gated?.severity).toBe("warn");
+    expect(gated?.message).toBe(STAGED_AGE_REFUSAL);
+    // Nothing past the gate ran: no provider call, no result, no LoRA asked.
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+    expect(codes(sink).some((code) => code.startsWith("image_lora."))).toBe(false);
   });
 
   it("refuses a staging id the registry does not have, before any spend", async () => {
