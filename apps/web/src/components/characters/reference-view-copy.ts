@@ -63,7 +63,7 @@ export const referenceViewStateCopy: Record<ReferenceViewState, ReferenceViewSta
   stale: {
     label: "out of date",
     tone: "accent",
-    hint: "This was made from a portrait or reference view that has since changed. Build it again from the current one.",
+    hint: "This was made from a portrait, reference view or body image that has since changed. Build it again from the current one.",
   },
   ineligible: {
     label: "not eligible",

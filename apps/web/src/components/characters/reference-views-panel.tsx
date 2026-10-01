@@ -2,6 +2,7 @@
 
 import { useState, type SetStateAction } from "react";
 import {
+  emptyBodyReferenceSet,
   referenceViewAngles,
   referenceViewsReadyToBuild,
   referenceViewWardrobeEntries,
@@ -39,6 +40,7 @@ import {
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 import { PortraitCropUploadDialog } from "./avatar-upload-dialog";
+import { BodyReferencesSection } from "./body-references-section";
 import { settledReferenceViewSelectionKeys } from "./reference-view-selection";
 
 /**
@@ -75,6 +77,11 @@ import { settledReferenceViewSelectionKeys } from "./reference-view-selection";
  * (`waitingOn`) shows a waiting state instead of a build control; approving a
  * view, or uploading one, builds the views made from it, and both controls say
  * how many before they are used.
+ *
+ * **Body images come first** (`body-references-section.tsx`): once a portrait
+ * is accepted, the panel opens with the up-to-two full-body images every view
+ * is built with. They are read with the set, so changing one and the views it
+ * made out of date show up in the same refresh.
  */
 
 const POLL_MS = 3000;
@@ -89,6 +96,8 @@ function slotKey(view: { angle: string; wardrobe: string }): string {
 
 export interface ReferenceViewsPanelProps {
   characterId: string;
+  /** The character's display name, for the body images' alt text. */
+  name: string;
   /** Identity of the saved apparent-age value that determines eligibility. */
   planKey: string;
   /**
@@ -102,7 +111,7 @@ export interface ReferenceViewsPanelProps {
   onChanged: () => void;
 }
 
-export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChanged }: ReferenceViewsPanelProps) {
+export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, onChanged }: ReferenceViewsPanelProps) {
   const views = useAsyncData(
     () => referenceViewsApi.get(characterId),
     [characterId, acceptance.acceptedImageId, planKey],
@@ -367,6 +376,15 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
           </Button>
         ) : null}
       </div>
+
+      {acceptance.acceptedImageId ? (
+        <BodyReferencesSection
+          characterId={characterId}
+          name={name}
+          body={views.data?.bodyReferences ?? emptyBodyReferenceSet()}
+          onChanged={refetch}
+        />
+      ) : null}
 
       {selectedViews.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-card border border-ink-600 bg-ink-950/40 p-2">
