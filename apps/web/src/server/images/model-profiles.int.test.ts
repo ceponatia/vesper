@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import type { ImageProfileTask } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { endTestPool, probeIntegrationDb } from "@/server/test-support";
 import { db, imageModelProfiles, imageModels } from "../db";
@@ -42,13 +43,15 @@ const FIXTURE_PROFILE_IDS = [FIXTURE_OK_PROFILE_ID, FIXTURE_BAD_PROFILE_ID];
  * The seeded rows, as the migrations wrote them. 0134 added six Qwen Image 3
  * profiles, then 0135 converted that regular/Pro fiction into fal's real
  * operation split: one portrait text-to-image profile plus variant and scene
- * edit profiles. Three obsolete cross-operation profiles are deleted, leaving 32.
+ * edit profiles. Three obsolete cross-operation profiles are deleted, leaving 32;
+ * 0152 adds the Civitai Qwen Image 2.1 variant and scene profiles, making 34.
  */
-const SEEDED_PROFILE_COUNT = 32;
+const SEEDED_PROFILE_COUNT = 34;
 const QWEN_GENERATE = "qwen/qwen-image-2512";
 const QWEN_EDIT = "qwen/qwen-image-edit-2511";
 const QWEN_3_TEXT = "alibaba/qwen-image-3/text-to-image";
 const QWEN_3_EDIT = "alibaba/qwen-image-3/edit";
+const QWEN_21 = CIVITAI_QWEN_IMAGE_21_SLUG;
 
 /**
  * The 0107 curated rows, pinned individually: which model each hangs off, the
@@ -125,7 +128,7 @@ async function insertFixtureProfile(id: string, label: string): Promise<void> {
 }
 
 describe.skipIf(!ready)("seeded image model profiles", () => {
-  it("the migrations seeded 32 built-in profiles, in sort order, all parseable", async () => {
+  it("the migrations seeded 34 built-in profiles, in sort order, all parseable", async () => {
     const sink = new DiagnosticCollector();
     const profiles = await loadImageModelProfiles(sink);
     const builtin = profiles.filter((profile) => profile.builtin);
@@ -156,16 +159,17 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     }
   });
 
-  // The global defaults after 0135. Portrait creation is fal text-to-image;
-  // variant/reference-view and scene work are fal edit. Item/location/chat-place
-  // stay on Qwen 2512 and chat-look keeps its dedicated Qwen 2511 path.
+  // The global defaults after 0152. Portrait creation is fal text-to-image;
+  // variant/reference-view and scene work are Civitai Qwen Image 2.1.
+  // Item/location/chat-place stay on Qwen 2512 and chat-look keeps its
+  // dedicated Qwen 2511 path.
   const anchorExpectations: ReadonlyArray<readonly [ImageProfileTask, string]> = [
     ["portrait", QWEN_3_TEXT],
     ["item", QWEN_GENERATE],
     ["location", QWEN_GENERATE],
     ["chat_place", QWEN_GENERATE],
-    ["variant", QWEN_3_EDIT],
-    ["scene", QWEN_3_EDIT],
+    ["variant", QWEN_21],
+    ["scene", QWEN_21],
     ["chat_look", QWEN_EDIT],
   ];
 
@@ -182,7 +186,7 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     });
   }
 
-  it("offers each task exactly the models its lane can reach after the fal Qwen Image 3 split", async () => {
+  it("offers each task exactly the models its lane can reach, the Civitai Qwen Image 2.1 defaults first", async () => {
     const offeredSlugs = async (task: ImageProfileTask): Promise<string[]> =>
       (await loadImageModelProfilesForTask(task))
         .filter((candidate) => candidate.profile.builtin)
@@ -204,9 +208,11 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
       QWEN_GENERATE,
       "stability-ai/stable-diffusion-3.5-large",
     ]);
-    // The fal edit endpoint leads scene work and can carry up to three ordered
-    // references; the prior instruction editors and curated choices remain.
+    // Civitai Qwen Image 2.1 leads scene work; the fal edit endpoint that was the
+    // default before it, the prior instruction editors and the curated choices
+    // all remain offered.
     expect(await offeredSlugs("scene")).toEqual([
+      QWEN_21,
       QWEN_3_EDIT,
       QWEN_EDIT,
       "bytedance/seedream-4.5",
@@ -218,6 +224,7 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
       "wan-video/wan-2.7-image-pro",
     ]);
     expect(await offeredSlugs("variant")).toEqual([
+      QWEN_21,
       QWEN_3_EDIT,
       QWEN_EDIT,
       "bytedance/seedream-4.5",
@@ -293,7 +300,7 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
 
     expect(resolved?.model.slug).toBe("bytedance/seedream-4.5");
     expect(resolved?.profile.id).toBe("imgprfs45sceneaaaaaaaaaa");
-    // fal Qwen Image 3 edit carries the global scene default, so a stored Seedream
+    // Civitai Qwen Image 2.1 carries the global scene default, so a stored Seedream
     // pick lands on a NON-default profile without a degradation warning.
     expect(resolved?.profile.isDefault).toBe(false);
     expect(sink.items).toEqual([]);
@@ -314,8 +321,8 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     const sink = new DiagnosticCollector();
     const resolved = await resolveImageProfileForTask("scene", "venice-hidream", sink);
 
-    expect(resolved?.model.slug).toBe(QWEN_3_EDIT);
-    expect(resolved?.profile.id).toBe("imgprfqwen3prosceneaaaaaa");
+    expect(resolved?.model.slug).toBe(QWEN_21);
+    expect(resolved?.profile.id).toBe("imgprfcivqwen21sceneaaaa");
     const warned = sink.items.filter((d) => d.code === "image_profile.pick_unavailable");
     expect(warned).toHaveLength(1);
     expect(warned[0]?.severity).toBe("warn");
@@ -329,7 +336,7 @@ describe.skipIf(!ready)("seeded image model profiles", () => {
     const resolved = await resolveImageProfileForTask("scene", "imgprf2512portraitaaaaaa", sink);
 
     expect(resolved?.profile.task).toBe("scene");
-    expect(resolved?.model.slug).toBe(QWEN_3_EDIT);
+    expect(resolved?.model.slug).toBe(QWEN_21);
     expect(sink.items.map((d) => d.code)).toContain("image_profile.pick_unavailable");
   });
 

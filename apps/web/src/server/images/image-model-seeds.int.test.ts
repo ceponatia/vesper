@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { ImageExecutionContext } from "@vesper/image-core";
+import { type ImageExecutionContext, MAX_TRIAL_PREDICTION_MS } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { createReplicateClient, DEFAULT_PREDICTION_TIMEOUT_MS, type ProbeResult } from "@vesper/image-replicate";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
@@ -19,6 +19,7 @@ import {
 import { db, imageLoras, imageModelProfiles, imageModels } from "../db";
 import { imageModelProbeFields } from "./identity-trial-model-versions";
 import { type ImageLoraResolution, listImageLoras, loadImageLora, resolveImageLoraForRender } from "./image-loras";
+import { loadImageModelProfiles } from "./model-profiles";
 import { loadImageModels } from "./models";
 
 /**
@@ -389,7 +390,8 @@ afterAll(async () => {
   // And for the row 0139 seeds: its guard cases delete it outright, and
   // `image-generator.int.test.ts` reads the registry after this file runs.
   if (ready && !(await kontextIntact())) await restoreKontextRow();
-  // And for the row 0151 seeds, whose guard cases delete it outright.
+  // And for the row 0151 seeds and 0152 promotes, whose guard cases delete it
+  // outright (cascading its two default profiles) or move the defaults away.
   if (ready && !(await qwen21Intact())) await restoreQwen21Row();
   await endTestPool();
 });
@@ -2414,12 +2416,19 @@ describe.skipIf(!ready)("migration 0141 — the capability record on a migrated 
 });
 
 // ---------------------------------------------------------------------------
-// Migration 0151 — the Civitai Qwen Image 2.1 bench row
+// Migrations 0151 and 0152 — the Civitai Qwen Image 2.1 row and its defaults
 // ---------------------------------------------------------------------------
 
 const QWEN21_MIGRATION_TAG = "0151_civitai-qwen-image-2-1";
 const QWEN21_MIGRATION_FILE = `drizzle/${QWEN21_MIGRATION_TAG}.sql`;
 const QWEN21_MODEL_ID = "imgmdlcivqwen21aaaaaaaa";
+
+/** 0152 promotes the 0151 row to the variant and scene default with these two rows. */
+const QWEN21_DEFAULTS_MIGRATION_TAG = "0152_civitai-qwen-image-2-1-defaults";
+const QWEN21_DEFAULTS_MIGRATION_FILE = `drizzle/${QWEN21_DEFAULTS_MIGRATION_TAG}.sql`;
+const QWEN21_VARIANT_PROFILE_ID = "imgprfcivqwen21variantaa";
+const QWEN21_SCENE_PROFILE_ID = "imgprfcivqwen21sceneaaaa";
+const QWEN21_PROFILE_IDS = [QWEN21_VARIANT_PROFILE_ID, QWEN21_SCENE_PROFILE_ID];
 
 /** 0151's shipped INSERT statement. */
 function qwen21SeedStatements(): Promise<string[]> {
@@ -2433,19 +2442,61 @@ async function reapplyQwen21Seed(): Promise<void> {
   for (const statement of statements) await db().execute(sql.raw(statement));
 }
 
-/** Put the migrated state back: drop whatever a case planted for the slug, then re-seed. */
-async function restoreQwen21Row(): Promise<void> {
-  // Read and validate the statement BEFORE deleting anything, so an unreadable
-  // migration file fails this suite instead of stripping the registry row.
-  expect(await qwen21SeedStatements(), `${QWEN21_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
-  await db().delete(imageModels).where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
-  await reapplyQwen21Seed();
+/**
+ * 0152's four shipped statements, in file order: the model's ratings, its
+ * `aspect_ratio` descriptor, the default clear, and the profile upsert. Every
+ * one keys on the 2.1 slug, which is how they are found; they are one
+ * transition and only ever replayed together.
+ */
+function qwen21DefaultsStatements(): Promise<string[]> {
+  return migrationStatements(QWEN21_DEFAULTS_MIGRATION_FILE, `'${CIVITAI_QWEN_IMAGE_21_SLUG}'`);
 }
 
-/** True when the migrated state is already in place, untouched. */
+/** Re-run 0152's own statements. Idempotent by its guards — that is what is under test. */
+async function reapplyQwen21Defaults(): Promise<void> {
+  const statements = await qwen21DefaultsStatements();
+  expect(statements, `${QWEN21_DEFAULTS_MIGRATION_FILE} must carry four statements`).toHaveLength(4);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/**
+ * Put the migrated state back: drop whatever a case planted for the slug (the
+ * delete cascades the row's profiles), re-seed it through 0151, and promote it
+ * through 0152, whose clear also takes the default back from any row a case
+ * handed it to.
+ */
+async function restoreQwen21Row(): Promise<void> {
+  // Read and validate both files BEFORE deleting anything, so an unreadable
+  // migration fails this suite instead of stripping the registry row and the
+  // variant and scene defaults with it.
+  expect(await qwen21SeedStatements(), `${QWEN21_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
+  expect(await qwen21DefaultsStatements(), `${QWEN21_DEFAULTS_MIGRATION_FILE} must carry four statements`)
+    .toHaveLength(4);
+  await db().delete(imageModels).where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
+  await reapplyQwen21Seed();
+  await reapplyQwen21Defaults();
+}
+
+/**
+ * True when the migrated state is in place: the seeded row, and both of its
+ * profiles as the enabled variant and scene defaults. Checking the profiles too
+ * matters because a case can leave the row present but its defaults gone.
+ */
 async function qwen21Intact(): Promise<boolean> {
   const [row] = await db().select({ id: imageModels.id }).from(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
-  return row !== undefined;
+  if (row === undefined) return false;
+  const defaults = await db()
+    .select({ id: imageModelProfiles.id })
+    .from(imageModelProfiles)
+    .where(
+      and(
+        inArray(imageModelProfiles.id, QWEN21_PROFILE_IDS),
+        eq(imageModelProfiles.imageModelId, QWEN21_MODEL_ID),
+        eq(imageModelProfiles.isDefault, true),
+        eq(imageModelProfiles.enabled, true),
+      ),
+    );
+  return defaults.length === QWEN21_PROFILE_IDS.length;
 }
 
 /**
@@ -2456,16 +2507,21 @@ async function qwen21Intact(): Promise<boolean> {
  * control, and the bands the bindings declare are the ones it refuses outside.
  * Expectations are read from the transport's own exports, not restated.
  */
-describe.skipIf(!ready)("migration 0151 — the Civitai Qwen Image 2.1 bench row", () => {
+describe.skipIf(!ready)("migration 0151 — the Civitai Qwen Image 2.1 row", () => {
   async function seededModel() {
     const sink = new DiagnosticCollector();
     const model = (await loadImageModels(sink)).find((candidate) => candidate.id === QWEN21_MODEL_ID);
     return { model, sink };
   }
 
-  it("seeds the bench row, and it parses through parseRegistryRows", async () => {
+  it("seeds the row, and it parses through parseRegistryRows", async () => {
     const { model, sink } = await seededModel();
 
+    // This reads the LIVE row, so it reflects 0152 as well. The columns below
+    // are the ones 0151 wrote and 0152 leaves alone; the reviewed ratings, the
+    // variant and scene surface flags, the operator warning, the `aspect_ratio`
+    // descriptor's text and the two profiles are 0152's, asserted in its own
+    // block below.
     expect(model).toMatchObject({
       slug: CIVITAI_QWEN_IMAGE_21_SLUG,
       label: "Qwen Image 2.1 (Civitai)",
@@ -2480,30 +2536,12 @@ describe.skipIf(!ready)("migration 0151 — the Civitai Qwen Image 2.1 bench row
       outputFormat: null,
       extraInput: {},
       probedVersionId: CIVITAI_QWEN_IMAGE_21_VERSION_ID,
-      editKind: "unknown",
-      identityPreservation: "unknown",
-      // Bench only: no legacy surface flag, and no profile below.
       forPortrait: false,
-      forVariant: false,
-      forScene: false,
       builtin: true,
     });
     // `loadImageModels` DROPS an unparseable row with a diagnostic rather than
     // throwing, so "it came back" and "nothing was skipped" are two assertions.
     expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
-    const profiles = await db()
-      .select({ id: imageModelProfiles.id })
-      .from(imageModelProfiles)
-      .where(eq(imageModelProfiles.imageModelId, QWEN21_MODEL_ID));
-    expect(profiles).toEqual([]);
-  });
-
-  it("warns the operator that the account, the LoRA path and the quality are unverified", async () => {
-    const { model } = await seededModel();
-    expect(model?.operatorWarning).toMatch(/bench lane only/i);
-    expect(model?.operatorWarning).toMatch(/account entitlement.*unverified/i);
-    expect(model?.operatorWarning).toContain("As of 2026-09-30 Civitai had enabled generation for no Qwen 2.1 LoRA");
-    expect(model?.operatorWarning).toContain("20B LoRA is refused before spend");
   });
 
   it("binds every control to the lane's wire field inside the transport's own bands", async () => {
@@ -2637,5 +2675,247 @@ describe.skipIf(!ready)("migration 0151 — guards over an existing row", () => 
     await db().delete(imageModels).where(eq(imageModels.id, OPERATOR_ID));
     await restoreQwen21Row();
     expect(await qwen21Intact()).toBe(true);
+  });
+});
+
+/**
+ * 0152 promotes the 0151 row to the global `variant` and `scene` default
+ * (owner ruling 2026-10-01). The part only a migrated database can answer is the
+ * one the partial unique index `image_model_profiles_default_per_task` makes
+ * hard: the clear must take the default off WHICHEVER row holds it — an admin
+ * may have re-defaulted either task since the seed — without disabling or
+ * deleting that row, and must do nothing at all when there is no lane-bearing
+ * row to promote, or variant and scene would be left without a default.
+ */
+describe.skipIf(!ready)("migration 0152 — Civitai Qwen Image 2.1 becomes the variant and scene default", () => {
+  afterAll(async () => {
+    if (!ready) return;
+    if (!(await qwen21Intact())) await restoreQwen21Row();
+  });
+
+  /** Every variant and scene profile row, raw and id-ordered, timestamps included. */
+  function variantAndSceneProfiles() {
+    return db()
+      .select()
+      .from(imageModelProfiles)
+      .where(inArray(imageModelProfiles.task, ["variant", "scene"]))
+      .orderBy(imageModelProfiles.id);
+  }
+
+  /** The enabled default rows for one task — one at most, by the partial unique index. */
+  async function enabledDefaults(task: "variant" | "scene"): Promise<string[]> {
+    const rows = await db()
+      .select({ id: imageModelProfiles.id })
+      .from(imageModelProfiles)
+      .where(
+        and(eq(imageModelProfiles.task, task), eq(imageModelProfiles.isDefault, true), eq(imageModelProfiles.enabled, true)),
+      );
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * The state before 0152: the 2.1 row as 0151 left it (deleting it cascades
+   * its two profiles) and the two task defaults on the rows a case names, set
+   * the way an admin's re-default sets them.
+   */
+  async function rewindToBeforeDefaults(defaults: { variant: string; scene: string }): Promise<void> {
+    expect(await qwen21SeedStatements(), `${QWEN21_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
+    await db().delete(imageModels).where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
+    await reapplyQwen21Seed();
+    await db()
+      .update(imageModelProfiles)
+      .set({ isDefault: true })
+      .where(inArray(imageModelProfiles.id, [defaults.variant, defaults.scene]));
+    expect(await enabledDefaults("variant")).toEqual([defaults.variant]);
+    expect(await enabledDefaults("scene")).toEqual([defaults.scene]);
+  }
+
+  it("re-running the shipped statements against the migrated state changes nothing, timestamps included", async () => {
+    const modelRow = () => db().select().from(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
+    const modelBefore = await modelRow();
+    const profilesBefore = await variantAndSceneProfiles();
+    expect(modelBefore).toHaveLength(1);
+
+    await reapplyQwen21Defaults();
+
+    expect(await modelRow()).toEqual(modelBefore);
+    expect(await variantAndSceneProfiles()).toEqual(profilesBefore);
+  });
+
+  it("rates the row, opens its variant and scene surfaces, and drops the bench-only warning", async () => {
+    const sink = new DiagnosticCollector();
+    const model = (await loadImageModels(sink)).find((candidate) => candidate.id === QWEN21_MODEL_ID);
+
+    expect(model).toMatchObject({
+      slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+      probedVersionId: CIVITAI_QWEN_IMAGE_21_VERSION_ID,
+      canEdit: true,
+      // The reviewed ratings. Both pass the screen the identity-critical
+      // variant and scene tasks apply (`profileEligibility`).
+      editKind: "multi_reference_compose",
+      identityPreservation: "strong",
+      // The two legacy surfaces the profiles are offered through; portrait is
+      // left as 0151 wrote it.
+      forPortrait: false,
+      forVariant: true,
+      forScene: true,
+    });
+    expect(sink.items.filter((item) => item.code === "image_model.row_invalid")).toEqual([]);
+    // The pickers show this before use: the provider's live LoRA limit stays,
+    // and the bench-only claim 0151 wrote is gone.
+    expect(model?.operatorWarning).toContain("no Qwen 2.1 LoRA");
+    expect(model?.operatorWarning).toContain("combined curated-LoRA + reference result is unverified");
+    expect(model?.operatorWarning).not.toMatch(/bench/i);
+  });
+
+  it("describes an edit's shape as cropped locally, rewriting that one descriptor and nothing else", async () => {
+    const sink = new DiagnosticCollector();
+    const model = (await loadImageModels(sink)).find((candidate) => candidate.id === QWEN21_MODEL_ID);
+    const inputs = model?.advancedCapabilities.providerInputs ?? [];
+
+    // An edit sends no shape and the result is cropped to the chosen ratio, so
+    // the hint copy no longer says the shape is refused.
+    expect(inputs.find((descriptor) => descriptor.field === "aspect_ratio")).toEqual({
+      field: "aspect_ratio",
+      type: "enum",
+      required: false,
+      default: "1:1",
+      enumValues: [...CIVITAI_QWEN21_ASPECTS],
+      description:
+        "Sizes a create. On an edit the provider sizes from the reference; Vesper sends no shape and crops the result to the chosen ratio.",
+      reserved: true,
+    });
+    // The list is rebuilt to change one member, so its order and membership are
+    // what a careless rebuild would lose; the 0151 block owns every other value.
+    expect(inputs.map((descriptor) => descriptor.field)).toEqual([
+      "prompt", "negativePrompt", "cfgScale", "steps", "sampler", "scheduler", "seed",
+      "aspect_ratio", "resolution", "civitai_lora_version", "civitai_lora_strength",
+    ]);
+  });
+
+  it("seeds the variant and scene profiles as the enabled defaults on the lanes' reference policies", async () => {
+    const sink = new DiagnosticCollector();
+    const profiles = (await loadImageModelProfiles(sink)).filter((profile) => profile.imageModelId === QWEN21_MODEL_ID);
+    expect(sink.items.filter((item) => item.code === "image_profile.row_invalid")).toEqual([]);
+    expect(profiles.map((profile) => profile.id).sort()).toEqual([...QWEN21_PROFILE_IDS].sort());
+
+    // Key, task, operation and strategy are the coordinates the prompt binding
+    // table matches; a variant needs the identity reference, a scene needs none.
+    expect(profiles.find((profile) => profile.id === QWEN21_VARIANT_PROFILE_ID)).toMatchObject({
+      key: "variant-standard",
+      task: "variant",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+      referencePolicy: { allowedRoles: ["identity", "style"], requiredRoles: ["identity"], roleOrder: ["identity", "style"] },
+    });
+    expect(profiles.find((profile) => profile.id === QWEN21_SCENE_PROFILE_ID)).toMatchObject({
+      key: "scene-standard",
+      task: "scene",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+      referencePolicy: {
+        allowedRoles: ["identity", "location", "style", "object"],
+        requiredRoles: [],
+        roleOrder: ["identity", "location", "style", "object"],
+      },
+    });
+    for (const profile of profiles) {
+      // The 1K tier and nothing else: a blank sampling control is the lane's
+      // official recipe, and no stated shape leaves the lane's own target shape
+      // in charge.
+      expect(profile.controlDefaults).toEqual({ seedPolicy: "random", resolution: "1K" });
+      expect(profile.providerOverrides).toEqual({});
+      // The profile ceiling: a Civitai budget is spent mostly in the queue, and
+      // a shorter one discards an image the account was already billed for.
+      expect(profile.timeoutMs).toBe(MAX_TRIAL_PREDICTION_MS);
+      expect(profile).toMatchObject({ enabled: true, isDefault: true, builtin: true, sort: 0 });
+    }
+  });
+
+  it("moves the default off whichever row holds it, disabling and deleting nothing", async () => {
+    // An admin re-defaulted both tasks since the seed, so neither default is the
+    // fal Qwen Image 3 pair 0135 left: the clear cannot be keyed on a known row.
+    const adminDefaults = { variant: "imgprfs45variantaaaaaaaa", scene: "imgprfwan27sceneaaaaaaaa" };
+    try {
+      await rewindToBeforeDefaults(adminDefaults);
+      const before = await variantAndSceneProfiles();
+
+      await reapplyQwen21Defaults();
+
+      expect(await enabledDefaults("variant")).toEqual([QWEN21_VARIANT_PROFILE_ID]);
+      expect(await enabledDefaults("scene")).toEqual([QWEN21_SCENE_PROFILE_ID]);
+      const after = await variantAndSceneProfiles();
+      const afterById = new Map(after.map((row) => [row.id, row]));
+      for (const row of before) {
+        const migrated = afterById.get(row.id);
+        expect(migrated, `${row.id} must survive the migration`).toBeDefined();
+        // Still offered, no longer the default.
+        expect(migrated?.enabled).toBe(row.enabled);
+        expect(migrated?.isDefault).toBe(false);
+      }
+      const added = after.filter((row) => !before.some((previous) => previous.id === row.id)).map((row) => row.id);
+      expect(added.sort()).toEqual([...QWEN21_PROFILE_IDS].sort());
+    } finally {
+      await restoreQwen21Row();
+    }
+  });
+
+  const NO_LANE_CASES: ReadonlyArray<readonly [string, () => Promise<void>]> = [
+    [
+      "deleted",
+      async () => {
+        await db().delete(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
+      },
+    ],
+    [
+      // `civitaiLaneFor` gives no transport to any other stored version, so
+      // promoting this row would fail every variant and scene render.
+      "re-pinned to a version with no lane",
+      async () => {
+        await db().update(imageModels).set({ probedVersionId: "operator-repin" }).where(eq(imageModels.id, QWEN21_MODEL_ID));
+      },
+    ],
+  ];
+
+  it.each(NO_LANE_CASES)("changes nothing, the current defaults included, when the row is %s", async (_label, damage) => {
+    // 0135's fal Qwen Image 3 pair: the fresh-database defaults before 0152.
+    const previousDefaults = { variant: "imgprfqwen3provariantaaaa", scene: "imgprfqwen3prosceneaaaaaa" };
+    const modelRow = () => db().select().from(imageModels).where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
+    try {
+      await rewindToBeforeDefaults(previousDefaults);
+      await damage();
+      const modelBefore = await modelRow();
+      const profilesBefore = await variantAndSceneProfiles();
+
+      await reapplyQwen21Defaults();
+
+      expect(await modelRow()).toEqual(modelBefore);
+      expect(await variantAndSceneProfiles()).toEqual(profilesBefore);
+      expect(await enabledDefaults("variant")).toEqual([previousDefaults.variant]);
+      expect(await enabledDefaults("scene")).toEqual([previousDefaults.scene]);
+    } finally {
+      await restoreQwen21Row();
+    }
+  });
+
+  it("is the unique ordered entry after every earlier migration and carries no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number; breakpoints: boolean }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === QWEN21_DEFAULTS_MIGRATION_TAG);
+    expect(entry).toMatchObject({ idx: 152, breakpoints: true });
+    expect(journal.entries.filter((candidate) => candidate.idx === 152)).toHaveLength(1);
+    // The migrator skips an entry stamped below one a database already applied,
+    // so this must be later than the whole history, not just its predecessor.
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 152).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    // Data only: a snapshot here would claim a `schema.ts` change this file does not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0152_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
   });
 });

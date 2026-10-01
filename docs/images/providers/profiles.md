@@ -101,18 +101,30 @@ copying the resolver into another server route; the existing list client continu
 
 ## The seeded standard set
 
-Of the 29 built-in profiles, the 22 standard ones are each equivalent to what its lane rendered
-before profiles existed; the seven curated ones are non-default alternatives a player or admin
-must pick.
+The migrations seed 34 built-in profiles: 27 standard rows, one for each task a model serves, and
+seven curated alternatives that are never a default.
 
-| Model                                                                                         | Standard profiles                                                                | Default for those tasks? |
-| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------ |
-| `qwen/qwen-image-2512`                                                                        | `portrait-standard`, `item-standard`, `location-standard`, `chat-place-standard` | yes                      |
-| `qwen/qwen-image-edit-2511`                                                                   | `variant-standard`, `scene-standard`, `chat-look-standard`                       | yes                      |
-| `bytedance/seedream-4.5`, `bytedance/seedream-5-lite`, `wan-video/wan-2.7-image-pro`          | `portrait-standard`, `variant-standard`, `scene-standard`                        | no                       |
-| `stability-ai/stable-diffusion-3.5-large`                                                     | `portrait-standard`                                                              | no                       |
-| `aisha-ai-official/nsfw-flux-dev`, `aisha-ai-official/likereality-pony-v1`, `prunaai/p-image` | `portrait-standard`                                                              | no                       |
-| `nsfw-api/sdxl-pulid`                                                                         | `variant-standard`, `scene-standard`                                             | no                       |
+| Model                                                                                         | Standard profiles                                                                | Seeded default for               |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------- |
+| `civitai/qwen-image-2.1`                                                                      | `variant-standard`, `scene-standard`                                             | `variant`, `scene`               |
+| `alibaba/qwen-image-3/text-to-image`                                                          | `portrait-standard`                                                              | `portrait`                       |
+| `alibaba/qwen-image-3/edit`                                                                   | `variant-standard`, `scene-standard`                                             | none                             |
+| `qwen/qwen-image-2512`                                                                        | `portrait-standard`, `item-standard`, `location-standard`, `chat-place-standard` | `item`, `location`, `chat_place` |
+| `qwen/qwen-image-edit-2511`                                                                   | `variant-standard`, `scene-standard`, `chat-look-standard`                       | `chat_look`                      |
+| `bytedance/seedream-4.5`, `bytedance/seedream-5-lite`, `wan-video/wan-2.7-image-pro`          | `portrait-standard`, `variant-standard`, `scene-standard`                        | none                             |
+| `stability-ai/stable-diffusion-3.5-large`                                                     | `portrait-standard`                                                              | none                             |
+| `aisha-ai-official/nsfw-flux-dev`, `aisha-ai-official/likereality-pony-v1`, `prunaai/p-image` | `portrait-standard`                                                              | none                             |
+| `nsfw-api/sdxl-pulid`                                                                         | `variant-standard`, `scene-standard`                                             | none                             |
+
+Owner ruling 2026-10-01: Civitai Qwen Image 2.1 is the `variant` default — reference views and
+portrait variants share that task — and the `scene` default. Every other variant and scene
+profile stays an enabled, non-default choice. Both 2.1 profiles store only the `1K` tier in
+`controlDefaults`, so every sampling control is blank and the lane sends the model's official
+recipe. They also store a `timeoutMs` of 900 seconds, the profile ceiling: a Civitai budget is
+spent mostly in the provider's queue, and a shorter one discards an image the account was already
+billed for ([../../image-models/models/civitai-flux-2-klein-4b.md §Execution and
+diagnostics](../../image-models/models/civitai-flux-2-klein-4b.md)). Every other seeded row stores
+a null `timeoutMs`.
 
 The Qwen generate profiles run `generate` / `text_to_image_description`; the Qwen edit profiles
 run `edit` / `instruction_edit`. Stable Diffusion 3.5's portrait-only set matches the row's
