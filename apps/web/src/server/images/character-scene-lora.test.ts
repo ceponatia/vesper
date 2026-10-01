@@ -524,3 +524,73 @@ describe("the content-rejection retry", () => {
     expect(retry.profile).toBe(stockProfile);
   });
 });
+
+/**
+ * THE SELFIE RETRY'S DISPOSITION GUARD (second correction round, #673).
+ *
+ * The selfie retry runs outside `executeSceneChain`'s own same-rung guard, so
+ * without this check a post-submit Civitai failure — `civitai_submit_unconfirmed`,
+ * an exhausted workflow-status read now reporting `reconcile`, an async
+ * timeout — would start a fresh preflight and a SECOND paid submit while the
+ * first, already billed, workflow might still finish untracked. The guard
+ * reads `declaresNonAutomaticRetry` directly on the stored failure message,
+ * independent of the `classifyImageFailure` mock's `reason`, so these cases
+ * set both separately to prove the two inputs are genuinely decoupled.
+ */
+describe("the selfie retry's disposition guard", () => {
+  it("does not retry when the first failure declares a non-automatic retry disposition", async () => {
+    const message = "Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as civitai_http_504, and no workflow in the list carried this externalId after 2 lookup rounds.";
+    vi.mocked(imageMeta).mockReturnValue({ error: message });
+    vi.mocked(classifyImageFailure).mockReturnValue("other");
+    stubDb([{ status: "failed", meta: { error: message } }]);
+    mockRender.mockResolvedValueOnce("img-first");
+
+    const imageId = await render({ flavor: "selfie" });
+
+    expect(imageId).toBe("img-first");
+    expect(mockRender).toHaveBeenCalledTimes(1);
+    expect(deleteOwnedImage).not.toHaveBeenCalled();
+    expect(loggedCodes()).toContain("images.selfie.retry_skipped");
+    expect(loggedCodes()).not.toContain("images.selfie.retry");
+  });
+
+  it("still retries sanitized on a content rejection, even when its own message also carries a disposition word", async () => {
+    // Content rejection is classified FIRST, ahead of any disposition the
+    // same message might also carry — proven here by giving the message
+    // both a content-policy phrase and a `retry=deliberate` token.
+    const message = "replicate 400: request blocked by content policy (retry=deliberate)";
+    vi.mocked(imageMeta).mockReturnValue({ error: message });
+    vi.mocked(classifyImageFailure).mockReturnValue("content_rejection");
+    stubDb([{ status: "failed", meta: { error: message } }]);
+    mockRender.mockResolvedValueOnce("img-first").mockResolvedValueOnce("img-second");
+
+    const imageId = await render({ flavor: "selfie" });
+
+    expect(imageId).toBe("img-second");
+    expect(mockRender).toHaveBeenCalledTimes(2);
+    expect(deleteOwnedImage).toHaveBeenCalledWith("img-first", "usr-1", { kind: "scene" });
+    expect(loggedCodes()).toContain("images.selfie.retry");
+    expect(loggedCodes()).not.toContain("images.selfie.retry_skipped");
+  });
+
+  it("still retries an ordinary transient failure, unsanitized", async () => {
+    const message = "fetch failed: ETIMEDOUT";
+    vi.mocked(imageMeta).mockReturnValue({ error: message });
+    vi.mocked(classifyImageFailure).mockReturnValue("transient");
+    stubDb([{ status: "failed", meta: { error: message } }]);
+    mockRender.mockResolvedValueOnce("img-first").mockResolvedValueOnce("img-second");
+
+    const imageId = await render({ flavor: "selfie" });
+
+    expect(imageId).toBe("img-second");
+    expect(mockRender).toHaveBeenCalledTimes(2);
+    expect(deleteOwnedImage).toHaveBeenCalledWith("img-first", "usr-1", { kind: "scene" });
+    // Unsanitized, unlike the content-rejection retry: the transient path
+    // keeps the staged plan and intimate permission.
+    const retry = requestAt(1);
+    expect(retry.plan.staging).toBeDefined();
+    expect(retry.references.some((reference) => reference.allowForIntimate)).toBe(true);
+    expect(loggedCodes()).toContain("images.selfie.retry");
+    expect(loggedCodes()).not.toContain("images.selfie.retry_skipped");
+  });
+});

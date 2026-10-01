@@ -8,6 +8,7 @@ import { exposedRegions, FULLY_COVERED, intimateRegionsBare, type RegionExposure
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { IdentityReferenceProvenance, SceneCaptureMode, SceneReferenceSource } from "@vesper/image-core";
+import { declaresNonAutomaticRetry } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { diag, DiagnosticCollector, teeSink } from "@/contracts/diagnostics";
 import { logDiagnostics } from "@/server/log";
@@ -668,7 +669,29 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
 
   const firstError = await imageFailure(first);
   if (firstError === null) return first;
-  const reason = classifyImageFailure(new Error(firstError || "render failed"));
+  const message = firstError || "render failed";
+  const reason = classifyImageFailure(new Error(message));
+  // A failure that already declares its own non-automatic retry disposition
+  // (civitai_submit_unconfirmed, an exhausted post-submit read reporting
+  // reconcile, an async timeout, and the like — all `retry=deliberate`,
+  // `retry=never`, or `retry=reconcile`) means Civitai may still accept or
+  // have already accepted the first attempt's workflow. This selfie retry
+  // runs OUTSIDE the scene chain's own same-rung guard
+  // (`executeSceneChain`/`MAX_TRANSIENT_RETRIES`), so without this check it
+  // would start a fresh preflight and a SECOND paid submit while the first,
+  // already billed, might still finish untracked (#673). A content
+  // rejection keeps its sanitized retry regardless: it is classified first,
+  // ahead of any disposition the same message might also carry, because the
+  // provider answering about the prompt is more specific than a generic
+  // disposition.
+  if (reason !== "content_rejection" && declaresNonAutomaticRetry(message)) {
+    sink.push(
+      diag("info", "images.selfie.retry_skipped", `first selfie attempt failed (${reason}) with a non-automatic retry disposition — not retrying`, {
+        context: { reason },
+      }),
+    );
+    return first;
+  }
   sink.push(
     diag("info", "images.selfie.retry", `first selfie attempt failed (${reason}) — retrying${reason === "content_rejection" ? " sanitized" : ""}`),
   );

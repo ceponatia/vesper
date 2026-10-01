@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyImageFailureMessage, imageFailureHealthOutcome, isBillingFailureMessage } from "./failures";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageFailureHealthOutcome, isBillingFailureMessage } from "./failures";
 
 describe("classifyImageFailureMessage", () => {
   it("classifies provider content-policy strings as content rejections", () => {
@@ -71,6 +71,25 @@ describe("classifyImageFailureMessage", () => {
   it("still classifies an ordinary Replicate startup timeout as transient", () => {
     const message = "replicate prediction abc123 never started: queue busy — startup timed out after 3 attempts, and no render was attempted";
     expect(classifyImageFailureMessage(message)).toBe("transient");
+  });
+});
+
+describe("declaresNonAutomaticRetry", () => {
+  /**
+   * PROTECTS (#673): this is the exact signal a caller outside the scene
+   * chain's own classifier (`character-scene.ts`'s selfie retry) must honor
+   * before repeating a paid request through a path `classifyImageFailureMessage`
+   * does not guard. Built on the same regex as the classifier's own
+   * NON_TRANSIENT_DISPOSITION rule, so the two can never drift apart.
+   */
+  it("is true for deliberate, never, and reconcile dispositions, false otherwise", () => {
+    expect(declaresNonAutomaticRetry("civitai submit failed (civitai_submit_unconfirmed; retry=deliberate).")).toBe(true);
+    expect(declaresNonAutomaticRetry("civitai output failed (civitai_output_invalid; retry=never).")).toBe(true);
+    expect(declaresNonAutomaticRetry("civitai workflow status failed (civitai_http_503; retry=reconcile).")).toBe(true);
+
+    expect(declaresNonAutomaticRetry("civitai lora metadata failed (civitai_http_503; retry=automatic).")).toBe(false);
+    expect(declaresNonAutomaticRetry("replicate prediction abc never started: startup timed out")).toBe(false);
+    expect(declaresNonAutomaticRetry("blocked by content policy")).toBe(false);
   });
 });
 

@@ -764,6 +764,7 @@ export type {
 export {
   attemptReferenceCount,
   classifyImageFailureMessage,
+  declaresNonAutomaticRetry,
   imageFailureHealthOutcome,
   isBillingFailureMessage,
   routeSceneAttempts,

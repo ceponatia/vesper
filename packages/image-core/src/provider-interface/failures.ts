@@ -58,6 +58,22 @@ const BILLING = /insufficient credit|payment required|\b402\b|billing/;
  */
 const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
 
+/**
+ * Whether a failure message already declares a non-automatic retry
+ * disposition (`retry=deliberate`, `retry=never`, or `retry=reconcile`) —
+ * the exact signal {@link classifyImageFailureMessage} uses to keep such a
+ * message out of `transient`, built on the SAME regex and exposed on its
+ * own (#673) so a caller weighing a SEPARATE, independent retry — not the
+ * scene chain's own same-rung retry, which `classifyImageFailureMessage`
+ * already guards — can honor the same disposition before repeating a paid
+ * request through that other path. A provider-neutral predicate, like the
+ * classifier itself: it takes only an already-described message, never a
+ * provider-specific error object.
+ */
+export function declaresNonAutomaticRetry(message: string): boolean {
+  return NON_TRANSIENT_DISPOSITION.test(message.toLowerCase());
+}
+
 /** Classify an already-described provider failure message. */
 export function classifyImageFailureMessage(message: string): ImageFailureReason {
   const text = message.toLowerCase();
