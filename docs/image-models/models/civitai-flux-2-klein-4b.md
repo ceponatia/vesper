@@ -158,8 +158,39 @@ characters unchanged.
   as specific as the provider permits.
 - Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, and `civitai_output_*` codes,
   plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
-  backed off with jitter, and apply only to idempotent metadata or workflow-status reads; a paid submission and what-if
-  POST are never repeated automatically.
+  backed off with jitter, and apply to idempotent metadata or workflow-status
+  reads and, up to one retry, the what-if preflight; a paid submission is
+  never repeated automatically.
+- The what-if preflight runs under its own ~120 s per-attempt timeout, longer
+  than every other stage's 30 s budget. A transport failure (abort/timeout,
+  network error, an unreadable response body) or an HTTP 429/5xx is POSTed
+  again automatically exactly once, reusing the identical preflight body and
+  its `externalId`, after the same jittered backoff as a read retry. Any other
+  4xx — including the 400 `resource_not_enabled` — a malformed JSON body, and
+  a failure surfaced only after a 200 OK (insufficient Buzz, a failed or
+  blocked workflow status, an echo refusal) are never retried. A second
+  transport or 429/5xx failure fails the render under the same stable code it
+  carries today, with a message that tells the operator the automatic retry
+  already ran and that only a deliberate replacement is next.
+
+  Measured 2026-10-01: zero-Buzz what-ifs against the Qwen Image 2.1
+  `editImage` body, with a synthetic 768x1024 jpeg reference.
+
+  | Probe                                                        | Latency     |
+  | ------------------------------------------------------------ | ----------- |
+  | short prompt, single                                         | 3.1 s       |
+  | short prompt, 8 concurrent identical                         | 2.1 s each  |
+  | real front-clothed view prompt (1,741 chars), first sighting | 13.0 s      |
+  | same prompt again, 8 concurrent                              | 2.4 s each  |
+  | all 8 real view prompts + a fresh nonce, concurrent          | 12.4 s each |
+  | real front-bare prompt (2,567 chars), first sighting         | 2.9 s       |
+
+  On prod, 2026-10-01 19:21:37Z, all 8 preflights in one reference-view batch
+  failed together after 30.4-30.9 s against the previous shared 30 s budget,
+  discarding renders whose paid submit would otherwise have gone through. The
+  exact cause of the slow responses is not pinned down — provider load, or the
+  real uploaded portrait, which was not probed — so the 120 s ceiling is
+  headroom over the measured range above, not a tuned minimum.
 - A `civitai_http_400` whose RFC7807 `errors.messages[]` says a selected
   resource "is not enabled for generation" also carries
   `reason=resource_not_enabled`: the request was well formed, and Civitai will

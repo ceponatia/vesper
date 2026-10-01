@@ -29,6 +29,22 @@ const WORKFLOWS_URL = "https://orchestration.civitai.com/v2/consumer/workflows";
 const BLOBS_URL = "https://orchestration.civitai.com/v2/consumer/blobs";
 const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * The what-if preflight's own per-attempt timeout.
+ *
+ * Every other stage keeps the 30 s {@link REQUEST_TIMEOUT_MS} budget. On
+ * 2026-10-01 all 8 reference-view preflights in one production batch failed
+ * together after 30.4-30.9 s against that shared budget, discarding renders
+ * whose paid submit would otherwise have gone through. Zero-Buzz what-if
+ * probes against the Qwen Image 2.1 `editImage` body measured the same day
+ * ranged 2.1-13.0 s, including concurrent batches of 8 and prompts as long as
+ * 2,567 characters — see docs/image-models/models/civitai-flux-2-klein-4b.md
+ * §Execution and diagnostics for the full table. This ceiling is headroom
+ * over that measured range, not a tuned minimum; the exact cause of the slow
+ * prod responses (provider load vs. the real uploaded portrait) was not
+ * pinned down (#672).
+ */
+const CIVITAI_PREFLIGHT_TIMEOUT_MS = 120_000;
 const MAX_REFERENCES = 2;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const ALLOWED_CONTROLS = new Set([
@@ -386,8 +402,22 @@ function errorCodes(value: unknown): string[] {
 }
 
 const MAX_GET_RETRIES = 2;
+/**
+ * How many times the what-if preflight is POSTed again after a transport
+ * failure or an HTTP 429/5xx — exactly once, per #672. A plain 4xx (including
+ * the 400 `resource_not_enabled`), a malformed JSON body, or any failure
+ * surfaced only after a 200 OK (insufficient Buzz, a failed/blocked workflow
+ * status, an echo refusal) never reaches this retry: each of those throws
+ * before or without consulting it.
+ */
+const MAX_PREFLIGHT_RETRIES = 1;
 
-async function waitForCivitaiGetRetry(attempt: number, deadline?: number): Promise<boolean> {
+/** Whether an HTTP status is one Vesper's bounded read/preflight retry covers. */
+function isCivitaiRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+async function waitForCivitaiRetry(attempt: number, deadline?: number): Promise<boolean> {
   const delay = deadline === undefined ? civitaiGetRetryDelay(attempt) : Math.min(civitaiGetRetryDelay(attempt), deadline - Date.now());
   if (delay <= 0) return false;
   await new Promise<void>((resolve) => setTimeout(resolve, delay));
@@ -396,6 +426,11 @@ async function waitForCivitaiGetRetry(attempt: number, deadline?: number): Promi
 
 async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "workflow_status", deadline?: number): Promise<unknown> {
   const method = init.method ?? "GET";
+  // GET reads (lora metadata, workflow-status polls) get the shared bounded
+  // retry; the what-if preflight gets its own single automatic repeat (#672);
+  // every other POST (the paid submit) gets none.
+  const maxRetries = method === "GET" ? MAX_GET_RETRIES : stage === "preflight" ? MAX_PREFLIGHT_RETRIES : 0;
+  const timeoutMs = stage === "preflight" ? CIVITAI_PREFLIGHT_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
   for (let attempt = 0; ; attempt += 1) {
     if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
     const headers = new Headers(init.headers);
@@ -408,13 +443,14 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
         ...init,
         headers,
         redirect: "error",
-        signal: AbortSignal.timeout(deadline === undefined ? REQUEST_TIMEOUT_MS : Math.max(1, Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now()))),
+        signal: AbortSignal.timeout(deadline === undefined ? timeoutMs : Math.max(1, Math.min(timeoutMs, deadline - Date.now()))),
       });
       text = await response.text();
     } catch {
-      const failure = civitaiTransportFailure(stage, method === "GET", attempt >= MAX_GET_RETRIES);
-      if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
-        if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
+      const retriesLeft = attempt < maxRetries;
+      const failure = civitaiTransportFailure(stage, method === "GET", !retriesLeft, stage === "preflight" && attempt > 0);
+      if (retriesLeft) {
+        if (await waitForCivitaiRetry(attempt, deadline)) continue;
         throw civitaiAsyncFailure("expired", ["timeout"]);
       }
       throw failure;
@@ -427,12 +463,14 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
       value = null;
     }
     if (!response.ok) {
+      const retriesLeft = isCivitaiRetryableStatus(response.status) && attempt < maxRetries;
       const failure = civitaiHttpFailure(
-        response.status, stage, method === "GET", civitaiValidationPaths(value), attempt >= MAX_GET_RETRIES,
+        response.status, stage, method === "GET", civitaiValidationPaths(value), !retriesLeft,
         response.status === 400 ? civitaiValidationReason(value) : undefined,
+        stage === "preflight" && attempt > 0,
       );
-      if (method === "GET" && failure.retry === "automatic" && attempt < MAX_GET_RETRIES) {
-        if (await waitForCivitaiGetRetry(attempt, deadline)) continue;
+      if (retriesLeft) {
+        if (await waitForCivitaiRetry(attempt, deadline)) continue;
         throw civitaiAsyncFailure("expired", ["timeout"]);
       }
       throw failure;

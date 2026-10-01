@@ -32,6 +32,30 @@ describe("Civitai error contract", () => {
     });
   });
 
+  /**
+   * PROTECTS (#672): once the preflight's own single automatic retry is
+   * spent, the disposition stays `deliberate` — never `automatic`, which
+   * would promise a retry that will not happen — and the message tells the
+   * operator a retry already ran rather than reusing the GET-retry wording,
+   * which names "read retries" and would misdescribe a POST.
+   */
+  it("marks a preflight failure that already used its one automatic retry as deliberate, not automatic", () => {
+    const transport = civitaiTransportFailure("preflight", false, true, true);
+    expect(transport).toMatchObject({
+      code: "civitai_transport_failure", retry: "deliberate", stage: "preflight", automaticRetryUsed: true,
+    });
+    expect(transport.message).toContain("already reposted this preflight once automatically");
+    expect(transport.message).not.toContain("read retries");
+
+    const http = civitaiHttpFailure(503, "preflight", false, [], true, undefined, true);
+    expect(http).toMatchObject({ code: "civitai_http_503", retry: "deliberate", automaticRetryUsed: true });
+    expect(http.message).toContain("already reposted this preflight once automatically");
+
+    // A first-attempt preflight failure (no retry used yet) keeps the
+    // unmodified deliberate wording.
+    expect(civitaiHttpFailure(400, "preflight", false).message).not.toContain("already reposted");
+  });
+
   it("uses documented job reasons and an explicit terminal fallback", () => {
     expect(civitaiAsyncFailure("failed", ["no_provider_available"])).toMatchObject({
       code: "civitai_async_no_provider_available", retry: "deliberate",
