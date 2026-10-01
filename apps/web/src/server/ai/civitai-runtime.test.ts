@@ -313,6 +313,34 @@ describe("Civitai Klein v2 transport", () => {
     });
   });
 
+  it("does not retry a 404 LoRA metadata read, so no what-if or submit ever follows", async () => {
+    // #672 regression: requestJson's retry gate now checks
+    // isCivitaiRetryableStatus(status) directly instead of reading back
+    // civitaiHttpFailure's computed `retry` field. A 404 sits outside the
+    // 429/5xx retryable band, so this GET — made before any preflight or
+    // spend — must still fail on its first attempt, the same as before the
+    // refactor that introduced the preflight's own retry.
+    const urls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const href = String(url);
+      urls.push(href);
+      if (href.includes("/model-versions/2633618")) return new Response("not found", { status: 404 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, {
+      ...request,
+      controlInput: {
+        seed: 1234,
+        [CIVITAI_LORA_VERSION_FIELD]: "2633618",
+        [CIVITAI_LORA_STRENGTH_FIELD]: 0.75,
+      },
+    });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_404; retry=never") });
+    expect(urls).toEqual(["https://civitai.com/api/v1/model-versions/2633618"]);
+  });
+
   it("collects documented job reasons without retaining job prose", () => {
     const parsed = parseCivitaiWorkflow({
       id: "workflow-failed", status: "failed", steps: [{
