@@ -95,6 +95,13 @@ intimate route) and the Image Lab's staged scene ([../../image-lab/staged-scene.
 §The age gate) ask it too, on every model. The explicit build route charges the budget from the same
 helper the job plans from, so the charge and the work can never be two numbers.
 
+The plan keeps a non-adult's `clothed` views, and the prompt seam stands behind them: a subject who
+fails the same rule and whose coverage reads the chest or groin bare refuses to compile
+(`image_prompt_program.non_adult_exposed`, [../character-prompts.md](../character-prompts.md)
+§Refusals the seam adds). A non-adult with no saved outfit reads bare on the clothed axis too, so
+that view's row fails before spend with the seam's reason, which asks for a saved outfit; a dressed
+non-adult's clothed views build as before.
+
 Eligibility is live character truth rather than a creation-time decision. If apparent age later
 becomes minor or unresolved, every `bare` slot projects `ineligible` immediately, including an
 older approved attempt. The studio keeps its image and review provenance visible but disables

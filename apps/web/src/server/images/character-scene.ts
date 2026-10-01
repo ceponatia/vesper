@@ -26,12 +26,17 @@ import { imageAgeAllowsIntimate, referenceViewAngleById, selectReferenceView } f
 import type { SceneLoweringViewer } from "./scene-lowering";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 import { applySceneCastVisual, type SceneCastVisualSubject, type SceneSubjectVisualSlice } from "./scene-subject-visual";
+import { characterPromptNonAdultExposureRefusal } from "./character-prompt-program";
 import type { VisualStateShadowInput } from "@/server/visual-state";
 
 /**
  * A chat scene that would have carried intimate content was taken off the
  * intimate route because a cast member's apparent age is not a resolved adult
- * (owner ruling 2026-10-01). The render goes on as an ordinary scene.
+ * (owner ruling 2026-10-01): no anatomy LoRA, intimate reveal, staged act or
+ * `bare` reference view. When that member's own coverage reads the chest or
+ * groin bare, the render is refused outright as well
+ * (`image_prompt_program.non_adult_exposed`); otherwise it goes on as an
+ * ordinary scene.
  */
 export const SCENE_INTIMATE_AGE_GATED = "images.scene_render.intimate_age_gated";
 
@@ -331,10 +336,24 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       diag(
         "warn",
         SCENE_INTIMATE_AGE_GATED,
-        "a cast member's apparent age is not a resolved adult — rendering without intimate content",
+        "a cast member's apparent age is not a resolved adult — this scene takes no intimate route: no anatomy LoRA, intimate reveal, staged act or bare reference view",
         { context: { characterIds: nonAdult, staging: plan.staging?.id ?? null } },
       ),
     );
+  }
+  // ...and no non-adult is drawn undressed at all. Exposure facts are stated on
+  // every route, so a non-adult whose own coverage reads the chest or groin bare
+  // would still be described that way with the route closed. The prompt seam
+  // refuses that on every lane (`characterPromptNonAdultExposureRefusal`); asked
+  // here of the same cuts, so the whole render fails before any provider with
+  // the seam's own words — the ladder would otherwise drop each rung and report
+  // "the selected image model cannot render this scene". It rides the cast
+  // visual refusal, which already withholds the cast, the provenance, the
+  // reference views and the selfie retry from a refused render.
+  const exposureRefusal = characterPromptNonAdultExposureRefusal(appliedVisuals);
+  if (exposureRefusal !== null && visualRefusal === null) {
+    sink.push(diag("warn", exposureRefusal.code, exposureRefusal.refusal, { context: exposureRefusal.context }));
+    visualRefusal = exposureRefusal.refusal;
   }
 
   // The chat's stored scene-model pick, resolved against the profile registry. A

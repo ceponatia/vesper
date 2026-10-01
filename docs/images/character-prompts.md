@@ -706,14 +706,27 @@ exposure facts alone
 
 ## Refusals the seam adds
 
-Beyond the layer's own refusals, three belong to this seam. All happen
+Beyond the layer's own refusals, four belong to this seam. All happen
 before provider spend.
 
 | Code                                          | Cause                                                   |
 | --------------------------------------------- | ------------------------------------------------------- |
+| `image_prompt_program.non_adult_exposed`      | a non-adult subject would be drawn chest or groin bare  |
 | `image_prompt_program.pack_missing`           | a bound pack version is not registered                  |
 | `image_prompt_program.references_renumbered`  | planning moves a slot a numbering dialect names         |
 | `visual_state.digest.cast_*`                  | the cast could not be folded into one digest            |
+
+**No non-adult is drawn undressed, on any lane or model** (owner ruling 2026-10-01).
+`non_adult_exposed` is decided first, ahead of the binding, by
+`characterPromptNonAdultExposureRefusal`: a subject whose resolved attributes fail
+`imageAgeAllowsIntimate` (the reference-view plan's adult floor) and whose coverage
+reads `intimateRegionsBare` — the torso or the pelvis `bare`; `sheer`, legs and feet
+do not count — refuses the compile. Exposure facts are stated on every route, so
+closing the intimate route alone cannot keep "is bare" out of such a prompt; refusing
+is the one answer that cannot leak, where drawing the state dressed would be a prompt
+that lies about the cut. A covered non-adult and every adult compile as before. The
+refusal's text names the fix: an outfit covering both — a saved outfit, for a
+portrait, variant or reference view.
 
 A refusal is never a fall-back to a second prompt system: a binding that resolved
 and then failed to compile is a fault on a lane that IS bound, and rendering

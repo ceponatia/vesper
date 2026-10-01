@@ -45,7 +45,9 @@ import {
   type CharacterAppearanceAspect,
   type CharacterSubjectSources,
 } from "@/contracts/images/character-adapter";
+import { imageAgeAllowsIntimate } from "@/contracts/images/reference-views";
 import { subjectIntimateRevealFacts } from "@/contracts/images/subject-reveal";
+import { intimateRegionsBare } from "@/contracts/items/visibility";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   assembleCharacterWorldDigest,
@@ -478,6 +480,62 @@ export const IMAGE_CHARACTER_PROMPT_PACK_MISSING = "image_prompt_program.pack_mi
  */
 export const IMAGE_CHARACTER_PROMPT_REFERENCES_RENUMBERED = "image_prompt_program.references_renumbered";
 
+/**
+ * A subject whose apparent age is not a resolved adult would be drawn with the
+ * chest or groin bare — refused before provider spend, on every lane and every
+ * model (owner ruling 2026-10-01: no intimate content for a non-adult on any
+ * image lane).
+ *
+ * Exposure facts are stated on EVERY route, intimate or not — coverage is the
+ * mandatory authority on what a body shows — so closing the intimate route
+ * alone cannot keep "is bare" out of a non-adult's prompt: a scene cut from an
+ * undressed chat wardrobe, or a portrait, variant or `clothed` reference view of
+ * a character with no saved outfit, would still state it. Refused rather than
+ * sanitized: drawing an undressed state dressed would be a prompt that lies
+ * about the cut, and a refusal is the one answer that cannot leak.
+ */
+export const IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED = "image_prompt_program.non_adult_exposed";
+
+/** The facts the non-adult exposure check reads — any lane's cut carries them. */
+export interface CharacterPromptAgeExposureSubject {
+  readonly subjectId: string;
+  readonly name?: string;
+  /** The resolved attributes the cut states — the age anchor reads the same list. */
+  readonly attributes: readonly AttributeValue[];
+  readonly exposure: RegionExposure;
+}
+
+/**
+ * THE non-adult exposure check, or null when every subject may be drawn as cut.
+ *
+ * A subject fails it when its resolved attributes fail
+ * `imageAgeAllowsIntimate` — the reference-view plan's adult floor, every
+ * apparent-age entry an adult value — AND `intimateRegionsBare` reads its
+ * coverage: the torso or the pelvis `bare`. A `sheer` region and bare legs or
+ * feet do not count, by that function's own rule. Adults are never refused
+ * here, and a covered non-adult compiles as before.
+ *
+ * Pure and exported so a lane that must fail a whole render on it — the chat
+ * scene, whose ladder would otherwise drop every rung and report the wrong
+ * cause — asks the same function the seam does, rather than a copy.
+ */
+export function characterPromptNonAdultExposureRefusal(
+  subjects: readonly CharacterPromptAgeExposureSubject[],
+): CharacterPromptProgramRefusal | null {
+  const exposed = subjects.filter((subject) => intimateRegionsBare(subject.exposure) && !imageAgeAllowsIntimate(subject));
+  if (exposed.length === 0) return null;
+  const who = exposed.map((subject) => subject.name?.trim() || "this character").join(" and ");
+  return {
+    kind: "refused",
+    code: IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
+    refusal:
+      `the apparent age of ${who} does not resolve to an adult, and this image would show the chest or groin bare, ` +
+      "so it is not drawn; an outfit that covers both — a saved outfit, for a portrait, variant or reference view — " +
+      "lets it render",
+    context: { subjects: exposed.map((subject) => subject.subjectId) },
+  };
+}
+
 const PATH = "images.character_prompt";
 
 /**
@@ -755,6 +813,20 @@ function selectRequestAwareAppearance(
 export function buildCharacterPromptProgram(input: CharacterPromptProgramInput): CharacterPromptProgramResult {
   const { lane, profile, sink } = input;
   const profileKey = input.bindingProfileKey;
+
+  // --- 0. No non-adult is drawn undressed, on any model --------------------
+  // First, ahead of the binding: the answer is about the cast, not the
+  // endpoint, so an unbound model must not turn it into "add a binding row".
+  const nonAdultExposed = characterPromptNonAdultExposureRefusal(input.cuts);
+  if (nonAdultExposed !== null) {
+    sink?.push(
+      diag("warn", IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED, "a subject who is not a resolved adult would be drawn with the chest or groin bare", {
+        path: PATH,
+        context: { lane, ...nonAdultExposed.context },
+      }),
+    );
+    return nonAdultExposed;
+  }
 
   // --- 1. The binding, on the lane's own FINAL resolved model ---------------
   // The BASE slug, not the row's own. Three seeded character models are

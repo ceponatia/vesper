@@ -318,6 +318,13 @@ intimate staging, or an intimate region bared on a subject or the viewer. The ga
 cast's characters only: the player's persona, the viewer, is not age-checked (owner ruling
 2026-10-01). The chat engine's own minor fence upstream is separate and unchanged.
 
+Closing the route does not change what a subject is wearing, and exposure facts are stated on every
+route. So when a cast member who fails the same rule has a committed cut whose
+coverage reads the chest or groin bare, the whole scene is refused before any provider, with
+`image_prompt_program.non_adult_exposed` and the prompt seam's own reason
+([../character-prompts.md](../character-prompts.md) §Refusals the seam adds). No image is made; the
+chat turn goes on.
+
 On the 2511 pairing, four legs degrade to the stock render with
 `images.scene_render.lora_unavailable` naming which one (`model` · `model_eligibility` ·
 `library_row` · `credential`); the taken LoRA route logs `images.scene_render.lora_route`. A

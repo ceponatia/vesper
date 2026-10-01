@@ -75,7 +75,11 @@ import { db } from "../db";
 import type { ImageRow } from "./asset-storage";
 import { runImagePipeline, type ImagePipelineOptions } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
-import { isCharacterPromptCompiled, type CharacterPromptProgram } from "./character-prompt-program";
+import {
+  IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
+  isCharacterPromptCompiled,
+  type CharacterPromptProgram,
+} from "./character-prompt-program";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { resolveImageLoraForRender } from "./image-loras";
 import { resolveImageProfileForTask } from "./model-profiles";
@@ -457,6 +461,74 @@ describe("the nsfw_test bench's age gate, on every model", () => {
   });
 });
 
+/**
+ * NO NON-ADULT IS DRAWN UNDRESSED, ON ANY VARIANT KIND (owner ruling
+ * 2026-10-01). The bench gate above is the intimate route's; this is the
+ * prompt seam's, and it holds for an ordinary `pose` too: a character with no
+ * saved outfit reads bare, and exposure facts are stated on every route. The
+ * row fails before spend with the seam's own words, which say what fixes it.
+ */
+describe("an ordinary variant of a non-adult with no saved outfit", () => {
+  let savedToken: string | undefined;
+
+  afterEach(() => {
+    if (savedToken === undefined) delete process.env.CIVITAI_API_TOKEN;
+    else process.env.CIVITAI_API_TOKEN = savedToken;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    pipelineCalls.length = 0;
+    savedToken = process.env.CIVITAI_API_TOKEN;
+    process.env.CIVITAI_API_TOKEN = "civitai-test-token-value";
+    // No saved outfit: the cut's coverage reads every region bare.
+    vi.mocked(loadDefaultWardrobeWithRevisions).mockResolvedValue({ wardrobe: [], revisions: [] });
+    mockPack.mockResolvedValue(packSelection());
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    mockPipeline.mockImplementation(async (opts) => {
+      pipelineCalls.push(opts);
+      if ((opts.failedPrecondition ?? null) !== null) return { imageId: "img-variant", status: "failed" };
+      const produced = await opts.produce({ id: "img-variant" } as unknown as ImageRow);
+      return { imageId: "img-variant", status: produced.ok ? "ready" : "failed" };
+    });
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(RESOLVED_PROFILE);
+  });
+
+  async function pose(band: string | null) {
+    stubCharacter(sheetAged(band));
+    const sink = new DiagnosticCollector();
+    await generateVariant({
+      characterId: LANE_PROBE_SUBJECT_ID,
+      userId: "user-probe",
+      kind: "pose",
+      instruction: "sitting by the window",
+      sink,
+    });
+    return sink;
+  }
+
+  it.each([
+    ["a minor band", "teen"],
+    ["no resolvable apparent age", null],
+  ])("fails the row before spend for %s, saying a saved outfit is needed", async (_label, band) => {
+    const sink = await pose(band);
+
+    expect(pipelineCalls[0]?.failedPrecondition).toContain("saved outfit");
+    expect(pipelineCalls[0]?.failedPrecondition).toContain("does not resolve to an adult");
+    expect(pipelineCalls[0]?.asset.prompt).toBe("");
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(sink.items.find((item) => item.code === IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED)?.severity).toBe("warn");
+  });
+
+  it("renders a resolved adult with no saved outfit as before — the control", async () => {
+    const sink = await pose("late_twenties");
+
+    expect(pipelineCalls[0]?.failedPrecondition).toBeNull();
+    expect(mockIntent).toHaveBeenCalledTimes(1);
+    expect(sink.items.some((item) => item.code === IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED)).toBe(false);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Qwen Image 2.1's nudity clause follows the route, not the coverage
 // ---------------------------------------------------------------------------
@@ -484,23 +556,25 @@ describe("Qwen Image 2.1 states nudity only where the route permits the intimate
     provenance: { lora: null, reason: "no_anatomy_lora_curated" as const },
   };
 
+  function qwen21Result(kind: PortraitVariantKind, permitted: boolean, cut = BARE_TORSO_CUT) {
+    return activeVariantProgram({
+      character: CHARACTER,
+      resolved: QWEN21_VARIANT,
+      cut,
+      nsfwRoute: permitted ? PERMITTED_ROUTE : null,
+      packSelection: packSelection(),
+      input: {
+        characterId: LANE_PROBE_SUBJECT_ID,
+        userId: "user-probe",
+        kind,
+        instruction: "the studio's fixed bench instruction",
+      },
+      revisions: [],
+    });
+  }
+
   function qwen21Program(kind: PortraitVariantKind, permitted: boolean, cut = BARE_TORSO_CUT) {
-    return compiled(
-      activeVariantProgram({
-        character: CHARACTER,
-        resolved: QWEN21_VARIANT,
-        cut,
-        nsfwRoute: permitted ? PERMITTED_ROUTE : null,
-        packSelection: packSelection(),
-        input: {
-          characterId: LANE_PROBE_SUBJECT_ID,
-          userId: "user-probe",
-          kind,
-          instruction: "the studio's fixed bench instruction",
-        },
-        revisions: [],
-      }),
-    );
+    return compiled(qwen21Result(kind, permitted, cut));
   }
 
   it("states it for an adult's permitted bench over a fully bare cut", () => {
@@ -512,14 +586,18 @@ describe("Qwen Image 2.1 states nudity only where the route permits the intimate
     expect(program.prompt).not.toMatch(NUDITY);
   });
 
-  it("never states it for a minor's bare cut on a route nothing permitted", () => {
+  it("never states it for a minor's bare cut — the prompt seam refuses that render outright", () => {
     const minorSheet = {
       ...SURFACE_PROFILE,
       attributes: SURFACE_PROFILE.attributes.map((entry) =>
         entry.id === "identity.apparent_age" ? { ...entry, value: "teen" } : entry,
       ),
     };
-    const program = qwen21Program("pose", false, laneProbeVariantCut([], minorSheet));
-    expect(program.prompt).not.toMatch(NUDITY);
+    // No prompt at all: a non-adult whose cut reads bare is refused before any
+    // wording is compiled, so neither the clause nor "is bare" can reach 2.1.
+    expect(qwen21Result("pose", false, laneProbeVariantCut([], minorSheet))).toMatchObject({
+      kind: "refused",
+      code: IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
+    });
   });
 });

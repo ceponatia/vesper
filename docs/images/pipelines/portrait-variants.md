@@ -141,7 +141,12 @@ resolved, any pack is read or any provider is called, with
 `images.variant.nsfw_test_age_gated` (warn) and the owner-facing reason "the anatomy bench
 renders only a character whose apparent age resolves to an adult". A minor band and an
 unresolved age both fail it. The gate reads the same character row the cut is built from, so the
-gate and the prompt cannot disagree. Ordinary variant kinds are not gated.
+gate and the prompt cannot disagree. Ordinary variant kinds are not gated by the bench — but no
+variant of any kind draws a non-adult undressed: the prompt seam refuses a subject who fails the
+same rule and whose coverage reads the chest or groin bare
+(`image_prompt_program.non_adult_exposed`, [../character-prompts.md](../character-prompts.md)
+§Refusals the seam adds), so a non-adult with no saved outfit fails a `pose` or `setting` row
+before spend, with the seam's reason asking for a saved outfit.
 
 Unlike the chat lane the 2511 pairing **fails rather than degrades**: a missing model row, LoRA
 row or Civitai credential fails the image row with the leg's own message, because a tame render

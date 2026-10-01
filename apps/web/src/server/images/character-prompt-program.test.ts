@@ -42,6 +42,7 @@ import {
   characterPromptTransport,
   isCharacterPromptCompiled,
   variantChangeOperation,
+  IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
   IMAGE_CHARACTER_PROMPT_PACK_MISSING,
   IMAGE_CHARACTER_PROMPT_REFERENCES_RENUMBERED,
   type CharacterPromptProgram,
@@ -475,6 +476,78 @@ describe("compiling a bound lane", () => {
  * invented `negativePrompt: ""` on the Qwen endpoints, which expose no negative
  * field at all.
  */
+/**
+ * NO NON-ADULT IS DRAWN UNDRESSED (owner ruling 2026-10-01). Exposure facts are
+ * stated on every route, so the intimate route's own gates cannot keep "is
+ * bare" out of a non-adult's prompt; the seam refuses it for every lane, ahead
+ * of the binding. Kills the hole the review found: a minor whose wardrobe reads
+ * bare — a scene's chat state, or a portrait, variant or `clothed` view with no
+ * saved outfit — compiled sentences describing them bare on every model.
+ */
+describe("the non-adult exposure refusal", () => {
+  /** The probe sheet with its apparent-age band replaced, or removed when `band` is null. */
+  function sheetAged(band: string | null) {
+    const base = laneProbeProfile();
+    return laneProbeProfile({
+      attributes:
+        band === null
+          ? base.attributes.filter((value) => value.id !== "identity.apparent_age")
+          : base.attributes.map((value) => (value.id === "identity.apparent_age" ? { ...value, value: band } : value)),
+    });
+  }
+
+  /** One variant-lane input over a cut of `profile` in `wardrobe` (empty = no saved outfit). */
+  function inputFor(band: string | null, dressed: boolean, over: Partial<CharacterPromptProgramInput> = {}) {
+    const cut = laneProbeVariantCut(dressed ? laneProbeWardrobe() : [], sheetAged(band));
+    return programInput({
+      cuts: [
+        {
+          subjectId: LANE_PROBE_SUBJECT_ID,
+          name: LANE_PROBE_NAME,
+          digest: cut.digest,
+          attributes: cut.resolved,
+          exposure: cut.exposure,
+          hairOcclusion: cut.hairOcclusion,
+          realizedBody: cut.realizedBody,
+        },
+      ],
+      ...over,
+    });
+  }
+
+  it.each([
+    ["a minor band", "teen"],
+    ["no resolvable apparent age", null],
+  ])("refuses %s whose cut reads the chest or groin bare, with the classified code and a diagnostic", (_label, band) => {
+    const sink = new DiagnosticCollector();
+    const result = buildCharacterPromptProgram(inputFor(band, false, { sink }));
+
+    expect(result).toMatchObject({
+      kind: "refused",
+      code: IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
+      context: { subjects: [LANE_PROBE_SUBJECT_ID] },
+    });
+    expect(result.kind === "refused" && result.refusal).toContain("saved outfit");
+    expectDiagnostic(sink, IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED);
+  });
+
+  it("refuses ahead of the binding, so the answer is the same on every model", () => {
+    const unbound = programProfile({ slug: "test-only/character-prompt-seam-absent" });
+    expect(buildCharacterPromptProgram(inputFor("teen", false, { profile: unbound }))).toMatchObject({
+      kind: "refused",
+      code: IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED,
+    });
+  });
+
+  it("compiles a non-adult whose cut covers the chest and groin, exactly as before", () => {
+    compiled(buildCharacterPromptProgram(inputFor("teen", true)));
+  });
+
+  it("compiles an adult whose cut reads bare — the refusal is about age, never about coverage alone", () => {
+    compiled(buildCharacterPromptProgram(inputFor("late_twenties", false)));
+  });
+});
+
 describe("characterPromptTransport", () => {
   it.each([
     {

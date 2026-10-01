@@ -6,6 +6,7 @@ import {
   attr,
   identityCandidateFixture as candidate,
   identityProvenanceFixture as record,
+  laneProbeBareExposure,
   laneProbeShadowInput,
   makeProfile,
   resolvedImageProfileFixture,
@@ -82,6 +83,7 @@ import { CHAT_LOOK_VISUAL_CUT_MISSING, latestChatLook, renderChatLookImage, type
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { generateVariant, VARIANT_PROGRAM_UNBOUND } from "./variants";
 import { renderCharacterSceneImage } from "./character-scene";
+import { IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED } from "./character-prompt-program";
 
 const mockConsume = vi.mocked(identityPackRenderReferences);
 const mockIntent = vi.mocked(renderImageIntent);
@@ -369,6 +371,50 @@ describe("scene (chat cast) lane", () => {
     expect(input?.failedPrecondition).toContain("Mira");
     expect(input?.failedPrecondition).toContain("identity references unavailable");
     expect(input?.identityProvenance).toBeUndefined();
+  });
+
+  /**
+   * NO NON-ADULT IS DRAWN UNDRESSED (owner ruling 2026-10-01). A cast member
+   * whose apparent age is not a resolved adult and whose committed coverage
+   * reads bare fails the WHOLE scene before any provider, with the prompt
+   * seam's own words — no cast is compiled, so no "is bare" sentence exists to
+   * send. The chat turn goes on; only the picture is refused.
+   */
+  describe("a cast member's committed cut that would draw a non-adult undressed", () => {
+    const runWithCut = async (band: string, bare: boolean) => {
+      mockResolve.mockResolvedValue(resolved("scene"));
+      mockConsume.mockResolvedValue(packOk());
+      const profile = makeProfile({ attributes: [attr("identity.apparent_age", band, "base")] });
+      const subject = member({ profile, ...(bare ? { outfit: "", exposure: laneProbeBareExposure() } : {}) });
+      const sink = new DiagnosticCollector();
+      await renderCharacterSceneImage({
+        characterId: subject.characterId,
+        userId: "user1",
+        cast: [subject],
+        chatId: "chat1",
+        subjectVisuals: new Map([[subject.characterId, { ...laneProbeShadowInput(profile), subjectId: subject.characterId }]]),
+        sink,
+      });
+      return sink;
+    };
+
+    it("refuses a minor whose coverage reads bare, naming the cause", async () => {
+      const sink = await runWithCut("teen", true);
+      const input = sceneInput();
+      expect(input?.failedPrecondition).toContain("does not resolve to an adult");
+      expect(input && "cast" in input).toBe(false);
+      expectDiagnostic(sink, IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED);
+    });
+
+    it("renders a minor whose coverage is dressed, and an adult who is bare — the controls", async () => {
+      await runWithCut("teen", false);
+      expect(sceneInput()?.failedPrecondition).toBeNull();
+
+      mockScene.mockClear();
+      await runWithCut("late_twenties", true);
+      expect(sceneInput()?.failedPrecondition).toBeNull();
+      expect(sceneInput()?.cast).toHaveLength(1);
+    });
   });
 
   it("a LATER member's refusal sends no provenance for the earlier member either — a refused row must not claim sends", async () => {
