@@ -1,7 +1,6 @@
 import { and, asc, eq, inArray, lt } from "drizzle-orm";
 import {
   bodyReferenceAttributes,
-  bodyReferenceSetKey,
   bodyReferenceSlots,
   bodyReferenceTagSchema,
   bodyReferenceWithheld,
@@ -93,17 +92,17 @@ export async function currentBodyReferenceImages(
 }
 
 /**
- * The character's body-image set RIGHT NOW (`bodyReferenceSetKey`): what a
- * build would send under this profile's adult gate, or null for none. The one
- * spelling the sheet projection, a reservation and a restoration compare
- * against.
+ * The character's SENDABLE body images right now — what a build would send
+ * under this profile's adult gate, slot order. The sheet projection, a
+ * reservation and a restoration each key it per view
+ * (`referenceViewBodySetKey`), exactly as the build keys what it records.
  */
-export async function currentBodyReferenceSetKey(
+export async function currentSendableBodyReferences(
   characterId: string,
   profile: Pick<CharacterProfile, "attributes">,
   executor: BodyReferenceExecutor = db(),
-): Promise<string | null> {
-  return bodyReferenceSetKey(sendableBodyReferences(await currentBodyReferenceImages(characterId, executor), profile));
+): Promise<BodyReferenceImage[]> {
+  return sendableBodyReferences(await currentBodyReferenceImages(characterId, executor), profile);
 }
 
 /** The owner's character with its parsed profile, or undefined when it is not theirs. */
@@ -177,8 +176,12 @@ export interface LoadedBodyReference extends BodyReferenceImage {
 }
 
 export interface BodyReferencesForBuild {
-  /** The set the build's rows record — every sendable image, readable or not. */
-  readonly setKey: string | null;
+  /**
+   * Every sendable image, readable or not — what each view's row records the
+   * key of (`referenceViewBodySetKey`), so a row names the set the owner
+   * configured rather than the subset that happened to be readable.
+   */
+  readonly sendable: readonly BodyReferenceImage[];
   /** The sendable images whose bytes were read, slot order. */
   readonly loaded: readonly LoadedBodyReference[];
 }
@@ -186,8 +189,8 @@ export interface BodyReferencesForBuild {
 /**
  * The body images one build sends, read ONCE per job like the portrait's bytes.
  *
- * The set key covers every SENDABLE image, so the rows record the set the owner
- * configured rather than the subset that happened to be readable: an image
+ * The rows record keys over every SENDABLE image, so they name the set the
+ * owner configured rather than the subset that happened to be readable: an image
  * whose bytes are gone is an optional reference that could not be sent, said
  * with a warning, and the views still render from the portrait. Owner-scoped
  * and kind-scoped on the asset read, so a row can only ever send its owner's
@@ -218,7 +221,7 @@ export async function loadBodyReferencesForBuild(input: {
     }
     loaded.push({ ...image, buffer });
   }
-  return { setKey: bodyReferenceSetKey(sendable), loaded };
+  return { sendable, loaded };
 }
 
 // ---------------------------------------------------------------------------

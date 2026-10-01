@@ -90,20 +90,11 @@ export function sendableBodyReferences(
 }
 
 /**
- * **THE BODY-IMAGE SET** a view was rendered against, as one comparable string:
- * each sendable image's id and tag, in slot order — or null for no image at all.
- *
- * A view row records it, and the sheet projects a rendered view stale once it
- * differs from the character's set right now, so adding, replacing, removing or
- * re-tagging an image marks the views out of date without rebuilding anything.
- * Null IS the empty set, which is what every row rendered before body images
- * existed stores: a character that never adds one sees no change, and adding
- * the first makes the sheet stale.
- *
- * Over the SENDABLE images, not the stored ones: an unclothed image the adult
- * gate starts withholding changes what a build would send, so the views built
- * from it go stale with it. A string rather than a hash, because two short ids
- * are cheap to store and an exact comparison cannot collide.
+ * A set of body images as one comparable string: each image's id and tag, in
+ * slot order — or null for no image at all. A string rather than a hash,
+ * because two short ids are cheap to store and an exact comparison cannot
+ * collide. What a view records is the key of the images ROUTED to it
+ * ({@link referenceViewBodySetKey}).
  */
 export function bodyReferenceSetKey(sendable: readonly BodyReferenceImage[]): string | null {
   if (sendable.length === 0) return null;
@@ -132,11 +123,42 @@ export function referenceViewBodyReferences(
   view: ReferenceView,
   sendable: readonly BodyReferenceImage[],
 ): BodyReferenceImage[] {
-  const wardrobe = referenceViewWardrobeById(view.wardrobe);
+  return bodyReferencesForWardrobe(view.wardrobe, sendable);
+}
+
+/** {@link referenceViewBodyReferences} for every view in one wardrobe — the angle never changes it. */
+export function bodyReferencesForWardrobe(
+  wardrobeId: string,
+  sendable: readonly BodyReferenceImage[],
+): BodyReferenceImage[] {
+  const wardrobe = referenceViewWardrobeById(wardrobeId);
   if (wardrobe === undefined) return [];
   const ordered = [...sendable].sort(bySlot);
   if (wardrobe.intimate) return ordered.filter((image) => image.tag === "unclothed");
   return [...ordered.filter((image) => image.tag === "clothed"), ...ordered.filter((image) => image.tag !== "clothed")];
+}
+
+/**
+ * **THE BODY-IMAGE SET ONE VIEW IS RENDERED AGAINST** — the key
+ * ({@link bodyReferenceSetKey}) of the images routed to its wardrobe, out of
+ * the character's SENDABLE images. The build records it on the row it
+ * reserves, and the sheet compares it with the same function over the
+ * character's images now, so the two sides cannot answer differently.
+ *
+ * Per wardrobe, because a view goes stale only on a change to the images it
+ * would send: a dressed view takes every image, so any add, replace, remove or
+ * re-tag moves it; an undressed view takes the unclothed ones alone, so a
+ * change to a Clothed image leaves it standing. Over the sendable images, so an
+ * unclothed image the adult gate starts withholding moves every view that took
+ * it. Independent of the image model and profile: whether the resolved route
+ * actually sends the images is a different question, answered beside the set.
+ *
+ * Null IS the empty set — what every row rendered before body images existed
+ * stores — so a view's first routed image makes it stale and a character that
+ * never adds one sees no change.
+ */
+export function referenceViewBodySetKey(wardrobeId: string, sendable: readonly BodyReferenceImage[]): string | null {
+  return bodyReferenceSetKey(bodyReferencesForWardrobe(wardrobeId, sendable));
 }
 
 // ---------------------------------------------------------------------------

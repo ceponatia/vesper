@@ -729,12 +729,17 @@ export interface ReferenceViewProjectionInput {
    */
   readonly method?: string | null;
   /**
-   * The body-image set this row was rendered against (`bodyReferenceSetKey`,
+   * The body-image set this row was rendered against: the key of the images
+   * routed to its wardrobe (`referenceViewBodySetKey`,
    * `contracts/images/body-references.ts`). Null or absent is the EMPTY set —
    * every row rendered before body images existed — never "unknown".
    */
   readonly bodyReferenceSet?: string | null;
-  /** The character's body-image set right now; null or absent when it has none. */
+  /**
+   * The body-image set this view would be rendered against right now — the key
+   * of the character's sendable images routed to its wardrobe
+   * (`referenceViewBodySetKey`); null or absent when none are.
+   */
   readonly currentBodyReferenceSet?: string | null;
 }
 

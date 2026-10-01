@@ -432,7 +432,7 @@ beforeEach(() => {
   vi.mocked(readAcceptedPortraitSource).mockResolvedValue({ ok: true, imageId: "img-accepted", contentHash: "hash-1" });
   vi.mocked(loadDefaultWardrobeWithRevisions).mockResolvedValue({ wardrobe: [], revisions: [] });
   // No body images unless a case gives the character some.
-  vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ setKey: null, loaded: [] });
+  vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ sendable: [], loaded: [] });
   mockReserve.mockImplementation(async (input) => `view-${input.view.angle}-${input.view.wardrobe}`);
   vi.mocked(finalizeReferenceView).mockResolvedValue("ready");
   vi.mocked(failReferenceView).mockResolvedValue("failed");
@@ -713,7 +713,7 @@ describe("the character's body images", () => {
   const SET_KEY = "img-body-1:unclothed,img-body-2:clothed";
 
   beforeEach(() => {
-    vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ setKey: SET_KEY, loaded: [UNCLOTHED, CLOTHED] });
+    vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ sendable: [UNCLOTHED, CLOTHED], loaded: [UNCLOTHED, CLOTHED] });
   });
 
   /** The body references one compile was handed, by image id, in send order. */
@@ -755,6 +755,8 @@ describe("the character's body images", () => {
       ["body", false],
     ]);
     expect(bodyImagesSent()).toEqual([UNCLOTHED.imageId]);
+    // The set routed to THIS view — the unclothed image alone — is what the row records.
+    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ bodyReferenceSet: `${UNCLOTHED.imageId}:unclothed` });
   });
 
   it("records and renders only what the program sends, and says why the rest stayed behind", async () => {
@@ -783,7 +785,7 @@ describe("the character's body images", () => {
   });
 
   it("sends and records no body image for a character with none", async () => {
-    vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ setKey: null, loaded: [] });
+    vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ sendable: [], loaded: [] });
 
     await build([ROOT_VIEW]);
 

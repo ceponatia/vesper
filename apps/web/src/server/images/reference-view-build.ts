@@ -7,12 +7,14 @@ import {
   plannedReferenceViews,
   referenceViewAngleById,
   referenceViewBodyReferences,
+  referenceViewBodySetKey,
   referenceViewFaceVisibility,
   referenceViewUpstream,
   referenceViewUpstreamBinding,
   referenceViewWardrobeById,
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
   REFERENCE_VIEW_GENERATION_VERSION,
+  type BodyReferenceImage,
   type ReferenceView,
 } from "@/contracts";
 import { characterChangeContract, characterVariantImageOperation } from "@/contracts/images/character-digest";
@@ -194,8 +196,11 @@ interface BuildContext {
   readonly sourceContentHash: string;
   /** The sendable body images with their bytes, read once for the whole pass. */
   readonly bodyReferences: readonly LoadedBodyReference[];
-  /** The body-image set every row this pass reserves records (`bodyReferenceSetKey`). */
-  readonly bodyReferenceSet: string | null;
+  /**
+   * Every sendable body image, readable or not — each row this pass reserves
+   * records the key of the ones routed to its view (`referenceViewBodySetKey`).
+   */
+  readonly bodySendable: readonly BodyReferenceImage[];
   readonly sink: DiagnosticSink;
 }
 
@@ -294,7 +299,7 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
     acceptedImageId,
     sourceContentHash: source.contentHash,
     bodyReferences: body.loaded,
-    bodyReferenceSet: body.setKey,
+    bodySendable: body.sendable,
     sink,
   };
 
@@ -514,7 +519,8 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     sourceImageId: context.acceptedImageId,
     sourceContentHash: context.sourceContentHash,
     upstreamViewId: upstream?.lineageId ?? null,
-    bodyReferenceSet: context.bodyReferenceSet,
+    // The set routed to THIS view, by the function the sheet compares with.
+    bodyReferenceSet: referenceViewBodySetKey(view.wardrobe, context.bodySendable),
     // An upstream that moved after the read above is refused with its own
     // diagnostic, so this lane never spends a charge in silence.
     sink,

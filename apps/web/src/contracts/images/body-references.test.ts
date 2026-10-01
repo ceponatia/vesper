@@ -10,6 +10,7 @@ import {
   defaultBodyReferenceTag,
   parseBodyReferenceSlot,
   referenceViewBodyReferences,
+  referenceViewBodySetKey,
   sendableBodyReferences,
   type BodyReferenceImage,
 } from "./body-references";
@@ -84,6 +85,36 @@ describe("the body-image set a view is rendered against", () => {
   it("moves when the adult gate starts withholding an undressed image", () => {
     const images = [UNCLOTHED_1, CLOTHED_2];
     expect(key(sendableBodyReferences(images, minor))).not.toBe(key(sendableBodyReferences(images, adult)));
+  });
+
+  /**
+   * Per wardrobe: a view is keyed by the images ROUTED to it, so a change only
+   * an undressed view never sends — a Clothed image added, replaced or removed —
+   * leaves an undressed view standing, while every dressed view moves. Checked
+   * over the registry's own wardrobes, so a new one is held to the same rule.
+   */
+  it("keys each view by the images its wardrobe takes, and nothing else", () => {
+    const base = [UNCLOTHED_1, CLOTHED_2];
+    const clothedOnlyChanges: readonly BodyReferenceImage[][] = [
+      [UNCLOTHED_1],
+      [UNCLOTHED_1, { ...CLOTHED_2, imageId: "img-c" }],
+    ];
+    for (const view of allReferenceViews()) {
+      const viewKey = (images: readonly BodyReferenceImage[]) => referenceViewBodySetKey(view.wardrobe, images);
+      // The same function the routing table answers with, keyed.
+      expect(viewKey(base), `${view.angle}/${view.wardrobe}`).toBe(key(referenceViewBodyReferences(view, base)));
+      const undressed = referenceViewWardrobeById(view.wardrobe)?.intimate === true;
+      for (const changed of clothedOnlyChanges) {
+        expect(viewKey(changed) === viewKey(base), `${view.angle}/${view.wardrobe}`).toBe(undressed);
+      }
+      // Re-tagging the dressed image undressed reaches every view.
+      expect(viewKey([UNCLOTHED_1, { ...CLOTHED_2, tag: "unclothed" }])).not.toBe(viewKey(base));
+    }
+  });
+
+  it("is null for a view no image is routed to", () => {
+    expect(referenceViewBodySetKey("bare", [CLOTHED_2])).toBeNull();
+    expect(referenceViewBodySetKey("clothed", [])).toBeNull();
   });
 });
 

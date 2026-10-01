@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { emptyCharacterProfile, VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type ReferenceView } from "@/contracts";
+import { emptyCharacterProfile, referenceViewBodySetKey, VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type ReferenceView } from "@/contracts";
 import { characterBodyReferences, characters, db, images, jobs } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { createImageAsset, saveImageBuffer } from "./asset-storage";
 import {
-  currentBodyReferenceSetKey,
+  currentSendableBodyReferences,
   getBodyReferenceSet,
   installBodyReference,
   removeBodyReference,
@@ -76,37 +76,41 @@ async function fixture(band = "eighteen") {
   const source = await readAcceptedPortraitSource(character.id, ownerId);
   if (!source.ok) throw new Error("fixture portrait unreadable");
   const characterId = character.id;
-  const claim = async () => {
+  const claim = async (view: ReferenceView = ROOT) => {
     const [job] = await db().insert(jobs).values({
       ownerId, type: "reference_views", status: "running", payload: { characterId, targets: [], leases: [] },
     }).returning({ id: jobs.id });
     if (!job) throw new Error("fixture job insert failed");
-    const leases = await claimReferenceViewLeases({ characterId, ownerId, jobId: job.id, targets: [ROOT] });
+    const leases = await claimReferenceViewLeases({ characterId, ownerId, jobId: job.id, targets: [view] });
     if (leases.claimed.length !== 1) throw new Error("fixture lease claim failed");
     return job.id;
   };
-  const reserve = (jobId: string, bodyReferenceSet: string | null) =>
+  const reserve = (jobId: string, bodyReferenceSet: string | null, view: ReferenceView = ROOT, upstreamViewId: string | null = null) =>
     reserveReferenceView({
-      jobId, characterId, ownerId, view: ROOT, sourceImageId: source.imageId, sourceContentHash: source.contentHash, bodyReferenceSet,
+      jobId, characterId, ownerId, view, sourceImageId: source.imageId, sourceContentHash: source.contentHash, bodyReferenceSet, upstreamViewId,
     });
-  /** A rendered, approved root view recording `bodyReferenceSet`. */
-  const renderRoot = async (bodyReferenceSet: string | null) => {
-    const jobId = await claim();
-    const id = await reserve(jobId, bodyReferenceSet);
+  /** A rendered, approved view recording `bodyReferenceSet`, built from `upstreamViewId`. */
+  const render = async (view: ReferenceView, bodyReferenceSet: string | null, upstreamViewId: string | null = null) => {
+    const jobId = await claim(view);
+    const id = await reserve(jobId, bodyReferenceSet, view, upstreamViewId);
     if (id === null) throw new Error("fixture reservation refused");
     const image = await asset(characterId, "reference_view");
-    await finalizeReferenceView({ jobId, viewId: id, characterId, ownerId, imageId: image.id, method: "rendered" });
+    await finalizeReferenceView({ jobId, viewId: id, characterId, ownerId, imageId: image.id, method: "rendered", upstreamViewId });
     await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, jobId));
-    const approval = await reviewReferenceView({ characterId, ownerId, view: ROOT, attemptId: id, expectedRevision: 0, verdict: "approve" });
+    const approval = await reviewReferenceView({ characterId, ownerId, view, attemptId: id, expectedRevision: 0, verdict: "approve" });
     if (approval.status !== "reviewed") throw new Error(`fixture approval refused: ${approval.status}`);
     return id;
   };
+  const renderRoot = (bodyReferenceSet: string | null) => render(ROOT, bodyReferenceSet);
+  /** The key a view in `wardrobe` would record over the character's images now. */
+  const currentKey = async (wardrobe: "clothed" | "bare") =>
+    referenceViewBodySetKey(wardrobe, await currentSendableBodyReferences(characterId, profileWithAge(band)));
   const addBody = async (slot: 1 | 2, tag: "clothed" | "unclothed", expectedImageId: string | null = null) => {
     const image = await asset(characterId, "body_reference");
     const result = await installBodyReference({ characterId, ownerId, slot, imageId: image.id, tag, expectedImageId });
     return { image, result };
   };
-  return { characterId, source, claim, reserve, renderRoot, addBody };
+  return { characterId, source, claim, reserve, render, renderRoot, currentKey, addBody };
 }
 
 async function bodyRows(characterId: string) {
@@ -183,7 +187,7 @@ describe.skipIf(!ready)("the body-image staleness rule in the store", () => {
     expect(await getReferenceViewSummary(state.characterId, ownerId, ROOT)).toMatchObject({ attemptId: rootId, state: "stale", consumable: false });
     expect(await db().select({ id: jobs.id }).from(jobs).where(eq(jobs.ownerId, ownerId))).toHaveLength(jobsBefore.length);
 
-    const current = await currentBodyReferenceSetKey(state.characterId, profileWithAge("eighteen"));
+    const current = await state.currentKey("clothed");
     expect(current).not.toBeNull();
     // A worker that read the empty set before the change renders nothing.
     const staleJob = await state.claim();
@@ -198,13 +202,41 @@ describe.skipIf(!ready)("the body-image staleness rule in the store", () => {
     const state = await fixture();
     const before = await state.renderRoot(null);
     await state.addBody(1, "clothed");
-    const current = await currentBodyReferenceSetKey(state.characterId, profileWithAge("eighteen"));
+    const current = await state.currentKey("clothed");
     const after = await state.renderRoot(current);
 
     const result = await restoreReferenceView({
       characterId: state.characterId, ownerId, view: ROOT, attemptId: before, expectedCurrentAttemptId: after, expectedCurrentRevision: 1,
     });
     expect(result.status).toBe("incompatible");
+  });
+
+  /**
+   * The per-view key: an undressed view is keyed by the unclothed images alone,
+   * so a Clothed image's change leaves it standing. Built from an UPLOADED
+   * dressed view, which no body image stales, so the build-order chain cannot
+   * cover for a whole-set key here.
+   */
+  it("stales an undressed view on an unclothed image's change only, even beside an uploaded dressed view", async () => {
+    const state = await fixture();
+    const frontBare: ReferenceView = { angle: "front_full", wardrobe: "bare" };
+    const image = await asset(state.characterId, "reference_view");
+    const uploaded = await installUploadedReferenceView({
+      characterId: state.characterId, ownerId, view: ROOT, sourceImageId: state.source.imageId,
+      sourceContentHash: state.source.contentHash, imageId: image.id, expectedCurrentAttemptId: null, expectedCurrentRevision: 0,
+    });
+    if (uploaded.status !== "uploaded" || uploaded.view.attemptId === null) throw new Error("fixture upload refused");
+    const bareId = await state.render(frontBare, null, uploaded.view.lineageId ?? uploaded.view.attemptId);
+    expect(await getReferenceViewSummary(state.characterId, ownerId, frontBare)).toMatchObject({ attemptId: bareId, state: "approved" });
+
+    const clothed = await state.addBody(1, "clothed");
+    expect(clothed.result.status).toBe("written");
+    expect(await getReferenceViewSummary(state.characterId, ownerId, ROOT)).toMatchObject({ state: "approved" });
+    expect(await getReferenceViewSummary(state.characterId, ownerId, frontBare)).toMatchObject({ state: "approved", consumable: true });
+
+    await state.addBody(2, "unclothed");
+    expect(await getReferenceViewSummary(state.characterId, ownerId, frontBare)).toMatchObject({ state: "stale", consumable: false });
+    expect(await state.currentKey("bare")).not.toBeNull();
   });
 
   it("never marks an uploaded view stale by the body images", async () => {
