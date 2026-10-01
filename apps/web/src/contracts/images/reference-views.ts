@@ -661,16 +661,31 @@ export interface ReferenceViewProjectionInput {
   readonly upstreamViewId?: string | null;
   /** The upstream slot's approved current attempt right now, or null/absent when it has none. */
   readonly approvedUpstreamId?: string | null;
+  /**
+   * How the row's bytes came to exist (`referenceViewMethods`). An upload was
+   * rendered from no body image, so the body-image rule never applies to it,
+   * exactly as the upstream rule never applies to a row that records none.
+   */
+  readonly method?: string | null;
+  /**
+   * The body-image set this row was rendered against (`bodyReferenceSetKey`,
+   * `contracts/images/body-references.ts`). Null or absent is the EMPTY set —
+   * every row rendered before body images existed — never "unknown".
+   */
+  readonly bodyReferenceSet?: string | null;
+  /** The character's body-image set right now; null or absent when it has none. */
+  readonly currentBodyReferenceSet?: string | null;
 }
 
 /**
- * **The one consumability rule.** A view may be sent to a render iff all six
+ * **The one consumability rule.** A view may be sent to a render iff all seven
  * hold: it is the slot's current row and `ready` under the current generation
  * version, it was rendered from the portrait the character has accepted right
  * now, a view rendered from an upstream view was rendered from that slot's
- * approved current attempt, its asset exists and is itself `ready`, the owner
- * has reviewed it, and the slot remains in the character's current age-gated
- * plan.
+ * approved current attempt, a rendered view was rendered against the
+ * character's current body-image set, its asset exists and is itself `ready`,
+ * the owner has reviewed it, and the slot remains in the character's current
+ * age-gated plan.
  *
  * The last condition is the point of the whole review step. A render the owner
  * has not looked at is a guess about what this character's back looks like, and
@@ -692,6 +707,13 @@ export function isConsumableReferenceView(row: ReferenceViewProjectionInput): bo
  * view is stale once that view is no longer its slot's approved current
  * attempt — superseded, undone, or itself stale — and a row that records no
  * upstream is never stale by it.
+ *
+ * So are the body images (#671): a RENDERED view is stale once the set it was
+ * rendered against differs from the character's set now — an image added,
+ * replaced, removed or re-tagged. A row that records none was rendered against
+ * the empty set, so a character's first body image makes the sheet stale and a
+ * character who never adds one sees no change. An upload is exempt: it was
+ * rendered from nothing.
  */
 export function projectReferenceViewState(row: ReferenceViewProjectionInput): ReferenceViewState {
   // Eligibility outranks the row's old verdict. An approved bare attempt must
@@ -715,11 +737,26 @@ export function projectReferenceViewState(row: ReferenceViewProjectionInput): Re
     row.imageId === null ||
     row.imageStatus !== "ready" ||
     row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
-    ((row.upstreamViewId ?? null) !== null && row.upstreamViewId !== (row.approvedUpstreamId ?? null))
+    ((row.upstreamViewId ?? null) !== null && row.upstreamViewId !== (row.approvedUpstreamId ?? null)) ||
+    referenceViewBodySetMoved(row)
   ) {
     return "stale";
   }
   return row.reviewedAt === null ? "unreviewed" : "approved";
+}
+
+/**
+ * Whether a view was rendered against a body-image set other than the
+ * character's set now — the one comparison the projection, review and
+ * restoration share. An uploaded view never moves by it.
+ */
+export function referenceViewBodySetMoved(row: {
+  readonly method?: string | null;
+  readonly bodyReferenceSet?: string | null;
+  readonly currentBodyReferenceSet?: string | null;
+}): boolean {
+  if (row.method === "uploaded") return false;
+  return (row.bodyReferenceSet ?? null) !== (row.currentBodyReferenceSet ?? null);
 }
 
 // ---------------------------------------------------------------------------

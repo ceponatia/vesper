@@ -6,6 +6,7 @@ import {
   outfitItems,
   plannedReferenceViews,
   referenceViewAngleById,
+  referenceViewBodyReferences,
   referenceViewFaceVisibility,
   referenceViewUpstream,
   referenceViewUpstreamBinding,
@@ -24,6 +25,7 @@ import {
   classifyImageFailureMessage,
   IMAGE_TARGET_ASPECT,
   type ImageLoraRenderBinding,
+  type ImageRenderReference,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { characters, db } from "../db";
@@ -37,6 +39,7 @@ import { runImagePipeline } from "./assets";
 import { deleteOwnedImage } from "./asset-deletion";
 import { loadDefaultWardrobeWithRevisions, type AvatarWardrobeLoad } from "./avatar";
 import { toWornInputs } from "./avatar-wardrobe";
+import { loadBodyReferencesForBuild, type LoadedBodyReference } from "./body-reference-store";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
@@ -98,6 +101,15 @@ import {
  * reservation confirms under the character lock that it is still the approved
  * attempt — so a view is never rendered from a body the owner has not approved.
  *
+ * The character's BODY IMAGES (#671) ride behind both, as optional `body`
+ * references routed by the view's wardrobe (`referenceViewBodyReferences`):
+ * a dressed view takes every one, dressed first, and an undressed view takes
+ * the undressed ones. They are read once per job like the portrait, the row
+ * records the set it was rendered against, and the reservation confirms under
+ * the lock that the set has not moved — so a view is never rendered from body
+ * images the owner has since changed. They are never identity references: the
+ * portrait owns the face.
+ *
  * The age gate is a GATE, in {@link plannedReferenceViews}, and it runs before
  * anything is reserved — a character whose image age band is not a recognized
  * adult one simply has no bare slots to build. Nothing about it reaches a model.
@@ -115,6 +127,14 @@ export const REFERENCE_VIEW_BUILD_FAILED = `${SCOPE}.build_failed`;
  * it. Nothing was reserved or rendered; that view's next approval queues it.
  */
 export const REFERENCE_VIEW_UPSTREAM_UNAPPROVED = `${SCOPE}.upstream_unapproved`;
+
+/**
+ * A body image this view would have sent did not ride the render: the model's
+ * capacity, the profile's reference policy or the resolved dialect left no
+ * place for it (`context.reason`). The view renders from the rest and records
+ * only what was sent.
+ */
+export const REFERENCE_VIEW_BODY_REFERENCE_DROPPED = `${SCOPE}.body_reference_dropped`;
 
 export interface BuildReferenceViewsInput {
   /** The heartbeat-live job whose payload owns each target lease. */
@@ -175,6 +195,10 @@ interface BuildContext {
   readonly wardrobe: AvatarWardrobeLoad;
   readonly acceptedImageId: string;
   readonly sourceContentHash: string;
+  /** The sendable body images with their bytes, read once for the whole pass. */
+  readonly bodyReferences: readonly LoadedBodyReference[];
+  /** The body-image set every row this pass reserves records (`bodyReferenceSetKey`). */
+  readonly bodyReferenceSet: string | null;
   readonly sink: DiagnosticSink;
 }
 
@@ -259,6 +283,9 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
   }
 
   const wardrobe = await loadDefaultWardrobeWithRevisions(ownerId, outfitItems(profile), sink);
+  // Read once, like the portrait's bytes: every view in the pass sends from the
+  // same set, and every row records it.
+  const body = await loadBodyReferencesForBuild({ characterId, ownerId, profile, sink });
   const context: BuildContext = {
     jobId: input.jobId,
     characterId,
@@ -269,6 +296,8 @@ async function runBuild(input: BuildReferenceViewsInput, sink: DiagnosticSink): 
     wardrobe,
     acceptedImageId,
     sourceContentHash: source.contentHash,
+    bodyReferences: body.loaded,
+    bodyReferenceSet: body.setKey,
     sink,
   };
 
@@ -424,6 +453,42 @@ async function loadUpstreamReference(
   };
 }
 
+/** One body image shaped to ride a view's render, beside the stored facts its meta records. */
+interface BodyReferenceEntry {
+  readonly image: LoadedBodyReference;
+  readonly entry: CharacterPromptReference;
+}
+
+/**
+ * The body images this view sends, in send order (`referenceViewBodyReferences`):
+ * each an OPTIONAL `body` reference of the character — never an identity one,
+ * so no dialect counts it among the images the face comes from — with no
+ * appearance revision, because the reference-authority selection concerns
+ * identity images alone and a body image never supersedes the text.
+ */
+function bodyReferenceEntries(context: BuildContext, view: ReferenceView): BodyReferenceEntry[] {
+  const routed = referenceViewBodyReferences(view, context.bodyReferences);
+  return routed.flatMap((routedImage): BodyReferenceEntry[] => {
+    const image = context.bodyReferences.find((loaded) => loaded.imageId === routedImage.imageId);
+    if (image === undefined) return [];
+    return [
+      {
+        image,
+        entry: {
+          reference: {
+            role: "body",
+            required: false,
+            buffer: image.buffer,
+            sourceImageId: image.imageId,
+            name: context.name,
+          },
+          subjectId: context.characterId,
+        },
+      },
+    ];
+  });
+}
+
 /** True when the view produced a ready asset. Never throws. */
 async function buildOneReferenceView(context: BuildContext, view: ReferenceView): Promise<boolean> {
   const { characterId, ownerId, sink } = context;
@@ -439,6 +504,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
   // approval.
   const upstream = await loadUpstreamReference(context, view);
   if (upstream === "unapproved") return false;
+  const bodyEntries = bodyReferenceEntries(context, view);
 
   const viewId = await reserveReferenceView({
     jobId: context.jobId,
@@ -448,11 +514,14 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     sourceImageId: context.acceptedImageId,
     sourceContentHash: context.sourceContentHash,
     upstreamViewId: upstream?.attemptId ?? null,
+    bodyReferenceSet: context.bodyReferenceSet,
   });
-  // The character can cross the age gate after the job was admitted, and the
-  // upstream view can be replaced while this worker waited. The reservation
-  // rechecks both under the character lock and spends nothing for a slot that
-  // is no longer eligible or no longer has that approved upstream.
+  // The character can cross the age gate after the job was admitted, the
+  // upstream view can be replaced while this worker waited, and the owner can
+  // change the body images. The reservation rechecks all three under the
+  // character lock and spends nothing for a slot that is no longer eligible,
+  // no longer has that approved upstream, or would render a body-image set
+  // that is no longer the character's.
   if (viewId === null) return false;
 
   const intimate = wardrobeEntry.intimate;
@@ -467,8 +536,9 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       : null;
   const packSelection = packIdentity?.ok === true ? packIdentity : null;
   // The pack's references first — required, unchanged — then the optional
-  // references this view renders beside them. One list, handed to the prompt
-  // seam and the renderer alike, so the planner reduces both to one send order.
+  // references this view renders beside them: the upstream view, then the body
+  // images. One list, handed to the prompt seam, whose planned send list is
+  // exactly what the renderer receives.
   const references: readonly CharacterPromptReference[] =
     packSelection === null
       ? []
@@ -480,6 +550,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
             appearanceRevision: entry.appearanceRevision,
           })),
           ...(upstream === null ? [] : [upstream.entry]),
+          ...bodyEntries.map((body) => body.entry),
         ];
 
   const program =
@@ -533,6 +604,29 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       }),
     );
   }
+  // The same honesty rule for the body images: only those the render actually
+  // carries are recorded, and every one it could not carry is said, with why.
+  const sentReferences: readonly ImageRenderReference[] = compiled?.sentReferences ?? [];
+  const sentBody = bodyEntries.filter((body) => sentReferences.includes(body.entry.reference));
+  if (compiled !== null) {
+    for (const body of bodyEntries) {
+      if (sentBody.includes(body)) continue;
+      const dropped = compiled.droppedReferences.find((entry) => entry.reference === body.entry.reference);
+      sink.push(
+        diag("info", REFERENCE_VIEW_BODY_REFERENCE_DROPPED, "a body image did not ride this view's render", {
+          path: SCOPE,
+          context: {
+            characterId,
+            imageId: body.image.imageId,
+            slot: body.image.slot,
+            tag: body.image.tag,
+            reason: dropped?.reason ?? "model_capacity",
+            for: `${view.angle}:${view.wardrobe}`,
+          },
+        }),
+      );
+    }
+  }
 
   const precondition = viewPrecondition({ cut, resolved, bareRoute, packIdentity, program });
   let failure: string | null = precondition;
@@ -563,6 +657,11 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
                 },
               }
             : {}),
+          // The body images this view was rendered from, by slot, id and tag —
+          // the ones actually sent, never the ones configured.
+          ...(sentBody.length > 0
+            ? { bodyReferences: sentBody.map((body) => ({ slot: body.image.slot, imageId: body.image.imageId, tag: body.image.tag })) }
+            : {}),
         },
         model: qualifiedImageModelIdentity(resolved?.model),
         // The weights this view ran on, by id and never the locator, and the
@@ -588,7 +687,10 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
         {
           profile: resolved,
           ...characterPromptTransport(compiled),
-          references: references.map((entry) => entry.reference),
+          // Exactly the list the prompt was compiled against: a body image the
+          // resolved dialect cannot word was dropped before planning, and must
+          // not reach the payload the prompt does not describe.
+          references: [...compiled.sentReferences],
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
           ...(bareRoute?.ok === true && bareRoute.binding !== null ? { resolvedLora: bareRoute.binding } : {}),
         },
