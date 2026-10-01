@@ -81,11 +81,11 @@ Klein 4B is a DISTILLED checkpoint: Black Forest Labs' reference usage for
 `Flux2KleinPipeline` is `guidance_scale=1.0, num_inference_steps=4`. Those are
 the defaults, and an operator overrides them per render.
 
-| Control | Provider field | Default | Band |
-| --- | --- | --- | --- |
-| `guidance` | `cfgScale` | 1 | 1–8 |
-| `steps` | `steps` | 4 | 1–40 |
-| `negativePrompt` | `negativePrompt` | unset | ≤ 2,000 characters |
+| Control          | Provider field   | Default | Band               |
+| ---------------- | ---------------- | ------- | ------------------ |
+| `guidance`       | `cfgScale`       | 1       | 1–8                |
+| `steps`          | `steps`          | 4       | 1–40               |
+| `negativePrompt` | `negativePrompt` | unset   | ≤ 2,000 characters |
 
 A value outside a band is refused rather than clamped. The bands are cost rails
 as well: the provider prices off both knobs, and guidance above 1 runs a second
@@ -130,7 +130,9 @@ characters unchanged.
   `https://orchestration.civitai.com/v2/consumer/workflows`.
 - The preflight uses `whatif=true`; only a successful, validated preflight permits
   an actual submission. Both calls carry the same model, LoRA, references, and
-  mature-content/payment policy.
+  mature-content/payment policy. The preflight's echo is compared field by field —
+  the prompt verbatim, references by count — and a difference in any compared
+  field refuses the paid submit.
 - A what-if response can be `unassigned`: no rendering has occurred. Its policy,
   model identity, payment evidence, and errors determine whether it admits a paid
   request; it need not claim a completed generation.

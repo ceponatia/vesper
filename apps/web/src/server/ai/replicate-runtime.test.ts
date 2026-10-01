@@ -424,7 +424,7 @@ describe("provider-aware image routing", () => {
     expect(klein).toMatchObject({ ok: false, error: expect.stringMatching(/insufficient yellow Buzz/i) as unknown });
     expect(inputs).toHaveLength(2);
     expect(inputs[0]).toMatchObject({
-      engine: "comfy", ecosystem: "qwen", model: "2.1", operation: "createImage", width: 1216, height: 832,
+      engine: "comfy", ecosystem: "qwen", model: "2.1", operation: "createImage", width: 1152, height: 768,
     });
     expect(inputs[1]).toMatchObject({ engine: "flux2", model: "klein", modelVersion: "4b" });
   });
@@ -452,9 +452,9 @@ describe("provider-aware image routing", () => {
       allowMatureContent: true,
       currencies: ["yellow"],
       upgradeMode: "manual",
-      steps: [{ input: { engine: "comfy", operation: "createImage", width: 2048, height: 1344, sampler: "dpmpp_2m" } }],
+      steps: [{ input: { engine: "comfy", operation: "createImage", width: 1920, height: 1280, sampler: "dpmpp_2m" } }],
     });
-    expect(create.sentShape).toEqual({ field: "width,height", value: "2048x1344" });
+    expect(create.sentShape).toEqual({ field: "width,height", value: "1920x1280" });
 
     // An edit takes no output shape: the provider sizes it from the reference.
     const edit = previewImageModelRequest({
