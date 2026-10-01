@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import type { ImageLoraRenderBinding } from "@vesper/image-core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  type ImageLoraRenderBinding,
+  imageModelProfileSchema,
+  imageModelSchema,
+  type ResolvedImageProfile,
+} from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import { IMAGE_SUBJECT_INTIMATE_ANATOMY_CONCEPT } from "@/contracts/images/subject-reveal";
 import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 import {
@@ -12,9 +20,74 @@ import {
   laneProbeVariantCut,
   resolvedImageProfileFixture,
 } from "@/server/test-support";
+
+/*
+ * The `activeVariantProgram` suite below is pure: it calls nothing these mocks
+ * replace. They serve the lane suite at the end of the file, which drives
+ * `generateVariant` with its IO mocked — the profile resolver, the character
+ * read, the wardrobe read, the identity pack, the pipeline shell and the render
+ * seam — while the intimate route (`nsfw-lora.ts`) and the age rule run for
+ * real, over mocked model-registry and LoRA-library reads.
+ */
+vi.mock("../ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ai")>();
+  return { ...actual, isDemoMode: vi.fn(() => false) };
+});
+vi.mock("../db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db")>();
+  return { ...actual, db: vi.fn() };
+});
+vi.mock("../events", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../events")>();
+  return { ...actual, logEvent: vi.fn() };
+});
+vi.mock("./model-profiles", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./model-profiles")>();
+  return { ...actual, resolveImageProfileForTask: vi.fn() };
+});
+vi.mock("./avatar", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./avatar")>();
+  return { ...actual, loadDefaultWardrobeWithRevisions: vi.fn() };
+});
+vi.mock("./identity-pack-consume", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./identity-pack-consume")>();
+  return { ...actual, identityPackRenderReferences: vi.fn() };
+});
+vi.mock("./assets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./assets")>();
+  return { ...actual, runImagePipeline: vi.fn() };
+});
+vi.mock("./render-intent", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./render-intent")>();
+  return { ...actual, renderImageIntent: vi.fn() };
+});
+vi.mock("./models", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./models")>();
+  return { ...actual, loadImageModels: vi.fn() };
+});
+vi.mock("./image-loras", () => ({ resolveImageLoraForRender: vi.fn() }));
+vi.mock("@/server/log", () => ({
+  log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logDiagnostics: vi.fn(),
+}));
+
+import { db } from "../db";
+import type { ImageRow } from "./asset-storage";
+import { runImagePipeline, type ImagePipelineOptions } from "./assets";
+import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { isCharacterPromptCompiled, type CharacterPromptProgram } from "./character-prompt-program";
-import type { IdentityPackRenderReferencesResult } from "./identity-pack-consume";
-import { activeVariantProgram, NSFW_TEST_VARIANT_KIND } from "./variants";
+import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
+import { resolveImageLoraForRender } from "./image-loras";
+import { resolveImageProfileForTask } from "./model-profiles";
+import { loadImageModels } from "./models";
+import { renderImageIntent } from "./render-intent";
+import {
+  activeVariantProgram,
+  generateVariant,
+  NSFW_TEST_AGE_REFUSAL,
+  NSFW_TEST_VARIANT_KIND,
+  VARIANT_NSFW_TEST_AGE_GATED,
+} from "./variants";
 
 /**
  * THE `nsfw_test` BENCH'S MISSING INPUT (issue #430).
@@ -37,7 +110,8 @@ import { activeVariantProgram, NSFW_TEST_VARIANT_KIND } from "./variants";
  *
  * `activeVariantProgram` is exported (module-private otherwise) so this suite
  * can call it directly with hand-built `VariantProgramInputs`: pure data in,
- * a `CharacterPromptProgramResult` out, no database and nothing mocked.
+ * a `CharacterPromptProgramResult` out, no database and nothing it calls
+ * mocked.
  * Binding resolution runs on the REAL production Qwen 2511 `variant-standard`
  * row (`packs-qwen-2511.ts`, imported for its registration side effect by
  * `character-prompt-program.ts`), exactly as `character-prompt-program.test.ts`
@@ -114,11 +188,13 @@ function packSelection(): Extract<IdentityPackRenderReferencesResult, { ok: true
 /**
  * One `activeVariantProgram` call over the shared bare-torso cut, varying only
  * the variant kind and the bench route's answer — the two inputs the seam's
- * `intimateReveal` decision is gated on.
+ * `intimateReveal` decision is gated on. A successful route carries the anatomy
+ * LoRA unless `withLora: false` asks for the no-LoRA route a model the
+ * intimate-route policy lists takes.
  */
 function programFor(
   kind: PortraitVariantKind,
-  nsfwRoute: null | { readonly ok: true } | { readonly ok: false; readonly error: string },
+  nsfwRoute: null | { readonly ok: true; readonly withLora?: boolean } | { readonly ok: false; readonly error: string },
 ) {
   return activeVariantProgram({
     character: CHARACTER,
@@ -128,7 +204,19 @@ function programFor(
       nsfwRoute === null
         ? null
         : nsfwRoute.ok
-          ? { ok: true, profile: RESOLVED_PROFILE, binding: NSFW_LORA_BINDING }
+          ? nsfwRoute.withLora === false
+            ? {
+                ok: true,
+                profile: RESOLVED_PROFILE,
+                binding: null,
+                provenance: { lora: null, reason: "no_anatomy_lora_curated" },
+              }
+            : {
+                ok: true,
+                profile: RESOLVED_PROFILE,
+                binding: NSFW_LORA_BINDING,
+                provenance: { lora: NSFW_LORA_BINDING.id, reason: "anatomy_lora" },
+              }
           : { ok: false, error: nsfwRoute.error },
     packSelection: packSelection(),
     input: {
@@ -169,6 +257,19 @@ describe("the nsfw_test bench asks the seam for the anatomy it tests (#430)", ()
     expect(program.prompt).toMatch(/an ample bust/i);
   });
 
+  it("asks for the same anatomy on a route with no LoRA — the allowance is the route's, never the weights'", () => {
+    // A model the intimate-route policy lists renders the bench on itself with
+    // no LoRA (owner ruling 2026-10-01). Reveal keyed on a binding instead of
+    // the route would compile that bench as an ordinary variant: the tame
+    // prompt for a render whose whole point is the anatomy.
+    const withLora = compiled(programFor(NSFW_TEST_VARIANT_KIND, { ok: true }));
+    const withoutLora = compiled(programFor(NSFW_TEST_VARIANT_KIND, { ok: true, withLora: false }));
+
+    const facts = withoutLora.subjects.flatMap((subject) => subject.facts);
+    expect(facts.some((fact) => fact.concept === IMAGE_SUBJECT_INTIMATE_ANATOMY_CONCEPT)).toBe(true);
+    expect(withoutLora.prompt).toBe(withLora.prompt);
+  });
+
   it("returns null for a FAILED bench route, unchanged from before this fix", () => {
     const program = programFor(NSFW_TEST_VARIANT_KIND, {
       ok: false,
@@ -176,5 +277,182 @@ describe("the nsfw_test bench asks the seam for the anatomy it tests (#430)", ()
     });
 
     expect(program).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bench's age gate (owner ruling 2026-10-01)
+// ---------------------------------------------------------------------------
+
+const mockPipeline = vi.mocked(runImagePipeline);
+const mockIntent = vi.mocked(renderImageIntent);
+const mockPack = vi.mocked(identityPackRenderReferences);
+const mockModels = vi.mocked(loadImageModels);
+const mockResolveLora = vi.mocked(resolveImageLoraForRender);
+
+const pipelineCalls: ImagePipelineOptions[] = [];
+
+/** The `variant` default on Civitai Qwen Image 2.1 — a model the intimate-route policy lists. */
+const QWEN21_VARIANT: ResolvedImageProfile = {
+  model: imageModelSchema.parse({
+    id: "imgmdlcivqwen21aaaaaaaa",
+    slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+    label: "Qwen Image 2.1 (Civitai)",
+    canGenerate: true,
+    canEdit: true,
+    editKind: "multi_reference_compose",
+    identityPreservation: "strong",
+    referenceField: "images",
+    referenceArity: "array",
+    maxReferences: 10,
+    probedVersionId: "3352534",
+  }),
+  profile: imageModelProfileSchema.parse({
+    id: "imgprfqwen21variantaaaa",
+    imageModelId: "imgmdlcivqwen21aaaaaaaa",
+    key: "variant-standard",
+    label: "Variant Standard",
+    task: "variant",
+    operation: "edit",
+    promptStrategy: "instruction_edit",
+  }),
+};
+
+/** The intimate model's REGISTERED row, carrying the two probed LoRA controls the pairing needs. */
+const INTIMATE_MODEL = imageModelSchema.parse({
+  id: "imgmdlqwen2511aaaaaaaaaa",
+  slug: INTIMATE_SCENE_LORA_MODEL_SLUG,
+  label: "Qwen Image Edit 2511",
+  canGenerate: false,
+  canEdit: true,
+  editKind: "instruction_edit",
+  identityPreservation: "strong",
+  referenceField: "image",
+  referenceArity: "array",
+  maxReferences: 3,
+  probedVersionId: "a0670a7f47d5975347c105b6ce71456c4377d511993975988127dee03ca6c729",
+  advancedCapabilities: {
+    controls: {
+      loraWeights: { field: "lora_weights", type: "string" },
+      loraScale: { field: "lora_scale", type: "number", minimum: 0, maximum: 4 },
+    },
+  },
+});
+
+/** The probe sheet with its apparent-age band replaced, or removed when `band` is null. */
+function sheetAged(band: string | null) {
+  const base = laneProbeProfile();
+  return {
+    ...base,
+    attributes:
+      band === null
+        ? base.attributes.filter((entry) => entry.id !== "identity.apparent_age")
+        : base.attributes.map((entry) => (entry.id === "identity.apparent_age" ? { ...entry, value: band } : entry)),
+  };
+}
+
+function stubCharacter(profile: ReturnType<typeof sheetAged>): void {
+  const row = { id: LANE_PROBE_SUBJECT_ID, name: LANE_PROBE_NAME, profile, updatedAt: CHARACTER.updatedAt };
+  vi.mocked(db).mockImplementation(() => {
+    const chain = {
+      select: () => chain,
+      from: () => chain,
+      where: () => chain,
+      limit: () => Promise.resolve([row]),
+    };
+    return chain as unknown as ReturnType<typeof db>;
+  });
+}
+
+async function bench(picked: ResolvedImageProfile, band: string | null, sink = new DiagnosticCollector()) {
+  vi.mocked(resolveImageProfileForTask).mockResolvedValue(picked);
+  stubCharacter(sheetAged(band));
+  await generateVariant({
+    characterId: LANE_PROBE_SUBJECT_ID,
+    userId: "user-probe",
+    kind: NSFW_TEST_VARIANT_KIND,
+    instruction: "the studio's fixed bench instruction",
+    sink,
+  });
+  const call = pipelineCalls[0];
+  if (call === undefined) throw new Error("the bench reserved no row");
+  return { call, sink };
+}
+
+describe("the nsfw_test bench's age gate, on every model", () => {
+  let savedToken: string | undefined;
+
+  afterEach(() => {
+    if (savedToken === undefined) delete process.env.CIVITAI_API_TOKEN;
+    else process.env.CIVITAI_API_TOKEN = savedToken;
+  });
+
+  beforeEach(() => {
+    // Cleared, not reset: the `../ai` stub keeps its deployment answer.
+    vi.clearAllMocks();
+    pipelineCalls.length = 0;
+    savedToken = process.env.CIVITAI_API_TOKEN;
+    process.env.CIVITAI_API_TOKEN = "civitai-test-token-value";
+    vi.mocked(loadDefaultWardrobeWithRevisions).mockResolvedValue({ wardrobe: [], revisions: [] });
+    mockPack.mockResolvedValue(packSelection());
+    mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
+    mockModels.mockResolvedValue([INTIMATE_MODEL]);
+    mockResolveLora.mockResolvedValue({ ok: true, binding: NSFW_LORA_BINDING });
+    // The shell's own order: a precondition fails the row before `produce` runs.
+    mockPipeline.mockImplementation(async (opts) => {
+      pipelineCalls.push(opts);
+      if ((opts.failedPrecondition ?? null) !== null) return { imageId: "img-variant", status: "failed" };
+      const produced = await opts.produce({ id: "img-variant" } as unknown as ImageRow);
+      return { imageId: "img-variant", status: produced.ok ? "ready" : "failed" };
+    });
+  });
+
+  it.each([
+    ["a minor band on Qwen Image 2.1", QWEN21_VARIANT, "teen"],
+    ["no resolvable age on Qwen Image 2.1", QWEN21_VARIANT, null],
+    ["a minor band on 2511's pairing", RESOLVED_PROFILE, "teen"],
+    ["no resolvable age on 2511's pairing", RESOLVED_PROFILE, null],
+  ])("refuses %s before any route, pack or provider", async (_label, picked, band) => {
+    const { call, sink } = await bench(picked, band);
+
+    expect(call.failedPrecondition).toBe(NSFW_TEST_AGE_REFUSAL);
+    // Nothing past the gate ran: no intimate model, no LoRA, no pack, no render.
+    expect(mockModels).not.toHaveBeenCalled();
+    expect(mockResolveLora).not.toHaveBeenCalled();
+    expect(mockPack).not.toHaveBeenCalled();
+    expect(mockIntent).not.toHaveBeenCalled();
+    const meta = call.asset.meta ?? {};
+    expect("lora" in meta).toBe(false);
+    expect("intimateRoute" in meta).toBe(false);
+    const gated = sink.items.find((item) => item.code === VARIANT_NSFW_TEST_AGE_GATED);
+    expect(gated?.severity).toBe("warn");
+  });
+
+  it.each([
+    ["Qwen Image 2.1", QWEN21_VARIANT, { lora: null, reason: "no_anatomy_lora_curated" }],
+    ["2511's pairing", RESOLVED_PROFILE, { lora: INTIMATE_SCENE_LORA_ID, reason: "anatomy_lora" }],
+  ])("lets a resolved adult through on %s — the control", async (_label, picked, route) => {
+    const { call, sink } = await bench(picked, "late_twenties");
+
+    expect(call.failedPrecondition).not.toBe(NSFW_TEST_AGE_REFUSAL);
+    expect(call.asset.meta?.intimateRoute).toEqual(route);
+    expect(sink.items.some((item) => item.code === VARIANT_NSFW_TEST_AGE_GATED)).toBe(false);
+  });
+
+  it("never gates an ordinary variant kind, whatever the character's age", async () => {
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(RESOLVED_PROFILE);
+    stubCharacter(sheetAged("teen"));
+    const sink = new DiagnosticCollector();
+    await generateVariant({
+      characterId: LANE_PROBE_SUBJECT_ID,
+      userId: "user-probe",
+      kind: "pose",
+      instruction: "sitting by the window",
+      sink,
+    });
+
+    expect(pipelineCalls[0]?.failedPrecondition).not.toBe(NSFW_TEST_AGE_REFUSAL);
+    expect(sink.items.some((item) => item.code === VARIANT_NSFW_TEST_AGE_GATED)).toBe(false);
+    expect(mockModels).not.toHaveBeenCalled();
   });
 });

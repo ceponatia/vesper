@@ -148,6 +148,24 @@ describe("a scene render carrying a resolved LoRA", () => {
     expect(meta?.lora).toBe("imglorqwennsfwallinclv20");
     expect(JSON.stringify(meta)).not.toContain("civitai.com");
   });
+
+  it("records the intimate route's own record beside the LoRA", async () => {
+    await renderResolvedScene(loraInput({ intimateRoute: { lora: binding.id, reason: "anatomy_lora" } }));
+    expect(pipelineCalls[0]?.asset.meta?.intimateRoute).toEqual({ lora: binding.id, reason: "anatomy_lora" });
+  });
+});
+
+describe("an intimate route that sent no LoRA (#664)", () => {
+  it("records the route's reason and no lora key — a listed model's reviewed render", async () => {
+    // Civitai Qwen Image 2.1 draws the act itself: the row says why no weights
+    // rode, rather than merely lacking a `lora` key.
+    await renderResolvedScene(input({ intimateRoute: { lora: null, reason: "no_anatomy_lora_curated" } }));
+    const meta = pipelineCalls[0]?.asset.meta;
+    expect(meta?.intimateRoute).toEqual({ lora: null, reason: "no_anatomy_lora_curated" });
+    expect(meta && "lora" in meta).toBe(false);
+    const intent = mockIntent.mock.calls[0]?.[0];
+    expect(intent && "resolvedLora" in intent).toBe(false);
+  });
 });
 
 describe("a scene render without one", () => {
@@ -161,5 +179,6 @@ describe("a scene render without one", () => {
     await renderResolvedScene(input());
     const meta = pipelineCalls[0]?.asset.meta;
     expect(meta && "lora" in meta).toBe(false);
+    expect(meta && "intimateRoute" in meta).toBe(false);
   });
 });

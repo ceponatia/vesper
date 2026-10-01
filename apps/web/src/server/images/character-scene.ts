@@ -4,7 +4,7 @@ import type { ActiveCondition } from "@/contracts/conditions/condition";
 import { resolveImageProfileForTask } from "./model-profiles";
 import type { CommittedSceneFacts } from "@/contracts/images/scene-committed";
 import type { HairOcclusion } from "@/contracts/items/hair-occlusion";
-import { exposedRegions, FULLY_COVERED, type RegionExposure } from "@/contracts/items/visibility";
+import { exposedRegions, FULLY_COVERED, intimateRegionsBare, type RegionExposure } from "@/contracts/items/visibility";
 import { realizeBody, speciesLabelPhrase } from "@/contracts/species";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import type { IdentityReferenceProvenance, SceneCaptureMode, SceneReferenceSource } from "@vesper/image-core";
@@ -22,11 +22,18 @@ import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scen
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 import { composeSceneSpec, renderResolvedScene, type SceneRenderReferenceView } from "./scene";
 import { loadConsumableReferenceView } from "./reference-view-consume";
-import { referenceViewAngleById, selectReferenceView } from "@/contracts";
+import { imageAgeAllowsIntimate, referenceViewAngleById, selectReferenceView } from "@/contracts";
 import type { SceneLoweringViewer } from "./scene-lowering";
 import { resolveIntimateSceneLoraRoute } from "./scene-lora";
 import { applySceneCastVisual, type SceneCastVisualSubject, type SceneSubjectVisualSlice } from "./scene-subject-visual";
 import type { VisualStateShadowInput } from "@/server/visual-state";
+
+/**
+ * A chat scene that would have carried intimate content was taken off the
+ * intimate route because a cast member's apparent age is not a resolved adult
+ * (owner ruling 2026-10-01). The render goes on as an ordinary scene.
+ */
+export const SCENE_INTIMATE_AGE_GATED = "images.scene_render.intimate_age_gated";
 
 export const DEFAULT_CHAT_ROOM =
   "A warm, softly lit room — a comfortable couch, a low wooden table, shelves of books along one wall, and a tall window letting in natural light.";
@@ -303,6 +310,30 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
     appliedVisuals = applied.visuals;
   }
 
+  // THE INTIMATE AGE GATE (owner ruling 2026-10-01). One subject whose apparent
+  // age is not a resolved adult — by the reference-view plan's own rule, asked
+  // of the authored sheet AND of the resolved attributes the cut states — takes
+  // the WHOLE render off the intimate route, on every model: every attempt runs
+  // with `allowIntimate` cleared, which is the one lever behind the anatomy
+  // LoRA, the intimate reveal, the staged act's sentence and a `bare` reference
+  // view; and an intimate staging leaves the plan, so the row does not record
+  // an act it never drew. The camera stays, as on the sanitized retry. The chat
+  // engine's own minor fence upstream is untouched; this is the image lane's.
+  const nonAdult = nonAdultSubjectIds(cast, appliedVisuals);
+  const intimateAgeAllowed = nonAdult.length === 0;
+  const gatedPlan: SceneRenderPlan =
+    intimateAgeAllowed || plan.staging?.intimate !== true ? plan : { ...plan, staging: undefined };
+  if (!intimateAgeAllowed && intimateContentWanted(plan, appliedVisuals, input.playerExposure)) {
+    sink.push(
+      diag(
+        "warn",
+        SCENE_INTIMATE_AGE_GATED,
+        "a cast member's apparent age is not a resolved adult — rendering without intimate content",
+        { context: { characterIds: nonAdult, staging: plan.staging?.id ?? null } },
+      ),
+    );
+  }
+
   // The chat's stored scene-model pick, resolved against the profile registry. A
   // pick that no longer exists degrades to the scene task's default (owner ruling
   // 5) — the legacy Venice keys on pre-registry rows land here and are simply
@@ -550,11 +581,17 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // matching back view has two images to compose rather than one.
       mode: imageBearing + referenceViews.length >= 2 ? ("multi" as const) : ("single" as const),
       ...(referenceViews.length === 0 ? {} : { referenceViews }),
-      // The route's profile IS the lane's profile paired with the intimate
-      // model's registered row; off the route it is the resolved object itself,
+      // The route's profile is the lane's profile paired with the intimate
+      // model's registered row — or, on a model the intimate-route policy lists,
+      // the resolved object itself. Off the route it is the resolved object too,
       // so a LoRA-free render is unchanged down to the reference.
       profile: finalProfile,
-      ...(lora ? { resolvedLora: lora.binding } : {}),
+      // Only weights that were actually resolved ride: a listed model's
+      // no-LoRA route sends none and the row records none.
+      ...(lora?.binding ? { resolvedLora: lora.binding } : {}),
+      // The route's own record — the LoRA sent or null, and why — on every
+      // render that took the intimate route, and on no other.
+      ...(lora ? { intimateRoute: lora.provenance } : {}),
       flavor: input.flavor,
       // No provenance travels with a refusal: an earlier cast member's pack may
       // have answered before a later member's refusal stopped the scene, and
@@ -602,7 +639,7 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
     });
   };
 
-  const first = await renderOnce(plan, true);
+  const first = await renderOnce(gatedPlan, intimateAgeAllowed);
   // A refused render — identity or visual-digest — retries into the same
   // refusal; return the record.
   if (!selfie || identityRefusal !== null || visualRefusal !== null) return first;
@@ -613,10 +650,47 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   sink.push(
     diag("info", "images.selfie.retry", `first selfie attempt failed (${reason}) — retrying${reason === "content_rejection" ? " sanitized" : ""}`),
   );
-  const retryPlan = reason === "content_rejection" ? sanitizeScenePlan(plan) : plan;
-  const second = await renderOnce(retryPlan, reason !== "content_rejection");
+  const retryPlan = reason === "content_rejection" ? sanitizeScenePlan(gatedPlan) : gatedPlan;
+  const second = await renderOnce(retryPlan, intimateAgeAllowed && reason !== "content_rejection");
   await deleteOwnedImage(first, input.userId, { kind: "scene" });
   return second;
+}
+
+/**
+ * The cast members whose apparent age is not a resolved adult, by
+ * `imageAgeAllowsIntimate` — the reference-view plan's own rule, never a second
+ * copy of the threshold. Asked of each member's authored sheet and of each
+ * realized cut's resolved attributes (the list the prompt states age and
+ * anatomy from), so a narrative overlay can neither unlock nor slip past it.
+ */
+function nonAdultSubjectIds(
+  cast: readonly SceneCastMember[],
+  visuals: readonly SceneSubjectVisualSlice[],
+): string[] {
+  const ids = new Set<string>();
+  for (const member of cast) {
+    if (!imageAgeAllowsIntimate(member.profile)) ids.add(member.characterId);
+  }
+  for (const visual of visuals) {
+    if (!imageAgeAllowsIntimate(visual)) ids.add(visual.subjectId);
+  }
+  return [...ids];
+}
+
+/**
+ * Whether the age gate withheld anything worth reporting: an intimate staged
+ * act, or an intimate region bared on someone in frame or on the viewer. A
+ * gated render with nothing intimate in it is an ordinary scene, and saying so
+ * on every one would bury the renders the gate actually changed.
+ */
+function intimateContentWanted(
+  plan: SceneRenderPlan,
+  visuals: readonly SceneSubjectVisualSlice[],
+  playerExposure: RegionExposure | undefined,
+): boolean {
+  if (plan.staging?.intimate === true) return true;
+  if (visuals.some((visual) => intimateRegionsBare(visual.exposure))) return true;
+  return playerExposure !== undefined && intimateRegionsBare(playerExposure);
 }
 
 async function imageFailure(imageId: string): Promise<string | null> {
