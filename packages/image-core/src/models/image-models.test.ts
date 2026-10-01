@@ -5,6 +5,7 @@ import {
   chooseAspect,
   chooseDimensions,
   fitReferences,
+  imageModelEditSizesFromReference,
   imageModelOffersSurface,
   imageModelSchema,
   imageModelsForSurface,
@@ -304,6 +305,79 @@ describe("chooseDimensions", () => {
     expect(
       chooseDimensions(wan({ supportedAspects: ["2K", "custom"] }), { targetRatio: 3 / 4, resolution: "2K" }).input,
     ).toEqual({});
+  });
+
+  describe("an edit sized from its own reference (#663/#664)", () => {
+    // The real catalog row's slug and offered shapes (drizzle/0151).
+    const qwen21 = (overrides: Partial<ImageModel> = {}) =>
+      model({
+        slug: "civitai/qwen-image-2.1",
+        supportedAspects: ["1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16"],
+        ...overrides,
+      });
+
+    it("asks for no shape at all on an edit, even though the target is one of its own members", () => {
+      expect(chooseDimensions(qwen21(), { targetRatio: 3 / 4, referenceCount: 1 })).toEqual({
+        input: {},
+        expectedAspect: null,
+        needsCrop: false,
+      });
+      // Several references read the same way — it is "at least one", not "one".
+      expect(chooseDimensions(qwen21(), { targetRatio: 3 / 4, referenceCount: 10 }).input).toEqual({});
+    });
+
+    it("still echoes a requested tier on the native edit answer", () => {
+      expect(chooseDimensions(qwen21(), { targetRatio: 3 / 4, referenceCount: 1, resolution: "2K" })).toEqual({
+        input: {},
+        expectedAspect: null,
+        needsCrop: false,
+        requestedResolution: "2K",
+      });
+    });
+
+    it("leaves a create (zero or absent referenceCount) exactly as chooseAspect answers it", () => {
+      expect(chooseDimensions(qwen21(), { targetRatio: 3 / 4, referenceCount: 0 })).toEqual({
+        input: { aspect_ratio: "3:4" },
+        expectedAspect: 3 / 4,
+        needsCrop: false,
+      });
+      // Absent reads the same as zero — every caller that never passes the new
+      // fact (the trial, the lab, any pre-existing caller) keeps today's answer.
+      expect(chooseDimensions(qwen21(), { targetRatio: 3 / 4 })).toEqual({
+        input: { aspect_ratio: "3:4" },
+        expectedAspect: 3 / 4,
+        needsCrop: false,
+      });
+    });
+
+    it("leaves every other model's edit negotiation untouched, references or not", () => {
+      // The ordinary aspect_ratio and size-mode answers, unaffected by a
+      // reference count that means nothing to them.
+      expect(chooseDimensions(model(), { targetRatio: 3 / 4, referenceCount: 3 })).toEqual({
+        input: { aspect_ratio: "3:4" },
+        expectedAspect: 3 / 4,
+        needsCrop: false,
+      });
+      expect(chooseDimensions(wan(), { targetRatio: 3 / 4, referenceCount: 3 })).toEqual({
+        input: { size: "3072*4096" },
+        expectedAspect: 3 / 4,
+        needsCrop: false,
+      });
+    });
+  });
+});
+
+describe("imageModelEditSizesFromReference", () => {
+  it("is true only for Civitai Qwen Image 2.1, pin suffix and all", () => {
+    expect(imageModelEditSizesFromReference({ slug: "civitai/qwen-image-2.1" })).toBe(true);
+    // A `baseImageModelSlug`-style pin would still match — this model has no
+    // such convention today, but the check must not assume it never will.
+    expect(imageModelEditSizesFromReference({ slug: "civitai/qwen-image-2.1:future" })).toBe(true);
+  });
+
+  it("is false for every other model, including a similarly-named one", () => {
+    expect(imageModelEditSizesFromReference({ slug: "qwen/qwen-image-2512" })).toBe(false);
+    expect(imageModelEditSizesFromReference({ slug: "civitai/flux-2-klein-4b" })).toBe(false);
   });
 });
 

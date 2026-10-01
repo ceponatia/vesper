@@ -51,6 +51,23 @@ Every player-facing lane names a ratio. The admin [Image
 Generator](../../image-generator/README.md) is the caller that does not, because a bench that
 reshaped a model's output would report Vesper's opinion as the model's.
 
+## An edit sized from its own reference
+
+A different case from the one above: the caller DOES name a non-null target ratio, but the model's
+EDIT operation (one or more references) derives its output shape from the reference rather than
+from a requested size, and refuses an explicit one instead of ignoring it — today exactly Civitai
+Qwen Image 2.1 ([civitai-qwen-image-2-1.md](../../image-models/models/civitai-qwen-image-2-1.md)
+§Sizing). `chooseDimensions` reads the request's `referenceCount` fact alongside the model
+(`imageModelEditSizesFromReference`,
+`packages/image-core/src/models/image-models.ts`): whenever it is at least one on such a model, the
+answer is the SAME empty, native `expectedAspect: null` choice a caller asking for no shape at all
+gets — no `aspect_ratio`/`size` key is written, so the lane's own refusal is never reached. The
+target ratio is not abandoned, though: `expectedAspect: null` paired with a non-null target is
+exactly what makes `renderWithModel`'s `skipCrop` attempt a crop anyway (see below), so the picked
+ratio still governs the stored image — by a local crop from the DECODED output rather than a
+provider-honored shape. A create on the same model (zero references) is unaffected and still sends
+an exact requested size, as the table above describes.
+
 ## Crop placement
 
 `renderWithModel` crops whenever the expected shape misses the target. Where the crop window lands

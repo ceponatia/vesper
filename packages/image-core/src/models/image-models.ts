@@ -399,6 +399,15 @@ export interface ImageDimensionRequest {
    * dropped, in which case the model's own shape answer stands.
    */
   mappedCustomSize?: { width: number; height: number } | null;
+  /**
+   * How many references this render actually sends — absent or zero reads as a
+   * create. Unlike `operation` above, this one fact IS acted on: it is what
+   * lets `chooseDimensions` tell an edit apart from a create on a model whose
+   * edit derives its output shape from the reference rather than from a
+   * requested size ({@link imageModelEditSizesFromReference}). Every other
+   * caller ignores it exactly as it ignores `operation` today.
+   */
+  referenceCount?: number;
 }
 
 /** The negotiated shape for one render. */
@@ -442,10 +451,50 @@ export function providerDefaultDimensions(): DimensionChoice {
   return { input: {}, expectedAspect: null, needsCrop: false };
 }
 
+/**
+ * Base slugs whose EDIT operation (one or more references) derives its output
+ * shape from the reference rather than from a requested size — the provider
+ * refuses an explicit shape there instead of ignoring it, so asking for one at
+ * all would either be refused outright or recorded as a shape the output does
+ * not have. Today exactly Civitai Qwen Image 2.1
+ * (`docs/images/providers/shape.md`, `docs/image-models/models/civitai-qwen-image-2-1.md`
+ * §Sizing). A CREATE on the same model (zero references) is unaffected: the
+ * same checkpoint still takes an exact requested size there, and still goes
+ * through the ordinary `chooseRatioDimensions` answer below.
+ *
+ * A literal slug set here, not a stored row flag or an import of
+ * `@vesper/image-models`'s own `CIVITAI_QWEN_IMAGE_21_SLUG`: that package
+ * depends on this one, so an upward import would be a cycle, and this fact is
+ * Vesper's own render policy (what `chooseDimensions` asks for) rather than a
+ * provider-schema capability a probe could record. A model onboarding that
+ * changes the Qwen Image 2.1 slug must update both constants.
+ */
+const EDIT_SIZES_FROM_REFERENCE_SLUGS: ReadonlySet<string> = new Set(["civitai/qwen-image-2.1"]);
+
+/**
+ * Whether an EDIT on this model (the request's `referenceCount` is at least
+ * one) must be asked for with no shape at all, because the provider derives
+ * the output shape from the reference and refuses an explicit one. A create
+ * on the same model (zero references) is untouched — see
+ * {@link EDIT_SIZES_FROM_REFERENCE_SLUGS}.
+ */
+export function imageModelEditSizesFromReference(model: Pick<ImageModel, "slug">): boolean {
+  return EDIT_SIZES_FROM_REFERENCE_SLUGS.has(baseImageModelSlug(model.slug));
+}
+
 export function chooseDimensions(model: ImageModel, request: ImageDimensionRequest): DimensionChoice {
+  const resolutionEcho = request.resolution === undefined ? {} : { requestedResolution: request.resolution };
+  if ((request.referenceCount ?? 0) > 0 && imageModelEditSizesFromReference(model)) {
+    // No aspect/size key is written and nothing is expected back — the same
+    // native answer a caller that asked for no shape at all would get. The
+    // caller still named a non-null target, though, and `expectedAspect: null`
+    // is what makes `renderWithModel`'s `skipCrop` attempt a crop toward it
+    // from the DECODED output instead of trusting a shape nothing asked for.
+    return { ...providerDefaultDimensions(), ...resolutionEcho };
+  }
   const choice =
     model.aspectMode === "size" ? chooseSizeDimensions(model, request) : chooseRatioDimensions(model, request);
-  return { ...choice, ...(request.resolution === undefined ? {} : { requestedResolution: request.resolution }) };
+  return { ...choice, ...resolutionEcho };
 }
 
 /** Two ratios that count as the same shape — the exact-match rule, reused. */
