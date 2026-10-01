@@ -38,6 +38,19 @@ export interface CivitaiFailure {
   httpStatus?: number;
   validationPaths?: readonly string[];
   automaticRetriesExhausted?: boolean;
+  /**
+   * Whether this failure follows a preflight Vesper already reposted once
+   * automatically (#672) — distinct from {@link automaticRetriesExhausted},
+   * whose "read retries" wording belongs to the bounded GET retry only. When
+   * the repeat fails the same transient way — another transport failure, or
+   * another HTTP 429/5xx — the disposition stays `deliberate`: the one
+   * automatic repeat is already spent, and nothing further happens on its
+   * own. A repeat that fails a DIFFERENT way (a plain 4xx, or a 409) reports
+   * that failure's own disposition (`never` or `reconcile`) instead, and this
+   * flag has no effect on the message in that case — {@link messageFor} only
+   * reads it in the `deliberate` branch.
+   */
+  automaticRetryUsed?: boolean;
   reason?: CivitaiValidationReason;
 }
 
@@ -61,7 +74,9 @@ function messageFor(failure: CivitaiFailure): string {
   const retry = failure.retry === "automatic"
     ? failure.automaticRetriesExhausted ? " Automatic read retries are exhausted; the provider is temporarily unavailable." : " The provider is temporarily unavailable; Vesper retries this read automatically."
     : failure.retry === "deliberate"
-      ? " Start one deliberate replacement only after reviewing the request."
+      ? failure.automaticRetryUsed
+        ? " Vesper already reposted this preflight once automatically; that retry is spent, so start one deliberate replacement only after reviewing the request."
+        : " Start one deliberate replacement only after reviewing the request."
       : failure.retry === "reconcile"
         ? " Refresh workflow status before deciding whether to replace it."
         : " Do not repeat this request with the same input.";
@@ -76,6 +91,7 @@ export class CivitaiError extends Error implements CivitaiFailure {
   readonly httpStatus: number | undefined;
   readonly validationPaths: readonly string[] | undefined;
   readonly automaticRetriesExhausted: boolean | undefined;
+  readonly automaticRetryUsed: boolean | undefined;
   readonly reason: CivitaiValidationReason | undefined;
 
   constructor(failure: CivitaiFailure) {
@@ -87,8 +103,19 @@ export class CivitaiError extends Error implements CivitaiFailure {
     this.httpStatus = failure.httpStatus;
     this.validationPaths = failure.validationPaths;
     this.automaticRetriesExhausted = failure.automaticRetriesExhausted;
+    this.automaticRetryUsed = failure.automaticRetryUsed;
     this.reason = failure.reason;
   }
+}
+
+/**
+ * The HTTP status band Vesper's bounded GET retry and the preflight's single
+ * automatic retry (#672) both cover: 429, or any 5xx. Exported so the retry
+ * GATE in `requestJson` and the disposition {@link civitaiHttpFailure}
+ * reports cannot drift apart from each other.
+ */
+export function civitaiRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
 }
 
 export function civitaiHttpFailure(
@@ -98,15 +125,16 @@ export function civitaiHttpFailure(
   validationPaths: readonly string[] = [],
   automaticRetriesExhausted = false,
   reason?: CivitaiValidationReason,
+  automaticRetryUsed = false,
 ): CivitaiError {
-  const retry: CivitaiRetryDisposition = (status === 429 || status >= 500 && status <= 599)
+  const retry: CivitaiRetryDisposition = civitaiRetryableStatus(status)
     ? readOnly ? "automatic" : "deliberate"
     : status === 409
       ? "reconcile"
       : "never";
   const code = `civitai_http_${String(status)}` as `civitai_http_${number}`;
   return new CivitaiError({
-    code, retry, stage, httpStatus: status, validationPaths, automaticRetriesExhausted,
+    code, retry, stage, httpStatus: status, validationPaths, automaticRetriesExhausted, automaticRetryUsed,
     ...(reason === undefined ? {} : { reason }),
   });
 }
@@ -115,12 +143,14 @@ export function civitaiTransportFailure(
   stage: Exclude<CivitaiStage, "output_download">,
   readOnly: boolean,
   automaticRetriesExhausted = false,
+  automaticRetryUsed = false,
 ): CivitaiError {
   return new CivitaiError({
     code: "civitai_transport_failure",
     retry: readOnly ? "automatic" : "deliberate",
     stage,
     automaticRetriesExhausted,
+    automaticRetryUsed,
   });
 }
 

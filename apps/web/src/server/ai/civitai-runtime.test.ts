@@ -313,6 +313,34 @@ describe("Civitai Klein v2 transport", () => {
     });
   });
 
+  it("does not retry a 404 LoRA metadata read, so no what-if or submit ever follows", async () => {
+    // #672 regression: requestJson's retry gate now checks
+    // civitaiRetryableStatus(status) directly instead of reading back
+    // civitaiHttpFailure's computed `retry` field. A 404 sits outside the
+    // 429/5xx retryable band, so this GET — made before any preflight or
+    // spend — must still fail on its first attempt, the same as before the
+    // refactor that introduced the preflight's own retry.
+    const urls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const href = String(url);
+      urls.push(href);
+      if (href.includes("/model-versions/2633618")) return new Response("not found", { status: 404 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, {
+      ...request,
+      controlInput: {
+        seed: 1234,
+        [CIVITAI_LORA_VERSION_FIELD]: "2633618",
+        [CIVITAI_LORA_STRENGTH_FIELD]: 0.75,
+      },
+    });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_404; retry=never") });
+    expect(urls).toEqual(["https://civitai.com/api/v1/model-versions/2633618"]);
+  });
+
   it("collects documented job reasons without retaining job prose", () => {
     const parsed = parseCivitaiWorkflow({
       id: "workflow-failed", status: "failed", steps: [{
@@ -446,7 +474,11 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("secret");
   });
 
-  it("never retries a transient preflight or paid-submission POST", async () => {
+  it("retries a transient preflight exactly once, then still posts the paid submission only once", async () => {
+    // #672: the preflight gets ONE automatic repeat after a transient failure;
+    // the paid submit's behavior is unchanged by that change and still gets
+    // none.
+    vi.useFakeTimers();
     const workflowUrls: string[] = [];
     let phase: "preflight" | "submit" = "preflight";
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
@@ -459,9 +491,14 @@ describe("Civitai Klein v2 transport", () => {
       return Response.json(workflowFrom(body, whatif === "true" ? "estimate-post" : "submit-post", whatif === "true" ? "unassigned" : "processing"));
     });
 
-    const preflightFailure = await runCivitaiKleinImageModel(MODEL, request);
+    const preflightPending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const preflightFailure = await preflightPending;
     expect(preflightFailure).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_503; retry=deliberate") });
-    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
+    if (preflightFailure.ok) throw new Error("expected the repeated preflight failure to fail");
+    expect(preflightFailure.error).toContain("already reposted this preflight once automatically");
+    expect(preflightFailure.error).not.toContain("read retries");
+    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=true")]);
 
     phase = "submit";
     workflowUrls.length = 0;
@@ -477,7 +514,107 @@ describe("Civitai Klein v2 transport", () => {
 
     const submitFailure = await runCivitaiKleinImageModel(MODEL, request);
     expect(submitFailure).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_503; retry=deliberate") });
+    if (submitFailure.ok) throw new Error("expected the submit failure to fail");
+    expect(submitFailure.error).not.toContain("already reposted");
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=false")]);
+  });
+
+  it.each(["fetch", "response text"] as const)("posts the paid submit exactly once even when it throws a transport %s failure", async (sentinel) => {
+    // #672 spend safety: requestJson's transport-catch retry gate is now just
+    // `attempt < maxRetries`, and `maxRetries` is 0 for the submit stage. A
+    // regression that widened that gate to cover every POST — not just the
+    // preflight — would silently re-post a PAID submission the account may
+    // already have been billed for. This proves the submit POST still never
+    // repeats on a thrown transport failure, exactly as before #672.
+    const workflowUrls: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      workflowUrls.push(href);
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (whatif === "true") {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json(workflowFrom(body, "estimate-submit-throw", "unassigned"));
+      }
+      if (sentinel === "fetch") throw new Error("provider token=secret prompt=private");
+      const response = Response.json({ id: "unused" });
+      vi.spyOn(response, "text").mockRejectedValue(new Error("provider token=secret prompt=private"));
+      return response;
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(workflowUrls).toEqual([
+      expect.stringContaining("whatif=true"),
+      expect.stringContaining("whatif=false"),
+    ]);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_transport_failure; retry=deliberate") });
+    if (result.ok) throw new Error("expected the submit transport failure to fail");
+    expect(result.error).not.toContain("secret");
+    expect(result.error).not.toContain("private");
+    expect(result.error).not.toContain("already reposted");
+  });
+
+  it.each([429, 503])("recovers a preflight that fails once with HTTP %i by reposting the identical body, then submits under a fresh externalId", async (status) => {
+    vi.useFakeTimers();
+    const workflowUrls: string[] = [];
+    const preflightBodies: Record<string, unknown>[] = [];
+    let submitBody: Record<string, unknown> | undefined;
+    let preflightAttempts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href === blobUrl("output.jpg")) return new Response("image", { status: 200 });
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      workflowUrls.push(href);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (whatif === "true") {
+        preflightAttempts += 1;
+        preflightBodies.push(body);
+        if (preflightAttempts === 1) return Response.json({ detail: "prompt=private" }, { status });
+        return Response.json(workflowFrom(body, "estimate-recovered", "unassigned"));
+      }
+      submitBody = body;
+      return Response.json(workflowFrom(body, "submit-recovered", "succeeded", [{ id: "output.jpg", available: true }]));
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(preflightAttempts).toBe(2);
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-recovered" });
+    expect(workflowUrls.filter((href) => href.includes("whatif=true"))).toHaveLength(2);
+    expect(workflowUrls.filter((href) => href.includes("whatif=false"))).toHaveLength(1);
+
+    // The retry reposts the IDENTICAL preflight body — including its
+    // externalId, which #672 requires reusing rather than minting fresh for
+    // the retry — while the paid submit still gets its own fresh one.
+    const [firstPreflight, secondPreflight] = preflightBodies;
+    if (!firstPreflight || !secondPreflight) throw new Error("expected two preflight bodies");
+    expect(secondPreflight).toEqual(firstPreflight);
+    if (!submitBody) throw new Error("expected a submit body");
+    expect(submitBody.externalId).not.toBe(firstPreflight.externalId);
+  });
+
+  it("posts a plain preflight 400 only once, with no automatic retry", async () => {
+    let preflightPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      preflightPosts += 1;
+      return Response.json({
+        title: "One or more validation errors occurred.",
+        errors: { messages: ["prompt must not exceed 10000 characters"] },
+      }, { status: 400 });
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(preflightPosts).toBe(1);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_400; retry=never") });
+    if (result.ok) throw new Error("expected the plain 400 to fail");
+    expect(result.error).not.toContain("already reposted");
   });
 
   it("returns a stable non-retryable code for a malformed successful Civitai response", async () => {
@@ -497,7 +634,10 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
   });
 
-  it.each(["fetch", "response text"] as const)("redacts a thrown preflight %s failure without retrying its POST", async (sentinel) => {
+  it.each(["fetch", "response text"] as const)("redacts a thrown preflight %s failure after one automatic retry", async (sentinel) => {
+    // #672: a thrown transport failure is retried once automatically, with
+    // the same preflight body (and externalId), before the render fails.
+    vi.useFakeTimers();
     let workflowPosts = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
       const href = String(url);
@@ -509,13 +649,103 @@ describe("Civitai Klein v2 transport", () => {
       return response;
     });
 
-    const result = await runCivitaiKleinImageModel(MODEL, request);
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
 
-    expect(workflowPosts).toBe(1);
+    expect(workflowPosts).toBe(2);
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_transport_failure; retry=deliberate") });
     if (result.ok) throw new Error("expected the preflight transport failure to fail");
     expect(result.error).not.toContain("secret");
     expect(result.error).not.toContain("private");
+    expect(result.error).toContain("already reposted this preflight once automatically");
+    expect(result.error).not.toContain("read retries");
+  });
+
+  it("gives the preflight its own 120 s per-attempt timeout, leaving the paid submit at 30 s", async () => {
+    // Proves the per-stage timeout split against the REAL AbortSignal.timeout
+    // rather than faked wall time, since vitest's fake timers do not reliably
+    // drive it. Nothing in this test actually waits out a timeout: the mocked
+    // fetch resolves immediately, and the assertion is on which budget each
+    // call's signal was built with. The submit response reports insufficient
+    // Buzz so the lane throws right after that POST, without a status poll or
+    // output download — each of which would add its own 30 s
+    // AbortSignal.timeout call and make the exact-equality assertion below
+    // fragile for reasons unrelated to what this test is proving.
+    const timeoutCalls: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      timeoutCalls.push(ms);
+      return realTimeout(ms);
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (whatif === "true") return Response.json(workflowFrom(body, "estimate-timeout", "unassigned"));
+      const submitted = workflowFrom(body, "submit-timeout", "succeeded");
+      (submitted.transactions as Record<string, unknown>).insufficientBuzz = true;
+      return Response.json(submitted);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_insufficient_buzz") });
+    // Preflight first (120 s), then the paid submit (30 s); no status poll or
+    // download followed because the submit itself already reported
+    // insufficient Buzz.
+    expect(timeoutCalls).toEqual([120_000, 30_000]);
+  });
+
+  it("also gives the preflight's automatic retry its own 120 s, while a lora_metadata GET and the paid submit stay at 30 s", async () => {
+    // Companion to the test above, exercising every stage's timeout in one
+    // request: the lora_metadata GET (30 s), a failed first preflight
+    // attempt (120 s), its automatic retry (120 s), then the paid submit
+    // (30 s). The insufficient-Buzz trick again keeps the submit from
+    // reaching a status poll or output download, so these four calls are the
+    // complete sequence — proving the retry attempt is not silently left on
+    // the shared 30 s budget.
+    vi.useFakeTimers();
+    const timeoutCalls: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      timeoutCalls.push(ms);
+      return realTimeout(ms);
+    });
+    let preflightAttempts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/model-versions/2633618")) {
+        return Response.json({ id: 2633618, baseModel: "Flux.2 Klein 4B", model: { type: "LORA" }, modelId: 2169780 });
+      }
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (whatif === "true") {
+        preflightAttempts += 1;
+        if (preflightAttempts === 1) return Response.json({ detail: "prompt=private" }, { status: 503 });
+        return Response.json(workflowFrom(body, "estimate-sequence", "unassigned"));
+      }
+      const submitted = workflowFrom(body, "submit-sequence", "succeeded");
+      (submitted.transactions as Record<string, unknown>).insufficientBuzz = true;
+      return Response.json(submitted);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, {
+      ...request,
+      controlInput: {
+        seed: 1234,
+        [CIVITAI_LORA_VERSION_FIELD]: "2633618",
+        [CIVITAI_LORA_STRENGTH_FIELD]: 0.75,
+      },
+    });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(preflightAttempts).toBe(2);
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_insufficient_buzz") });
+    expect(timeoutCalls).toEqual([30_000, 120_000, 120_000, 30_000]);
   });
 
   it.each(["fetch", "response text"] as const)("retries a thrown workflow-status %s failure as a bounded read", async (sentinel) => {

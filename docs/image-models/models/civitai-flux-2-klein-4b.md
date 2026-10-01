@@ -158,8 +158,43 @@ characters unchanged.
   as specific as the provider permits.
 - Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, and `civitai_output_*` codes,
   plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
-  backed off with jitter, and apply only to idempotent metadata or workflow-status reads; a paid submission and what-if
-  POST are never repeated automatically.
+  backed off with jitter, and apply to idempotent metadata or workflow-status
+  reads and, up to one retry, the what-if preflight; a paid submission is
+  never repeated automatically.
+- The what-if preflight runs under its own 120 s per-attempt timeout; every
+  other stage keeps a 30 s budget. A transport failure (abort or timeout,
+  network error, an unreadable response body) or an HTTP 429/5xx is POSTed
+  again automatically exactly once, with the identical preflight body and its
+  `externalId`, after the same jittered backoff as a read retry. Any other
+  4xx — including the 400 `resource_not_enabled` — a 200 OK whose body is not
+  JSON, and a failure surfaced only after a 200 OK (insufficient Buzz, a
+  failed or blocked workflow status, an echo refusal) are never retried; a
+  non-2xx with an unparseable body (an HTML gateway page from a 502/503, say)
+  is judged by status like any other response and is retried if that status
+  is 429/5xx too. When the repeat fails the same transient way — another
+  transport failure, or another 429/5xx — the render fails with its stable
+  code, `retry=deliberate`, and a message saying the automatic retry already
+  ran; a repeat that fails a different way (a plain 4xx, or a 409) reports
+  that failure's own disposition instead.
+
+  Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (checkpoint
+  version `3352534`, `model: "2.1"`, `editImage`, one synthetic 768x1024 jpeg
+  reference), zero-Buzz what-ifs:
+
+  | Probe                                                        | Latency     |
+  | ------------------------------------------------------------ | ----------- |
+  | short prompt, single                                         | 3.1 s       |
+  | short prompt, 8 concurrent identical                         | 2.1 s each  |
+  | real front-clothed view prompt (1,741 chars), first sighting | 13.0 s      |
+  | same prompt again, 8 concurrent                              | 2.4 s each  |
+  | all 8 real view prompts + a fresh nonce, concurrent          | 12.4 s each |
+  | real front-bare prompt (2,567 chars), first sighting         | 2.9 s       |
+
+  On Fly v284 (`a544edbe`) the same day, all 8 preflights of one
+  reference-view batch failed at 30.4-30.9 s under a uniform 30 s budget,
+  before any paid submit. The probes do not reproduce the production
+  latency, so the 120 s ceiling is headroom over the measured range, not a
+  tuned minimum.
 - A `civitai_http_400` whose RFC7807 `errors.messages[]` says a selected
   resource "is not enabled for generation" also carries
   `reason=resource_not_enabled`: the request was well formed, and Civitai will
