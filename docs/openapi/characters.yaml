@@ -744,7 +744,7 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409':
-          description: ineligible or changed.
+          description: busy (a reference-view build is live), ineligible or changed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -770,7 +770,7 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409':
-          description: changed.
+          description: busy (a reference-view build is live) or changed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -808,7 +808,7 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409':
-          description: ineligible or changed.
+          description: busy (a reference-view build is live), ineligible or changed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1070,7 +1070,7 @@ components:
             copies. A view built from this one records it.
     BodyReferenceSet:
       type: object
-      required: [images, unclothedAllowed, attributes]
+      required: [images, unclothedAllowed, attributes, routes]
       properties:
         images:
           type: array
@@ -1095,6 +1095,18 @@ components:
               id: { type: string }
               label: { type: string }
               value: { type: string }
+        routes:
+          description: >-
+            Whether the image model a build would use right now sends body images to the dressed
+            and to the undressed views. Null when not resolved — every write's own answer, or a
+            sheet read that could not tell. Never part of staleness.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [clothed, bare]
+              properties:
+                clothed: { type: boolean }
+                bare: { type: boolean }
     BodyReferenceWriteResult:
       type: object
       required: [bodyReferences]

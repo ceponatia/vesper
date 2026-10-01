@@ -207,8 +207,8 @@ approval and opening the bytes.
   the slot's current row, when its source is not the portrait the character has accepted right now,
   when its asset is missing or unreadable, when its generation version is behind, when the
   upstream attempt it was rendered from is no longer that slot's approved current attempt, or —
-  for a rendered view — when the body-image set it was rendered against is no longer the
-  character's ([body-reference-images.md](body-reference-images.md) §Out of date). Because
+  for a rendered view — when the body images routed to its wardrobe are no longer the set it was
+  rendered against ([body-reference-images.md](body-reference-images.md) §Out of date). Because
   nothing is rewritten when the accepted portrait moves, re-accepting the earlier portrait revives
   exactly the views that were rendered from it.
 - **The sheet is projected in build order** (`projectReferenceViewSlots`), so staleness flows down
@@ -278,7 +278,7 @@ approval and opening the bytes.
 - History offers **Use this version** for a retained compatible attempt. Restoration checks
   ownership, slot, current attempt and revision, accepted portrait id and content hash, generation
   version, that the upstream attempt it was rendered from is still that slot's approved current
-  one, that a rendered attempt's body-image set is still the character's, available bytes,
+  one, that a rendered attempt's body-image set is still the one routed to its wardrobe, available bytes,
   retention expiry and the pending/live generation state of that slot and of every slot built from
   it. It copies the bytes into an
   independent asset and creates a new unreviewed current candidate recording the same upstream and
@@ -387,7 +387,7 @@ studio's grid displays them. The body images the views are built with are the hi
 
 | Route                                                 | What it does                                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot; withheld slots are `ineligible`                          |
+| `GET /api/characters/:id/reference-views`             | `{ set, planned, bodyReferences }` — every slot, and the body images with their routes    |
 | `POST /api/characters/:id/reference-views/build`      | Claims every ready `missing` / `failed` / `stale` slot; reports each target outcome       |
 | `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — claims named slots; `queued` / `busy` per target; 409 `waiting`           |
 | `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                              |
@@ -400,8 +400,10 @@ All routes are owner-only and rooted at the character. A slot the registry has n
 A plan-withheld regeneration is refused whole before anything is charged. A review, restoration, or
 upload that loses eligibility after its initial read returns a recoverable 409 `ineligible`.
 `dependents` is the queue outcome of what that write unlocked (§Cost and slot leases): nothing
-queued for a rejection or an undo. The set read also returns the character's body images, whose own
-routes are in [body-reference-images.md](body-reference-images.md) §Routes.
+queued for a rejection or an undo. Withheld slots read `ineligible`. `bodyReferences` is the
+character's body images with `routes` — whether the image model a build would use right now sends
+them to dressed and to undressed views; their own routes are in
+[body-reference-images.md](body-reference-images.md) §Routes.
 
 ## Diagnostic codes
 

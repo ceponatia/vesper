@@ -135,7 +135,13 @@ two slot cards, each a thumbnail beside its controls on every width. An empty sl
 image**; a filled one offers a **Clothed / Unclothed** radio group that re-tags it in place and a
 **More** menu with **Replace image** and **Remove** (through `ConfirmDialog`). Unclothed is disabled,
 with its reason, for a character below the adult gate, and a stored undressed image the gate now
-withholds carries a *not used* chip and a line saying so. Add and Replace open the shared 3:4 crop
+withholds carries a *not used* chip and a line saying so. The sheet read says whether the image
+model a build would use right now takes body images for dressed and for undressed views: an image
+no view it reaches can use carries the same *not used* chip with "not used by the current image
+model", an undressed image only one kind of view uses says which, and each tag's hint says what it
+is sent to on the current model. While the sheet is building, every body-image control is disabled
+with a line saying the images can change once the build finishes — the server refuses a change
+mid-build as `busy`. Add and Replace open the shared 3:4 crop
 dialog with an aside — beside the image on a wide screen, below it on a phone — holding the tag
 choice (slot 1 starts Clothed, slot 2 Unclothed), the character's written build attributes with a
 note to make the image agree with them, and the one-line real-person note. Every change is free,

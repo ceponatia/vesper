@@ -28,6 +28,11 @@ the hidden-asset rules ([../asset-registry.md](../asset-registry.md) §Hidden ki
 - Every write — upload into a slot, re-tag, remove — runs under the character row lock the
   reference-view store also takes, and names the image the owner saw (`expectedImageId`, null for
   an empty slot). A write that crossed another is a 409 `changed` and writes nothing.
+- Every write waits while a reference-view build is live for the character — a slot leased by a
+  heartbeat-live job, or a pending attempt (`referenceViewBuildLive`) — and answers 409 `busy`, as
+  the view upload does. A change mid-build would strand that build's renders: the ones not yet
+  reserved are already charged and render nothing, and the ones rendering land stale. The studio
+  disables the body-image controls while the sheet builds and says why.
 - A replaced or removed image's row is **retired** (`current = false`), never rewritten. The
   reference-view sweep purges a retired image's asset after the views' retention window, and the
   image FK cascades its row away with it; a current image is never collected.
@@ -61,6 +66,16 @@ dialect with no wording for it drops it with an info diagnostic and the view ren
 rest. A view records only the images it actually sent (`meta.referenceView.bodyReferences`, each
 `{ slot, imageId, tag }`).
 
+**Whether the current route sends them** is read with the sheet, once per read and outside the
+character lock (`referenceViewBodyRoutes`): the `variant` profile a build resolves for dressed
+views and the bare route resolved from it for undressed views, each judged by the prompt seam's own
+rule (`characterPromptSendsBodyReferences` — a binding whose dialect words the role, and a
+reference policy that admits it). The answer travels as `bodyReferences.routes`, `{ clothed, bare }`,
+or null when it could not be read. The studio marks an image *not used by the current image
+model* when no view it would reach takes body images, says which kind of view does not when only
+one does, and words each tag's hint from the same facts. The routes are a fact about the
+deployment's image model and play no part in staleness.
+
 ## The role binding
 
 - A body image is never an `identity` reference. The portrait owns the face (owner ruling
@@ -82,13 +97,16 @@ rest. A view records only the images it actually sent (`meta.referenceView.bodyR
 
 ## Out of date
 
-- A view row records the body-image set it was rendered against (`body_reference_set`): each
-  sendable image's id and tag in slot order (`bodyReferenceSetKey`), or null for none.
-- A **rendered** view is stale once that set differs from the character's set now — an image
-  added, replaced, removed or re-tagged, or an Unclothed image the adult gate starts withholding.
-  Null is the empty set, so a character's first image makes its rendered views stale and a
-  character that never adds one sees no change. An uploaded view was rendered from nothing and is
-  never stale by this rule.
+- A view row records the body-image set it was rendered against (`body_reference_set`): the id and
+  tag, in slot order, of the sendable images ROUTED to its wardrobe (`referenceViewBodySetKey`),
+  or null for none. The build records it and the sheet compares with that one function, over the
+  character's images now — never over the image model, so the key does not move with the profile.
+- A **rendered** view is stale once that set differs — an image it takes added, replaced, removed
+  or re-tagged, or an Unclothed image the adult gate starts withholding. A dressed view takes every
+  image, so any change moves it; an undressed view takes the Unclothed ones alone, so a change to a
+  Clothed image leaves it standing. Null is the empty set, so a view's first routed image makes it
+  stale and a character that never adds one sees no change. An uploaded view was rendered from
+  nothing and is never stale by this rule.
 - Nothing is rebuilt and nothing is charged: the owner's next build starts at the root, as
   [reference-views.md](reference-views.md) §Build order describes.
 - A build reads the images once per job. Its reservation confirms under the character lock that
@@ -97,14 +115,16 @@ rest. A view records only the images it actually sent (`meta.referenceView.bodyR
 
 ## Routes
 
-| Route                                                   | What it does                                               |
-| ------------------------------------------------------- | ---------------------------------------------------------- |
-| `GET /api/characters/:id/reference-views`               | Also returns `bodyReferences`: images, gate, attributes    |
-| `POST /api/characters/:id/body-references/:slot/upload` | `{ dataUrl, tag, expectedImageId }` ⇒ `{ bodyReferences }` |
-| `PATCH /api/characters/:id/body-references/:slot`       | `{ tag, expectedImageId }` ⇒ `{ bodyReferences }`          |
-| `DELETE /api/characters/:id/body-references/:slot`      | `?imageId=` ⇒ `{ bodyReferences }`                         |
+| Route                                                   | What it does                                                    |
+| ------------------------------------------------------- | --------------------------------------------------------------- |
+| `GET /api/characters/:id/reference-views`               | Also returns `bodyReferences`: images, gate, attributes, routes |
+| `POST /api/characters/:id/body-references/:slot/upload` | `{ dataUrl, tag, expectedImageId }` ⇒ `{ bodyReferences }`      |
+| `PATCH /api/characters/:id/body-references/:slot`       | `{ tag, expectedImageId }` ⇒ `{ bodyReferences }`               |
+| `DELETE /api/characters/:id/body-references/:slot`      | `?imageId=` ⇒ `{ bodyReferences }`                              |
 
-Every route is owner-only and rooted at the character.
+Every route is owner-only and rooted at the character. A write answers 409 `busy` while a build is
+live, `changed` when the slot no longer holds the image the owner saw, and `ineligible` for an
+Unclothed tag below the adult gate.
 
 ## Diagnostic codes
 

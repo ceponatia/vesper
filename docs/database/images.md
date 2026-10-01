@@ -93,9 +93,9 @@ the two admin bench run records.
   build order), `origin_attempt_id?` (for a restored copy, the attempt it copies — that attempt's
   own origin when it was itself a copy; a row's lineage is `origin_attempt_id ?? id`; no foreign
   key; null for every rendered and uploaded row),
-  `body_reference_set?` (the body-image set the view was rendered against — each image's id and
-  tag in slot order; null is the empty set, which every row built before body images records, and
-  what an upload stores). One
+  `body_reference_set?` (the body-image set the view was rendered against — the id and tag, in slot
+  order, of the images routed to its wardrobe; null is the empty set, which every row built before
+  body images records, and what an upload stores). One
   slot of a character's reference view set: attempts are rows, and exactly one per (character,
   angle, wardrobe) may be `current` (a partial unique index). See
   [../images/pipelines/reference-views.md](../images/pipelines/reference-views.md).
