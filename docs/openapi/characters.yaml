@@ -667,7 +667,8 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '409':
           description: >-
-            not_ready, changed, incompatible (including a view whose upstream view was replaced),
+            not_ready, changed, incompatible (including a view whose upstream view was replaced, or a
+            rendered view whose body images have changed since),
             ineligible, busy, expired or unavailable.
           content:
             application/json:
