@@ -741,8 +741,16 @@ async function lookupSubmitPage(
 
 /** What the lost-submit-answer lookup concluded. */
 interface SubmitLookupOutcome {
-  /** The adopted workflow, parsed and ready to resume polling on, or null when no round found one. */
-  workflow: CivitaiWorkflowResult | null;
+  /**
+   * The matching RAW list item, unparsed, or null when no round found one.
+   * Deliberately not parsed here (#673 correction): parsing is the caller's
+   * job, specifically so a shape failure on a workflow that WAS found
+   * surfaces as that parse error — with the found id already attached as
+   * `predictionId` — rather than being swallowed by this function's own
+   * read-failure handling and misreported as "no workflow carries this
+   * key", which is false when one does.
+   */
+  match: JsonRecord | null;
   /** False only when EVERY round's own read itself failed — never when a round read cleanly and simply found nothing. */
   readable: boolean;
 }
@@ -751,9 +759,9 @@ interface SubmitLookupOutcome {
  * Searches the workflow list, read-only, for a submit whose own answer
  * Vesper could not read — across {@link CIVITAI_SUBMIT_LOOKUP_ROUNDS} bounded,
  * spaced rounds (#673). Sends no POST at any point, only the bounded GET the
- * workflow list already supports. A found item is adopted (parsed and
- * logged) so the caller can resume the ordinary poll/terminal/download path
- * on it unchanged.
+ * workflow list already supports. Returns the found item's raw record
+ * unparsed (see {@link SubmitLookupOutcome.match}); the caller resumes the
+ * ordinary poll/terminal/download path on it after parsing.
  */
 async function lookupUnconfirmedSubmit(
   token: string,
@@ -765,23 +773,26 @@ async function lookupUnconfirmedSubmit(
   let readable = false;
   for (let round = 0; round < CIVITAI_SUBMIT_LOOKUP_ROUNDS; round += 1) {
     await delay(round === 0 ? CIVITAI_SUBMIT_LOOKUP_SETTLE_DELAY_MS : CIVITAI_SUBMIT_LOOKUP_ROUND_INTERVAL_MS);
+    let match: JsonRecord | null;
     try {
-      const match = await lookupSubmitPage(token, suffix, fromDateIso);
-      readable = true;
-      if (match) {
-        const workflow = parseCivitaiWorkflow(match, "Civitai workflow lookup");
-        log.warn("ai.civitai", "adopted a workflow found by externalId lookup after the submit's own answer was lost", {
-          workflowId: workflow.id, externalId: submitExternalId,
-        });
-        return { workflow, readable: true };
-      }
+      match = await lookupSubmitPage(token, suffix, fromDateIso);
     } catch {
       // This round's read itself failed (transport failure, or every bounded
       // GET retry inside requestJson exhausted). `readable` stays whatever an
       // earlier round already proved; the next round gets its own chance.
+      // Unchanged by this correction: a FOUND item's parse failure never
+      // reaches this catch, because parsing no longer happens in this loop.
+      continue;
+    }
+    readable = true;
+    if (match) {
+      log.warn("ai.civitai", "found a workflow by externalId lookup after the submit's own answer was lost", {
+        workflowId: asString(match.id), externalId: submitExternalId,
+      });
+      return { match, readable: true };
     }
   }
-  return { workflow: null, readable };
+  return { match: null, readable };
 }
 
 /**
@@ -996,10 +1007,16 @@ export async function runCivitaiLane(
       if (isDefinitelyRejectedSubmit(submitError)) throw submitError;
       const originalCode = submitError instanceof CivitaiError ? submitError.code : "civitai_submit_response_invalid";
       const outcome = await lookupUnconfirmedSubmit(token, submitWorkflow.externalId, submitStartedAt);
-      if (!outcome.workflow) {
+      if (!outcome.match) {
         throw civitaiSubmitUnconfirmedFailure(originalCode, submitWorkflow.externalId, outcome.readable, CIVITAI_SUBMIT_LOOKUP_ROUNDS);
       }
-      result = outcome.workflow;
+      // The id is recorded BEFORE parsing (#673 correction): a found item
+      // whose shape then fails `parseCivitaiWorkflow` must surface as that
+      // parse failure, with this id attached, never as
+      // civitai_submit_unconfirmed — the workflow WAS found, so "no workflow
+      // carries this key" would be false.
+      predictionId = asString(outcome.match.id) ?? undefined;
+      result = parseCivitaiWorkflow(outcome.match, "Civitai workflow lookup");
       predictionId = result.id;
     }
     const deadline = Date.now() + Math.max(30_000, request.timeoutMs ?? CIVITAI_DEFAULT_TIMEOUT_MS);

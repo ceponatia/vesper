@@ -728,6 +728,56 @@ describe("Civitai Klein v2 transport", () => {
       expect(result.error).not.toContain("private");
     });
 
+    /**
+     * PROTECTS (second correction round, #673): a list item that MATCHES the
+     * externalId suffix must be treated as FOUND even if its shape then
+     * fails `parseCivitaiWorkflow` — the round's own try/catch must not
+     * swallow that parse failure as "this round's read failed", which would
+     * misreport `civitai_submit_unconfirmed` ("no workflow carries this
+     * key") for a key a workflow demonstrably DOES carry. The found id must
+     * also still reach `predictionId`, matching the pre-#673 behavior for an
+     * ordinary 2xx submit body that carried an id but failed to parse.
+     */
+    it("surfaces a parse failure on a found workflow with its id attached, never as civitai_submit_unconfirmed", async () => {
+      vi.useFakeTimers();
+      const paidPosts: string[] = [];
+      let submitExternalId = "";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          return Response.json({
+            items: [{
+              id: "found-but-broken",
+              externalId: `5910720-${submitExternalId}`,
+              status: "not-a-real-status",
+            }],
+            next: null,
+          });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        paidPosts.push(href);
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        submitExternalId = body.externalId as string;
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(paidPosts).toHaveLength(1);
+      expect(result).toMatchObject({ ok: false, predictionId: "found-but-broken" });
+      if (result.ok) throw new Error("expected the found-but-unparseable workflow to fail");
+      expect(result.error).not.toContain("civitai_submit_unconfirmed");
+      expect(result.error).toBe("Civitai workflow lookup returned an invalid workflow identity or status");
+      expect(classifyImageFailureMessage(result.error)).not.toBe("transient");
+    });
+
     it("follows the list's next cursor within one round to find a match on a later page", async () => {
       vi.useFakeTimers();
       const lookupUrls: string[] = [];
