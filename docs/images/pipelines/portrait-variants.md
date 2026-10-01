@@ -2,7 +2,7 @@
 
 Pose / outfit / expression / setting / `nsfw test` variants of the canonical avatar, rendered
 as reference edits through **the New Variant picker's model** (the registry filtered to
-`canEdit`; default `qwen/qwen-image-edit-2511`, shared with scene images). The identity
+`canEdit`; default `civitai/qwen-image-2.1`, shared with scene images). The identity
 reference(s) come from the identity-pack service
 ([../identity-packs.md](../identity-packs.md) — provenance on `meta.identityReferences`, a
 blocked pack refuses the render). The prompt is the **compiled prompt program** over the

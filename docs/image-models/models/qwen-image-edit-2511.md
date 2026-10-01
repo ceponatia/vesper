@@ -6,9 +6,12 @@
 > An enhanced version over Qwen-Image-Edit-2509, featuring multiple improvements
 > including notably better consistency.
 
-Vesper's default for chat scene images and portrait variants. It is the current
-instruction editor used when the application must preserve a known character,
-but “identity-preserving” is a relative capability rating rather than a promise
+Vesper's instruction editor for chat-look references and the intimate-model
+pairing on every model the intimate-route policy does not list; chat scene
+images and portrait variants default to `civitai/qwen-image-2.1`
+([civitai-qwen-image-2-1.md](civitai-qwen-image-2-1.md)) and keep this row as a
+selectable profile. It is an instruction editor for preserving a known
+character, but “identity-preserving” is a relative capability rating rather than a promise
 of exact likeness. The owner has observed faces that remain similar while losing
 recognisable facial structure, which is why identity continuity must be judged
 from output rather than inferred from a successful edit request.
