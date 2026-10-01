@@ -47,8 +47,11 @@ Migration `0135_fal-qwen-image-3.sql` defaults the production portrait, variant/
 ## Surface routing
 
 - **Character Studio portrait generation** → `alibaba/qwen-image-3/text-to-image`
-- **Character Studio variants/reference views** → `alibaba/qwen-image-3/edit`
-- **Scene images** → `alibaba/qwen-image-3/edit`
+- **Character Studio variants/reference views** → `alibaba/qwen-image-3/edit` is
+  a selectable profile; the `variant` default is `civitai/qwen-image-2.1`
+  ([civitai-qwen-image-2-1.md](civitai-qwen-image-2-1.md))
+- **Scene images** → `alibaba/qwen-image-3/edit` is a selectable profile; the
+  `scene` default is `civitai/qwen-image-2.1`
 - **Admin Image Generator** → both rows are selectable independently
 
 The edit row accepts up to three primary references and preserves their order when sending `image_urls` to fal.

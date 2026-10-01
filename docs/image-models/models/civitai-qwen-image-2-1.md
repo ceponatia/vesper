@@ -37,8 +37,18 @@ currency are explicit request policy.
 - The preflight echo reports the lane, not a checkpoint, so a render records no
   executed version. A row whose stored version is not `3352534` has no transport
   lane and is refused before any provider call.
-- Owner ruling 2026-09-30: the row is an admin Image Generator bench target
-  only. It has no profile and no production surface flag.
+- Owner ruling 2026-10-01: the owner's bench renders on this row stand in for
+  the graded comparison. The row is rated `editKind` `multi_reference_compose`
+  and `identityPreservation` `strong`, is offered on the variant and scene
+  surfaces, and its built-in `variant-standard` and `scene-standard` profiles
+  are the `variant` and `scene` task defaults
+  ([../../images/providers/profiles.md](../../images/providers/profiles.md)).
+  The profiles store the 1K tier and a 900-second budget; a blank sampling
+  control sends the recipe in §Generation settings. It has no portrait profile.
+- Both profiles compile through the `qwen_21_instruction_edit` prompt dialect
+  ([../../images/prompt-programs.md](../../images/prompt-programs.md)), which
+  declares no negative channel: the lane refuses a negative prompt at the
+  profiles' `cfgScale` of 1.
 - The weights are published under the Qwen Research License, which is
   non-commercial without a separate agreement.
 
@@ -64,6 +74,16 @@ currency are explicit request policy.
   priced a 20B LoRA on this lane, so the metadata gate is the only check that
   keeps a mis-curated row from rendering foreign weights.
 - One LoRA per render, strength 0–4, inside the library row's curated band.
+- Production intimate work — a `bare` reference view, an `nsfw_test` variant
+  and an intimate staged chat scene — renders on this model's own resolved
+  profile with no LoRA (owner ruling 2026-10-01). The model is listed
+  `optional` in the intimate-route policy
+  ([../../images/providers/loras.md](../../images/providers/loras.md)), so
+  `qwen/qwen-image-edit-2511` is never paired in, and the prompt dialect states
+  a fully bare subject's nudity explicitly. A curated 2.1 anatomy LoRA rides
+  once its library row is named in that policy, which waits until Civitai
+  enables generation for it; it then reaches the workflow through the same
+  library row, strength and Qwen 2.1 family gate as a Generator run.
 
 ## Generation settings
 
@@ -119,9 +139,13 @@ near-miss size would be recorded as a ratio the image does not have:
   or 2048 (2K) — and no size: the provider derives an edit's `width` and
   `height` from the reference and ignores an explicit pair, so the output keeps
   the reference's aspect.
-- An edit with a chosen output shape is refused before any preflight. The shape
-  could be neither sent nor applied, so running it would record a shape the
-  output does not have; clear the shape or remove the references.
+- An edit sends no shape, whichever caller asked for one: shape negotiation
+  writes no aspect on an edit for this model, and the render path crops the
+  returned image locally to the caller's target ratio
+  ([../../images/providers/shape.md](../../images/providers/shape.md)). The
+  production lanes' 3:4 target and an Image Generator operator's chosen shape
+  are both applied this way. The lane's workflow builder still refuses an
+  aspect that reaches it with references, as transport defense in depth.
 - The checkpoint's native non-square 2K sizes exceed Civitai's 2048 cap; the 2K
   column is the largest exact-ratio fit of each ratio on a 64-pixel grid inside
   the cap.
@@ -184,8 +208,9 @@ The [provider OpenAPI](https://orchestration.civitai.com/openapi/v2-consumers.js
 [workflow payment rules](https://github.com/civitai/civitai-developer-docs/blob/main/orchestration/guide/submitting-work.md),
 the [model card](https://huggingface.co/Qwen/Qwen-Image-2.1), and zero-Buzz
 what-if preflights establish the fields above, their echo, pricing, and yellow
-settlement. A what-if renders nothing. Account entitlement for a paid mature
-render, output quality, identity preservation, and the combined curated-LoRA and
-reference result each require an authorized paid run on this lane and
-inspection of its output; the combined result also needs a generation-enabled
-Qwen 2.1 LoRA.
+settlement. A what-if renders nothing. The owner's paid Image Generator renders
+on 2026-10-01 — prompt creates and reference edits, nudity without a LoRA
+included — established output quality and identity preservation by inspection,
+ranking the lane above every other bound model except Seedream 4.5, which it
+rivals. The combined curated-LoRA and reference result still requires a
+generation-enabled Qwen 2.1 LoRA and an authorized paid run on this lane.
