@@ -103,9 +103,14 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  *    computed coverage is fully bare (see {@link isFullyBareSubject}) —
  *    acceptance #4, the owner's nudity-reinforcement ruling (2026-10-01):
  *    2.1 carries no LoRA to assert nudity, so the prompt has to say it. The
- *    permission is the application's, behind its age gate (owner ruling
- *    2026-10-01): bare coverage alone reads the same on a minor's wardrobe, an
- *    empty saved outfit or an ordinary scene, none of which may say it.
+ *    permission is the RENDER's own intimate allowance, behind its age gate
+ *    (owner ruling 2026-10-01) — in a chat scene that is the rung's
+ *    `allowIntimate` (`scene.ts` `allowIntimateFor`), true on an edit rung for
+ *    an adult cast WHATEVER the staging, so an ordinary chat scene with a bare
+ *    adult subject gets the clause exactly like a staged one does. Bare
+ *    coverage alone never earns it: a minor's wardrobe, a `clothed` reference
+ *    view, or an ordinary (non-`nsfw test`) variant reads the same bare
+ *    coverage without the permission and states only the exposure sentences.
  *
  * **No negative channel at all** (acceptance #3): the probed schema exposes
  * `negativePrompt`, but every bound profile runs at the blank `cfgScale` (1),
@@ -292,28 +297,79 @@ function isLastExposureClaimForSubject(claims: readonly ImagePositiveClaim[], cl
 }
 
 /**
+ * Whether this subject's payload states a worn garment at all — any
+ * `subject.wardrobe` claim, whatever it names (stockings, heels, a single
+ * accessory). Read beside {@link everyExposureRegionBare} to decide whether
+ * "no clothes" is true of this render rather than merely "fully bare where
+ * exposure was stated": a subject can read bare at the torso and pelvis and
+ * still wear stockings the wardrobe claim names, and a clause saying she has
+ * no clothes on at all would contradict the stockings sentence sitting right
+ * beside it.
+ */
+function hasWardrobeClaim(claims: readonly ImagePositiveClaim[], ref: string): boolean {
+  return claims.some((claim) => claim.concept === "subject.wardrobe" && claim.subjectRef === ref);
+}
+
+/**
+ * Whether EVERY `subject.exposure` claim this subject's payload states reads
+ * `coverage:bare` — not only the torso and pelvis {@link isFullyBareSubject}
+ * requires, but every region this shot's framing stated at all (legs, feet).
+ * A region reading `covered` or `sheer` is itself worn coverage, the same
+ * contradiction a wardrobe claim is.
+ */
+function everyExposureRegionBare(claims: readonly ImagePositiveClaim[], ref: string): boolean {
+  let stated = false;
+  for (const claim of claims) {
+    if (claim.concept !== "subject.exposure" || claim.subjectRef !== ref) continue;
+    stated = true;
+    if (!claim.semanticTags.includes("coverage:bare")) return false;
+  }
+  return stated;
+}
+
+/**
+ * Whether this subject has literally nothing worn anywhere this program
+ * states — the one condition under which "no clothes" is true rather than an
+ * overclaim beside a wardrobe or partial-coverage sentence this same prompt
+ * also carries.
+ */
+function wearsNothingAtAll(claims: readonly ImagePositiveClaim[], ref: string): boolean {
+  return !hasWardrobeClaim(claims, ref) && everyExposureRegionBare(claims, ref);
+}
+
+/**
  * The nudity-reinforcement clause (acceptance #4, owner ruling 2026-10-01):
  * 2.1 renders every reference-view wardrobe and every intimate chat scene
  * WITHOUT a LoRA, so the prompt itself has to state nudity rather than lean on
- * weights trained to assert it. Said twice, in the owner's own vocabulary
- * ("naked", "nude", "no clothes") — reinforcement through repetition, not one
- * dense clause — and ALONGSIDE the body attributes the exposure and
- * intimate-reveal facts already state, never replacing them.
+ * weights trained to assert it. "Naked" and "nude" are said whenever the
+ * trigger holds — reinforcement through repetition, not one dense clause —
+ * ALONGSIDE the body attributes the exposure and intimate-reveal facts
+ * already state, never replacing them. "No clothes" is said only when
+ * {@link wearsNothingAtAll} is true: the torso/pelvis threshold that TRIGGERS
+ * this clause ({@link isFullyBareSubject}) says nothing about stockings, heels
+ * or a region outside that threshold that still reads covered or sheer, and a
+ * prompt claiming no clothes beside a sentence naming one is a contradiction a
+ * model has to resolve by ignoring one of them.
  *
  * Emitted only on a route that permits intimate content
  * (`input.intimatePermitted`) and only where {@link isFullyBareSubject} is
- * true. Both are required. The permission is the application's own decision —
- * a `bare` reference view, an `nsfw_test` bench or an intimate scene rung,
- * each behind its age gate — and it does NOT depend on any
+ * true. Both are required. The permission is the RENDER's own intimate
+ * allowance — in a chat scene, the rung's `allowIntimate` (`scene.ts`
+ * `allowIntimateFor`), true on an edit rung for an adult cast whatever the
+ * staging, so an ORDINARY scene gets this clause exactly like a staged one
+ * once its subject reads fully bare. It does NOT depend on any
  * `subject.intimate_anatomy` claim being present: a permitted bare view of a
  * subject with no intimate attributes authored still reinforces. Without the
- * permission, a fully bare subject — a minor's wardrobe, an empty saved outfit,
- * an ordinary scene — states only the exposure sentences every dialect states;
- * so does a partial undress either way. This function is never called for
- * any of them.
+ * permission — a minor's wardrobe, a `clothed` reference view, an ordinary
+ * (non-`nsfw test`) variant — a fully bare subject states only the exposure
+ * sentences every dialect states; so does a partial undress either way. This
+ * function is never called for any of them.
  */
-function nudityReinforcementClause(subject: string | null): string {
-  return `${prefixed(subject, "is completely naked, with no clothes left anywhere on the body")} ${prefixed(subject, "is fully nude")}`;
+function nudityReinforcementClause(subject: string | null, nothingWorn: boolean): string {
+  const naked = nothingWorn
+    ? prefixed(subject, "is completely naked, with no clothes left anywhere on the body")
+    : prefixed(subject, "is completely naked");
+  return `${naked} ${prefixed(subject, "is fully nude")}`;
 }
 
 /**
@@ -454,14 +510,16 @@ function renderClaim(
       // `bare` wardrobe) gets the clause stated explicitly, alongside this
       // claim's own attribute wording rather than in place of it. Attached to
       // the LAST exposure claim for this subject so it fires exactly once
-      // whatever regions this shot's framing carries.
+      // whatever regions this shot's framing carries. "No clothes" is further
+      // gated on `wearsNothingAtAll` — a wardrobe claim (stockings, heels) or
+      // any other exposure region reading covered/sheer would make it a lie.
       const base = prefixed(subject, `is ${value}`);
       const reinforced =
         input.intimatePermitted === true &&
         claim.subjectRef !== undefined &&
         isLastExposureClaimForSubject(input.claims, claim) &&
         isFullyBareSubject(input.claims, claim.subjectRef)
-          ? `${base} ${nudityReinforcementClause(subject)}`
+          ? `${base} ${nudityReinforcementClause(subject, wearsNothingAtAll(input.claims, claim.subjectRef))}`
           : base;
       return say(reinforced);
     }

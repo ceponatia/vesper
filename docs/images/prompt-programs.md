@@ -358,19 +358,27 @@ neither evidenced by any 2.1 trial yet. **It is also the one dialect that
 states nudity in words**: no Qwen 2.1 LoRA is generation-enabled on Civitai
 (owner ruling 2026-09-30/2026-10-01), so a fully bare subject — torso and
 pelvis both reading `bare`, the same threshold `selectReferenceView` uses for
-its `bare` reference-view wardrobe — gets an explicit nudity clause ("naked",
-"nude", "no clothes") alongside the ordinary exposure and intimate-anatomy
-wording, never in place of it and never for a partial undress. **The clause
-needs the route's permission as well as the coverage** (owner ruling
-2026-10-01): the compile's optional `intimatePermitted` input, which the
-character seam sets from the lane's own intimate reveal — a `bare` reference
-view, an `nsfw test` bench, an intimate scene rung, each behind its age gate.
-Bare coverage on any other route — a minor's wardrobe, a `clothed` view with no
-saved outfit, an ordinary variant or scene — states the exposure sentences and
-nothing more, and a permitted subject with no intimate attributes authored
-still gets the clause. Like the register, `intimatePermitted` is not part of
-the program fingerprint, and every other dialect ignores it. Every other
-dialect leaves nudity to the computed exposure facts alone. It also carries no
+its `bare` reference-view wardrobe — gets an explicit "naked"/"nude" clause
+alongside the ordinary exposure and intimate-anatomy wording, never in place
+of it and never for a partial undress; "no clothes" is said too, but only when
+the subject has no worn-garment claim and no OTHER stated exposure region
+reads anything but bare — a stockinged, fully-bare-at-torso-and-pelvis subject
+still gets "naked"/"nude", never the clothes claim the stockings sentence
+beside it would contradict. **The clause needs the route's permission as well
+as the coverage** (owner ruling 2026-10-01): the compile's optional
+`intimatePermitted` input, which the character seam sets from the lane's own
+intimate reveal. The permission is the RENDER's own intimate allowance, not a
+property of the scene's content — in a chat scene that is the rung's
+`allowIntimate` (`scene.ts` `allowIntimateFor`), true on an edit rung for an
+adult cast WHATEVER the staging, so an ordinary chat scene with a bare adult
+subject gets the clause exactly like a staged one does. Bare coverage alone
+never earns it: a minor's wardrobe, a `clothed` reference view, or an ordinary
+(non-`nsfw test`) variant reads the same bare coverage without the permission
+and states the exposure sentences and nothing more; a permitted subject with no
+intimate attributes authored still gets the clause. Like the register,
+`intimatePermitted` is not part of the program fingerprint, and every other
+dialect ignores it. Every other dialect leaves nudity to the computed exposure
+facts alone. It also carries no
 negative channel at all: the probed endpoint's `negativePrompt` field is real
 but is REFUSED by the lane at the blank `cfgScale` every bound profile runs at,
 so sending one would fail the render rather than merely waste budget — see
