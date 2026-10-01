@@ -61,8 +61,8 @@ import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 // this module is the one place a character lane resolves a binding — so the
 // registration import belongs here rather than being duplicated at every
 // caller. A module that imported this one alone and skipped the seeds would
-// silently resolve `unbound` for every lane. All three files together are the
-// whole character surface: the two Qwen endpoints, and every other model the
+// silently resolve `unbound` for every lane. All four files together are the
+// whole character surface: the three Qwen endpoints, and every other model the
 // profile picker offers (#256).
 import "./packs-character-endpoints";
 import {
@@ -71,6 +71,11 @@ import {
   QWEN_2511_REFERENCE_AUTHORITY_ASPECTS,
 } from "./packs-qwen-2511";
 import "./packs-qwen-2512-portrait";
+// `civitai/qwen-image-2.1` (#663/#664 slice S2): no profile row binds a model
+// to it yet (owner ruling 2026-09-30/2026-10-01 — the row is an admin Image
+// Generator bench target only), so this import only registers the binding for
+// when one does; nothing resolves it through the profile catalog today.
+import "./packs-qwen-21";
 
 /**
  * THE CHARACTER PROMPT-PROGRAM SEAM (issue #256) — the one path that turns a

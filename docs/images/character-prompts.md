@@ -452,6 +452,19 @@ asked for "exactly as shown", so the grouped clause asks for consistency ACROSS
 them. No adapter in `@vesper/image-models` touches prompt text, so a prompt
 reaches the provider exactly as it was compiled and hashed.
 
+**`civitai/qwen-image-2.1`'s dialect locks the same way, with a narrower
+repertoire.** It merges the lock into the same numbered binding sentence and
+preserves the same set — face, skin tone and apparent age, leaving hair,
+build, wardrobe and pose to the text — but speaks only the single- and
+grouped-reference forms: its two bound lanes (`variant-standard`,
+`scene-standard`) are single-subject, so it carries none of the several-people
+cast binding the Qwen edit dialect's third form exists for. It also declares no reference-authority aspects of its own in
+`CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT` (below), unlike the Qwen edit
+dialect's declared set — no 2.1 trial has evidenced that an optional
+appearance fact is redundant beside its reference yet, so its subjects'
+optional appearance detail compiles exactly as every other undeclared
+dialect's does.
+
 **What a lock preserves is that dialect's own set.** The prose family's measured
 sentence names face, hair colour and style, skin tone, body proportions and
 apparent age. The Qwen edit dialect's names face, skin tone and apparent age
@@ -669,6 +682,12 @@ untouched. A lane that passes nothing compiles the cut alone: the portrait, ordi
 and chat-look lanes ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) §Subject body
 reveal, [pipelines/portrait-variants.md](pipelines/portrait-variants.md) §The `nsfw test`
 anatomy bench).
+
+Every dialect words these facts and the `subject.exposure` facts beside them —
+and, on every endpoint but one, nothing more. `civitai/qwen-image-2.1` carries
+no anatomy LoRA, so its dialect additionally states nudity in so many words
+once the computed exposure is fully bare
+([prompt-programs.md §Families](prompt-programs.md#families)).
 
 ## Refusals the seam adds
 

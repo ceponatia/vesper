@@ -23,6 +23,7 @@ export * from "./compile-program";
 export * from "./concepts";
 export * from "./conflict-keys";
 export * from "./dialect-prose-family";
+export * from "./dialect-qwen-21";
 export * from "./dialect-qwen-2511";
 export * from "./dialect-qwen-2512";
 export * from "./dialect-tag-family";
