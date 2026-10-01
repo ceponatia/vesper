@@ -161,20 +161,19 @@ characters unchanged.
   backed off with jitter, and apply to idempotent metadata or workflow-status
   reads and, up to one retry, the what-if preflight; a paid submission is
   never repeated automatically.
-- The what-if preflight runs under its own ~120 s per-attempt timeout, longer
-  than every other stage's 30 s budget. A transport failure (abort/timeout,
+- The what-if preflight runs under its own 120 s per-attempt timeout; every
+  other stage keeps a 30 s budget. A transport failure (abort or timeout,
   network error, an unreadable response body) or an HTTP 429/5xx is POSTed
-  again automatically exactly once, reusing the identical preflight body and
-  its `externalId`, after the same jittered backoff as a read retry. Any other
+  again automatically exactly once, with the identical preflight body and its
+  `externalId`, after the same jittered backoff as a read retry. Any other
   4xx — including the 400 `resource_not_enabled` — a malformed JSON body, and
   a failure surfaced only after a 200 OK (insufficient Buzz, a failed or
-  blocked workflow status, an echo refusal) are never retried. A second
-  transport or 429/5xx failure fails the render under the same stable code it
-  carries today, with a message that tells the operator the automatic retry
-  already ran and that only a deliberate replacement is next.
+  blocked workflow status, an echo refusal) are never retried. When the repeat
+  also fails, the render fails with its stable code, `retry=deliberate`, and a
+  message saying the automatic retry already ran.
 
-  Measured 2026-10-01: zero-Buzz what-ifs against the Qwen Image 2.1
-  `editImage` body, with a synthetic 768x1024 jpeg reference.
+  Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (`model: "2.1"`,
+  `editImage`, one synthetic 768x1024 jpeg reference), zero-Buzz what-ifs:
 
   | Probe                                                        | Latency     |
   | ------------------------------------------------------------ | ----------- |
@@ -185,12 +184,11 @@ characters unchanged.
   | all 8 real view prompts + a fresh nonce, concurrent          | 12.4 s each |
   | real front-bare prompt (2,567 chars), first sighting         | 2.9 s       |
 
-  On prod, 2026-10-01 19:21:37Z, all 8 preflights in one reference-view batch
-  failed together after 30.4-30.9 s against the previous shared 30 s budget,
-  discarding renders whose paid submit would otherwise have gone through. The
-  exact cause of the slow responses is not pinned down — provider load, or the
-  real uploaded portrait, which was not probed — so the 120 s ceiling is
-  headroom over the measured range above, not a tuned minimum.
+  On Fly v284 (`a544edbe`) the same day, all 8 preflights of one
+  reference-view batch failed at 30.4-30.9 s under a uniform 30 s budget,
+  before any paid submit. The slow responses are not explained — provider
+  load and the real uploaded portrait (not probed) both remain open — so the
+  120 s ceiling is headroom over the measured range, not a tuned minimum.
 - A `civitai_http_400` whose RFC7807 `errors.messages[]` says a selected
   resource "is not enabled for generation" also carries
   `reason=resource_not_enabled`: the request was well formed, and Civitai will

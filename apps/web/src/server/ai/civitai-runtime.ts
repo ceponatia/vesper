@@ -34,8 +34,8 @@ const REQUEST_TIMEOUT_MS = 30_000;
  *
  * Every other stage keeps the 30 s {@link REQUEST_TIMEOUT_MS} budget. On
  * 2026-10-01 all 8 reference-view preflights in one production batch failed
- * together after 30.4-30.9 s against that shared budget, discarding renders
- * whose paid submit would otherwise have gone through. Zero-Buzz what-if
+ * together after 30.4-30.9 s against that shared budget, before any paid
+ * submit. Zero-Buzz what-if
  * probes against the Qwen Image 2.1 `editImage` body measured the same day
  * ranged 2.1-13.0 s, including concurrent batches of 8 and prompts as long as
  * 2,567 characters — see docs/image-models/models/civitai-flux-2-klein-4b.md
