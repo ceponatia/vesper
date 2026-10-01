@@ -7,7 +7,7 @@ import {
 } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { sceneStagingById } from "@/contracts/images/scene-staging";
-import { attr, makeProfile } from "@/server/test-support/profile-fixtures";
+import { type CharacterProfile, emptyCharacterProfile } from "@/contracts/world/profile";
 
 /**
  * The chat lane's half of the intimate-scene LoRA route: which renders leave
@@ -137,8 +137,14 @@ const stockProfile: ResolvedImageProfile = {
 };
 
 /** A sheet whose apparent age is `band`, or carries none at all when `band` is null. */
-function profileAged(band: string | null) {
-  return makeProfile({ attributes: band === null ? [] : [attr("identity.apparent_age", band, "base")] });
+function profileAged(band: string | null): CharacterProfile {
+  // Built from the contract rather than `@/server/test-support`: that barrel
+  // loads the images barrel, whose modules read exports this suite's module
+  // mocks do not provide.
+  return {
+    ...emptyCharacterProfile(),
+    attributes: band === null ? [] : [{ id: "identity.apparent_age", value: band, source: "base" }],
+  };
 }
 
 /**
