@@ -550,11 +550,14 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
       // matching back view has two images to compose rather than one.
       mode: imageBearing + referenceViews.length >= 2 ? ("multi" as const) : ("single" as const),
       ...(referenceViews.length === 0 ? {} : { referenceViews }),
-      // The route's profile IS the lane's profile paired with the intimate
-      // model's registered row; off the route it is the resolved object itself,
+      // The route's profile is the lane's profile paired with the intimate
+      // model's registered row — or, on a model the intimate-route policy lists,
+      // the resolved object itself. Off the route it is the resolved object too,
       // so a LoRA-free render is unchanged down to the reference.
       profile: finalProfile,
-      ...(lora ? { resolvedLora: lora.binding } : {}),
+      // Only weights that were actually resolved ride: a listed model's
+      // no-LoRA route sends none and the row records none.
+      ...(lora?.binding ? { resolvedLora: lora.binding } : {}),
       flavor: input.flavor,
       // No provenance travels with a refusal: an earlier cast member's pack may
       // have answered before a later member's refusal stopped the scene, and

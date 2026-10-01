@@ -11,6 +11,7 @@ import {
   imageModelSchema,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { sceneStagingById } from "@/contracts/images/scene-staging";
 
@@ -38,6 +39,7 @@ vi.mock("./image-loras", () => ({ resolveImageLoraForRender: vi.fn() }));
 
 import { resolveImageLoraForRender } from "./image-loras";
 import { loadImageModels } from "./models";
+import { INTIMATE_ROUTE_NO_ANATOMY_LORA_CODE } from "./nsfw-lora";
 import { emptySceneRenderPlan, type SceneRenderPlan } from "./prompts-scene-plan";
 import {
   INTIMATE_SCENE_LORA_ID,
@@ -323,6 +325,79 @@ describe("resolveIntimateSceneLoraRoute", () => {
     const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile: null });
     expect(route).toBeNull();
     expect(mockModels).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A scene whose resolved model the intimate-route policy lists (owner ruling
+ * 2026-10-01): Civitai Qwen Image 2.1 draws the intimate staged scene itself,
+ * so the route keeps the lane's own profile and pairs nothing in. The resolver's
+ * matrix — curated row, missing legs — is `nsfw-lora.test.ts`'s; what this suite
+ * owns is the scene trigger in front of it, which is the only thing that grants
+ * the route at all.
+ */
+describe("resolveIntimateSceneLoraRoute on a listed model (Qwen Image 2.1)", () => {
+  /** The chat's resolved scene profile on the 2.1 row. */
+  function qwen21SceneProfile(): ResolvedImageProfile {
+    return {
+      model: imageModelSchema.parse({
+        id: "imgmdlcivqwen21aaaaaaaa",
+        slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+        label: "Qwen Image 2.1 (Civitai)",
+        canGenerate: true,
+        canEdit: true,
+        editKind: "multi_reference_compose",
+        identityPreservation: "strong",
+        referenceField: "images",
+        referenceArity: "array",
+        maxReferences: 10,
+        probedVersionId: "3352534",
+      }),
+      profile: imageModelProfileSchema.parse({
+        id: "imgprfqwen21sceneaaaaaa",
+        imageModelId: "imgmdlcivqwen21aaaaaaaa",
+        key: "scene-standard",
+        label: "Scene Standard",
+        task: "scene",
+        operation: "edit",
+        promptStrategy: "instruction_edit",
+      }),
+    };
+  }
+
+  it("renders the intimate staged scene on the chat's own 2.1 profile, with no LoRA and no 2511", async () => {
+    const sink = new DiagnosticCollector();
+    const profile = qwen21SceneProfile();
+    const route = await resolveIntimateSceneLoraRoute({ ...facts(), profile, sink });
+
+    expect(route?.profile).toBe(profile);
+    expect(route?.binding).toBeNull();
+    expect(route?.provenance).toEqual({ lora: null, reason: "no_anatomy_lora_curated" });
+    // The intimate model is never read, let alone paired in.
+    expect(mockModels).not.toHaveBeenCalled();
+    expect(mockResolveLora).not.toHaveBeenCalled();
+    // Neither scene-vocabulary line fits: nothing rides, and nothing degraded.
+    expect(sink.items.map((item) => item.code)).toEqual([INTIMATE_ROUTE_NO_ANATOMY_LORA_CODE]);
+  });
+
+  it.each([
+    ["no staging at all", { plan: emptySceneRenderPlan() }],
+    ["a NON-intimate staging", { plan: stagedPlan("held_from_behind") }],
+    ["a moderated rung", { allowIntimate: false }],
+    ["a selfie", { selfie: true }],
+    ["no reference route", { referenceRoute: false }],
+    ["no anchor", { anchored: false }],
+    ["a sanitized retry", { plan: { ...stagedPlan(), staging: undefined } }],
+  ])("grants nothing off the trigger — %s stays the ordinary render, silently", async (_label, overrides) => {
+    // Never wider than the LoRA route: the no-LoRA route is reached only where
+    // the 2511 route would have been, so a 2.1 scene gains no intimate render
+    // the trigger did not already grant.
+    const sink = new DiagnosticCollector();
+    const route = await resolveIntimateSceneLoraRoute({ ...facts(overrides), profile: qwen21SceneProfile(), sink });
+    expect(route).toBeNull();
+    expect(sink.items).toEqual([]);
+    expect(mockModels).not.toHaveBeenCalled();
+    expect(mockResolveLora).not.toHaveBeenCalled();
   });
 });
 

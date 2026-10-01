@@ -5,6 +5,7 @@ import {
   imageModelSchema,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { sceneStagingById } from "@/contracts/images/scene-staging";
 import { emptyCharacterProfile } from "@/contracts/world/profile";
 
@@ -283,6 +284,71 @@ describe("the intimate staged render", () => {
     expect(requestAt(0).profile).toBe(stockProfile);
     expect("resolvedLora" in requestAt(0)).toBe(false);
     expect(loggedCodes()).toContain("images.scene_render.lora_unavailable");
+  });
+});
+
+/**
+ * The scene model decides the intimate route (owner ruling 2026-10-01): a chat
+ * whose scene profile resolves to a model the intimate-route policy lists
+ * renders its intimate staged scene on that profile, and every other chat —
+ * whatever its stored pick resolves to — keeps the intimate-model pairing.
+ */
+describe("the intimate staged render follows the chat's resolved scene model", () => {
+  /** A resolved scene profile on `slug`, as the picker hands it to the lane. */
+  function sceneProfileOn(slug: string, id: string): ResolvedImageProfile {
+    return {
+      model: imageModelSchema.parse({
+        id,
+        slug,
+        label: slug,
+        canGenerate: true,
+        canEdit: true,
+        editKind: "multi_reference_compose",
+        identityPreservation: "strong",
+        referenceField: "images",
+        referenceArity: "array",
+        maxReferences: 10,
+      }),
+      profile: imageModelProfileSchema.parse({
+        id: `${id}scene`,
+        imageModelId: id,
+        key: "scene-standard",
+        label: "Scene Standard",
+        task: "scene",
+        operation: "edit",
+        promptStrategy: "instruction_edit",
+      }),
+    };
+  }
+
+  it("renders on the chat's own Qwen Image 2.1 profile with no weights, and never reads 2511", async () => {
+    const qwen21 = sceneProfileOn(CIVITAI_QWEN_IMAGE_21_SLUG, "imgmdlcivqwen21aaaaaaaa");
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(qwen21);
+
+    await render({});
+
+    const request = requestAt(0);
+    expect(request.profile).toBe(qwen21);
+    expect("resolvedLora" in request).toBe(false);
+    expect(mockModels).not.toHaveBeenCalled();
+    // The route's own line, replayed by the lane; no LoRA-route or degrade line.
+    const codes = loggedCodes();
+    expect(codes).toContain("images.intimate_route.no_anatomy_lora");
+    expect(codes).not.toContain("images.scene_render.lora_route");
+    expect(codes).not.toContain("images.scene_render.lora_unavailable");
+  });
+
+  it("keeps the intimate-model pairing for a stored pick on a model the policy does not list", async () => {
+    const seedream = sceneProfileOn("bytedance/seedream-4.5", "imgmdlseedream45aaaaaaaa");
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(seedream);
+
+    await render({ sceneModel: "imgmdlseedream45aaaaaaaa" });
+
+    const request = requestAt(0);
+    expect(request.profile?.model.slug).toBe(INTIMATE_SCENE_LORA_MODEL_SLUG);
+    expect(request.profile?.profile).toBe(seedream.profile);
+    expect(request.resolvedLora).toEqual(binding);
+    expect(loggedCodes()).toContain("images.scene_render.lora_route");
   });
 });
 

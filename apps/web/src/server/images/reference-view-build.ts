@@ -13,6 +13,7 @@ import {
   type ReferenceView,
 } from "@/contracts";
 import { characterChangeContract, characterVariantImageOperation } from "@/contracts/images/character-digest";
+import type { IntimateRouteProvenance } from "@/contracts/images/intimate-scene-lora";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
 import { parseOr } from "@/lib/parse";
@@ -42,7 +43,7 @@ import {
 } from "./character-prompt-program";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
-import { pairProfileWithNsfwLora } from "./nsfw-lora";
+import { resolveIntimateRoute } from "./nsfw-lora";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { buildStandaloneSubjectCut, standaloneSubjectPromptCut, type StandaloneSubjectCut } from "./standalone-subject-visual";
 import {
@@ -69,12 +70,16 @@ import {
  *    wrapper refuses to allow any standalone lane.
  * 2. **The wardrobe is an axis.** `clothed` loads the saved outfit exactly as
  *    the variant lane does; `bare` passes NO garments, so the coverage readout
- *    reads fully bare and the adapter's exposure facts state it. No prompt text
- *    anywhere asserts nudity — the coverage does.
- * 3. **A bare view rides the anatomy LoRA**, paired the way the `nsfw_test`
- *    variant kind pairs it, because the scenes that consume these views run on
- *    those weights and a reference rendered on different weights anchors a body
- *    the consumer cannot reproduce.
+ *    reads fully bare and the adapter's exposure facts state it. This lane
+ *    writes no nudity sentence of its own — the coverage does, worded by the
+ *    resolved model's dialect.
+ * 3. **A bare view takes the intimate route**, resolved the way the `nsfw_test`
+ *    variant kind resolves it (`nsfw-lora.ts`), because the scenes that consume
+ *    these views take the same route and a reference rendered on different
+ *    weights anchors a body the consumer cannot reproduce. On a model the
+ *    intimate-route policy lists, that is the resolved `variant` profile
+ *    itself, with the model's curated anatomy LoRA only when one resolves; on
+ *    every other model it is the anatomy LoRA on the intimate model.
  * 4. **Nothing here can fail an accept.** Every refusal is a value with a code:
  *    a moderated bare view fails its own row and the other seven carry on, a
  *    character with no accepted portrait builds nothing and says so, and the
@@ -297,20 +302,32 @@ export async function runReferenceViewBuilds(
 // One view
 // ---------------------------------------------------------------------------
 
-/** The bare view's weights, or the reason this one view cannot be rendered. */
-type BareRoute = { ok: true; profile: ResolvedImageProfile; binding: ImageLoraRenderBinding } | { ok: false; error: string };
+/**
+ * The bare view's model and weights (null on a listed model rendering without
+ * its anatomy LoRA) and what its row records about them, or the reason this one
+ * view cannot be rendered.
+ */
+type BareRoute =
+  | {
+      ok: true;
+      profile: ResolvedImageProfile;
+      binding: ImageLoraRenderBinding | null;
+      provenance: IntimateRouteProvenance;
+    }
+  | { ok: false; error: string };
 
 /**
- * A bare view's model pairing, exactly the `nsfw_test` variant kind's route
+ * A bare view's intimate route, exactly the `nsfw_test` variant kind's
  * (`resolveNsfwTestRoute` in `variants.ts`) and failing for its reason: a
  * reference the consumers cannot reproduce is worse than a missing one, so a
- * missing leg fails THIS view — regenerable later — and leaves the clothed views
- * untouched.
+ * missing leg of the intimate-model pairing fails THIS view — regenerable later
+ * — and leaves the clothed views untouched. A model the intimate-route policy
+ * lists has no leg to miss: it renders on the resolved profile either way.
  */
 async function resolveBareRoute(profile: ResolvedImageProfile, sink: DiagnosticSink): Promise<BareRoute> {
-  const paired = await pairProfileWithNsfwLora(profile, sink);
-  if (!paired.ok) return { ok: false, error: `the anatomy LoRA is unavailable (${paired.leg}): ${paired.message}` };
-  return { ok: true, profile: paired.profile, binding: paired.binding };
+  const route = await resolveIntimateRoute(profile, sink);
+  if (!route.ok) return { ok: false, error: `the anatomy LoRA is unavailable (${route.leg}): ${route.message}` };
+  return { ok: true, profile: route.profile, binding: route.binding, provenance: route.provenance };
 }
 
 /** True when the view produced a ready asset. Never throws. */
@@ -412,7 +429,15 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
           faceVisibility: referenceViewFaceVisibility(angle),
         },
         model: qualifiedImageModelIdentity(resolved?.model),
-        ...(bareRoute?.ok === true ? { lora: bareRoute.binding.id } : {}),
+        // The weights this view ran on, by id and never the locator, and the
+        // route's own record — the LoRA it sent or null, and why. Bare views
+        // only; a clothed view takes no intimate route.
+        ...(bareRoute?.ok === true
+          ? {
+              ...(bareRoute.binding === null ? {} : { lora: bareRoute.binding.id }),
+              intimateRoute: bareRoute.provenance,
+            }
+          : {}),
         ...(packSelection ? { identityReferences: packSelection.provenance } : {}),
         ...(cut?.digestMeta ?? {}),
         ...(compiled?.meta ?? {}),
@@ -429,7 +454,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
           ...characterPromptTransport(compiled),
           references: packSelection?.references.map((entry) => entry.reference) ?? [],
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
-          ...(bareRoute?.ok === true ? { resolvedLora: bareRoute.binding } : {}),
+          ...(bareRoute?.ok === true && bareRoute.binding !== null ? { resolvedLora: bareRoute.binding } : {}),
         },
         sink,
       );

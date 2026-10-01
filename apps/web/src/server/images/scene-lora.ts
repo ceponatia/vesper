@@ -1,7 +1,11 @@
 import type { ImageLoraRenderBinding, ResolvedImageProfile } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
-import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
-import { pairProfileWithNsfwLora, type NsfwLoraMissingLeg } from "./nsfw-lora";
+import {
+  INTIMATE_SCENE_LORA_ID,
+  INTIMATE_SCENE_LORA_MODEL_SLUG,
+  type IntimateRouteProvenance,
+} from "@/contracts/images/intimate-scene-lora";
+import { resolveIntimateRoute, type NsfwLoraMissingLeg } from "./nsfw-lora";
 import type { SceneRenderPlan } from "./prompts-scene-plan";
 
 /**
@@ -13,23 +17,34 @@ import type { SceneRenderPlan } from "./prompts-scene-plan";
  * picture of a near-miss — until one curated LoRA rides along, which rendered
  * every acceptance act on the same prompts.
  *
- * This module owns WHICH chat renders take the LoRA and what a missing piece of
- * the configuration costs them. Assembling the pairing itself — the intimate
- * model, the library row, the credential — is `nsfw-lora.ts`, shared with the
- * portrait studio's `nsfw_test` variant. The answer is a BINDING on the intimate
- * model rather than a flag, because weights are resolved against the model that
- * will load them: the library row states which endpoints and versions it may
- * reach, and only a resolved pairing can be checked against that.
+ * This module owns WHICH chat renders take the intimate route and what a
+ * missing piece of the configuration costs them. Assembling the route itself —
+ * which model, which library row, the credential — is `nsfw-lora.ts`, shared
+ * with the portrait studio's `nsfw_test` variant and the `bare` reference view.
+ * The answer is a BINDING on a resolved model rather than a flag, because weights
+ * are resolved against the model that will load them: the library row states
+ * which endpoints and versions it may reach, and only a resolved route can be
+ * checked against that.
+ *
+ * Which model the route renders on is the reviewed policy table's answer
+ * (`INTIMATE_ROUTE_POLICIES`). A scene whose resolved model the table lists as
+ * `optional` — Civitai Qwen Image 2.1 — renders on that resolved profile, with
+ * its curated anatomy LoRA when one resolves and with none otherwise; the
+ * intimate model is never paired in. A scene whose model the table does not list
+ * — whatever the chat's stored pick resolves to — keeps the intimate-model
+ * pairing below, every leg and diagnostic as it was.
  *
  * Three properties are load-bearing:
  *
  * 1. **The trigger reads the render's own facts, never a parallel guess.** The
  *    same staging, route and anchor that decide whether the explicit sentence is
  *    emitted decide whether the LoRA rides — see {@link intimateSceneLoraApplies}.
- * 2. **Every miss degrades to today.** A missing model row, an unresolvable
- *    library row, a deployment with no Civitai credential: each renders exactly
- *    as it does now, on the stock profile, with one info diagnostic naming the
- *    leg. Nothing here can fail a render.
+ * 2. **Every miss degrades to today.** On the intimate-model pairing, a missing
+ *    model row, an unresolvable library row, a deployment with no Civitai
+ *    credential: each renders exactly as it does now, on the stock profile, with
+ *    one info diagnostic naming the leg. On a listed `optional` model there is
+ *    nothing to degrade from — no LoRA is that route's reviewed render, reported
+ *    once by `nsfw-lora.ts`. Nothing here can fail a render.
  * 3. **Silence off the trigger.** A non-intimate or unstaged render pushes no
  *    diagnostic and reads no row — most scene renders are that render, and a
  *    "no LoRA today" line on every one of them is noise nobody would read.
@@ -54,11 +69,12 @@ export const SCENE_LORA_UNAVAILABLE_CODE = "images.scene_render.lora_unavailable
 /** Which leg of the route was missing, for the degrade diagnostic's context. */
 export type SceneLoraMissingLeg = NsfwLoraMissingLeg;
 
-/** What the render path does differently when the route is on: a resolved model, and a LoRA. */
+/** What the render path does differently when the route is on: a resolved model, and maybe a LoRA. */
 export interface IntimateSceneLoraRoute {
   /**
-   * The lane's own scene profile paired with the intimate model — today the
-   * same base model most scene profiles already resolve to.
+   * The model the intimate render runs on. On a listed `optional` model it is
+   * the lane's own resolved scene profile, the same object. Otherwise it is
+   * the lane's own scene profile paired with the intimate model.
    *
    * The profile row is unchanged — same task, same prompt strategy, same
    * reference policy, same control defaults — because the render is the same
@@ -69,7 +85,10 @@ export interface IntimateSceneLoraRoute {
    * is why no route-specific profile row has to exist for this route to work.
    */
   profile: ResolvedImageProfile;
-  binding: ImageLoraRenderBinding;
+  /** The weights to send, or null on a listed model rendering without its anatomy LoRA. */
+  binding: ImageLoraRenderBinding | null;
+  /** What the row records about the route: the LoRA sent, by id, and why. */
+  provenance: IntimateRouteProvenance;
 }
 
 /** Everything the trigger reads, all of it already decided by the render path. */
@@ -130,8 +149,10 @@ export function intimateSceneLoraApplies(facts: IntimateSceneLoraFacts): boolean
  * The order of the legs is the order they cost: the trigger is free, the model
  * registry is one read the lane already pays elsewhere, the library row is a
  * second, and the credential is an environment lookup that only matters once
- * there is a locator to complete. Every one of them refuses by returning null,
- * so the caller has a single branch and no way to half-apply the route.
+ * there is a locator to complete. On the intimate-model pairing every one of
+ * them refuses by returning null, so the caller has a single branch and no way
+ * to half-apply the route. A listed `optional` model never refuses: its route
+ * is the resolved profile, with a binding only when its LoRA resolved.
  */
 export async function resolveIntimateSceneLoraRoute(
   input: ResolveIntimateSceneLoraInput,
@@ -142,29 +163,32 @@ export async function resolveIntimateSceneLoraRoute(
   // below type-narrows without an assertion.
   if (!intimateSceneLoraApplies(input) || profile === null) return null;
 
-  const paired = await pairProfileWithNsfwLora(profile, sink);
-  if (!paired.ok) return unavailable(sink, paired.leg, paired.message);
+  const route = await resolveIntimateRoute(profile, sink);
+  if (!route.ok) return unavailable(sink, route.leg, route.message);
 
-  const { binding } = paired;
+  const { binding } = route;
+  // The listed model's no-LoRA route already said so, once, in the route's own
+  // vocabulary — and "rendering through a LoRA" would be untrue.
+  if (binding === null) return { profile: route.profile, binding: null, provenance: route.provenance };
   sink?.push(
     diag(
       "info",
       SCENE_LORA_ROUTE_CODE,
-      `intimate staged scene rendering through ${binding.label} on ${paired.profile.model.slug}`,
+      `intimate staged scene rendering through ${binding.label} on ${route.profile.model.slug}`,
       {
         path: "image_loras",
         // Ids and a number — never the locator, which is the one field on a
         // binding that may carry a credential once the transport completes it.
         context: {
           staging: input.plan.staging?.id ?? null,
-          slug: paired.profile.model.slug,
+          slug: route.profile.model.slug,
           lora: binding.id,
           scale: binding.scale,
         },
       },
     ),
   );
-  return { profile: paired.profile, binding };
+  return { profile: route.profile, binding, provenance: route.provenance };
 }
 
 /** Report one missing leg and fall back to today's render. */

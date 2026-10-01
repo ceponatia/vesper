@@ -114,11 +114,13 @@ function packSelection(): Extract<IdentityPackRenderReferencesResult, { ok: true
 /**
  * One `activeVariantProgram` call over the shared bare-torso cut, varying only
  * the variant kind and the bench route's answer — the two inputs the seam's
- * `intimateReveal` decision is gated on.
+ * `intimateReveal` decision is gated on. A successful route carries the anatomy
+ * LoRA unless `withLora: false` asks for the no-LoRA route a model the
+ * intimate-route policy lists takes.
  */
 function programFor(
   kind: PortraitVariantKind,
-  nsfwRoute: null | { readonly ok: true } | { readonly ok: false; readonly error: string },
+  nsfwRoute: null | { readonly ok: true; readonly withLora?: boolean } | { readonly ok: false; readonly error: string },
 ) {
   return activeVariantProgram({
     character: CHARACTER,
@@ -128,7 +130,19 @@ function programFor(
       nsfwRoute === null
         ? null
         : nsfwRoute.ok
-          ? { ok: true, profile: RESOLVED_PROFILE, binding: NSFW_LORA_BINDING }
+          ? nsfwRoute.withLora === false
+            ? {
+                ok: true,
+                profile: RESOLVED_PROFILE,
+                binding: null,
+                provenance: { lora: null, reason: "no_anatomy_lora_curated" },
+              }
+            : {
+                ok: true,
+                profile: RESOLVED_PROFILE,
+                binding: NSFW_LORA_BINDING,
+                provenance: { lora: NSFW_LORA_BINDING.id, reason: "anatomy_lora" },
+              }
           : { ok: false, error: nsfwRoute.error },
     packSelection: packSelection(),
     input: {
@@ -167,6 +181,19 @@ describe("the nsfw_test bench asks the seam for the anatomy it tests (#430)", ()
     // through no clothing) regardless of the bench route — only the surface
     // detail above is gated on it.
     expect(program.prompt).toMatch(/an ample bust/i);
+  });
+
+  it("asks for the same anatomy on a route with no LoRA — the allowance is the route's, never the weights'", () => {
+    // A model the intimate-route policy lists renders the bench on itself with
+    // no LoRA (owner ruling 2026-10-01). Reveal keyed on a binding instead of
+    // the route would compile that bench as an ordinary variant: the tame
+    // prompt for a render whose whole point is the anatomy.
+    const withLora = compiled(programFor(NSFW_TEST_VARIANT_KIND, { ok: true }));
+    const withoutLora = compiled(programFor(NSFW_TEST_VARIANT_KIND, { ok: true, withLora: false }));
+
+    const facts = withoutLora.subjects.flatMap((subject) => subject.facts);
+    expect(facts.some((fact) => fact.concept === IMAGE_SUBJECT_INTIMATE_ANATOMY_CONCEPT)).toBe(true);
+    expect(withoutLora.prompt).toBe(withLora.prompt);
   });
 
   it("returns null for a FAILED bench route, unchanged from before this fix", () => {
