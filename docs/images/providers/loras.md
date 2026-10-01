@@ -103,7 +103,11 @@ take is one decision, `resolveIntimateRoute` (`server/images/nsfw-lora.ts`), mad
   §The age gate) — keeps `bare` views out of the plan, refuses the `nsfw test` bench before spend,
   and takes a chat scene with any non-adult cast member off the intimate route. A character it
   gates never reaches the route. What it reads is the character: the scene gate checks the cast's
-  characters, and the player's persona is not age-checked (owner ruling 2026-10-01).
+  characters, and the player's persona is not age-checked (owner ruling 2026-10-01). Behind the
+  route, the prompt seam refuses on every lane a subject who fails the same rule and whose coverage
+  reads the chest or groin bare (`image_prompt_program.non_adult_exposed`,
+  [../character-prompts.md](../character-prompts.md) §Refusals the seam adds), since exposure facts
+  are stated whether or not the route is taken.
 - **Provenance.** Every row that took the route — a `bare` view, an `nsfw test` variant, an
   intimate staged scene — records the library id on `meta.lora` only when weights were sent, and
   `meta.intimateRoute` as `{ lora, reason }`: the id or null, and `anatomy_lora`,
