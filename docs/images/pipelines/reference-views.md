@@ -59,7 +59,9 @@ The portrait-variant lane's machinery pointed at a fixed camera
   no prompt text asserts nudity — except the `civitai/qwen-image-2.1` dialect
   (`qwen_21_instruction_edit`), which states it explicitly since this endpoint pairs no anatomy
   LoRA for `bare` (owner ruling 2026-10-01; see [../prompt-programs.md](../prompt-programs.md)
-  §Families).
+  §Families). It does so only on the `bare` view's own route, which passes the intimate reveal
+  behind the age gate; a `clothed` view whose saved outfit leaves the body bare states the
+  exposure facts alone.
 - A `bare` view takes the **intimate route**
   ([../providers/loras.md](../providers/loras.md) §The intimate route), resolved the way the
   `nsfw_test` variant kind resolves it, because the scenes that consume these views take the same

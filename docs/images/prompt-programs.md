@@ -360,7 +360,16 @@ states nudity in words**: no Qwen 2.1 LoRA is generation-enabled on Civitai
 pelvis both reading `bare`, the same threshold `selectReferenceView` uses for
 its `bare` reference-view wardrobe — gets an explicit nudity clause ("naked",
 "nude", "no clothes") alongside the ordinary exposure and intimate-anatomy
-wording, never in place of it and never for a partial undress. Every other
+wording, never in place of it and never for a partial undress. **The clause
+needs the route's permission as well as the coverage** (owner ruling
+2026-10-01): the compile's optional `intimatePermitted` input, which the
+character seam sets from the lane's own intimate reveal — a `bare` reference
+view, an `nsfw test` bench, an intimate scene rung, each behind its age gate.
+Bare coverage on any other route — a minor's wardrobe, a `clothed` view with no
+saved outfit, an ordinary variant or scene — states the exposure sentences and
+nothing more, and a permitted subject with no intimate attributes authored
+still gets the clause. Like the register, `intimatePermitted` is not part of
+the program fingerprint, and every other dialect ignores it. Every other
 dialect leaves nudity to the computed exposure facts alone. It also carries no
 negative channel at all: the probed endpoint's `negativePrompt` field is real
 but is REFUSED by the lane at the blank `cfgScale` every bound profile runs at,

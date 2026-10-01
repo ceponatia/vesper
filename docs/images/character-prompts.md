@@ -686,7 +686,10 @@ anatomy bench).
 Every dialect words these facts and the `subject.exposure` facts beside them —
 and, on every endpoint but one, nothing more. `civitai/qwen-image-2.1` carries
 no anatomy LoRA, so its dialect additionally states nudity in so many words
-once the computed exposure is fully bare
+once the computed exposure is fully bare — on a route that passes
+`intimateReveal`, and only there: the seam hands that same decision to the
+compile as `intimatePermitted`, and bare coverage on any other route states the
+exposure facts alone
 ([prompt-programs.md §Families](prompt-programs.md#families)).
 
 ## Refusals the seam adds
