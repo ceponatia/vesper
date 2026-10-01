@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  IDENTITY_CROP_POLICY_V1,
   identityPackSummaryStatuses,
   imageIdentityPackFailureCodes,
   imageIdentityPackWarningCodes,
 } from "@vesper/image-core";
-import { identityPackCodeCopy, identityPackStatusChip, identityPackStatusHint } from "./identity-pack-copy";
+import {
+  identityCropTooSmallCopy,
+  identityManualCropEnlargementNotice,
+  identityPackCodeCopy,
+  identityPackStatusChip,
+  identityPackStatusHint,
+} from "./identity-pack-copy";
 
 /**
  * The copy map is the ONLY place a stored code becomes English, so "every code has
@@ -29,6 +36,28 @@ describe("identityPackCodeCopy", () => {
     for (const code of ["no_usable_face", "ambiguous_faces", "crop_too_small"] as const) {
       expect(identityPackCodeCopy(code).toLowerCase()).toMatch(/crop|bigger|portrait/);
     }
+  });
+});
+
+describe("identityCropTooSmallCopy (#667)", () => {
+  it("names the actual floor it was measured against", () => {
+    expect(identityCropTooSmallCopy(128)).toContain("128");
+    expect(identityCropTooSmallCopy(256)).toContain("256");
+    expect(identityCropTooSmallCopy(128)).not.toBe(identityCropTooSmallCopy(256));
+  });
+});
+
+describe("identityManualCropEnlargementNotice (#667)", () => {
+  it("discloses the enlargement below the automatic floor", () => {
+    const notice = identityManualCropEnlargementNotice(150);
+    expect(notice).not.toBeNull();
+    expect(notice).toContain("150");
+    expect(notice).toContain(String(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx));
+  });
+
+  it("says nothing at or above the automatic floor", () => {
+    expect(identityManualCropEnlargementNotice(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx)).toBeNull();
+    expect(identityManualCropEnlargementNotice(600)).toBeNull();
   });
 });
 

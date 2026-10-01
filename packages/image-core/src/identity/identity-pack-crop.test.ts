@@ -3,11 +3,13 @@ import {
   deriveDetectorCrop,
   heuristicCropV1,
   identityCropOutputSide,
+  identityManualCropOutputSide,
   isHeuristicEligibleSource,
   normalizedCropToSourcePixels,
   paddingBetween,
   squareSourcePixelCrop,
   validateIdentityCrop,
+  validateManualIdentityCrop,
   type DeriveIdentityCropResult,
   type IdentityCropGeometry,
 } from "./identity-pack-crop";
@@ -309,5 +311,55 @@ describe("output side", () => {
     expect(identityCropOutputSide(1024)).toBe(1024);
     // A 300px crop stays 300px: enlarging it would claim detail the bytes lack.
     expect(identityCropOutputSide(300)).toBe(300);
+  });
+});
+
+describe("manual crop validation (#667)", () => {
+  const source = { width: 768, height: 1024 };
+
+  it("accepts a manual square below the automatic floor, down to the manual minimum", () => {
+    expect(validateManualIdentityCrop({ left: 0, top: 0, width: 128, height: 128 }, source)).toEqual({ ok: true });
+    expect(validateManualIdentityCrop({ left: 0, top: 0, width: 200, height: 200 }, source)).toEqual({ ok: true });
+    // The automatic entry point still refuses the same rectangle.
+    expect(validateIdentityCrop({ left: 0, top: 0, width: 200, height: 200 }, source)).toEqual({
+      ok: false,
+      code: "crop_too_small",
+      reason: "below_minimum",
+    });
+  });
+
+  it("still refuses a square under the manual minimum", () => {
+    expect(validateManualIdentityCrop({ left: 0, top: 0, width: 127, height: 127 }, source)).toEqual({
+      ok: false,
+      code: "crop_too_small",
+      reason: "below_minimum",
+    });
+  });
+
+  it("keeps the same shape and bounds checks as the automatic entry point", () => {
+    expect(validateManualIdentityCrop({ left: 0, top: 0, width: 200, height: 199 }, source)).toEqual({
+      ok: false,
+      code: "invalid_crop",
+      reason: "not_square",
+    });
+    expect(validateManualIdentityCrop({ left: 700, top: 0, width: 200, height: 200 }, source)).toEqual({
+      ok: false,
+      code: "invalid_crop",
+      reason: "out_of_bounds",
+    });
+  });
+});
+
+describe("manual output side (#667)", () => {
+  it("enlarges a manual crop below the automatic floor up to it", () => {
+    expect(identityManualCropOutputSide(128)).toBe(256);
+    expect(identityManualCropOutputSide(200)).toBe(256);
+    expect(identityManualCropOutputSide(255)).toBe(256);
+  });
+
+  it("matches the automatic entry point at or above the automatic floor", () => {
+    expect(identityManualCropOutputSide(256)).toBe(256);
+    expect(identityManualCropOutputSide(546)).toBe(546);
+    expect(identityManualCropOutputSide(2048)).toBe(1024);
   });
 });

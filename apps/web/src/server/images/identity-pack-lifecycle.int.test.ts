@@ -324,10 +324,12 @@ describe.skipIf(!ready)("saveManualIdentityCrop", () => {
       actorUserId: userId,
     };
 
-    // 0.5 × 384 = 192, below the 256px floor.
+    // 0.3 × 384 = 115.2 and 0.225 × 512 = 115.2, both rounding to 115 — square
+    // already, and below the 128px MANUAL floor (#667; the automatic floor is
+    // 256, but a hand-framed square is held to the lower manual minimum).
     const tooSmall = await saveManualIdentityCrop({
       ...request,
-      crop: { space: "normalized", crop: { left: 0.1, top: 0.1, width: 0.5, height: 0.375 } },
+      crop: { space: "normalized", crop: { left: 0.1, top: 0.1, width: 0.3, height: 0.225 } },
     });
     expect(tooSmall.status).toBe("rejected");
     if (tooSmall.status !== "rejected") return;

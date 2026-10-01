@@ -63,7 +63,11 @@ variation*, or the seed itself.
 Below the portrait cards, the **Identity reference** block appears when an accepted image exists
 (`identity-reference-panel.tsx`): a status chip for the character's identity pack plus **Adjust
 face crop**, which opens `identity-crop-dialog.tsx` — a draggable, resizable square over the
-**accepted** portrait with live preview, plain-language warnings, save/retry/reset actions, and (for
+**accepted** portrait, zoomable (slider, +/- buttons, drag-to-pan once zoomed, keyboard-accessible)
+so a small face on a full-figure portrait can still be framed tightly, with live preview,
+plain-language warnings (including a notice when the framed square will be enlarged on save — a
+manual crop may go as small as 128 source pixels, below which it is enlarged to 256),
+save/retry/reset actions, and (for
 admins) the lazily-loaded revision-history and override inspector
 (`identity-pack-inspector.tsx`; [../images/identity-packs.md](../images/identity-packs.md)).
 

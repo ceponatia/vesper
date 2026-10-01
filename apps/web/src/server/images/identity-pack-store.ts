@@ -8,6 +8,7 @@ import {
   IDENTITY_PACK_POLICY_VERSION,
   IDENTITY_PACK_SCHEMA_VERSION,
   identityCropOutputSide,
+  identityManualCropOutputSide,
   type IdentityPackIntrinsicPolicy,
   type ImageIdentityPackFailureCode,
   imageIdentityPackQualitySchema,
@@ -181,6 +182,12 @@ export function readJsonColumn<T>(schema: ZodType<T>, raw: unknown, sink: Diagno
  * persisting it would be persisting a second copy of a derived number that could
  * drift from the file. They resolve only for rows stamped with the CURRENT
  * derivation version, since a future version's ceiling is not this one's.
+ *
+ * A `manual` row's output side is computed via `identityManualCropOutputSide`
+ * rather than `identityCropOutputSide` (#667): a manual crop between the
+ * manual and automatic floors is ENLARGED on encode
+ * (`identity-pack-manual.ts`'s `encodeManualCropEnlarged`), and reporting the
+ * raw crop side here would describe a file the crop no longer matches.
  */
 export function packRowToContract(row: IdentityPackRow, sink?: DiagnosticSink): ImageIdentityPackV1 {
   const crop = readJsonColumn(sourcePixelCropSchema, row.crop, sink, "image_identity_packs.crop_json");
@@ -205,7 +212,9 @@ export function packRowToContract(row: IdentityPackRow, sink?: DiagnosticSink): 
 
   const outputSide =
     !degraded && crop.value && row.faceCropImageId && row.derivationVersion === IDENTITY_PACK_DERIVATION_VERSION
-      ? identityCropOutputSide(crop.value.width, IDENTITY_CROP_POLICY_V1)
+      ? row.method === "manual"
+        ? identityManualCropOutputSide(crop.value.width, IDENTITY_CROP_POLICY_V1)
+        : identityCropOutputSide(crop.value.width, IDENTITY_CROP_POLICY_V1)
       : null;
 
   return {
