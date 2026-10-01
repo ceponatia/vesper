@@ -15,6 +15,7 @@ import {
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
   REFERENCE_VIEW_GENERATION_VERSION,
   type BodyReferenceImage,
+  type BodyReferenceRoutes,
   type ReferenceView,
 } from "@/contracts";
 import { characterChangeContract, characterVariantImageOperation } from "@/contracts/images/character-digest";
@@ -44,6 +45,7 @@ import { toWornInputs } from "./avatar-wardrobe";
 import { loadBodyReferencesForBuild, type LoadedBodyReference } from "./body-reference-store";
 import {
   buildCharacterPromptProgram,
+  characterPromptSendsBodyReferences,
   characterPromptTransport,
   characterPromptUnboundRefusal,
   type CharacterPromptProgram,
@@ -379,6 +381,39 @@ async function resolveBareRoute(profile: ResolvedImageProfile, sink: DiagnosticS
   const route = await resolveIntimateRoute(profile, sink);
   if (!route.ok) return { ok: false, error: `the anatomy LoRA is unavailable (${route.leg}): ${route.message}` };
   return { ok: true, profile: route.profile, binding: route.binding, provenance: route.provenance };
+}
+
+/**
+ * Whether a build started now would SEND body images to dressed and to
+ * undressed views — the profile and the bare route the build itself resolves
+ * (`resolveImageProfileForTask("variant")`, then {@link resolveBareRoute}),
+ * judged by the prompt seam's own rule (`characterPromptSendsBodyReferences`:
+ * the role policy, and a dialect that words the role).
+ *
+ * A fact about the deployment's current image model, not about the character
+ * and not about staleness: an admin who switches the `variant` default to a
+ * model that takes no body image, or a bare view routed to an anatomy-LoRA
+ * model, sends none — and the studio must say so rather than claim the images
+ * are in use. Read once per sheet read, outside the character lock. Never
+ * throws: a route that does not resolve sends nothing, and a read that failed
+ * outright is null — unknown, which the studio says nothing about.
+ */
+export async function referenceViewBodyRoutes(): Promise<BodyReferenceRoutes | null> {
+  // The routes' own diagnostics belong to a build, not to a read of the sheet.
+  const quiet = new DiagnosticCollector();
+  try {
+    const picked = await resolveImageProfileForTask("variant", undefined, quiet);
+    if (picked === null) return { clothed: false, bare: false };
+    const sends = (profile: ResolvedImageProfile): boolean =>
+      characterPromptSendsBodyReferences({ profile, task: "variant", bindingProfileKey: profile.profile.key });
+    const bare = await resolveBareRoute(picked, quiet);
+    return { clothed: sends(picked), bare: bare.ok && sends(bare.profile) };
+  } catch (error) {
+    log.warn("images", "the body-image routes could not be resolved for a sheet read", {
+      error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+    });
+    return null;
+  }
 }
 
 /**

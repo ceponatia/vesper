@@ -843,6 +843,38 @@ function selectRequestAwareAppearance(
   return { subjects: nextSubjects, suppressions: [...suppressions, ...dropped] };
 }
 
+/** Whether a binding's dialect words a `body` slot — the seam's own drop rule. */
+function dialectBindsBodyReferences(binding: ImagePromptProfileBinding): boolean {
+  return imagePromptDialectForBinding(binding)?.bindsBodyReferences === true;
+}
+
+/**
+ * Whether a render on this resolved profile would SEND a body image — the
+ * question Portrait Studio asks before it tells an owner their images are in
+ * use, answered by the same rules a compile applies rather than a second copy:
+ * the binding this seam would resolve must name a dialect that words the role
+ * (it drops one otherwise), and the profile's reference policy must admit the
+ * role — an empty allowlist admits every role, as reference planning reads it,
+ * and a per-role cap of zero admits none. Capacity is not asked: a body image
+ * is an optional reference a full model cuts, which is not "never sent".
+ */
+export function characterPromptSendsBodyReferences(input: {
+  readonly profile: ResolvedImageProfile;
+  readonly task: CharacterPromptTask;
+  readonly bindingProfileKey?: string;
+}): boolean {
+  const binding = activeImagePromptBinding({
+    modelSlug: baseImageModelSlug(input.profile.model.slug),
+    task: input.task,
+    ...(input.bindingProfileKey === undefined ? {} : { profileKey: input.bindingProfileKey }),
+  });
+  if (binding === null || !dialectBindsBodyReferences(binding)) return false;
+  const policy = input.profile.profile.referencePolicy;
+  const allowed = new Set<string>([...policy.allowedRoles, ...policy.requiredRoles]);
+  if (allowed.size > 0 && !allowed.has("body")) return false;
+  return policy.maxPerRole?.body !== 0;
+}
+
 /**
  * Resolve, assemble, compile — the whole semantic path, once.
  *
@@ -931,8 +963,9 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
   // A body image reaches only a dialect that words it; on any other it is
   // dropped HERE, before planning, so neither the prompt nor the payload
   // carries an image the program could not describe honestly.
-  const unworded =
-    dialect?.bindsBodyReferences === true ? [] : input.references.filter((entry) => entry.reference.role === "body");
+  const unworded = dialectBindsBodyReferences(binding)
+    ? []
+    : input.references.filter((entry) => entry.reference.role === "body");
   const supplied = input.references.filter((entry) => !unworded.includes(entry)).map((entry) => entry.reference);
   const planned = planIntentReferences(profile.model, profile.profile.referencePolicy, supplied);
   const sentReferences = [...planned.primary, ...planned.dedicated.flatMap((field) => field.references)];

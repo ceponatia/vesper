@@ -1,5 +1,5 @@
 import { jsonOk, withAuthorizedResource } from "@/server/api";
-import { getBodyReferenceSet, getReferenceViewSet } from "@/server/images";
+import { getBodyReferenceSet, getReferenceViewSet, referenceViewBodyRoutes } from "@/server/images";
 import { ownedCharacter, plannedCount, type OwnedCharacter, type ReferenceViewParams } from "./shared";
 
 /**
@@ -17,7 +17,9 @@ import { ownedCharacter, plannedCount, type OwnedCharacter, type ReferenceViewPa
  *
  * `bodyReferences` is the character's body images — the inputs the views are
  * built from — read beside the set so the studio shows an image change and the
- * views it made out of date in one refresh.
+ * views it made out of date in one refresh. Its `routes` say whether the image
+ * model a build would use right now sends body images to the dressed and to the
+ * undressed views, resolved here, once per read and outside the character lock.
  */
 export const GET = withAuthorizedResource<ReferenceViewParams, OwnedCharacter>(
   "character",
@@ -27,7 +29,7 @@ export const GET = withAuthorizedResource<ReferenceViewParams, OwnedCharacter>(
     return jsonOk({
       set: await getReferenceViewSet(id, user.id),
       planned: await plannedCount(id, user.id),
-      bodyReferences: await getBodyReferenceSet(id, user.id),
+      bodyReferences: { ...(await getBodyReferenceSet(id, user.id)), routes: await referenceViewBodyRoutes() },
     });
   },
   { limit: "read" },

@@ -6,6 +6,7 @@ import {
   bodyReferenceSetKey,
   bodyReferenceSlots,
   bodyReferenceUploadRequestSchema,
+  bodyReferenceUse,
   bodyReferenceWithheld,
   defaultBodyReferenceTag,
   parseBodyReferenceSlot,
@@ -177,5 +178,24 @@ describe("the upload wire", () => {
     expect(bodyReferenceUploadRequestSchema.safeParse({ dataUrl, expectedImageId: null }).success).toBe(false);
     expect(bodyReferenceUploadRequestSchema.safeParse({ dataUrl, tag: "clothed" }).success).toBe(false);
     expect(bodyReferenceUploadRequestSchema.safeParse({ dataUrl, tag: "nude", expectedImageId: null }).success).toBe(false);
+  });
+});
+
+describe("what the studio says an image is used for", () => {
+  it.each([
+    // tag, routes, unused, partial
+    ["clothed", { clothed: true, bare: true }, false, null],
+    ["clothed", { clothed: true, bare: false }, false, null],
+    ["clothed", { clothed: false, bare: true }, true, null],
+    ["unclothed", { clothed: true, bare: true }, false, null],
+    ["unclothed", { clothed: true, bare: false }, false, "clothed_only"],
+    ["unclothed", { clothed: false, bare: true }, false, "bare_only"],
+    ["unclothed", { clothed: false, bare: false }, true, null],
+  ] as const)("a %s image under %o: unused %s, partial %s", (tag, routes, unused, partial) => {
+    expect(bodyReferenceUse(tag, routes)).toEqual({ unused, partial });
+  });
+
+  it("claims nothing when the route could not be read", () => {
+    for (const tag of ["clothed", "unclothed"] as const) expect(bodyReferenceUse(tag, null)).toEqual({ unused: false, partial: null });
   });
 });

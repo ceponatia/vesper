@@ -120,6 +120,7 @@ import {
   buildReferenceViews,
   REFERENCE_VIEW_BODY_REFERENCE_DROPPED,
   REFERENCE_VIEW_UPSTREAM_UNAPPROVED,
+  referenceViewBodyRoutes,
   runReferenceViewBuilds,
 } from "./reference-view-build";
 import { loadConsumableReferenceView, REFERENCE_VIEW_DROPPED_FOR_CAPACITY } from "./reference-view-consume";
@@ -792,5 +793,37 @@ describe("the character's body images", () => {
     expect(bodyImagesSent()).toEqual([]);
     expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ bodyReferenceSet: null });
     expect(reservedMeta().referenceView).not.toHaveProperty("bodyReferences");
+  });
+});
+
+/**
+ * **What the studio is told about the body images' route** (#671): whether a
+ * build started now would send them to dressed and to undressed views, from the
+ * profile and the bare route the build itself resolves, by the prompt seam's own
+ * rule. The implementation this kills tells the owner their images are used on
+ * a model that drops every one of them.
+ */
+describe("the body images' route, as a sheet read reports it", () => {
+  it("sends to every view on the Qwen Image 2.1 default, whose dialect words the role", async () => {
+    mockResolveProfile.mockResolvedValue(QWEN21_VARIANT);
+    expect(await referenceViewBodyRoutes()).toEqual({ clothed: true, bare: true });
+  });
+
+  it("sends to no view when the variant default's dialect cannot word a body image", async () => {
+    mockResolveProfile.mockResolvedValue(QWEN2511_VARIANT);
+    expect(await referenceViewBodyRoutes()).toEqual({ clothed: false, bare: false });
+  });
+
+  it("sends to no view when the profile's policy does not allow the role", async () => {
+    mockResolveProfile.mockResolvedValue({
+      ...QWEN21_VARIANT,
+      profile: { ...QWEN21_VARIANT.profile, referencePolicy: { ...QWEN21_VARIANT.profile.referencePolicy, allowedRoles: ["identity", "style"] } },
+    });
+    expect(await referenceViewBodyRoutes()).toEqual({ clothed: false, bare: false });
+  });
+
+  it("sends to no view when no variant profile resolves", async () => {
+    mockResolveProfile.mockResolvedValue(null);
+    expect(await referenceViewBodyRoutes()).toEqual({ clothed: false, bare: false });
   });
 });

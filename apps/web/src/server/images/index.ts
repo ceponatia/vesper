@@ -183,6 +183,7 @@ export {
   buildReferenceViews,
   REFERENCE_VIEW_BODY_REFERENCE_DROPPED,
   REFERENCE_VIEW_BUILD_FAILED,
+  referenceViewBodyRoutes,
   referenceViewInstruction,
   type BuildReferenceViewsInput,
   type ReferenceViewBuildReport,

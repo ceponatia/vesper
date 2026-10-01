@@ -39,6 +39,7 @@ import {
 } from "@/server/test-support";
 import {
   buildCharacterPromptProgram,
+  characterPromptSendsBodyReferences,
   characterPromptTransport,
   isCharacterPromptCompiled,
   variantChangeOperation,
@@ -1805,5 +1806,37 @@ describe("a body reference through the seam", () => {
       program.keptClaimIds.filter((id) => !id.startsWith("operation.reference.")).sort();
 
     expect(facts(withBody)).toEqual(facts(without));
+  });
+});
+
+/**
+ * `characterPromptSendsBodyReferences` answers BEFORE a render what the seam
+ * would do with a body image on a resolved profile — the studio's "not used"
+ * line reads it. Each row is a compile above's outcome, restated as the
+ * predicate: a disagreement would tell an owner their image is used on a route
+ * that drops it, or hide one that is sent.
+ */
+describe("whether a resolved profile sends body images", () => {
+  const BODY_POLICY = {
+    allowedRoles: ["identity", "style", "body"],
+    requiredRoles: ["identity"],
+    roleOrder: ["identity", "style", "body"],
+  };
+  const sends = (slug: string, policy?: unknown) =>
+    characterPromptSendsBodyReferences({
+      profile: programProfile({ slug, ...(policy === undefined ? {} : { policy }) }),
+      task: "variant",
+      bindingProfileKey: VARIANT_KEY,
+    });
+
+  it.each([
+    ["the Qwen 2.1 dialect under a policy that allows the role", "civitai/qwen-image-2.1", BODY_POLICY, true],
+    ["the Qwen 2.1 dialect under an open policy", "civitai/qwen-image-2.1", undefined, true],
+    ["a policy that does not allow the role", "civitai/qwen-image-2.1", { allowedRoles: ["identity", "style"], requiredRoles: ["identity"] }, false],
+    ["a per-role cap of zero", "civitai/qwen-image-2.1", { ...BODY_POLICY, maxPerRole: { body: 0 } }, false],
+    ["a dialect that cannot word the role, whatever the policy", QWEN_2511_SLUG, BODY_POLICY, false],
+    ["a model with no binding for the task", "test-only/character-prompt-seam-unbound-body", BODY_POLICY, false],
+  ] as const)("%s ⇒ %s", (_label, slug, policy, expected) => {
+    expect(sends(slug, policy)).toBe(expected);
   });
 });

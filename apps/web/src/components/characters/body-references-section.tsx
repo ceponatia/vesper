@@ -4,7 +4,9 @@ import { useId, useState } from "react";
 import {
   bodyReferenceSlots,
   bodyReferenceTags,
+  bodyReferenceUse,
   defaultBodyReferenceTag,
+  type BodyReferenceRoutes,
   type BodyReferenceSet,
   type BodyReferenceSlot,
   type BodyReferenceSummary,
@@ -21,11 +23,15 @@ import { PortraitCropUploadDialog } from "./avatar-upload-dialog";
 import {
   BODY_REFERENCE_BUILDING,
   BODY_REFERENCE_CHANGE_EFFECT,
+  BODY_REFERENCE_NO_ROUTE,
+  BODY_REFERENCE_NOT_USED,
   BODY_REFERENCE_REAL_PERSON_NOTE,
   BODY_REFERENCE_UNCLOTHED_REFUSED,
   BODY_REFERENCE_UNCLOTHED_UNAVAILABLE,
   bodyReferenceSlotLabel,
   bodyReferenceTagCopy,
+  bodyReferenceTagHint,
+  bodyReferenceUseNote,
 } from "./body-reference-copy";
 
 /**
@@ -148,9 +154,12 @@ export function BodyReferencesSection({ characterId, name, body, building, onCha
           Body images
         </h4>
         <p className="text-sm text-paper-400">
-          Optional. Give up to two full-body images and every view is built with them, so the views follow this
-          character&apos;s real body. The face still comes from the accepted portrait.
+          Optional. Give up to two full-body images for the reference views to follow this character&apos;s real
+          body. The face still comes from the accepted portrait.
         </p>
+        {body.routes !== null && !body.routes.clothed && !body.routes.bare ? (
+          <p className="text-xs text-paper-400">{BODY_REFERENCE_NO_ROUTE}</p>
+        ) : null}
         {building ? (
           <p role="status" className="text-xs text-paper-400">
             {BODY_REFERENCE_BUILDING}
@@ -174,8 +183,8 @@ export function BodyReferencesSection({ characterId, name, body, building, onCha
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium text-paper-100">{label}</span>
-                  {image?.withheld ? (
-                    <Tag tone="danger" title={BODY_REFERENCE_UNCLOTHED_REFUSED}>
+                  {image !== undefined && (image.withheld || bodyReferenceUse(image.tag, body.routes).unused) ? (
+                    <Tag tone="danger" title={image.withheld ? BODY_REFERENCE_UNCLOTHED_REFUSED : BODY_REFERENCE_NOT_USED}>
                       not used
                     </Tag>
                   ) : null}
@@ -196,10 +205,11 @@ export function BodyReferencesSection({ characterId, name, body, building, onCha
                       legend={`What ${label.toLowerCase()} shows`}
                       value={image.tag}
                       unclothedAllowed={body.unclothedAllowed}
+                      routes={body.routes}
                       disabled={locked}
                       onChange={(tag) => void retag(image, tag)}
                     />
-                    {image.withheld ? <p className="text-xs leading-relaxed text-danger-300">{BODY_REFERENCE_UNCLOTHED_REFUSED}</p> : null}
+                    <BodyReferenceUseLine image={image} routes={body.routes} />
                   </>
                 ) : (
                   <div className="mt-auto">
@@ -229,6 +239,7 @@ export function BodyReferencesSection({ characterId, name, body, building, onCha
                 legend="This image shows the body"
                 value={upload.tag}
                 unclothedAllowed={body.unclothedAllowed}
+                routes={body.routes}
                 disabled={locked}
                 onChange={(tag) => setUpload({ ...upload, tag })}
               />
@@ -254,6 +265,22 @@ export function BodyReferencesSection({ characterId, name, body, building, onCha
 }
 
 /**
+ * One stored image's use, beside it: withheld by the adult gate, or not taken by
+ * the image model a build would use right now — wholly or for one kind of view.
+ * Nothing when it is used everywhere its tag reaches.
+ */
+function BodyReferenceUseLine({ image, routes }: { image: BodyReferenceSummary; routes: BodyReferenceRoutes | null }) {
+  if (image.withheld) return <p className="text-xs leading-relaxed text-danger-300">{BODY_REFERENCE_UNCLOTHED_REFUSED}</p>;
+  const note = bodyReferenceUseNote(image.tag, routes);
+  if (note === null) return null;
+  return (
+    <p className={bodyReferenceUse(image.tag, routes).unused ? "text-xs leading-relaxed text-danger-300" : "text-xs leading-relaxed text-paper-400"}>
+      {note}
+    </p>
+  );
+}
+
+/**
  * The Clothed / Unclothed choice — native radios, so arrow keys and screen
  * readers get the radio-group behaviour for free. Unclothed is unavailable on
  * a character the adult gate refuses, and says why.
@@ -262,12 +289,14 @@ function BodyReferenceTagChoice({
   legend,
   value,
   unclothedAllowed,
+  routes,
   disabled,
   onChange,
 }: {
   legend: string;
   value: BodyReferenceTag;
   unclothedAllowed: boolean;
+  routes: BodyReferenceRoutes | null;
   disabled: boolean;
   onChange: (tag: BodyReferenceTag) => void;
 }) {
@@ -294,7 +323,7 @@ function BodyReferenceTagChoice({
             />
             <span className="min-w-0">
               <span className="font-medium text-paper-100">{copy.label}</span>
-              <span className="block text-xs text-paper-400">{refused ? BODY_REFERENCE_UNCLOTHED_UNAVAILABLE : copy.hint}</span>
+              <span className="block text-xs text-paper-400">{refused ? BODY_REFERENCE_UNCLOTHED_UNAVAILABLE : bodyReferenceTagHint(tag, routes)}</span>
             </span>
           </label>
         );

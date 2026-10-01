@@ -1,4 +1,4 @@
-import type { BodyReferenceSlot, BodyReferenceTag } from "@/contracts";
+import { bodyReferenceUse, type BodyReferenceRoutes, type BodyReferenceSlot, type BodyReferenceTag } from "@/contracts";
 
 /**
  * The body-image vocabulary in English (#671), on `reference-view-copy.ts`'s
@@ -8,16 +8,45 @@ import type { BodyReferenceSlot, BodyReferenceTag } from "@/contracts";
  */
 
 /** What each tag is called, on the radio and on the image's own chip. */
-export const bodyReferenceTagCopy: Record<BodyReferenceTag, { label: string; hint: string }> = {
-  clothed: {
-    label: "Clothed",
-    hint: "Sent to every dressed view. The outfit still comes from the character's saved outfit.",
-  },
-  unclothed: {
-    label: "Unclothed",
-    hint: "Sent to every view, dressed and undressed. Dressed views put the saved outfit on this body.",
-  },
+export const bodyReferenceTagCopy: Record<BodyReferenceTag, { label: string }> = {
+  clothed: { label: "Clothed" },
+  unclothed: { label: "Unclothed" },
 };
+
+/**
+ * What a tag's image is sent to, said against the image model a build would
+ * use right now (`routes`, null when the read could not tell — then the
+ * routing table alone). Never claims an image is sent where the current route
+ * takes none (`bodyReferenceUse`).
+ */
+export function bodyReferenceTagHint(tag: BodyReferenceTag, routes: BodyReferenceRoutes | null): string {
+  const use = bodyReferenceUse(tag, routes);
+  if (use.unused) return BODY_REFERENCE_NOT_USED;
+  if (tag === "clothed") return "Sent to every dressed view. The outfit still comes from the character's saved outfit.";
+  if (use.partial === "clothed_only") {
+    return "Sent to every dressed view, which puts the saved outfit on this body. The current image model for undressed views takes no body images.";
+  }
+  if (use.partial === "bare_only") {
+    return "Sent to every undressed view. The current image model for dressed views takes no body images.";
+  }
+  return "Sent to every view, dressed and undressed. Dressed views put the saved outfit on this body.";
+}
+
+/** One stored image's use, in a line beside it; null when it is used everywhere its tag reaches. */
+export function bodyReferenceUseNote(tag: BodyReferenceTag, routes: BodyReferenceRoutes | null): string | null {
+  const use = bodyReferenceUse(tag, routes);
+  if (use.unused) return BODY_REFERENCE_NOT_USED;
+  if (use.partial === "clothed_only") return "Not used by undressed views: their current image model takes no body images.";
+  if (use.partial === "bare_only") return "Used by undressed views only: the current image model for dressed views takes no body images.";
+  return null;
+}
+
+/** An image no view it would reach can take, on the current image model. */
+export const BODY_REFERENCE_NOT_USED = "Not used by the current image model: it takes no body images for these views.";
+
+/** Said once above the slots when neither route takes body images. */
+export const BODY_REFERENCE_NO_ROUTE =
+  "The current image model for reference views takes no body images, so any you add are stored but not sent.";
 
 export function bodyReferenceSlotLabel(slot: BodyReferenceSlot): string {
   return `Body image ${String(slot)}`;

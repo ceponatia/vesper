@@ -211,16 +211,53 @@ export type BodyReferenceSummary = z.infer<typeof bodyReferenceSummarySchema>;
  * the reference-view set it travels beside: the area is additive, and a body it
  * cannot read degrades to "no images" rather than failing the sheet.
  */
+/**
+ * Whether the route a build would take right now SENDS body images — to the
+ * dressed views and to the undressed views separately, since an undressed view
+ * may render on a different model (the intimate route). A fact about the
+ * deployment's current image model and its prompt dialect, never part of the
+ * staleness key: a body-image change marks the views out of date whatever this
+ * says, and the studio says when the images are not being used.
+ */
+export const bodyReferenceRoutesSchema = z.object({
+  clothed: z.boolean(),
+  bare: z.boolean(),
+});
+export type BodyReferenceRoutes = z.infer<typeof bodyReferenceRoutesSchema>;
+
 export const bodyReferenceSetSchema = z.object({
   images: z.array(bodyReferenceSummarySchema).max(bodyReferenceSlots.length).catch([]),
   /** The character passes the adult gate, so an `unclothed` image may be added and is sent. */
   unclothedAllowed: z.boolean().catch(false),
   attributes: z.array(bodyReferenceAttributeSchema).catch([]),
+  /**
+   * {@link bodyReferenceRoutesSchema}, as the sheet read resolved it; null when
+   * it was not resolved — a write's own answer, or a read that could not tell.
+   */
+  routes: bodyReferenceRoutesSchema.nullable().catch(null),
 });
 export type BodyReferenceSet = z.infer<typeof bodyReferenceSetSchema>;
 
 export function emptyBodyReferenceSet(): BodyReferenceSet {
-  return { images: [], unclothedAllowed: false, attributes: [] };
+  return { images: [], unclothedAllowed: false, attributes: [], routes: null };
+}
+
+/**
+ * What the studio says about ONE image's use, from its tag and the resolved
+ * routes: `unused` when no view it would be sent to takes body images, and a
+ * one-line note when some do and some do not. PURE, so the wording's rule is
+ * one function the copy and its test share.
+ */
+export function bodyReferenceUse(
+  tag: BodyReferenceTag,
+  routes: BodyReferenceRoutes | null,
+): { readonly unused: boolean; readonly partial: "clothed_only" | "bare_only" | null } {
+  if (routes === null) return { unused: false, partial: null };
+  if (tag === "clothed") return { unused: !routes.clothed, partial: null };
+  if (!routes.clothed && !routes.bare) return { unused: true, partial: null };
+  if (routes.clothed && !routes.bare) return { unused: false, partial: "clothed_only" };
+  if (!routes.clothed && routes.bare) return { unused: false, partial: "bare_only" };
+  return { unused: false, partial: null };
 }
 
 /**

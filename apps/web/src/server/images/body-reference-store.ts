@@ -144,6 +144,8 @@ export function summarizeBodyReferences(rows: readonly BodyReferenceRow[], profi
     }),
     unclothedAllowed: imageAgeAllowsIntimate(profile),
     attributes: bodyReferenceAttributes(profile.attributes),
+    // The route facts are resolved by the sheet read, outside any lock.
+    routes: null,
   };
 }
 
