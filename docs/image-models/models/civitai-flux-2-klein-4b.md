@@ -167,9 +167,14 @@ characters unchanged.
   backed off with jitter, and apply to idempotent metadata or workflow-status
   reads and, up to one retry, the what-if preflight; a paid submission is
   never repeated automatically — not by this transport, and not by the scene
-  chain's own retry, because every failure that can surface once a workflow
-  id exists is a non-automatic disposition (`deliberate`, `never`, or
-  `reconcile`), never `automatic`.
+  chain's own retry. Every failure that can surface once a workflow id
+  exists classifies non-transient to that chain: the ones Civitai's own
+  error vocabulary describes carry a non-automatic disposition (`deliberate`,
+  `never`, or `reconcile`, never `automatic`), and a small set of plain
+  identity/shape failures — a workflow answering with a different id while
+  polling, a shape a submitted or adopted record fails to parse, the
+  mature/yellow retention check — carry no disposition at all but are
+  equally non-transient by their own wording.
 - The what-if preflight and the paid submission share a 120 s per-attempt
   timeout; every other stage keeps a 30 s budget. The submission carries the
   same data-URL references the preflight already validated, in the same
@@ -221,9 +226,10 @@ characters unchanged.
   never sent again to find out. Instead the workflow list is searched,
   read-only, for an item whose `externalId` ends with the submission's own
   key: `GET /v2/consumer/workflows?tags=vesper&fromDate=<the submission's
-  own start time, minus a clock-skew margin of a few minutes>&take=100`,
-  following `next` as `cursor` up to a small page cap. Two rounds run — the
-  first after a short settle delay, the second after a longer wait — because
+  own start time, minus a clock-skew margin of a few minutes>&take=100&hideMatureContent=false`
+  (explicit, since the endpoint defaults it to `true`), following `next` as
+  `cursor` up to a small page cap. Two rounds run — the first after a short
+  settle delay, the second after a longer wait — because
   the provider may still be registering the workflow at the moment of the
   first read. A match is parsed and adopted as the submitted workflow, and
   the ordinary poll, terminal-status, and download path resumes on it
@@ -240,13 +246,22 @@ characters unchanged.
   operator checks the workflow list for that key before starting one
   deliberate replacement.
 - **Every failure that can surface once a workflow id exists — from the
-  submission's own answer, or from the lookup's adoption — is a
-  non-automatic disposition, so it is never retried automatically by this
-  transport or by the scene chain's own same-rung retry.** A scene-chain
-  rerun of that rung would be a second paid submission while the first,
-  already billed, may still finish untracked. This is why an exhausted
-  workflow-status read reports `reconcile` rather than `automatic`, and why
-  `civitai_submit_unconfirmed` is always `deliberate`.
+  submission's own answer, or from the lookup's adoption — classifies
+  non-transient, so it is never retried automatically by this transport or
+  by the scene chain's own same-rung retry.** A scene-chain rerun of that
+  rung would be a second paid submission while the first, already billed,
+  may still finish untracked. The ones Civitai's own error vocabulary
+  describes carry a non-automatic disposition (`deliberate`, `never`, or
+  `reconcile`, never `automatic`); a handful of plain identity/shape
+  failures carry none at all but are equally non-transient by wording. This
+  is why an exhausted workflow-status read reports `reconcile` rather than
+  `automatic`, and why `civitai_submit_unconfirmed` is always `deliberate`.
+  The character-chat selfie lane's own retry — which runs outside the scene
+  chain's same-rung guard — honors this same rule and skips its retry on a
+  non-automatic disposition, a content rejection excepted, since that is
+  classified first. A scene chain FALLBACK to its next rung — a different,
+  reduced-reference request to a different model — is unaffected and still
+  runs; only a rerun of the SAME rung is ruled out.
 
   Measured 2026-10-01 against the live workflow list: a `GET` carrying
   `tags` and `fromDate` answered in 0.3-0.4 s and returned every persisted
