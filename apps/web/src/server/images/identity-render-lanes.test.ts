@@ -386,6 +386,19 @@ describe("scene (chat cast) lane", () => {
       mockConsume.mockResolvedValue(packOk());
       const profile = makeProfile({ attributes: [attr("identity.apparent_age", band, "base")] });
       const subject = member({ profile, ...(bare ? { outfit: "", exposure: laneProbeBareExposure() } : {}) });
+      // The exposure check reads the REALIZED cast (`appliedVisuals` from
+      // `applySceneCastVisual`), never `member.exposure` on its own —
+      // `applySceneCastVisual` only realizes a cut for a subject the resolved
+      // PLAN names (`specKeys`, scene-subject-visual.ts). The suite's own
+      // `beforeEach` default, `emptySceneRenderPlan()`, names nobody
+      // (`focal: null, others: []`), so without this override nothing would
+      // ever be realized and the seam would see an empty cast on every case —
+      // the same reason `character-scene-lora.test.ts`'s own `plan()` fixture
+      // names "Mira" as focal.
+      vi.mocked(composeSceneSpec).mockResolvedValue({
+        ...emptySceneRenderPlan(),
+        focal: { name: subject.name, action: "sitting", outfitSummary: "" },
+      });
       const sink = new DiagnosticCollector();
       await renderCharacterSceneImage({
         characterId: subject.characterId,

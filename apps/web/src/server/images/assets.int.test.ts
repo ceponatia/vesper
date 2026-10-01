@@ -480,7 +480,17 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
     // an accepted canonical portrait `ensureIdentityPack` can derive from, so
     // the render reaches the provider instead of refusing on the pack's own
     // precondition (asserted separately by the next case, below).
-    const characterId = await seedCharacter("Variant Subject");
+    //
+    // An adult `identity.apparent_age` (#663/#664's non-adult exposure seam,
+    // `characterPromptNonAdultExposureRefusal`): this subject still has no
+    // saved outfit, same as before that seam existed, but a profile with no
+    // resolvable age now refuses the whole render before provider spend —
+    // this case's claim is the PROVIDER failure, not the age gate, which the
+    // seam's own suite (`character-prompt-program.test.ts`) owns.
+    const characterId = await seedCharacter(
+      "Variant Subject",
+      makeProfile({ attributes: [attr("identity.apparent_age", "late_twenties")] }),
+    );
     await seedAcceptedPortrait(characterId);
     const sink = new DiagnosticCollector();
 
