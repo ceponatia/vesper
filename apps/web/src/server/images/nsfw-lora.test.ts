@@ -20,6 +20,17 @@ import { DiagnosticCollector } from "@/contracts/diagnostics";
  * `character-scene-lora.test.ts`, `variants.test.ts`,
  * `reference-view-build.test.ts`) prove only their connection to it.
  *
+ * What it kills:
+ *
+ * 1. a policy key that drifts from the provider's own 2.1 slug, which would
+ *    silently send every 2.1 nude render back onto the 2511 pairing;
+ * 2. a listed model's no-LoRA route treated as a refusal (failing every 2.1
+ *    bare view and bench render) or as a degrade (pairing 2511 back in);
+ * 3. a change to the unlisted model's pairing — its legs, its refusal, or a
+ *    diagnostic it starts pushing that each lane already words for itself;
+ * 4. a curated row resolved against the wrong model or version, which would
+ *    refuse a 2.1 anatomy LoRA curated for the hosted checkpoint.
+ *
  * Two collaborators are mocked because they are IO and are tested where they
  * live — the model registry read and the library resolution. The policy lookup
  * is wrapped rather than replaced: every case reads the REAL reviewed table
