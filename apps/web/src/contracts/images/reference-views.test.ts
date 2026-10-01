@@ -300,6 +300,15 @@ describe("what a stored row projects to, and what may be sent to a render", () =
     ["its upstream view was regenerated and re-approved", { upstreamViewId: "up-1", approvedUpstreamId: "up-2" }, "stale", false],
     ["its upstream view has no approved current attempt", { upstreamViewId: "up-1", approvedUpstreamId: null }, "stale", false],
     ["it records no upstream — uploaded, or built before the build order", { upstreamViewId: null, approvedUpstreamId: null }, "approved", true],
+    // The body-image rule (#671): a rendered view stands only while the
+    // character's body-image set is the one it was rendered against, and a row
+    // that records none was rendered against the empty set.
+    ["rendered with no body image, and the character still has none", { method: "rendered", bodyReferenceSet: null, currentBodyReferenceSet: null }, "approved", true],
+    ["rendered before the character's first body image", { method: "rendered", bodyReferenceSet: null, currentBodyReferenceSet: "img-a:clothed" }, "stale", false],
+    ["rendered against the character's body-image set now", { method: "rendered", bodyReferenceSet: "img-a:clothed", currentBodyReferenceSet: "img-a:clothed" }, "approved", true],
+    ["its body image was re-tagged since", { method: "rendered", bodyReferenceSet: "img-a:clothed", currentBodyReferenceSet: "img-a:unclothed" }, "stale", false],
+    ["its body images were all removed since", { method: "rendered", bodyReferenceSet: "img-a:clothed", currentBodyReferenceSet: null }, "stale", false],
+    ["uploaded — no body image was rendered into it", { method: "uploaded", bodyReferenceSet: null, currentBodyReferenceSet: "img-a:clothed" }, "approved", true],
   ];
 
   it.each(cases)("%s ⇒ %s", (_name, patch, state, consumable) => {
@@ -535,6 +544,24 @@ describe("the sheet, projected in build order", () => {
     ]);
     const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: null });
     expect(slotSet(disclosed)).toEqual(slotSet([BACK, LEFT, FRONT_BARE]));
+  });
+
+  it("marks a whole rendered sheet stale when the body images change, rebuilding nothing but the root", () => {
+    const BODY = "img-a:clothed";
+    const rendered = (row: ReferenceViewSlotRow): ReferenceViewSlotRow => ({ ...row, method: "rendered", currentBodyReferenceSet: BODY });
+    const facts = sheet([
+      // Every view rendered before the character's first body image.
+      [ROOT, rendered(approved("front-1"))],
+      [BACK, rendered(approved("back-1", "front-1"))],
+      [FRONT_BARE, rendered(approved("front-bare-1", "front-1"))],
+      [BACK_BARE, rendered(approved("back-bare-1", "back-1"))],
+    ]);
+    for (const view of [ROOT, BACK, FRONT_BARE, BACK_BARE]) {
+      expect(slot(facts, view), slotKeyOf(view)).toMatchObject({ state: "stale", consumable: false });
+    }
+    // Nothing rebuilds by itself; the owner's build starts at the root, and the
+    // rest wait on its approval as they always do.
+    expect(referenceViewsReadyToBuild(projectReferenceViewSlots(facts))).toEqual([ROOT]);
   });
 
   it("never marks a view stale by the upstream rule when it records no upstream", () => {
