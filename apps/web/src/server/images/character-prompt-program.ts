@@ -71,10 +71,10 @@ import {
   QWEN_2511_REFERENCE_AUTHORITY_ASPECTS,
 } from "./packs-qwen-2511";
 import "./packs-qwen-2512-portrait";
-// `civitai/qwen-image-2.1` (#663/#664 slice S2): no profile row binds a model
-// to it yet (owner ruling 2026-09-30/2026-10-01 — the row is an admin Image
-// Generator bench target only), so this import only registers the binding for
-// when one does; nothing resolves it through the profile catalog today.
+// `civitai/qwen-image-2.1`: its `variant-standard` and `scene-standard`
+// profiles are the `variant` and `scene` task defaults (drizzle 0152, owner
+// ruling 2026-10-01), so every default variant, reference view and scene
+// compiles through these bindings.
 import "./packs-qwen-21";
 
 /**
