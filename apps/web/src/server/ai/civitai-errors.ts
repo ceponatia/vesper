@@ -41,9 +41,14 @@ export interface CivitaiFailure {
   /**
    * Whether this failure follows a preflight Vesper already reposted once
    * automatically (#672) — distinct from {@link automaticRetriesExhausted},
-   * whose "read retries" wording belongs to the bounded GET retry only. A
-   * preflight's own disposition always stays `deliberate`: the one automatic
-   * repeat is already spent, and nothing further happens on its own.
+   * whose "read retries" wording belongs to the bounded GET retry only. When
+   * the repeat fails the same transient way — another transport failure, or
+   * another HTTP 429/5xx — the disposition stays `deliberate`: the one
+   * automatic repeat is already spent, and nothing further happens on its
+   * own. A repeat that fails a DIFFERENT way (a plain 4xx, or a 409) reports
+   * that failure's own disposition (`never` or `reconcile`) instead, and this
+   * flag has no effect on the message in that case — {@link messageFor} only
+   * reads it in the `deliberate` branch.
    */
   automaticRetryUsed?: boolean;
   reason?: CivitaiValidationReason;
@@ -103,6 +108,16 @@ export class CivitaiError extends Error implements CivitaiFailure {
   }
 }
 
+/**
+ * The HTTP status band Vesper's bounded GET retry and the preflight's single
+ * automatic retry (#672) both cover: 429, or any 5xx. Exported so the retry
+ * GATE in `requestJson` and the disposition {@link civitaiHttpFailure}
+ * reports cannot drift apart from each other.
+ */
+export function civitaiRetryableStatus(status: number): boolean {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
 export function civitaiHttpFailure(
   status: number,
   stage: CivitaiStage,
@@ -112,7 +127,7 @@ export function civitaiHttpFailure(
   reason?: CivitaiValidationReason,
   automaticRetryUsed = false,
 ): CivitaiError {
-  const retry: CivitaiRetryDisposition = (status === 429 || status >= 500 && status <= 599)
+  const retry: CivitaiRetryDisposition = civitaiRetryableStatus(status)
     ? readOnly ? "automatic" : "deliberate"
     : status === 409
       ? "reconcile"

@@ -166,14 +166,20 @@ characters unchanged.
   network error, an unreadable response body) or an HTTP 429/5xx is POSTed
   again automatically exactly once, with the identical preflight body and its
   `externalId`, after the same jittered backoff as a read retry. Any other
-  4xx — including the 400 `resource_not_enabled` — a malformed JSON body, and
-  a failure surfaced only after a 200 OK (insufficient Buzz, a failed or
-  blocked workflow status, an echo refusal) are never retried. When the repeat
-  also fails, the render fails with its stable code, `retry=deliberate`, and a
-  message saying the automatic retry already ran.
+  4xx — including the 400 `resource_not_enabled` — a 200 OK whose body is not
+  JSON, and a failure surfaced only after a 200 OK (insufficient Buzz, a
+  failed or blocked workflow status, an echo refusal) are never retried; a
+  non-2xx with an unparseable body (an HTML gateway page from a 502/503, say)
+  is judged by status like any other response and is retried if that status
+  is 429/5xx too. When the repeat fails the same transient way — another
+  transport failure, or another 429/5xx — the render fails with its stable
+  code, `retry=deliberate`, and a message saying the automatic retry already
+  ran; a repeat that fails a different way (a plain 4xx, or a 409) reports
+  that failure's own disposition instead.
 
-  Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (`model: "2.1"`,
-  `editImage`, one synthetic 768x1024 jpeg reference), zero-Buzz what-ifs:
+  Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (checkpoint
+  version `3352534`, `model: "2.1"`, `editImage`, one synthetic 768x1024 jpeg
+  reference), zero-Buzz what-ifs:
 
   | Probe                                                        | Latency     |
   | ------------------------------------------------------------ | ----------- |
@@ -186,9 +192,9 @@ characters unchanged.
 
   On Fly v284 (`a544edbe`) the same day, all 8 preflights of one
   reference-view batch failed at 30.4-30.9 s under a uniform 30 s budget,
-  before any paid submit. The slow responses are not explained — provider
-  load and the real uploaded portrait (not probed) both remain open — so the
-  120 s ceiling is headroom over the measured range, not a tuned minimum.
+  before any paid submit. The probes do not reproduce the production
+  latency, so the 120 s ceiling is headroom over the measured range, not a
+  tuned minimum.
 - A `civitai_http_400` whose RFC7807 `errors.messages[]` says a selected
   resource "is not enabled for generation" also carries
   `reason=resource_not_enabled`: the request was well formed, and Civitai will

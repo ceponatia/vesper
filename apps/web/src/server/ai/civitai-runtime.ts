@@ -3,7 +3,7 @@ import type { ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { civitaiApiToken } from "../images/lora-credentials";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -35,14 +35,13 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * Every other stage keeps the 30 s {@link REQUEST_TIMEOUT_MS} budget. On
  * 2026-10-01 all 8 reference-view preflights in one production batch failed
  * together after 30.4-30.9 s against that shared budget, before any paid
- * submit. Zero-Buzz what-if
- * probes against the Qwen Image 2.1 `editImage` body measured the same day
- * ranged 2.1-13.0 s, including concurrent batches of 8 and prompts as long as
- * 2,567 characters — see docs/image-models/models/civitai-flux-2-klein-4b.md
- * §Execution and diagnostics for the full table. This ceiling is headroom
- * over that measured range, not a tuned minimum; the exact cause of the slow
- * prod responses (provider load vs. the real uploaded portrait) was not
- * pinned down (#672).
+ * submit. Zero-Buzz what-if probes against the Qwen Image 2.1 `editImage`
+ * body measured the same day ranged 2.1-13.0 s, including concurrent
+ * batches of 8 and prompts as long as 2,567 characters — see
+ * docs/image-models/models/civitai-flux-2-klein-4b.md §Execution and
+ * diagnostics for the full table and build/version provenance. Those probes
+ * do not reproduce the production latency, so this ceiling is headroom over
+ * the measured range, not a tuned minimum (#672).
  */
 const CIVITAI_PREFLIGHT_TIMEOUT_MS = 120_000;
 const MAX_REFERENCES = 2;
@@ -404,18 +403,16 @@ function errorCodes(value: unknown): string[] {
 const MAX_GET_RETRIES = 2;
 /**
  * How many times the what-if preflight is POSTed again after a transport
- * failure or an HTTP 429/5xx — exactly once, per #672. A plain 4xx (including
- * the 400 `resource_not_enabled`), a malformed JSON body, or any failure
- * surfaced only after a 200 OK (insufficient Buzz, a failed/blocked workflow
- * status, an echo refusal) never reaches this retry: each of those throws
- * before or without consulting it.
+ * failure or an HTTP 429/5xx (`civitaiRetryableStatus`) — exactly once, per
+ * #672. A plain 4xx (including the 400 `resource_not_enabled`), a 200 OK
+ * whose body is not JSON, or any failure surfaced only after a 200 OK
+ * (insufficient Buzz, a failed/blocked workflow status, an echo refusal)
+ * never reaches this retry: each of those throws before or without
+ * consulting it. A non-2xx with an unparseable body (an HTML gateway page
+ * from a 502/503, say) is NOT in that list — it falls through to `value =
+ * null` and is judged, and retried, by status alone like any other response.
  */
 const MAX_PREFLIGHT_RETRIES = 1;
-
-/** Whether an HTTP status is one Vesper's bounded read/preflight retry covers. */
-function isCivitaiRetryableStatus(status: number): boolean {
-  return status === 429 || (status >= 500 && status <= 599);
-}
 
 async function waitForCivitaiRetry(attempt: number, deadline?: number): Promise<boolean> {
   const delay = deadline === undefined ? civitaiGetRetryDelay(attempt) : Math.min(civitaiGetRetryDelay(attempt), deadline - Date.now());
@@ -463,7 +460,7 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
       value = null;
     }
     if (!response.ok) {
-      const retriesLeft = isCivitaiRetryableStatus(response.status) && attempt < maxRetries;
+      const retriesLeft = civitaiRetryableStatus(response.status) && attempt < maxRetries;
       const failure = civitaiHttpFailure(
         response.status, stage, method === "GET", civitaiValidationPaths(value), !retriesLeft,
         response.status === 400 ? civitaiValidationReason(value) : undefined,
