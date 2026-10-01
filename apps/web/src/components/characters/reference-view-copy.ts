@@ -124,6 +124,20 @@ export const referenceViewMethodCopy: Record<ReferenceViewMethod, string> = {
  * comes from the registries and the character's plan, and no surface may spell
  * "eight" or invent its own phrasing for the same event.
  */
+/**
+ * Why some ticked views are left out of a regeneration: each is built from
+ * another ticked view, so it waits for that view's approval and builds then.
+ */
+export function referenceViewSelectionWaitingHint(count: number): string {
+  return count === 1
+    ? "1 selected view is built from another selected view, so it is left out. Approving the new view rebuilds it."
+    : `${String(count)} selected views are built from another selected view, so they are left out. Approving the new view rebuilds them.`;
+}
+
+/** A tile's checkbox while a view it is built from is ticked. */
+export const referenceViewSelectionBlockedHint =
+  "Built from another selected view. It rebuilds when that view is approved.";
+
 export function referenceViewSelectionActionLabel(count: number): string {
   return count === 1 ? "Regenerate 1 selected view" : `Regenerate ${String(count)} selected views`;
 }

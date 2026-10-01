@@ -3,9 +3,12 @@
 import { useState, type SetStateAction } from "react";
 import {
   emptyBodyReferenceSet,
+  referenceViewAncestors,
   referenceViewAngles,
   referenceViewsReadyToBuild,
+  referenceViewsWaitingInBatch,
   referenceViewWardrobeEntries,
+  sameReferenceView,
   type CharacterPortraitAcceptance,
 } from "@/contracts";
 import {
@@ -23,6 +26,8 @@ import {
   referenceViewRebuildQueuedTitle,
   referenceViewRefusalCopy,
   referenceViewSelectionActionLabel,
+  referenceViewSelectionBlockedHint,
+  referenceViewSelectionWaitingHint,
   referenceViewStateCopy,
   referenceViewUploadConfirmLabel,
   referenceViewWaitingCopy,
@@ -213,6 +218,17 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
       !submitted.has(slotKey(view)) &&
       selected.has(slotKey(view)),
   );
+  // The server's batch rule (`referenceViewsWaitingInBatch`): a ticked view built
+  // from another ticked view would render from the attempt this same request
+  // replaces, so it is left out — counted nowhere, charged nowhere — and its new
+  // upstream's approval builds it.
+  const waitingInSelection = referenceViewsWaitingInBatch(selectedViews);
+  const regenerableViews = selectedViews.filter(
+    (view) => !waitingInSelection.some((entry) => sameReferenceView(entry, view)),
+  );
+  /** Whether a view this one is built from is ticked — its checkbox waits on that. */
+  const ancestorSelected = (view: { angle: ReferenceViewAngleId; wardrobe: ReferenceViewWardrobe }): boolean =>
+    referenceViewAncestors(view).some((ancestor) => selectedViews.some((entry) => sameReferenceView(entry, ancestor)));
 
   // What an upload into the open dialog's slot would build — read off the live
   // set, so a poll that changes the dependents changes the disclosed count.
@@ -388,17 +404,22 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
 
       {selectedViews.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-card border border-ink-600 bg-ink-950/40 p-2">
-          <Button
-            size="sm"
-            variant="primary"
-            busy={submitting}
-            onClick={() => void regenerate(selectedViews)}
-          >
-            {referenceViewSelectionActionLabel(selectedViews.length)}
-          </Button>
+          {regenerableViews.length > 0 ? (
+            <Button
+              size="sm"
+              variant="primary"
+              busy={submitting}
+              onClick={() => void regenerate(regenerableViews)}
+            >
+              {referenceViewSelectionActionLabel(regenerableViews.length)}
+            </Button>
+          ) : null}
           <Button size="sm" variant="quiet" onClick={() => setSelected(NO_SLOTS)}>
             Clear selection
           </Button>
+          {waitingInSelection.length > 0 ? (
+            <p className="w-full text-xs text-paper-400">{referenceViewSelectionWaitingHint(waitingInSelection.length)}</p>
+          ) : null}
         </div>
       ) : null}
 
@@ -433,11 +454,17 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     {rebuildable && !slotBuilding ? (
-                      <label className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100">
+                      <label
+                        className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100"
+                        title={ancestorSelected(view) ? referenceViewSelectionBlockedHint : undefined}
+                      >
                         <input
                           type="checkbox"
                           className="accent-accent-500"
-                          checked={selected.has(slot)}
+                          // Unticked and disabled while a view it is built from is
+                          // ticked: one request may not rebuild both.
+                          checked={selected.has(slot) && !ancestorSelected(view)}
+                          disabled={ancestorSelected(view)}
                           aria-label={`Select ${label} for regeneration`}
                           onChange={() =>
                             setSelected((prev) => {

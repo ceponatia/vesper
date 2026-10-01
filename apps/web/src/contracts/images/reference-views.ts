@@ -348,24 +348,56 @@ export function referenceViewDependents(view: ReferenceView): readonly Reference
   });
 }
 
-/** How many upstream hops separate a view from its root. */
-function buildDepth(view: ReferenceView): number {
+/**
+ * Every view this one is built from, nearest first: its upstream, that view's
+ * upstream, and on to the root. Empty for a root view.
+ */
+export function referenceViewAncestors(view: ReferenceView): ReferenceView[] {
   const bound = allReferenceViews().length;
-  let depth = 0;
+  const ancestors: ReferenceView[] = [];
   let upstream = referenceViewUpstream(view);
   // Bounded by the sheet's size, so a registry edit that made the graph cyclic
   // stops here instead of looping; such a view simply never has an approved
   // upstream, and waits.
-  while (upstream !== null && depth < bound) {
-    depth += 1;
+  while (upstream !== null && ancestors.length < bound) {
+    ancestors.push(upstream);
     upstream = referenceViewUpstream(upstream);
   }
-  return depth;
+  return ancestors;
+}
+
+/** Every view built from this one, directly or through another view, in registry order. */
+export function referenceViewDescendants(view: ReferenceView): ReferenceView[] {
+  return allReferenceViews().filter((candidate) =>
+    referenceViewAncestors(candidate).some((ancestor) => sameReferenceView(ancestor, view)),
+  );
 }
 
 /** Every view, each one after the view it is built from; registry order within a level. */
 export function referenceViewBuildOrder(): readonly ReferenceView[] {
-  return [...allReferenceViews()].sort((left, right) => buildDepth(left) - buildDepth(right));
+  return [...allReferenceViews()].sort(
+    (left, right) => referenceViewAncestors(left).length - referenceViewAncestors(right).length,
+  );
+}
+
+/**
+ * The targets of ONE request that are built — directly or through another
+ * view — from another target of that same request.
+ *
+ * Such a target cannot be rendered by that request: its upstream is about to
+ * be replaced by the request's own new attempt, so its worker would either
+ * find no approved upstream and render nothing, or render from the attempt
+ * being superseded and land stale — either way a charge with nothing usable to
+ * show for it. It waits instead, and the new upstream's approval builds it.
+ * The regenerate route refuses a request that names one, and the studio leaves
+ * it out of a selection, by this one rule. PURE.
+ */
+export function referenceViewsWaitingInBatch(targets: readonly ReferenceView[]): ReferenceView[] {
+  return targets
+    .filter((target) =>
+      referenceViewAncestors(target).some((ancestor) => targets.some((other) => sameReferenceView(other, ancestor))),
+    )
+    .map((target) => ({ angle: target.angle, wardrobe: target.wardrobe }));
 }
 
 /**

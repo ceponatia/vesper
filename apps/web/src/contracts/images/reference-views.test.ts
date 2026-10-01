@@ -12,6 +12,7 @@ import {
   REFERENCE_VIEW_GENERATION_VERSION,
   REFERENCE_VIEW_ROOT_ANGLE,
   REFERENCE_VIEW_ROOT_ANGLE_BINDING,
+  referenceViewAncestors,
   referenceViewAngleById,
   referenceViewAngleIds,
   referenceViewAngles,
@@ -19,6 +20,7 @@ import {
   referenceViewBuildsOnApproval,
   referenceViewDependents,
   referenceViewDependentsToBuild,
+  referenceViewDescendants,
   referenceViewFaceVisibility,
   referenceViewFeedbackReasons,
   referenceViewReviewRequestSchema,
@@ -26,6 +28,7 @@ import {
   referenceViewQueueOutcomeSchema,
   referenceViewHistoryVerdict,
   referenceViewsReadyToBuild,
+  referenceViewsWaitingInBatch,
   referenceViewUpstream,
   referenceViewUpstreamBinding,
   referenceViewWardrobeEntries,
@@ -408,6 +411,44 @@ describe("the build order", () => {
  *    queues (the projection after it). Asserted directly below rather than
  *    trusted, because the two are computed at different moments.
  */
+/**
+ * **One request may not rebuild a view and a view built from it** (#670).
+ *
+ * The request replaces the upstream, so the dependent's worker finds either no
+ * approved upstream (a charge for nothing) or the attempt being superseded (a
+ * render that lands stale) — and approving the new upstream then charges it
+ * again. The implementation this kills checks only the sheet's `waitingOn`,
+ * which reads "ready" for both before the request runs, and the transitive case
+ * (the root beside an undressed view two hops down) that a direct-parent check
+ * misses.
+ */
+describe("a batch that names a view and a view built from it", () => {
+  const LEFT: ReferenceView = { angle: "side_left", wardrobe: "clothed" };
+  const LEFT_BARE: ReferenceView = { angle: "side_left", wardrobe: "bare" };
+  const RIGHT: ReferenceView = { angle: "side_right", wardrobe: "clothed" };
+
+  it("holds back every target built from another target, directly or through another view", () => {
+    expect(referenceViewsWaitingInBatch([ROOT, LEFT])).toEqual([LEFT]);
+    expect(referenceViewsWaitingInBatch([LEFT_BARE, ROOT])).toEqual([LEFT_BARE]);
+    expect(referenceViewsWaitingInBatch([ROOT, LEFT, LEFT_BARE])).toEqual([LEFT, LEFT_BARE]);
+  });
+
+  it("holds back nothing when no target is built from another", () => {
+    expect(referenceViewsWaitingInBatch([LEFT, RIGHT])).toEqual([]);
+    expect(referenceViewsWaitingInBatch([LEFT_BARE, RIGHT])).toEqual([]);
+    expect(referenceViewsWaitingInBatch(allReferenceViews().filter((view) => referenceViewUpstream(view) === null))).toEqual([]);
+  });
+
+  it("reads ancestors and descendants off the one build order", () => {
+    expect(referenceViewAncestors(LEFT_BARE)).toEqual([LEFT, ROOT]);
+    expect(referenceViewAncestors(ROOT)).toEqual([]);
+    expect(slotSet(referenceViewDescendants(ROOT))).toEqual(
+      slotSet(allReferenceViews().filter((view) => !sameReferenceView(view, ROOT))),
+    );
+    expect(referenceViewDescendants(LEFT)).toEqual([LEFT_BARE]);
+  });
+});
+
 describe("the sheet, projected in build order", () => {
   const ACCEPTED = "portrait-a";
   const APPROVED_AT = new Date("2026-01-01T00:00:00Z");

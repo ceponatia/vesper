@@ -9,6 +9,7 @@ import {
   referenceViewReviewRequestSchema,
   referenceViewWardrobeById,
   referenceViewWardrobeSchema,
+  referenceViewsWaitingInBatch,
   sameReferenceView,
   type ReferenceView,
   type ReferenceViewQueueOutcome,
@@ -298,7 +299,10 @@ export async function queueReviewDependents(input: {
  *
  * A slot still waiting on its upstream view (`waitingOn`) refuses the whole
  * request the same way, as a 409 `waiting`: it has no approved body to be built
- * from, and it builds by itself when that view is approved.
+ * from, and it builds by itself when that view is approved. So does a slot
+ * built from ANOTHER slot this same request names (`referenceViewsWaitingInBatch`):
+ * the request is about to replace its upstream, so its render could only land
+ * on nothing or on the attempt being superseded — a charge with no usable view.
  */
 export async function regenerateReferenceViews(input: {
   characterId: string;
@@ -328,6 +332,15 @@ export async function regenerateReferenceViews(input: {
     return jsonError(
       "waiting",
       `${named} ${waiting.length === 1 ? "builds" : "build"} from a view that is not approved yet. Approve that view first.`,
+      409,
+    );
+  }
+  const waitingInBatch = referenceViewsWaitingInBatch(targets);
+  if (waitingInBatch.length > 0) {
+    const named = waitingInBatch.map(slotLabel).join("; ");
+    return jsonError(
+      "waiting",
+      `${named} ${waitingInBatch.length === 1 ? "builds" : "build"} from another view in this request. Rebuild and approve that view first; approving it rebuilds the views made from it.`,
       409,
     );
   }

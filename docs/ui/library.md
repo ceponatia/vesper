@@ -109,9 +109,12 @@ identically. The submit action is disabled while a build is live for the charact
 busy-refusal line from the same copy map the tiles read, but the selection can still be assembled
 meanwhile, and only the slots a batch actually claimed read busy. A queued batch clears the
 selection for queued slots and slots the server reports as already busy. Budget and storage
-refusals keep their selections, so the owner never has to tick the same slots twice. N is the size
-of the selection, and every other count on this panel comes from the reference-view registries and
-the character's plan.
+refusals keep their selections, so the owner never has to tick the same slots twice. A tile built
+from a ticked view — directly or through another — has its checkbox unticked and disabled, hinted
+that it rebuilds when that view is approved, and a view ticked before its upstream was is left out
+of the request with a line saying so: one request never rebuilds a view and a view built from it.
+N is the number of views the request will rebuild, and every other count on this panel comes from
+the reference-view registries and the character's plan.
 
 **History** sits with Upload in the **More** menu on every tile that has been attempted, and opens that slot's past
 images (`reference-view-history.tsx`): a dialog over the sheet listing every image the slot has

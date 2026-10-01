@@ -70,6 +70,15 @@ import { sourceContentHashOf } from "./identity-pack-store";
 /** A row whose stored ids no longer resolve against the registry. Dropped, never guessed at. */
 export const REFERENCE_VIEW_UNKNOWN = "images.reference_views.unknown_view";
 
+/**
+ * A queued view did not start because the view it is built from is no longer
+ * approved — regenerated, undone or gone stale since the approval that queued
+ * it. Nothing was reserved or rendered; that view's next approval queues it.
+ * Pushed by the build lane when its read finds no approved upstream, and by the
+ * reservation when the upstream moved after that read.
+ */
+export const REFERENCE_VIEW_UPSTREAM_UNAPPROVED = "images.reference_views.upstream_unapproved";
+
 export type ReferenceViewRow = typeof characterReferenceViews.$inferSelect;
 
 /** The same character lock serializes reservation, review and restoration. */
@@ -867,6 +876,8 @@ export interface ReserveReferenceViewInput {
    * character's set at reservation, under the lock, and recorded on the row.
    */
   bodyReferenceSet?: string | null;
+  /** Where a refusal the worker should hear about is said — the upstream moving under it. */
+  sink?: DiagnosticSink;
 }
 
 /**
@@ -908,7 +919,22 @@ export async function reserveReferenceView(input: ReserveReferenceViewInput): Pr
     let upstreamViewId: string | null = null;
     if (upstream !== null) {
       const approved = approvedUpstreamAttemptId(await getReferenceViewSet(characterId, input.ownerId, undefined, tx), view);
-      if (approved === null || approved !== (input.upstreamViewId ?? null)) return null;
+      if (approved === null || approved !== (input.upstreamViewId ?? null)) {
+        input.sink?.push(
+          diag("warn", REFERENCE_VIEW_UPSTREAM_UNAPPROVED, "the view this one is built from changed before it rendered, so nothing was reserved", {
+            context: {
+              characterId,
+              angle: view.angle,
+              wardrobe: view.wardrobe,
+              upstreamAngle: upstream.angle,
+              upstreamWardrobe: upstream.wardrobe,
+              read: input.upstreamViewId ?? null,
+              approved,
+            },
+          }),
+        );
+        return null;
+      }
       upstreamViewId = approved;
     }
     await tx

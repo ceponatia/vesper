@@ -57,6 +57,7 @@ import {
   failReferenceView,
   finalizeReferenceView,
   readAcceptedPortraitSource,
+  REFERENCE_VIEW_UPSTREAM_UNAPPROVED,
   reserveReferenceView,
 } from "./reference-view-store";
 
@@ -121,12 +122,8 @@ const SCOPE = "images.reference_views";
 /** A view's render failed. The expected instance is a moderated bare view. */
 export const REFERENCE_VIEW_BUILD_FAILED = `${SCOPE}.build_failed`;
 
-/**
- * A queued view did not start because the view it is built from is no longer
- * approved — regenerated, undone or gone stale since the approval that queued
- * it. Nothing was reserved or rendered; that view's next approval queues it.
- */
-export const REFERENCE_VIEW_UPSTREAM_UNAPPROVED = `${SCOPE}.upstream_unapproved`;
+/** Defined beside the reservation, which pushes it too; re-exported for the lane's readers. */
+export { REFERENCE_VIEW_UPSTREAM_UNAPPROVED };
 
 /**
  * A body image this view would have sent did not ride the render: the model's
@@ -515,6 +512,9 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     sourceContentHash: context.sourceContentHash,
     upstreamViewId: upstream?.attemptId ?? null,
     bodyReferenceSet: context.bodyReferenceSet,
+    // An upstream that moved after the read above is refused with its own
+    // diagnostic, so this lane never spends a charge in silence.
+    sink,
   });
   // The character can cross the age gate after the job was admitted, the
   // upstream view can be replaced while this worker waited, and the owner can

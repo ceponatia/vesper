@@ -13,7 +13,8 @@ import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngB
 import { createImageAsset, readImageBytes, saveImageBuffer } from "./asset-storage";
 import { absoluteImagePath } from "./paths";
 import { referenceViewSweepPass } from "./reference-view-maintenance";
-import { claimReferenceViewLeases, currentReferenceViewRow, finalizeReferenceView, getReferenceViewSummary, installUploadedReferenceView, readAcceptedPortraitSource, referenceViewHistoryEntries, reserveReferenceView, restoreReferenceView, reviewReferenceView, withReferenceViewLock, REFERENCE_VIEW_RETENTION_MS } from "./reference-view-store";
+import { claimReferenceViewLeases, currentReferenceViewRow, finalizeReferenceView, getReferenceViewSummary, installUploadedReferenceView, readAcceptedPortraitSource, referenceViewHistoryEntries, reserveReferenceView, restoreReferenceView, reviewReferenceView, withReferenceViewLock, REFERENCE_VIEW_RETENTION_MS, REFERENCE_VIEW_UPSTREAM_UNAPPROVED } from "./reference-view-store";
+import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { uploadReferenceView } from "./reference-view-upload";
 import { loadConsumableReferenceView } from "./reference-view-consume";
 
@@ -349,7 +350,10 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     expect((await reviewReferenceView({ ...state.input, attemptId: state.first.id, expectedRevision: 0, verdict: "approve" })).status)
       .toBe("incompatible");
     const backJob = await state.claimSlot();
-    expect(await reserveReferenceView({ ...state.reserve, jobId: backJob })).toBeNull();
+    // Refused before spend, and said: a worker never loses a charge in silence.
+    const sink = new DiagnosticCollector();
+    expect(await reserveReferenceView({ ...state.reserve, jobId: backJob, sink })).toBeNull();
+    expect(sink.items.map((item) => item.code)).toContain(REFERENCE_VIEW_UPSTREAM_UNAPPROVED);
     expect((await currentReferenceViewRow(state.input.characterId, back))?.id).toBe(state.first.id);
   });
 

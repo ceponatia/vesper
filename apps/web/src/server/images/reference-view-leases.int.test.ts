@@ -352,4 +352,34 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
       (await claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: afterJob, targets: [front] })).claimed,
     ).toEqual([{ ...front, attemptId: null }]);
   });
+
+  // The same door for a request that names a view AND a view built from it
+  // (#670 review). With the front approved, `back` reads ready on the sheet —
+  // only the request itself makes it wait: rebuilding the front replaces the
+  // upstream `back` would render from. Charging both would buy one render that
+  // lands on nothing, then a second charge when the new front is approved.
+  it("refuses a whole regenerate request that names a view and a view built from it, charging nothing", async () => {
+    const state = await fixture();
+    const attempt = await unreviewedFront(state.characterId, state.source);
+    expect((await reviewReferenceView({
+      characterId: state.characterId, ownerId, view: front, attemptId: attempt, expectedRevision: 0, verdict: "approve",
+    })).status).toBe("reviewed");
+    expect(await getReferenceViewSummary(state.characterId, ownerId, back)).toMatchObject({ state: "missing", waitingOn: null });
+    const before = await readDailyUsage(ownerId, "provider_image_day");
+
+    const response = await regenerateReferenceViews({
+      characterId: state.characterId,
+      ownerId,
+      req: routeRequest(state.characterId),
+      user: { id: ownerId },
+      requested: [front, back],
+    });
+    await expectApiError(response, 409, "waiting");
+
+    expect((await readDailyUsage(ownerId, "provider_image_day")).used).toBe(before.used);
+    const afterJob = await job(state.characterId);
+    expect(
+      (await claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: afterJob, targets: [front, back] })).claimed,
+    ).toEqual([{ ...front, attemptId: null }, { ...back, attemptId: null }]);
+  });
 });

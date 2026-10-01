@@ -100,7 +100,10 @@ it.
 - **A view builds only once its upstream view is approved.** On a fresh character the build action
   starts the root alone; every other slot carries `waitingOn` (its upstream slot) and the studio
   shows a waiting state in place of its build and regenerate controls. A regeneration that names a
-  waiting slot is refused whole with a 409 `waiting`, before anything is charged.
+  waiting slot is refused whole with a 409 `waiting`, before anything is charged — and so is one
+  that names a view together with a view built from it, directly or through another
+  (`referenceViewsWaitingInBatch`): the request replaces the upstream that view would render from,
+  so the dependent waits for the new upstream's approval instead of being charged twice.
 - **The upstream view rides the render as an optional identity reference** of the same person,
   after the identity pack's required anchors, so a model with too little capacity drops it like any
   optional reference (`dropped_for_capacity`) rather than refusing the plan. It is read through
@@ -115,7 +118,8 @@ it.
 - **A row records the upstream attempt it was rendered from** (`upstream_view_id`). The worker
   reads the upstream before reserving, and the reservation confirms under the character lock that
   it is still that slot's approved current attempt; otherwise the slot reserves nothing, renders
-  nothing and keeps what it shows (`upstream_unapproved`). A render whose model had no room for the
+  nothing and keeps what it shows, and both the read and the reservation say so
+  (`upstream_unapproved`). A render whose model had no room for the
   upstream records none. The root, an upload, and every row built before the build order existed
   record none, and none of them can go stale by the upstream rule.
 

@@ -556,8 +556,9 @@ paths:
       summary: Rebuild the named slots as one batch
       description: >-
         One plan check, one admission, one charge. A slot the plan withholds refuses the whole
-        request with 404; a slot still waiting on an unapproved upstream view refuses it with 409
-        waiting. Nothing is charged for a refused request.
+        request with 404; a slot still waiting on an unapproved upstream view, or one built from
+        another slot the same request names, refuses it with 409 waiting. Nothing is charged for a
+        refused request.
       x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/regenerate/route.ts
       requestBody:
         required: true
@@ -584,7 +585,9 @@ paths:
                   views: { $ref: '#/components/schemas/ReferenceViewQueueOutcome' }
         '404': { $ref: '#/components/responses/Error' }
         '409':
-          description: not_accepted, or waiting — a named slot's upstream view is not approved.
+          description: >-
+            not_accepted, or waiting — a named slot's upstream view is not approved, or a named slot
+            is built from another named slot.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
