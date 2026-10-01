@@ -105,9 +105,21 @@ export type ImageIdentityPreservation = (typeof imageIdentityPreservationRatings
  * would record a claim nobody made; ordering, not role, is what routes it.
  * It is deliberately not a structural role and carries no planner semantics
  * beyond occupying a numbered primary slot.
+ *
+ * `body` is a full-body image of a person the render also carries an
+ * `identity` reference of, sent for that person's body shape, proportions and
+ * height ALONE — never the face, the backdrop or (on a dressed render) the
+ * clothing. A separate role rather than an `identity` reference with a
+ * qualifying clause, because a dialect's identity lock asks the face, skin
+ * tone and apparent age to agree across EVERY identity slot of a subject, and
+ * a body image the face is not taken from must stay out of that set by
+ * construction. A dialect states whether it can word the role
+ * (`ImagePromptDialectDefinition.bindsBodyReferences`); one that cannot never
+ * receives it.
  */
 export const imageReferenceRoles = [
   "identity",
+  "body",
   "location",
   "style",
   "object",

@@ -405,9 +405,20 @@ vocabulary that produced the image is the only thing that can describe it
 honestly — and it rides on the SLOT rather than the claim, so it cannot be paired
 with the wrong image whatever order the claims resolve in. Unset, every dialect
 compiles byte-identically to what it did before the field existed; the two
-families that name no slots at all ignore it. Today one lane supplies it: a scene
-sending a character's reference view
-([pipelines/reference-views.md](pipelines/reference-views.md) §Consumption and reference ordering).
+families that name no slots at all ignore it. Two lanes supply it, both from the
+reference-view registry: a scene sending a character's reference view
+([pipelines/reference-views.md](pipelines/reference-views.md) §Consumption and reference ordering),
+and a reference view rendered from the approved view it is built from
+([pipelines/reference-views.md](pipelines/reference-views.md) §Build order).
+
+A **`body`** slot is a full-body image of a subject the payload also carries an identity image
+of, sent for that subject's body shape, proportions and height alone
+([pipelines/body-reference-images.md](pipelines/body-reference-images.md)). It carries its
+subject like an identity slot, is never one, and so never joins the identity slots a lock binds.
+A dialect declares whether it words the role (`bindsBodyReferences`); only
+`qwen_21_instruction_edit` does, assigning the face to the subject's identity images and the
+clothing and backdrop to the prompt in the slot's own sentence. A dialect that declares false
+never receives a body slot: the character seam drops the image before planning.
 
 ## Packs and bindings
 

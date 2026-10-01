@@ -288,9 +288,11 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
  * identity face crop, the identity-trial render output, the
  * Advanced Image Lab's control fixtures and experiment renders, the Image
- * Generator's run outputs, and a character's reference views.
+ * Generator's run outputs, a character's reference views, and the full-body
+ * images those views are built from.
  * Their owner may read one — the crop editor, the trial review UI, the lab's
- * fixtures panel and the studio's reference-view grid have to display them — but
+ * fixtures panel, the studio's reference-view grid and its body-image area have
+ * to display them — but
  * they must be absent from every listing, copy, cross-owner read and quota sum:
  *
  * - the character read's portrait strip (`api/characters/[id]/route.ts` GET);
@@ -316,6 +318,7 @@ export const HIDDEN_IMAGE_KINDS = [
   "lab_output",
   "generator_output",
   "reference_view",
+  "body_reference",
 ] as const satisfies readonly ImageKind[];
 
 /**

@@ -4,8 +4,9 @@ info:
   version: 0.1.0
   description: >-
     Authenticated character-library and authoring API. Covers discovery, create/update/delete,
-    cloning, forge drafting, relationship defaults, and the main portrait-generation surface.
-    Deep identity-pack/reference-view operations remain a follow-up for this first pass.
+    cloning, forge drafting, relationship defaults, the main portrait-generation surface, and the
+    reference-view build, review and upload operations. Identity-pack operations and reference-view
+    history and restoration remain a follow-up for this first pass.
 servers:
   - url: /
 x-vesper-auth: Authenticated Vesper user session required.
@@ -14,6 +15,7 @@ tags:
   - name: Authoring
   - name: Relationships
   - name: Portraits
+  - name: Reference views
 paths:
   /api/characters:
     get:
@@ -490,6 +492,329 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/characters/{id}/reference-views:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    get:
+      tags: [Reference views]
+      summary: Read every reference-view slot and how many views a full build would render
+      description: >-
+        A pure read. Every angle × wardrobe slot is reported; a slot the age-gated plan withholds is
+        ineligible. Each slot says whether it waits on its upstream view and what approving it, or
+        uploading into it, would build. The character's body images, the inputs every view is
+        built with, are read beside the sheet.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/route.ts
+      responses:
+        '200':
+          description: The sheet, the planned count and the body images.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [set, planned, bodyReferences]
+                properties:
+                  set: { $ref: '#/components/schemas/ReferenceViewSet' }
+                  planned: { type: integer, minimum: 0 }
+                  bodyReferences: { $ref: '#/components/schemas/BodyReferenceSet' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/reference-views/build:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    post:
+      tags: [Reference views]
+      summary: Build every slot that is ready to build
+      description: >-
+        Claims every planned slot that is missing, failed or stale and whose upstream view is
+        approved — on a fresh character, the front clothed view alone — and charges the daily image
+        budget for exactly the newly claimed slots. Rejected slots are never rebuilt here.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/build/route.ts
+      responses:
+        '200':
+          description: The admission outcome; a refusal is a value, not an error.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [views]
+                properties:
+                  views: { $ref: '#/components/schemas/ReferenceViewQueueOutcome' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: not_accepted — the character has no accepted portrait to build from.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/reference-views/regenerate:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+    post:
+      tags: [Reference views]
+      summary: Rebuild the named slots as one batch
+      description: >-
+        One plan check, one admission, one charge. A slot the plan withholds refuses the whole
+        request with 404; a slot still waiting on an unapproved upstream view, or one built from
+        another slot the same request names, refuses it with 409 waiting. Nothing is charged for a
+        refused request.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/regenerate/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targets]
+              properties:
+                targets:
+                  type: array
+                  minItems: 1
+                  maxItems: 32
+                  items: { $ref: '#/components/schemas/ReferenceViewSlot' }
+      responses:
+        '200':
+          description: The admission outcome.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [views]
+                properties:
+                  views: { $ref: '#/components/schemas/ReferenceViewQueueOutcome' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: >-
+            not_accepted; waiting — a named slot's upstream view is not approved, or a named slot is
+            built from another named slot; or busy — a view built from a named slot is still
+            rendering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/reference-views/{angleId}/{wardrobe}/regenerate:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/ReferenceViewAngleId'
+      - $ref: '#/components/parameters/ReferenceViewWardrobe'
+    post:
+      tags: [Reference views]
+      summary: Rebuild one slot — the one-target form of the batch route
+      x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/[angleId]/[wardrobe]/regenerate/route.ts
+      responses:
+        '200':
+          description: The admission outcome.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [views]
+                properties:
+                  views: { $ref: '#/components/schemas/ReferenceViewQueueOutcome' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: >-
+            not_accepted; waiting — the slot's upstream view is not approved; or busy — a view built
+            from this slot is still rendering.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/reference-views/{angleId}/{wardrobe}/review:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/ReferenceViewAngleId'
+      - $ref: '#/components/parameters/ReferenceViewWardrobe'
+    post:
+      tags: [Reference views]
+      summary: Approve, reject or undo the displayed attempt
+      description: >-
+        Conditional on the displayed attempt id and review revision. An approval is a spending
+        action: once it commits, the views built from this one that are then missing, failed or
+        stale are admitted, charged and queued as one build, reported as dependents. The verdict
+        stands whatever the queue answers. A rejection or an undo queues nothing.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/[angleId]/[wardrobe]/review/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [attemptId, expectedRevision, verdict]
+              properties:
+                attemptId: { type: string, minLength: 1, maxLength: 128 }
+                expectedRevision: { type: integer, minimum: 0 }
+                verdict: { type: string, enum: [approve, reject, undo] }
+                feedback:
+                  type: object
+                  required: [reasons, correction]
+                  properties:
+                    reasons:
+                      type: array
+                      items:
+                        type: string
+                        enum: [wrong_outfit, wrong_angle, identity_mismatch, image_defect]
+                    correction: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: The settled slot and what the write queued downstream.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferenceViewWriteResult' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: >-
+            not_ready, changed, incompatible (including a view whose upstream view was replaced, or a
+            rendered view whose body images have changed since),
+            ineligible, busy (an undo of an approval while a view built from this one is
+            rendering), expired or unavailable.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/reference-views/{angleId}/{wardrobe}/upload:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/ReferenceViewAngleId'
+      - $ref: '#/components/parameters/ReferenceViewWardrobe'
+    post:
+      tags: [Reference views]
+      summary: Replace one slot with an owner-supplied image
+      description: >-
+        Synchronous and model-free; the installed view arrives approved. Because an upload is an
+        approval, the views built from this slot are then queued and charged, reported as
+        dependents.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/[angleId]/[wardrobe]/upload/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataUrl]
+              properties:
+                dataUrl: { type: string, minLength: 1, maxLength: 3000000 }
+      responses:
+        '201':
+          description: The installed slot and what the upload queued downstream.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferenceViewWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: >-
+            not_accepted, busy (this slot, or a view built from it, is building), ineligible or
+            changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/body-references/{slot}:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/BodyReferenceSlot'
+    patch:
+      tags: [Reference views]
+      summary: Re-tag one body image
+      description: >-
+        Names the image the owner saw. Marks the reference views out of date and builds nothing.
+        Tagging an image unclothed for a character below the adult gate is refused.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/body-references/[slot]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag, expectedImageId]
+              properties:
+                tag: { type: string, enum: [clothed, unclothed] }
+                expectedImageId: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: The character's body images after the write.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyReferenceWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: busy (a reference-view build is live), ineligible or changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Reference views]
+      summary: Remove one body image
+      description: >-
+        Retires exactly the image the owner saw; its bytes wait out the retention window. Marks the
+        reference views out of date and builds nothing.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/body-references/[slot]/route.ts
+      parameters:
+        - in: query
+          name: imageId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: The character's body images after the write.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyReferenceWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: busy (a reference-view build is live) or changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/body-references/{slot}/upload:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/BodyReferenceSlot'
+    post:
+      tags: [Reference views]
+      summary: Put an owner-supplied full-body image in one slot
+      description: >-
+        Fills an empty slot (expectedImageId null) or replaces the image the owner saw; the
+        replaced image is retired. Synchronous, model-free and uncharged; marks the reference views
+        out of date and builds nothing. There are two slots, so any other slot is a 404.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/body-references/[slot]/upload/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataUrl, tag, expectedImageId]
+              properties:
+                dataUrl: { type: string, minLength: 1, maxLength: 3000000 }
+                tag: { type: string, enum: [clothed, unclothed] }
+                expectedImageId: { type: [string, 'null'], maxLength: 128 }
+      responses:
+        '201':
+          description: The character's body images after the write.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyReferenceWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: busy (a reference-view build is live), ineligible or changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
 components:
   parameters:
     CharacterId:
@@ -502,6 +827,21 @@ components:
       name: runId
       required: true
       schema: { type: string }
+    ReferenceViewAngleId:
+      in: path
+      name: angleId
+      required: true
+      schema: { type: string, enum: [front_full, back_full, side_left, side_right] }
+    ReferenceViewWardrobe:
+      in: path
+      name: wardrobe
+      required: true
+      schema: { type: string, enum: [clothed, bare] }
+    BodyReferenceSlot:
+      in: path
+      name: slot
+      required: true
+      schema: { type: string, enum: ['1', '2'] }
   responses:
     Error:
       description: Error response.
@@ -681,6 +1021,134 @@ components:
         createdAt: { type: string, format: date-time }
         startedAt: { type: [string, 'null'], format: date-time }
         finishedAt: { type: [string, 'null'], format: date-time }
+    ReferenceViewSlot:
+      type: object
+      required: [angle, wardrobe]
+      properties:
+        angle: { type: string, enum: [front_full, back_full, side_left, side_right] }
+        wardrobe: { type: string, enum: [clothed, bare] }
+    ReferenceViewSummary:
+      type: object
+      required: [angle, wardrobe, state, attemptId, reviewRevision, imageId, consumable, waitingOn, approvalBuilds, uploadBuilds]
+      properties:
+        angle: { type: string, enum: [front_full, back_full, side_left, side_right] }
+        wardrobe: { type: string, enum: [clothed, bare] }
+        state:
+          type: string
+          enum: [missing, pending, unreviewed, approved, rejected, failed, stale, ineligible]
+        attemptId: { type: [string, 'null'] }
+        reviewRevision: { type: integer, minimum: 0 }
+        feedback: { type: [object, 'null'], additionalProperties: true }
+        imageId: { type: [string, 'null'] }
+        method: { type: [string, 'null'] }
+        reviewedAt: { type: [string, 'null'] }
+        failureCode: { type: [string, 'null'] }
+        failureMessage: { type: [string, 'null'] }
+        updatedAt: { type: [string, 'null'] }
+        consumable: { type: boolean }
+        waitingOn:
+          description: The upstream slot this one builds from while that slot has no approved current attempt.
+          oneOf:
+            - $ref: '#/components/schemas/ReferenceViewSlot'
+            - type: 'null'
+        approvalBuilds:
+          type: array
+          description: What approving this slot's current attempt would build now; empty unless unreviewed.
+          items: { $ref: '#/components/schemas/ReferenceViewSlot' }
+        uploadBuilds:
+          type: array
+          description: What installing an upload in this slot would build now.
+          items: { $ref: '#/components/schemas/ReferenceViewSlot' }
+        downstreamBuilding:
+          type: boolean
+          description: >-
+            A view built from this one is building; regenerating, uploading or restoring this slot
+            is refused as busy until it settles.
+        lineageId:
+          type: [string, 'null']
+          description: >-
+            The current attempt's lineage — its own id, or for a restored copy the attempt it
+            copies. A view built from this one records it.
+    BodyReferenceSet:
+      type: object
+      required: [images, unclothedAllowed, attributes, routes]
+      properties:
+        images:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            required: [slot, imageId, tag, withheld, updatedAt]
+            properties:
+              slot: { type: integer, enum: [1, 2] }
+              imageId: { type: string }
+              tag: { type: string, enum: [clothed, unclothed] }
+              withheld: { type: boolean, description: An unclothed image the adult gate keeps from every render. }
+              updatedAt: { type: [string, 'null'] }
+        unclothedAllowed: { type: boolean }
+        attributes:
+          type: array
+          description: The character's build-aspect attributes in the registry's words.
+          items:
+            type: object
+            required: [id, label, value]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              value: { type: string }
+        routes:
+          description: >-
+            Whether the image model a build would use right now sends body images to the dressed
+            and to the undressed views. Null when not resolved — every write's own answer, or a
+            sheet read that could not tell. Never part of staleness.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [clothed, bare]
+              properties:
+                clothed: { type: boolean }
+                bare: { type: boolean }
+    BodyReferenceWriteResult:
+      type: object
+      required: [bodyReferences]
+      properties:
+        bodyReferences: { $ref: '#/components/schemas/BodyReferenceSet' }
+    ReferenceViewSet:
+      type: object
+      required: [acceptedImageId, building, views]
+      properties:
+        acceptedImageId: { type: [string, 'null'] }
+        building: { type: boolean }
+        views:
+          type: array
+          items: { $ref: '#/components/schemas/ReferenceViewSummary' }
+    ReferenceViewQueueOutcome:
+      type: object
+      required: [queued, reason, planned, admitted, targets]
+      properties:
+        queued: { type: boolean }
+        reason: { type: [string, 'null'], enum: [budget, storage, busy, null] }
+        planned: { type: integer, minimum: 0 }
+        admitted: { type: integer, minimum: 0 }
+        targets:
+          type: array
+          maxItems: 32
+          items:
+            allOf:
+              - $ref: '#/components/schemas/ReferenceViewSlot'
+              - type: object
+                required: [state]
+                properties:
+                  state: { type: string, enum: [queued, busy, budget, storage] }
+    ReferenceViewWriteResult:
+      type: object
+      required: [view, dependents]
+      properties:
+        view: { $ref: '#/components/schemas/ReferenceViewSummary' }
+        dependents:
+          description: What the write queued downstream — nothing for a rejection or an undo.
+          allOf:
+            - $ref: '#/components/schemas/ReferenceViewQueueOutcome'
     DecideAuthoringRunRequest:
       type: object
       required: [action, expectedProposalRevision]

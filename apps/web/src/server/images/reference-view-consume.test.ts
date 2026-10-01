@@ -27,15 +27,18 @@ import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
  * only proves that this module reads that verdict rather than recomputing it.
  */
 
-vi.mock("./reference-view-store", () => ({ withLockedReferenceViewSet: vi.fn() }));
+vi.mock("./reference-view-store", () => ({ withLockedReferenceViewSet: vi.fn(), failLostReferenceViewAsset: vi.fn() }));
 
-import { withLockedReferenceViewSet } from "./reference-view-store";
+import { failLostReferenceViewAsset, withLockedReferenceViewSet } from "./reference-view-store";
 import { loadConsumableReferenceView, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
 
 const VIEW = { angle: "back_full", wardrobe: "clothed" } as const;
 const CHARACTER = "chr1";
 const PORTRAIT = "img-portrait";
 const VIEW_ASSET = "img-back-clothed";
+const VIEW_ATTEMPT = "rv-back-clothed-1";
+/** The attempt a restored copy came from — distinct from the attempt id, so the test tells them apart. */
+const VIEW_LINEAGE = "rv-back-clothed-0";
 const readReadyAsset = vi.fn<(imageId: string) => Promise<{ buffer: Buffer; meta: unknown } | null>>();
 
 /** The sheet as the store projects it, with this one slot forced into a state. */
@@ -49,7 +52,7 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         angle: view.angle,
         wardrobe: view.wardrobe,
         state: target ? state : ("missing" as const),
-        attemptId: null,
+        attemptId: target ? VIEW_ATTEMPT : null,
         reviewRevision: 0,
         feedback: null,
         imageId: target ? imageId : null,
@@ -61,6 +64,11 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         // The store's own verdict, which this module must READ rather than
         // re-derive from the state beside it.
         consumable: target && state === "approved",
+        waitingOn: null,
+        approvalBuilds: [],
+        uploadBuilds: [],
+        lineageId: target ? VIEW_LINEAGE : null,
+        downstreamBuilding: false,
       };
     }),
   };
@@ -79,7 +87,7 @@ function project(set: ReferenceViewSetSummary) {
 }
 
 describe("loadConsumableReferenceView", () => {
-  it("hands over an approved view's bytes, its asset id and the portrait behind it", async () => {
+  it("hands over an approved view's bytes, its attempt and asset ids and the portrait behind it", async () => {
     project(sheet("approved"));
     const sink = new DiagnosticCollector();
 
@@ -92,6 +100,11 @@ describe("loadConsumableReferenceView", () => {
 
     expect(loaded).toEqual({
       ok: true,
+      // The attempt a view built FROM this one records as its upstream.
+      attemptId: VIEW_ATTEMPT,
+      // What a view built FROM this one records: the lineage, so a restored copy
+      // still counts as the attempt it copies.
+      lineageId: VIEW_LINEAGE,
       imageId: VIEW_ASSET,
       buffer: Buffer.from("view-bytes"),
       // The accepted portrait IS the view's source — that equality is the
@@ -173,5 +186,17 @@ describe("loadConsumableReferenceView", () => {
 
     expect(loaded).toEqual({ ok: false, reason: "missing_bytes" });
     expectDiagnostic(sink, REFERENCE_VIEW_UNAVAILABLE);
+    // ...and hands the asset to the image sweep's transition, so an approved
+    // view whose file is gone stops reading approved and the views built from
+    // it stop being charged for an upstream that cannot be sent.
+    expect(failLostReferenceViewAsset).toHaveBeenCalledWith(VIEW_ASSET, "user1");
+  });
+
+  it("settles nothing when the view was sent", async () => {
+    project(sheet("approved"));
+
+    await loadConsumableReferenceView({ ownerId: "user1", characterId: CHARACTER, view: VIEW });
+
+    expect(failLostReferenceViewAsset).not.toHaveBeenCalled();
   });
 });

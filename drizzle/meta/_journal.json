@@ -1072,6 +1072,34 @@
       "when": 1790866800000,
       "tag": "0152_civitai-qwen-image-2-1-defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1790878926666,
+      "tag": "0153_reference-view-upstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1790881210207,
+      "tag": "0154_character-body-references",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1790881270207,
+      "tag": "0155_variant-body-reference-role",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1790884004399,
+      "tag": "0156_reference-view-origin",
+      "breakpoints": true
     }
   ]
 }

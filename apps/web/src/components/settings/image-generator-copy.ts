@@ -45,6 +45,7 @@ export function imageGeneratorStatusChip(status: ImageGeneratorRunStatus): { lab
  */
 const ROLE_LABELS: Record<ImageReferenceRole, string> = {
   identity: "identity",
+  body: "body",
   location: "location",
   style: "style",
   object: "object",

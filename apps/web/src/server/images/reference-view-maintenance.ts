@@ -3,6 +3,7 @@ import { images } from "../db";
 import { log } from "@/server/log";
 import { purgeImagesWhere } from "./asset-deletion";
 import { registerReferenceViewMaintenance } from "./asset-lifecycle-hooks";
+import { deleteRetiredBodyReferenceRows, retiredBodyReferenceRows } from "./body-reference-store";
 import {
   REFERENCE_VIEW_RETENTION_MS,
   clearReferenceViewAssetPointers,
@@ -68,19 +69,36 @@ export interface ReferenceViewSweepOptions {
  */
 export async function referenceViewSweepPass(options: ReferenceViewSweepOptions = {}): Promise<Record<string, number>> {
   const now = options.now ?? new Date();
+  const cutoff = new Date(now.getTime() - REFERENCE_VIEW_RETENTION_MS);
+  const limit = options.limit ?? REFERENCE_VIEW_CLEANUP_LIMIT;
   const referenceViewAttemptsReconciled = await reconcileOrphanedReferenceViewAttempts(now);
-  const rows = await retiredReferenceViewAssets(
-    new Date(now.getTime() - REFERENCE_VIEW_RETENTION_MS),
-    options.limit ?? REFERENCE_VIEW_CLEANUP_LIMIT,
-  );
-  if (rows.length === 0) return { referenceViewAssetsPurged: 0, referenceViewAttemptsReconciled };
+  const bodyReferenceAssetsPurged = await bodyReferenceSweep(cutoff, limit);
+  const rows = await retiredReferenceViewAssets(cutoff, limit);
+  if (rows.length === 0) return { referenceViewAssetsPurged: 0, referenceViewAttemptsReconciled, bodyReferenceAssetsPurged };
 
   const imageIds = [...new Set(rows.flatMap((row) => (row.imageId === null ? [] : [row.imageId])))];
   // Kind-guarded like every purge here, so a pointer that somehow named another
   // class of asset can only ever delete nothing.
   const removed = await purgeImagesWhere(and(inArray(images.id, imageIds), eq(images.kind, "reference_view")));
   await clearReferenceViewAssetPointers(rows.map((row) => row.id));
-  return { referenceViewAssetsPurged: removed, referenceViewAttemptsReconciled };
+  return { referenceViewAssetsPurged: removed, referenceViewAttemptsReconciled, bodyReferenceAssetsPurged };
+}
+
+/**
+ * The body images' half of the same retention (#671): a replaced or removed
+ * body image's row is retired, and once it has outlived the window its asset is
+ * purged — kind-guarded to `body_reference` — and the row goes with it (the
+ * image FK cascades; the explicit delete is the backstop for a row whose image
+ * the guard would not touch). A current body image is never touched: it is the
+ * one the views are built from.
+ */
+async function bodyReferenceSweep(cutoff: Date, limit: number): Promise<number> {
+  const retired = await retiredBodyReferenceRows(cutoff, limit);
+  if (retired.length === 0) return 0;
+  const imageIds = [...new Set(retired.map((row) => row.imageId))];
+  const removed = await purgeImagesWhere(and(inArray(images.id, imageIds), eq(images.kind, "body_reference")));
+  await deleteRetiredBodyReferenceRows(retired.map((row) => row.id));
+  return removed;
 }
 
 /**

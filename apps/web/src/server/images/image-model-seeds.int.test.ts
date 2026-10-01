@@ -2430,6 +2430,43 @@ const QWEN21_VARIANT_PROFILE_ID = "imgprfcivqwen21variantaa";
 const QWEN21_SCENE_PROFILE_ID = "imgprfcivqwen21sceneaaaa";
 const QWEN21_PROFILE_IDS = [QWEN21_VARIANT_PROFILE_ID, QWEN21_SCENE_PROFILE_ID];
 
+/** 0155 appends the `body` role to the 2.1 variant profile's reference policy. */
+const QWEN21_BODY_ROLE_MIGRATION_TAG = "0155_variant-body-reference-role";
+const QWEN21_BODY_ROLE_MIGRATION_FILE = `drizzle/${QWEN21_BODY_ROLE_MIGRATION_TAG}.sql`;
+/** The variant policy exactly as 0152 seeds it — 0155's guard. */
+const QWEN21_VARIANT_POLICY_0152 = {
+  allowedRoles: ["identity", "style"],
+  requiredRoles: ["identity"],
+  roleOrder: ["identity", "style"],
+};
+/** The variant policy once 0155 has run: `body` appended to the allowed and ranked roles. */
+const QWEN21_VARIANT_POLICY_0155 = {
+  allowedRoles: ["identity", "style", "body"],
+  requiredRoles: ["identity"],
+  roleOrder: ["identity", "style", "body"],
+};
+
+/** 0155's one shipped statement. */
+function qwen21BodyRoleStatements(): Promise<string[]> {
+  return migrationStatements(QWEN21_BODY_ROLE_MIGRATION_FILE, `'${CIVITAI_QWEN_IMAGE_21_SLUG}'`);
+}
+
+/** Re-run 0155's own statement. Idempotent by its guard — that is what is under test. */
+async function reapplyQwen21BodyRole(): Promise<void> {
+  const statements = await qwen21BodyRoleStatements();
+  expect(statements, `${QWEN21_BODY_ROLE_MIGRATION_FILE} must carry one statement`).toHaveLength(1);
+  for (const statement of statements) await db().execute(sql.raw(statement));
+}
+
+/** The 2.1 variant profile's stored reference policy, raw. */
+async function qwen21VariantPolicy(): Promise<unknown> {
+  const [row] = await db()
+    .select({ referencePolicy: imageModelProfiles.referencePolicy })
+    .from(imageModelProfiles)
+    .where(eq(imageModelProfiles.id, QWEN21_VARIANT_PROFILE_ID));
+  return row?.referencePolicy;
+}
+
 /** 0151's shipped INSERT statement. */
 function qwen21SeedStatements(): Promise<string[]> {
   return insertStatements(QWEN21_MIGRATION_FILE);
@@ -2461,20 +2498,22 @@ async function reapplyQwen21Defaults(): Promise<void> {
 
 /**
  * Put the migrated state back: drop whatever a case planted for the slug (the
- * delete cascades the row's profiles), re-seed it through 0151, and promote it
+ * delete cascades the row's profiles), re-seed it through 0151, promote it
  * through 0152, whose clear also takes the default back from any row a case
- * handed it to.
+ * handed it to, and allow the body role through 0155.
  */
 async function restoreQwen21Row(): Promise<void> {
-  // Read and validate both files BEFORE deleting anything, so an unreadable
+  // Read and validate every file BEFORE deleting anything, so an unreadable
   // migration fails this suite instead of stripping the registry row and the
   // variant and scene defaults with it.
   expect(await qwen21SeedStatements(), `${QWEN21_MIGRATION_FILE} must carry one INSERT`).toHaveLength(1);
   expect(await qwen21DefaultsStatements(), `${QWEN21_DEFAULTS_MIGRATION_FILE} must carry four statements`)
     .toHaveLength(4);
+  expect(await qwen21BodyRoleStatements(), `${QWEN21_BODY_ROLE_MIGRATION_FILE} must carry one statement`).toHaveLength(1);
   await db().delete(imageModels).where(eq(imageModels.slug, CIVITAI_QWEN_IMAGE_21_SLUG));
   await reapplyQwen21Seed();
   await reapplyQwen21Defaults();
+  await reapplyQwen21BodyRole();
 }
 
 /**
@@ -2496,7 +2535,11 @@ async function qwen21Intact(): Promise<boolean> {
         eq(imageModelProfiles.enabled, true),
       ),
     );
-  return defaults.length === QWEN21_PROFILE_IDS.length;
+  if (defaults.length !== QWEN21_PROFILE_IDS.length) return false;
+  // A replay of 0152 alone writes its own variant policy back, without 0155's
+  // role. Read structurally: jsonb does not keep the key order it was given.
+  const policy = (await qwen21VariantPolicy()) as { allowedRoles?: unknown } | undefined;
+  return Array.isArray(policy?.allowedRoles) && policy.allowedRoles.includes("body");
 }
 
 /**
@@ -2730,16 +2773,26 @@ describe.skipIf(!ready)("migration 0152 — Civitai Qwen Image 2.1 becomes the v
     expect(await enabledDefaults("scene")).toEqual([defaults.scene]);
   }
 
-  it("re-running the shipped statements against the migrated state changes nothing, timestamps included", async () => {
-    const modelRow = () => db().select().from(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
-    const modelBefore = await modelRow();
-    const profilesBefore = await variantAndSceneProfiles();
-    expect(modelBefore).toHaveLength(1);
+  it("re-running the shipped statements against the state it left changes nothing, timestamps included", async () => {
+    try {
+      // The state 0152 left: 0155 has since appended the body role to the
+      // variant policy, and 0152's own upsert would write its policy back.
+      await db()
+        .update(imageModelProfiles)
+        .set({ referencePolicy: QWEN21_VARIANT_POLICY_0152 })
+        .where(eq(imageModelProfiles.id, QWEN21_VARIANT_PROFILE_ID));
+      const modelRow = () => db().select().from(imageModels).where(eq(imageModels.id, QWEN21_MODEL_ID));
+      const modelBefore = await modelRow();
+      const profilesBefore = await variantAndSceneProfiles();
+      expect(modelBefore).toHaveLength(1);
 
-    await reapplyQwen21Defaults();
+      await reapplyQwen21Defaults();
 
-    expect(await modelRow()).toEqual(modelBefore);
-    expect(await variantAndSceneProfiles()).toEqual(profilesBefore);
+      expect(await modelRow()).toEqual(modelBefore);
+      expect(await variantAndSceneProfiles()).toEqual(profilesBefore);
+    } finally {
+      await reapplyQwen21BodyRole();
+    }
   });
 
   it("rates the row, opens its variant and scene surfaces, and drops the bench-only warning", async () => {
@@ -2801,12 +2854,13 @@ describe.skipIf(!ready)("migration 0152 — Civitai Qwen Image 2.1 becomes the v
 
     // Key, task, operation and strategy are the coordinates the prompt binding
     // table matches; a variant needs the identity reference, a scene needs none.
+    // This reads the LIVE row, so the variant policy carries 0155's body role.
     expect(profiles.find((profile) => profile.id === QWEN21_VARIANT_PROFILE_ID)).toMatchObject({
       key: "variant-standard",
       task: "variant",
       operation: "edit",
       promptStrategy: "instruction_edit",
-      referencePolicy: { allowedRoles: ["identity", "style"], requiredRoles: ["identity"], roleOrder: ["identity", "style"] },
+      referencePolicy: QWEN21_VARIANT_POLICY_0155,
     });
     expect(profiles.find((profile) => profile.id === QWEN21_SCENE_PROFILE_ID)).toMatchObject({
       key: "scene-standard",
@@ -2913,6 +2967,100 @@ describe.skipIf(!ready)("migration 0152 — Civitai Qwen Image 2.1 becomes the v
 
     // Data only: a snapshot here would claim a `schema.ts` change this file does not make.
     const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0152_snapshot.json"), "utf8").then(
+      () => false,
+      () => true,
+    );
+    expect(missing).toBe(true);
+  });
+});
+
+/**
+ * 0155 lets the reference-view build's full-body images reach the dialect that
+ * words them, by appending the `body` role to the 2.1 variant profile's
+ * reference policy. Only a migrated database can answer the guard: the policy
+ * moves only from exactly what 0152 wrote, so an operator's own edit and a
+ * re-pinned row are left alone, and a replay changes nothing.
+ */
+describe.skipIf(!ready)("migration 0155 — the body role on the Qwen Image 2.1 variant profile", () => {
+  afterAll(async () => {
+    if (!ready) return;
+    if (!(await qwen21Intact())) await restoreQwen21Row();
+  });
+
+  /** Every variant and scene profile row, raw and id-ordered, timestamps included. */
+  function variantAndSceneProfiles() {
+    return db()
+      .select()
+      .from(imageModelProfiles)
+      .where(inArray(imageModelProfiles.task, ["variant", "scene"]))
+      .orderBy(imageModelProfiles.id);
+  }
+
+  async function setVariantPolicy(policy: unknown): Promise<void> {
+    await db().update(imageModelProfiles).set({ referencePolicy: policy }).where(eq(imageModelProfiles.id, QWEN21_VARIANT_PROFILE_ID));
+  }
+
+  it("allows the body role on the variant profile, after the roles it already ranks, and on nothing else", async () => {
+    const sink = new DiagnosticCollector();
+    const profiles = (await loadImageModelProfiles(sink)).filter((profile) => profile.imageModelId === QWEN21_MODEL_ID);
+    expect(sink.items.filter((item) => item.code === "image_profile.row_invalid")).toEqual([]);
+
+    expect(profiles.find((profile) => profile.id === QWEN21_VARIANT_PROFILE_ID)?.referencePolicy).toMatchObject(
+      QWEN21_VARIANT_POLICY_0155,
+    );
+    // The scene profile never carries a body image.
+    expect(profiles.find((profile) => profile.id === QWEN21_SCENE_PROFILE_ID)?.referencePolicy.allowedRoles).not.toContain("body");
+  });
+
+  it("re-running the shipped statement against the migrated state changes nothing, timestamps included", async () => {
+    const before = await variantAndSceneProfiles();
+
+    await reapplyQwen21BodyRole();
+
+    expect(await variantAndSceneProfiles()).toEqual(before);
+  });
+
+  it("keeps a policy an operator has edited since 0152", async () => {
+    const edited = { allowedRoles: ["identity"], requiredRoles: ["identity"], roleOrder: ["identity"] };
+    try {
+      await setVariantPolicy(edited);
+
+      await reapplyQwen21BodyRole();
+
+      expect(await qwen21VariantPolicy()).toEqual(edited);
+    } finally {
+      await setVariantPolicy(QWEN21_VARIANT_POLICY_0152);
+      await reapplyQwen21BodyRole();
+    }
+  });
+
+  it("changes nothing when the row is re-pinned to a version with no lane", async () => {
+    try {
+      await setVariantPolicy(QWEN21_VARIANT_POLICY_0152);
+      await db().update(imageModels).set({ probedVersionId: "operator-repin" }).where(eq(imageModels.id, QWEN21_MODEL_ID));
+
+      await reapplyQwen21BodyRole();
+
+      expect(await qwen21VariantPolicy()).toEqual(QWEN21_VARIANT_POLICY_0152);
+    } finally {
+      await restoreQwen21Row();
+    }
+  });
+
+  it("is the unique ordered entry after every earlier migration and carries no schema snapshot", async () => {
+    const journal = JSON.parse(
+      await readFile(path.join(process.cwd(), "drizzle", "meta", "_journal.json"), "utf8"),
+    ) as { entries: { idx: number; tag: string; when: number; breakpoints: boolean }[] };
+
+    const entry = journal.entries.find((candidate) => candidate.tag === QWEN21_BODY_ROLE_MIGRATION_TAG);
+    expect(entry).toMatchObject({ idx: 155, breakpoints: true });
+    expect(journal.entries.filter((candidate) => candidate.idx === 155)).toHaveLength(1);
+    // The migrator skips an entry stamped below one a database already applied.
+    const earlier = journal.entries.filter((candidate) => candidate.idx < 155).map((candidate) => candidate.when);
+    expect(Math.max(...earlier)).toBeLessThan(entry?.when ?? 0);
+
+    // Data only: a snapshot here would claim a `schema.ts` change this file does not make.
+    const missing = await readFile(path.join(process.cwd(), "drizzle", "meta", "0155_snapshot.json"), "utf8").then(
       () => false,
       () => true,
     );

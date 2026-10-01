@@ -9,14 +9,16 @@ import {
 } from "../shared";
 
 /**
- * Build every slot that is not currently a good view of the accepted portrait —
- * the explicit paid action an owner reaches for after accepting or changing a
- * portrait.
+ * Build every slot that is not currently a good view of the accepted portrait
+ * and may be built now — the explicit paid action an owner reaches for after
+ * accepting or changing a portrait.
  *
- * It renders the slots whose projected state is `missing`, `failed` or `stale`,
- * and deliberately NOT `rejected`: the owner said no to that view, and a bulk
- * build must not quietly re-render something they turned down. A rejected slot
- * is rebuilt one at a time, through its own regenerate.
+ * It renders the slots whose projected state is `missing`, `failed` or `stale`
+ * and whose upstream view is approved (on a fresh character, the front clothed
+ * view alone; the rest build as each upstream is approved), and deliberately
+ * NOT `rejected`: the owner said no to that view, and a bulk build must not
+ * quietly re-render something they turned down. A rejected slot is rebuilt one
+ * at a time, through its own regenerate.
  *
  * 409 `not_accepted` is the one hard refusal here — with no accepted portrait
  * there is nothing to derive from, and that is a state the studio has to be able

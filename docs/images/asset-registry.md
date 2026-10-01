@@ -50,8 +50,9 @@ portrait studio's full rows come from the owner-strict `GET /api/characters/:id/
 
 ## Hidden kinds
 
-`identity_face_crop`, `identity_trial_output`, `lab_control`, `lab_output`, `generator_output`, and
-`reference_view` rows are **internal derived assets, not user content**. `HIDDEN_IMAGE_KINDS` keeps them out of:
+`identity_face_crop`, `identity_trial_output`, `lab_control`, `lab_output`, `generator_output`,
+`reference_view` and `body_reference` rows are **internal operational assets, not user content**.
+`HIDDEN_IMAGE_KINDS` keeps them out of:
 
 - the portrait strip and the portrait studio's routes;
 - the Gallery;
@@ -72,7 +73,12 @@ never the `meta.source` value, which is the entire authorization boundary betwee
 `reference_view` is one slot of a character's reference view set
 ([pipelines/reference-views.md](pipelines/reference-views.md)), hard-deleted with its character by
 the same Gallery-listable survival rule, and read by its owner through the ordinary owner file
-route, which is how the portrait studio's view grid displays it.
+route, which is how the portrait studio's view grid displays it; `body_reference` is one of a
+character's full-body images, an owner-supplied input to the reference-view build and never a
+scene's reference ([pipelines/body-reference-images.md](pipelines/body-reference-images.md)),
+hard-deleted with its character by the same rule, collected by the reference-view sweep a week
+after it is replaced or removed, and read by its owner through the owner file route, which is how
+Portrait Studio's body-image area displays it.
 
 ## Deletes
 

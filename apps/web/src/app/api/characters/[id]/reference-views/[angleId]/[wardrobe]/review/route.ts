@@ -4,13 +4,23 @@ import { reviewReferenceView } from "@/server/images";
 import {
   ownedCharacter,
   parseSlot,
+  queueReviewDependents,
   referenceViewReviewBodySchema,
   referenceViewWriteMessages,
   type OwnedCharacter,
   type ReferenceViewSlotParams,
 } from "../../../shared";
 
-/** Conditional verdict or undo on the displayed attempt. */
+/**
+ * Conditional verdict or undo on the displayed attempt.
+ *
+ * An approval is a spending action: once it commits, the views built from this
+ * one that are now missing, failed or stale are admitted, charged and queued as
+ * one build (`queueReviewDependents`), and `dependents` reports that outcome per
+ * target. The verdict stands whatever the queue answers — a budget refusal is
+ * reported there, never as a failed review. A rejection or an undo queues
+ * nothing.
+ */
 export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharacter>(
   "character",
   ownedCharacter,
@@ -31,7 +41,15 @@ export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharact
     if (result.status !== "reviewed") {
       return jsonError(result.status, referenceViewWriteMessages[result.status], result.status === "not_found" ? 404 : 409);
     }
-    return jsonOk({ view: result.view });
+    const dependents = await queueReviewDependents({
+      characterId: params.id,
+      ownerId: user.id,
+      req,
+      user,
+      view: slot,
+      trigger: body.value.verdict,
+    });
+    return jsonOk({ view: result.view, dependents });
   },
   { limit: "write" },
 );

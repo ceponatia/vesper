@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { charactersApi } from "@/lib/client/api";
 import {
   AVATAR_HEIGHT,
@@ -34,6 +34,13 @@ export interface PortraitCropUploadDialogProps {
   description: string;
   confirmLabel: string;
   onUpload: (dataUrl: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+  /**
+   * What the caller shows BESIDE the image in both stages — the body-image
+   * upload's tag choice, attribute summary and real-person note. Beside it on a
+   * wide screen, below it on a phone; absent, the dialog is exactly the plain
+   * crop flow every other caller uses.
+   */
+  aside?: ReactNode;
 }
 
 /** The crop window's on-screen size (3:4, matches AVATAR_WIDTH:AVATAR_HEIGHT). */
@@ -62,7 +69,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * no adjustment reproduces the old fast path. No model runs, so this works in
  * demo mode and offline.
  */
-export function PortraitCropUploadDialog({ open, onClose, name, title, description, confirmLabel, onUpload }: PortraitCropUploadDialogProps) {
+export function PortraitCropUploadDialog({ open, onClose, name, title, description, confirmLabel, onUpload, aside }: PortraitCropUploadDialogProps) {
   const [stage, setStage] = useState<Stage>("pick");
   const [image, setImage] = useState<LoadedImage | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -251,8 +258,20 @@ export function PortraitCropUploadDialog({ open, onClose, name, title, descripti
       </Button>
     );
 
+  // The caller's aside sits beside the stage's own content on a wide screen and
+  // below it on a phone; the dialog widens only when there is an aside to hold.
+  const withAside = (content: ReactNode) =>
+    aside === undefined ? (
+      content
+    ) : (
+      <div className="flex flex-col gap-5 md:flex-row md:items-start">
+        <div className="min-w-0 flex-1">{content}</div>
+        <div className="flex min-w-0 flex-col gap-4 md:w-80 md:shrink-0">{aside}</div>
+      </div>
+    );
+
   return (
-    <Dialog open={open} onClose={requestClose} title={title} footer={footer}>
+    <Dialog open={open} onClose={requestClose} title={title} footer={footer} size={aside === undefined ? "md" : "xl"}>
       <input
         ref={fileInputRef}
         type="file"
@@ -264,7 +283,7 @@ export function PortraitCropUploadDialog({ open, onClose, name, title, descripti
         }}
       />
 
-      {stage === "pick" ? (
+      {withAside(stage === "pick" ? (
         <div className="flex flex-col gap-4">
           <p>{description}</p>
           <p>
@@ -345,7 +364,7 @@ export function PortraitCropUploadDialog({ open, onClose, name, title, descripti
           <p className="text-xs text-paper-500">Drag to reposition · scroll or use the slider to zoom — out past the edges to fit more in.</p>
           {error ? <p className="text-xs text-danger-400">{error}</p> : null}
         </div>
-      )}
+      ))}
     </Dialog>
   );
 }
