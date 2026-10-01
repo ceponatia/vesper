@@ -20,9 +20,12 @@ export type CivitaiCode = `civitai_http_${number}`
    * The paid submit's own answer was lost (transport failure, an HTTP 5xx,
    * or a 2xx body that was not JSON or not a usable workflow) and a bounded
    * read-only lookup by its externalId, across the workflow list, did not
-   * resolve it either — never found a match, or could not be read itself
-   * (#673). `messageFor` renders which of those two applies from
-   * {@link CivitaiFailure.lookupReadable}.
+   * resolve it either — never found a match in any round whose read
+   * actually succeeded, or every round's read itself failed (#673).
+   * `messageFor` renders which of those applies, and whether the search was
+   * incomplete, from {@link CivitaiFailure.roundsSearched},
+   * {@link CivitaiFailure.roundsAttempted}, and
+   * {@link CivitaiFailure.pageCapHit}.
    */
   | "civitai_submit_unconfirmed"
   /**
@@ -74,10 +77,17 @@ export interface CivitaiFailure {
   originalCode?: CivitaiCode;
   /** `civitai_submit_unconfirmed` only: the submit's own externalId, so an operator can match it against the workflow list later (#673). */
   externalId?: string;
-  /** `civitai_submit_unconfirmed` only: false when EVERY lookup round's own read failed — distinct from a round that read cleanly and simply found no match. */
-  lookupReadable?: boolean;
-  /** `civitai_submit_unconfirmed` only: how many lookup rounds ran before giving up. */
+  /**
+   * `civitai_submit_unconfirmed` only: how many lookup rounds' OWN READS
+   * actually succeeded — never the configured round count when a round's
+   * read itself failed (second correction round, #673). 0 means every round
+   * was unreadable.
+   */
   roundsSearched?: number;
+  /** `civitai_submit_unconfirmed` only: how many rounds were configured to run, for comparison against `roundsSearched`. */
+  roundsAttempted?: number;
+  /** `civitai_submit_unconfirmed` only: true when some round that did read hit its page cap without a match, so the search may not have covered the whole list. */
+  pageCapHit?: boolean;
 }
 
 const VALIDATION_REASON_TEXT: Record<CivitaiValidationReason, string> = {
@@ -98,10 +108,19 @@ function messageFor(failure: CivitaiFailure): string {
   if (failure.code === "civitai_submit_unconfirmed") {
     const original = failure.originalCode ?? "unknown";
     const externalId = failure.externalId ?? "unknown";
-    const rounds = failure.roundsSearched ?? 0;
-    const outcome = failure.lookupReadable === false
+    const searched = failure.roundsSearched ?? 0;
+    const attempted = failure.roundsAttempted ?? searched;
+    // Second correction round (#673): `searched` counts only rounds whose OWN
+    // read succeeded, never the configured round count regardless of whether
+    // every round could actually be read. When fewer rounds could be read
+    // than were attempted, the wording says so rather than implying a full
+    // search; when a round that WAS read hit its page cap without a match,
+    // that is named too, since the list may hold more than this search saw.
+    const outcome = searched === 0
       ? "the lookup itself could not be read"
-      : `no workflow in the list carried this externalId after ${String(rounds)} lookup round${rounds === 1 ? "" : "s"}`;
+      : `no workflow in the list carried this externalId after ${String(searched)} lookup round${searched === 1 ? "" : "s"}`
+        + (searched < attempted ? " that could be read" : "")
+        + (failure.pageCapHit ? " (the list was only searched up to its page cap)" : "");
     return `Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as ${original}, and ${outcome}. Civitai may still accept, or may already have accepted, this workflow under externalId=${externalId} — check the workflow list for it before starting one deliberate replacement.`;
   }
   const reason = failure.reason ? ` reason=${failure.reason}: ${VALIDATION_REASON_TEXT[failure.reason]}` : "";
@@ -130,8 +149,9 @@ export class CivitaiError extends Error implements CivitaiFailure {
   readonly reason: CivitaiValidationReason | undefined;
   readonly originalCode: CivitaiCode | undefined;
   readonly externalId: string | undefined;
-  readonly lookupReadable: boolean | undefined;
   readonly roundsSearched: number | undefined;
+  readonly roundsAttempted: number | undefined;
+  readonly pageCapHit: boolean | undefined;
 
   constructor(failure: CivitaiFailure) {
     super(messageFor(failure));
@@ -146,8 +166,9 @@ export class CivitaiError extends Error implements CivitaiFailure {
     this.reason = failure.reason;
     this.originalCode = failure.originalCode;
     this.externalId = failure.externalId;
-    this.lookupReadable = failure.lookupReadable;
     this.roundsSearched = failure.roundsSearched;
+    this.roundsAttempted = failure.roundsAttempted;
+    this.pageCapHit = failure.pageCapHit;
   }
 }
 
@@ -224,8 +245,9 @@ export function civitaiTransportFailure(
 export function civitaiSubmitUnconfirmedFailure(
   originalCode: CivitaiCode,
   externalId: string,
-  lookupReadable: boolean,
   roundsSearched: number,
+  roundsAttempted: number,
+  pageCapHit = false,
 ): CivitaiError {
   return new CivitaiError({
     code: "civitai_submit_unconfirmed",
@@ -233,8 +255,9 @@ export function civitaiSubmitUnconfirmedFailure(
     stage: "submit",
     originalCode,
     externalId,
-    lookupReadable,
     roundsSearched,
+    roundsAttempted,
+    pageCapHit,
   });
 }
 

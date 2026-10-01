@@ -708,35 +708,59 @@ async function delay(ms: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+/** What one page-bounded pass over the workflow list found. */
+interface LookupPageResult {
+  /** The matching raw item, unparsed, or null when this pass carried no match. */
+  match: JsonRecord | null;
+  /**
+   * True when every page up to {@link CIVITAI_SUBMIT_LOOKUP_MAX_PAGES} carried
+   * no match AND the last one still offered a `next` cursor — the list may
+   * hold more than this pass looked at. False when the list ended naturally
+   * (`next` null or empty) before the cap, with or without a match.
+   */
+  pageCapHit: boolean;
+}
+
 /**
  * One page-bounded pass over the workflow list, searching for an item whose
  * `externalId` ends with `-${the submit's own externalId}` — the shape the
  * provider stores it in, `"<civitaiUserId>-<the client value Vesper sent>"`
  * (#673 live-evidence comment). A v4 UUID client value makes a suffix match
- * unambiguous. Returns the matching raw item, or null when every page up to
- * {@link CIVITAI_SUBMIT_LOOKUP_MAX_PAGES} carried no match. Throws if a page
- * could not be read at all (after `requestJson`'s own bounded retry), so the
- * caller can tell "absent" apart from "unreadable".
+ * unambiguous. Throws if a page could not be read at all (after
+ * `requestJson`'s own bounded retry), so the caller can tell "absent" apart
+ * from "unreadable".
  */
 async function lookupSubmitPage(
   token: string,
   externalIdSuffix: string,
   fromDateIso: string,
-): Promise<JsonRecord | null> {
+): Promise<LookupPageResult> {
   let cursor: string | undefined;
   for (let page = 0; page < CIVITAI_SUBMIT_LOOKUP_MAX_PAGES; page += 1) {
-    const url = `${WORKFLOWS_URL}?tags=vesper&fromDate=${encodeURIComponent(fromDateIso)}&take=${String(CIVITAI_SUBMIT_LOOKUP_PAGE_TAKE)}${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
+    // `hideMatureContent=false` is explicit, not relied on as a default
+    // (second correction round, #673): the provider OpenAPI defaults
+    // `hideMatureContent=true` on this LIST endpoint specifically. A live
+    // probe (zero Buzz) found a mature workflow's `available` flag and id
+    // still true/present under that default, with only its signed `url`
+    // withheld — Vesper never reads that `url` (#630) — so adoption was not
+    // actually broken; this removes the dependency on that default rather
+    // than on having verified its current behavior is harmless forever.
+    const url = `${WORKFLOWS_URL}?tags=vesper&fromDate=${encodeURIComponent(fromDateIso)}&take=${String(CIVITAI_SUBMIT_LOOKUP_PAGE_TAKE)}&hideMatureContent=false${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
     const body = asRecord(await requestJson(url, { method: "GET" }, token, "submit_lookup"));
     for (const item of asArray(body?.items)) {
       const record = asRecord(item);
       const externalId = asString(record?.externalId);
-      if (externalId?.endsWith(externalIdSuffix)) return record;
+      if (externalId?.endsWith(externalIdSuffix)) return { match: record, pageCapHit: false };
     }
     const next = asString(body?.next);
-    if (next === null) return null;
+    // Treated the same as a literal `next: null`: an empty string names no
+    // cursor to follow, so it is the end of the list, not a page to re-fetch.
+    if (next === null || next === "") return { match: null, pageCapHit: false };
     cursor = next;
   }
-  return null;
+  // Every page up to the cap carried no match, and the last one still had a
+  // `next` cursor this pass declined to follow further.
+  return { match: null, pageCapHit: true };
 }
 
 /** What the lost-submit-answer lookup concluded. */
@@ -751,8 +775,15 @@ interface SubmitLookupOutcome {
    * key", which is false when one does.
    */
   match: JsonRecord | null;
-  /** False only when EVERY round's own read itself failed — never when a round read cleanly and simply found nothing. */
-  readable: boolean;
+  /**
+   * How many rounds' own reads actually SUCCEEDED (regardless of finding a
+   * match) — never just the configured round count, which would overstate
+   * the search when a round's read itself failed (second correction round,
+   * #673). 0 means every round's read failed outright.
+   */
+  roundsSearched: number;
+  /** True when some round that did read hit its page cap without a match, so the search did not necessarily cover the whole list. */
+  pageCapHit: boolean;
 }
 
 /**
@@ -770,31 +801,33 @@ async function lookupUnconfirmedSubmit(
 ): Promise<SubmitLookupOutcome> {
   const fromDateIso = new Date(submitStartedAt - CIVITAI_SUBMIT_LOOKUP_CLOCK_SKEW_MS).toISOString();
   const suffix = `-${submitExternalId}`;
-  let readable = false;
+  let roundsSearched = 0;
+  let pageCapHit = false;
   for (let round = 0; round < CIVITAI_SUBMIT_LOOKUP_ROUNDS; round += 1) {
     await delay(round === 0 ? CIVITAI_SUBMIT_LOOKUP_SETTLE_DELAY_MS : CIVITAI_SUBMIT_LOOKUP_ROUND_INTERVAL_MS);
-    let match: JsonRecord | null;
+    let page: LookupPageResult;
     try {
-      match = await lookupSubmitPage(token, suffix, fromDateIso);
+      page = await lookupSubmitPage(token, suffix, fromDateIso);
     } catch {
       // This round's read itself failed (transport failure, or every bounded
-      // GET retry inside requestJson exhausted). `readable` stays whatever an
-      // earlier round already proved; the next round gets its own chance.
-      // Unchanged by this correction: a FOUND item's parse failure never
-      // reaches this catch, because parsing no longer happens in this loop.
+      // GET retry inside requestJson exhausted). `roundsSearched` stays
+      // whatever earlier rounds already proved; the next round gets its own
+      // chance. Unchanged by the first correction: a FOUND item's parse
+      // failure never reaches this catch, because parsing no longer happens
+      // in this loop.
       continue;
     }
-    readable = true;
-    if (match) {
+    roundsSearched += 1;
+    if (page.pageCapHit) pageCapHit = true;
+    if (page.match) {
       log.warn("ai.civitai", "found a workflow by externalId lookup after the submit's own answer was lost", {
-        workflowId: asString(match.id), externalId: submitExternalId,
+        workflowId: asString(page.match.id), externalId: submitExternalId,
       });
-      return { match, readable: true };
+      return { match: page.match, roundsSearched, pageCapHit };
     }
   }
-  return { match: null, readable };
+  return { match: null, roundsSearched, pageCapHit };
 }
-
 /**
  * One output location this download is allowed to visit, or a refusal.
  *
@@ -993,6 +1026,13 @@ export async function runCivitaiLane(
     let result: CivitaiWorkflowResult;
     try {
       const submitted = await sendWorkflow(submitWorkflow, token, false);
+      // Recorded BEFORE parsing (second correction round, #673), restoring
+      // the pre-#673 contract (see `ReplicateImageResult.predictionId`,
+      // packages/image-replicate/src/prediction.ts): a 2xx body that carries
+      // an id but fails to parse must keep that id even though `result` is
+      // never assigned here — including if the lookup below then cannot
+      // read the list and the render ends as civitai_submit_unconfirmed.
+      predictionId = asString(asRecord(submitted)?.id) ?? undefined;
       result = parseCivitaiWorkflow(submitted, "Civitai generation submit");
       predictionId = result.id;
     } catch (submitError) {
@@ -1008,11 +1048,13 @@ export async function runCivitaiLane(
       const originalCode = submitError instanceof CivitaiError ? submitError.code : "civitai_submit_response_invalid";
       const outcome = await lookupUnconfirmedSubmit(token, submitWorkflow.externalId, submitStartedAt);
       if (!outcome.match) {
-        throw civitaiSubmitUnconfirmedFailure(originalCode, submitWorkflow.externalId, outcome.readable, CIVITAI_SUBMIT_LOOKUP_ROUNDS);
+        throw civitaiSubmitUnconfirmedFailure(
+          originalCode, submitWorkflow.externalId, outcome.roundsSearched, CIVITAI_SUBMIT_LOOKUP_ROUNDS, outcome.pageCapHit,
+        );
       }
-      // The id is recorded BEFORE parsing (#673 correction): a found item
-      // whose shape then fails `parseCivitaiWorkflow` must surface as that
-      // parse failure, with this id attached, never as
+      // The id is recorded BEFORE parsing (first correction round, #673): a
+      // found item whose shape then fails `parseCivitaiWorkflow` must
+      // surface as that parse failure, with this id attached, never as
       // civitai_submit_unconfirmed — the workflow WAS found, so "no workflow
       // carries this key" would be false.
       predictionId = asString(outcome.match.id) ?? undefined;

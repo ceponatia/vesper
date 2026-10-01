@@ -207,21 +207,44 @@ describe("Civitai error contract", () => {
    * the workflow, so this is never retried automatically.
    */
   it("names the original code and externalId on civitai_submit_unconfirmed, and distinguishes not-found from unreadable", () => {
-    const notFound = civitaiSubmitUnconfirmedFailure("civitai_http_504", "99a07779-ef94-43b6-bbc4-bc4ab9005f75", true, 2);
+    const notFound = civitaiSubmitUnconfirmedFailure("civitai_http_504", "99a07779-ef94-43b6-bbc4-bc4ab9005f75", 2, 2);
     expect(notFound).toMatchObject({ code: "civitai_submit_unconfirmed", retry: "deliberate", stage: "submit" });
     expect(notFound.message).toContain("civitai_submit_unconfirmed; retry=deliberate");
     expect(notFound.message).toContain("civitai_http_504");
     expect(notFound.message).toContain("99a07779-ef94-43b6-bbc4-bc4ab9005f75");
     expect(notFound.message).toContain("2 lookup rounds");
     expect(notFound.message).not.toContain("could not be read");
+    expect(notFound.message).not.toContain("that could be read");
+    expect(notFound.message).not.toContain("page cap");
     expect(notFound.message).toContain("check the workflow list for it before starting one deliberate replacement");
 
-    const unreadable = civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "99a07779-ef94-43b6-bbc4-bc4ab9005f75", false, 2);
+    const unreadable = civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "99a07779-ef94-43b6-bbc4-bc4ab9005f75", 0, 2);
     expect(unreadable.message).toContain("civitai_transport_failure");
     expect(unreadable.message).toContain("the lookup itself could not be read");
     expect(unreadable.message).not.toContain("no workflow in the list carried this externalId");
 
-    expect(civitaiSubmitUnconfirmedFailure("civitai_malformed_response", "x", true, 1).message).toContain("1 lookup round.");
+    expect(civitaiSubmitUnconfirmedFailure("civitai_malformed_response", "x", 1, 1).message).toContain("1 lookup round.");
+  });
+
+  /**
+   * PROTECTS (second correction round, #673): `roundsSearched` counts only
+   * rounds whose own read succeeded, never the configured round count
+   * regardless of whether a round could actually be read, and a round that
+   * hit its page cap without a match is named so the operator does not read
+   * "not found" as "exhaustively searched."
+   */
+  it("qualifies civitai_submit_unconfirmed when the search was incomplete", () => {
+    // One of two configured rounds could be read: "that could be read"
+    // distinguishes this from the fully-searched case above.
+    const partial = civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "ext-id", 1, 2);
+    expect(partial.message).toContain("1 lookup round that could be read");
+    expect(partial.message).not.toContain("could not be read");
+
+    // Both rounds read, but one hit its page cap without a match.
+    const capped = civitaiSubmitUnconfirmedFailure("civitai_http_504", "ext-id", 2, 2, true);
+    expect(capped.message).toContain("2 lookup rounds");
+    expect(capped.message).not.toContain("that could be read");
+    expect(capped.message).toContain("the list was only searched up to its page cap");
   });
 
   /**
@@ -237,8 +260,8 @@ describe("Civitai error contract", () => {
    */
   it("classifies every post-submit failure as non-transient (civitai_submit_unconfirmed included)", () => {
     const postSubmitFailures = [
-      civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "ext-id", true, 2).message,
-      civitaiSubmitUnconfirmedFailure("civitai_http_504", "ext-id", false, 2).message,
+      civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "ext-id", 2, 2).message,
+      civitaiSubmitUnconfirmedFailure("civitai_http_504", "ext-id", 0, 2).message,
       civitaiHttpFailure(503, "workflow_status", true, [], true).message,
       civitaiTransportFailure("workflow_status", true, true).message,
       civitaiAsyncFailure("expired", ["timeout"]).message, // civitai_async_timeout
