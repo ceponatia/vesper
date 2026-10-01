@@ -148,6 +148,11 @@ describe.skipIf(!ready)("saveManualIdentityCrop — the manual floor (#667)", ()
     expect(result.pack.faceDetail.crop).toEqual({ left: 77, top: 102, width: 154, height: 154 });
     expect(result.pack.faceDetail.crop?.width).toBeLessThan(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx);
     expect(result.pack.faceDetail.imageId).not.toBeNull();
+    // `packRowToContract` must report the ENLARGED side here (256), not the raw
+    // 154px crop — reporting the crop's own side would describe a file this
+    // revision's bytes no longer match (identity-pack-store.ts, #667 follow-up).
+    expect(result.pack.faceDetail.outputWidth).toBe(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx);
+    expect(result.pack.faceDetail.outputHeight).toBe(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx);
 
     // The ENCODED bytes are enlarged to the automatic floor (256), not left at
     // the framed 154px — "a little softer, but framed on the face".
@@ -187,7 +192,7 @@ describe.skipIf(!ready)("saveManualIdentityCrop — the manual floor (#667)", ()
     expect(summary?.pack?.revision).toBe(editor.revision);
   });
 
-  it("accepts a manual square exactly at the manual floor, with no enlargement notice needed above it", async () => {
+  it("accepts a manual square exactly at the manual floor, still enlarged (128 < the automatic floor)", async () => {
     const subject = await preparedSubject("At Manual Floor Subject");
     const editor = await editorState(subject.characterId);
 
@@ -206,5 +211,33 @@ describe.skipIf(!ready)("saveManualIdentityCrop — the manual floor (#667)", ()
     expect(result.status).toBe("ready");
     if (result.status !== "ready") return;
     expect(result.pack.faceDetail.crop).toEqual({ left: 100, top: 100, width: side, height: side });
+    // 128 is still below the automatic floor (256), so it is still enlarged —
+    // only a crop AT OR ABOVE 256 would report its own side here.
+    expect(result.pack.faceDetail.outputWidth).toBe(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx);
+    expect(result.pack.faceDetail.outputHeight).toBe(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx);
+  });
+
+  it("reports a manual crop's OWN side when it is already at or above the automatic floor", async () => {
+    const subject = await preparedSubject("Large Manual Crop Subject");
+    const editor = await editorState(subject.characterId);
+
+    // 300px, comfortably above the 256px automatic floor: `packRowToContract`
+    // must take the same `identityCropOutputSide` branch a `manual` row always
+    // took before #667 — no enlargement, no cap (below the 1024 ceiling).
+    const result = await saveManualIdentityCrop({
+      ownerId: userId,
+      characterId: subject.characterId,
+      expectedPackId: editor.packId,
+      expectedRevision: editor.revision,
+      expectedSourceHash: editor.hash,
+      crop: { space: "source_pixels", crop: { left: 50, top: 50, width: 300, height: 300 } },
+      actorUserId: userId,
+    });
+
+    expect(result.status).toBe("ready");
+    if (result.status !== "ready") return;
+    expect(result.pack.faceDetail.crop).toEqual({ left: 50, top: 50, width: 300, height: 300 });
+    expect(result.pack.faceDetail.outputWidth).toBe(300);
+    expect(result.pack.faceDetail.outputHeight).toBe(300);
   });
 });
