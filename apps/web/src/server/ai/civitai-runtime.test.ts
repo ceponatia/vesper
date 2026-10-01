@@ -640,6 +640,18 @@ describe("Civitai Klein v2 transport", () => {
     it.each([
       ["a 5xx submit", () => Response.json({ detail: "prompt=private" }, { status: 503 }), "civitai_http_503"],
       ["a malformed 2xx submit", () => new Response("not json", { status: 200 }), "civitai_malformed_response"],
+      // Distinct from both rows above: a 2xx body that IS valid JSON -- so
+      // `requestJson` returns it with no throw of its own -- but is not a
+      // usable workflow shape (no `status`), so `parseCivitaiWorkflow` throws
+      // a plain `Error`, never a `CivitaiError`. This is the only path that
+      // exercises the catch block's `instanceof CivitaiError` fallback to
+      // `civitai_submit_response_invalid`, and the only path proving a
+      // non-CivitaiError thrown here still reaches the lookup rather than
+      // skipping it -- `isDefinitelyRejectedSubmit` requires a CivitaiError
+      // with an httpStatus, so a bug that let a bare Error through
+      // unconditionally (or crashed deriving its code) would leave this
+      // submit a silent orphan instead of naming the workflow (#673).
+      ["a 2xx submit whose valid-JSON body is not a usable workflow", () => Response.json({ id: "shapeless" }), "civitai_submit_response_invalid"],
     ] as const)("leads to a lookup after %s, naming that code once the lookup gives up", async (_description, submitResponse, originalCode) => {
       vi.useFakeTimers();
       const paidPosts: string[] = [];
