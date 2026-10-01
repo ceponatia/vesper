@@ -394,6 +394,8 @@ function upstreamFor(view: ReferenceView) {
   return {
     ok: true as const,
     attemptId: `rv-${view.angle}-${view.wardrobe}`,
+    // A restored copy's lineage differs from its attempt id; the row records the lineage.
+    lineageId: `lineage-${view.angle}-${view.wardrobe}`,
     imageId: `img-rv-${view.angle}-${view.wardrobe}`,
     buffer: Buffer.from("upstream-bytes"),
     sourceImageId: "img-accepted",
@@ -612,7 +614,7 @@ describe("a dependent view's upstream reference", () => {
 
     expect(report).toMatchObject({ built: 1, failed: 0 });
     expect(vi.mocked(loadConsumableReferenceView).mock.calls[0]?.[0]).toMatchObject({ view: upstream });
-    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ view, upstreamViewId: loaded.attemptId });
+    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ view, upstreamViewId: loaded.lineageId });
 
     const references = mockProgram.mock.calls[0]?.[0].references ?? [];
     expect(references).toHaveLength(2);
@@ -626,9 +628,11 @@ describe("a dependent view's upstream reference", () => {
     // The renderer receives the same list in the same order the prompt numbered.
     expect(mockIntent.mock.calls[0]?.[0].references).toEqual(references.map((entry) => entry.reference));
 
-    expect(vi.mocked(finalizeReferenceView).mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: loaded.attemptId });
+    expect(vi.mocked(finalizeReferenceView).mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: loaded.lineageId });
     expect(reservedMeta().referenceView).toMatchObject({
-      upstream: { angle: upstream.angle, wardrobe: upstream.wardrobe, attemptId: loaded.attemptId, imageId: loaded.imageId },
+      upstream: {
+        angle: upstream.angle, wardrobe: upstream.wardrobe, attemptId: loaded.attemptId, lineageId: loaded.lineageId, imageId: loaded.imageId,
+      },
     });
   });
 

@@ -63,11 +63,14 @@ export type ReferenceViewUnavailableReason =
 export type LoadConsumableReferenceViewResult =
   | {
       readonly ok: true;
-      /**
-       * The slot's approved current attempt these bytes belong to — what a view
-       * built FROM this one records as its upstream (`upstream_view_id`).
-       */
+      /** The slot's approved current attempt these bytes belong to. */
       readonly attemptId: string;
+      /**
+       * That attempt's LINEAGE (`referenceViewLineageId`) — what a view built
+       * FROM this one records as its upstream (`upstream_view_id`), so restoring
+       * the attempt revives what was built from it.
+       */
+      readonly lineageId: string;
       /** The view asset — the bytes the render sends. */
       readonly imageId: string;
       readonly buffer: Buffer;
@@ -163,6 +166,7 @@ export async function loadConsumableReferenceView(
     return {
       ok: true,
       attemptId: summary.attemptId,
+      lineageId: summary.lineageId ?? summary.attemptId,
       imageId: summary.imageId,
       buffer: asset.buffer,
       sourceImageId: set.acceptedImageId,

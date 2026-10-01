@@ -625,6 +625,12 @@ export const referenceViewSummarySchema = z.object({
    * arrives approved, so it builds what an approval of a NEW attempt would.
    */
   uploadBuilds: z.array(referenceViewSchema).max(32).default([]),
+  /**
+   * The current attempt's LINEAGE ({@link referenceViewLineageId}): its own id,
+   * or for a restored copy the attempt it copies. A view built from this one
+   * records it, so restoring an attempt revives what was built from it.
+   */
+  lineageId: z.string().nullable().default(null),
 });
 export type ReferenceViewSummary = z.infer<typeof referenceViewSummarySchema>;
 
@@ -660,6 +666,7 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
       waitingOn: null,
       approvalBuilds: [],
       uploadBuilds: [],
+      lineageId: null,
     })),
   };
 }
@@ -685,13 +692,14 @@ export interface ReferenceViewProjectionInput {
   /** The character's accepted portrait right now. */
   readonly acceptedImageId: string | null;
   /**
-   * The upstream attempt this row was rendered from ({@link referenceViewUpstream}),
-   * or null/absent for a row rendered from no upstream view: a root view, an
-   * upload, a render whose model had no room for the upstream image, and every
-   * row built before the build order existed.
+   * The LINEAGE ({@link referenceViewLineageId}) of the upstream attempt this row
+   * was rendered from ({@link referenceViewUpstream}), or null/absent for a row
+   * rendered from no upstream view: a root view, an upload, a render whose model
+   * had no room for the upstream image, and every row built before the build
+   * order existed.
    */
   readonly upstreamViewId?: string | null;
-  /** The upstream slot's approved current attempt right now, or null/absent when it has none. */
+  /** The lineage of the upstream slot's approved current attempt right now, or null/absent when it has none. */
   readonly approvedUpstreamId?: string | null;
   /**
    * How the row's bytes came to exist (`referenceViewMethods`). An upload was
@@ -798,6 +806,20 @@ export function referenceViewBodySetMoved(row: {
 /** One slot's current attempt as the sheet projection reads it. */
 export interface ReferenceViewSlotRow extends Omit<ReferenceViewProjectionInput, "eligible" | "approvedUpstreamId"> {
   readonly attemptId: string;
+  /** The attempt this row's bytes were copied from by a restoration; null or absent for anything else. */
+  readonly originAttemptId?: string | null;
+}
+
+/**
+ * An attempt's LINEAGE: the attempt its bytes were actually rendered or
+ * uploaded as. A restored copy shows exactly what its original shows, so it
+ * carries the original's lineage (`origin_attempt_id`); every other row is its
+ * own. Views built from an attempt record its lineage as their upstream, and
+ * the build order compares lineages — so restoring the attempt a view was built
+ * from revives that view, exactly as undoing and re-approving it does. PURE.
+ */
+export function referenceViewLineageId(row: { readonly attemptId: string; readonly originAttemptId?: string | null }): string {
+  return row.originAttemptId ?? row.attemptId;
 }
 
 /** One slot's stored facts: whether the plan holds it, and its current attempt if it has one. */
@@ -818,7 +840,8 @@ export interface ReferenceViewSlotProjection extends ReferenceView {
 /**
  * An attempt to treat as approved in a what-if projection: an approval about to
  * be written, or — with `attemptId` null — an upload about to be installed, a
- * new attempt no stored row was rendered from.
+ * new attempt no stored row was rendered from. `attemptId` is that attempt's
+ * LINEAGE ({@link referenceViewLineageId}), the id its dependents record.
  */
 export interface ReferenceViewAssumedApproval {
   readonly view: ReferenceView;
@@ -844,7 +867,7 @@ export function projectReferenceViewSlots(
 ): ReferenceViewSlotProjection[] {
   const factsBySlot = new Map(slots.map((slot) => [slotKey(slot.view), slot]));
   // A slot is here iff it has an approved current attempt (or the assumption
-  // gives it one); the value is that attempt, null for an assumed new one.
+  // gives it one); the value is that attempt's lineage, null for an assumed new one.
   const approved = new Map<string, string | null>();
   const projected = new Map<string, ReferenceViewSlotProjection>();
   for (const view of referenceViewBuildOrder()) {
@@ -865,7 +888,7 @@ export function projectReferenceViewSlots(
     const state: ReferenceViewState =
       input === null ? (facts.eligible ? "missing" : "ineligible") : projectReferenceViewState(input);
     if (assume !== undefined && sameReferenceView(assume.view, view)) approved.set(key, assume.attemptId);
-    else if (state === "approved" && facts.row !== null) approved.set(key, facts.row.attemptId);
+    else if (state === "approved" && facts.row !== null) approved.set(key, referenceViewLineageId(facts.row));
     projected.set(key, {
       angle: view.angle,
       wardrobe: view.wardrobe,

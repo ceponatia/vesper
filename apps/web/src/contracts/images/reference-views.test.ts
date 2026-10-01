@@ -27,6 +27,7 @@ import {
   referenceViewRestoreRequestSchema,
   referenceViewQueueOutcomeSchema,
   referenceViewHistoryVerdict,
+  referenceViewLineageId,
   referenceViewsReadyToBuild,
   referenceViewsWaitingInBatch,
   referenceViewUpstream,
@@ -603,6 +604,26 @@ describe("the sheet, projected in build order", () => {
     // Nothing rebuilds by itself; the owner's build starts at the root, and the
     // rest wait on its approval as they always do.
     expect(referenceViewsReadyToBuild(projectReferenceViewSlots(facts))).toEqual([ROOT]);
+  });
+
+  // "Use this version" restores an earlier attempt as a NEW row. Compared by
+  // attempt id, the views built from the original read stale against the copy
+  // forever, and rebuilding them buys byte-identical renders; compared by
+  // lineage, approving the copy revives them exactly as Undo then Approve does.
+  it("revives the views built from an attempt when a restored copy of it is approved", () => {
+    const copy = { attemptId: "front-3", originAttemptId: "front-1" };
+    expect(referenceViewLineageId(copy)).toBe("front-1");
+    const facts = sheet([
+      [ROOT, attempt(copy.attemptId, { originAttemptId: copy.originAttemptId })],
+      [BACK, approved("back-1", "front-1")],
+      [LEFT, approved("left-1", "front-1")],
+    ]);
+    // Unreviewed, the copy approves nothing yet, so its dependents wait...
+    expect(slot(facts, BACK)).toMatchObject({ state: "stale", waitingOn: ROOT });
+    // ...and approving it builds only what was never built from its original.
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: referenceViewLineageId(copy) });
+    expect(slotSet(disclosed)).toEqual(slotSet([RIGHT, FRONT_BARE]));
+    expect(slot(withApproval(facts, ROOT), BACK)).toMatchObject({ state: "approved", consumable: true });
   });
 
   it("never marks a view stale by the upstream rule when it records no upstream", () => {

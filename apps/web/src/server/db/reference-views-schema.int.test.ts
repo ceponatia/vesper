@@ -197,9 +197,11 @@ describe.skipIf(!ready)("character_body_references constraints", () => {
       .select({
         upstreamViewId: characterReferenceViews.upstreamViewId,
         bodyReferenceSet: characterReferenceViews.bodyReferenceSet,
+        // 0156's lineage column too: a default would call every row a copy.
+        originAttemptId: characterReferenceViews.originAttemptId,
       })
       .from(characterReferenceViews)
       .where(eq(characterReferenceViews.id, viewId));
-    expect(row).toEqual({ upstreamViewId: null, bodyReferenceSet: null });
+    expect(row).toEqual({ upstreamViewId: null, bodyReferenceSet: null, originAttemptId: null });
   });
 });

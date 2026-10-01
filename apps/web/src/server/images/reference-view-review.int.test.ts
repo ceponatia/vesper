@@ -357,6 +357,45 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     expect((await currentReferenceViewRow(state.input.characterId, back))?.id).toBe(state.first.id);
   });
 
+  // The lineage rule at the storage layer: regenerating the front stales the
+  // views built from it; restoring the original front ("Use this version")
+  // makes a new row, and approving that copy revives them — no rebuild, no
+  // charge — because they recorded the original's lineage, which the copy keeps.
+  it("revives the views built from an attempt when a restored copy of it is approved", async () => {
+    const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+    const state = await fixture(back);
+    const original = state.upstreamViewId;
+    if (original === null) throw new Error("fixture front attempt missing");
+
+    const frontJob = await state.claimSlot(view);
+    const regenerated = await reserveReferenceView({ ...state.reserve, view, upstreamViewId: null, jobId: frontJob });
+    if (regenerated === null) throw new Error("front regeneration was not reserved");
+    const image = await asset(state.input.characterId, "reference_view");
+    await finalizeReferenceView({
+      jobId: frontJob, viewId: regenerated, characterId: state.input.characterId, ownerId, imageId: image.id, method: "rendered",
+    });
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, frontJob));
+    expect((await getReferenceViewSummary(state.input.characterId, ownerId, back)).state).toBe("stale");
+
+    const restored = await restoreReferenceView({
+      characterId: state.input.characterId, ownerId, view, attemptId: original,
+      expectedCurrentAttemptId: regenerated, expectedCurrentRevision: 0,
+    });
+    expect(restored.status).toBe("restored");
+    if (restored.status !== "restored") return;
+    expect(restored.view).toMatchObject({ state: "unreviewed", lineageId: original });
+    expect(restored.view.attemptId).not.toBe(original);
+    // The Approve control discloses no rebuild of the view built from the original.
+    expect(restored.view.approvalBuilds).not.toContainEqual(back);
+    const [copyRow] = await db().select().from(characterReferenceViews).where(eq(characterReferenceViews.id, restored.view.attemptId ?? ""));
+    expect(copyRow?.originAttemptId).toBe(original);
+
+    expect((await reviewReferenceView({
+      ...state.input, view, attemptId: restored.view.attemptId ?? "", expectedRevision: 0, verdict: "approve",
+    })).status).toBe("reviewed");
+    expect(await getReferenceViewSummary(state.input.characterId, ownerId, back)).toMatchObject({ state: "unreviewed", waitingOn: null });
+  });
+
   it("refuses foreign, wrong-slot, expired, unreadable, incompatible and busy attempts", async () => {
     const state = await retainedFixture();
     expect((await restoreReferenceView({ ...state.restore, ownerId: otherOwnerId })).status).toBe("not_found");

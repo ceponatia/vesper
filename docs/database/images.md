@@ -88,8 +88,11 @@ the two admin bench run records.
   the owner's ruling on this attempt, written by a review or an upload and never cleared, because
   retiring a row overwrites `status` with `superseded` and would otherwise erase every ruling but
   the newest), `reviewed_by_user_id?` (→ `users`, no cascade — the audit survives the reviewer),
-  `reviewed_at?`, `upstream_view_id?` (the upstream slot's attempt this view was rendered from — no
-  foreign key; null for a root view, an upload, and every row built before the build order),
+  `reviewed_at?`, `upstream_view_id?` (the lineage of the upstream slot's attempt this view was
+  rendered from — no foreign key; null for a root view, an upload, and every row built before the
+  build order), `origin_attempt_id?` (for a restored copy, the attempt it copies — that attempt's
+  own origin when it was itself a copy; a row's lineage is `origin_attempt_id ?? id`; no foreign
+  key; null for every rendered and uploaded row),
   `body_reference_set?` (the body-image set the view was rendered against — each image's id and
   tag in slot order; null is the empty set, which every row built before body images records, and
   what an upload stores). One

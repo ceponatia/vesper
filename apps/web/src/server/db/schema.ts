@@ -2108,7 +2108,9 @@ export const characterReferenceViews = pgTable(
      * whose bytes rode the render as its body reference (`referenceViewUpstream`
      * in `contracts/images/reference-views.ts`). Read-time staleness compares it
      * with that slot's approved current attempt, exactly as `source_image_id` is
-     * compared with the accepted portrait.
+     * compared with the accepted portrait. It names the upstream's LINEAGE
+     * (`origin_attempt_id ?? id`), so a restored copy of that attempt still counts
+     * as the view this one was rendered from.
      *
      * Null for the root view, for an upload, for a render whose model had no room
      * for the upstream image, and for every row built before the build order
@@ -2131,6 +2133,19 @@ export const characterReferenceViews = pgTable(
      * reason: a set that matches nothing current already reads stale.
      */
     bodyReferenceSet: text("body_reference_set"),
+    /**
+     * The attempt whose bytes this row is a copy of — set only by "Use this
+     * version", to the original's own lineage (`origin_attempt_id ?? id`), so a
+     * chain of restorations still names the attempt that was actually rendered.
+     * A row's LINEAGE is `origin_attempt_id ?? id`, and that is what a view built
+     * from it records as `upstream_view_id`: restoring the attempt a dependent was
+     * rendered from revives the dependent exactly as Undo then Approve does.
+     *
+     * Null for a rendered or uploaded row — its lineage is its own id — and for
+     * every row restored before the column existed, whose dependents read stale
+     * as they did before. Not a foreign key, for `upstream_view_id`'s reason.
+     */
+    originAttemptId: text("origin_attempt_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -383,8 +383,10 @@ async function resolveBareRoute(profile: ResolvedImageProfile, sink: DiagnosticS
  */
 interface UpstreamReference {
   readonly view: ReferenceView;
-  /** The upstream slot's approved current attempt — what the dependent row records. */
+  /** The upstream slot's approved current attempt — the bytes this render sends. */
   readonly attemptId: string;
+  /** That attempt's lineage — what the dependent row records as its upstream. */
+  readonly lineageId: string;
   readonly imageId: string;
   readonly entry: CharacterPromptReference;
 }
@@ -434,6 +436,7 @@ async function loadUpstreamReference(
   return {
     view: upstream,
     attemptId: loaded.attemptId,
+    lineageId: loaded.lineageId,
     imageId: loaded.imageId,
     entry: {
       reference: {
@@ -510,7 +513,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     view,
     sourceImageId: context.acceptedImageId,
     sourceContentHash: context.sourceContentHash,
-    upstreamViewId: upstream?.attemptId ?? null,
+    upstreamViewId: upstream?.lineageId ?? null,
     bodyReferenceSet: context.bodyReferenceSet,
     // An upstream that moved after the read above is refused with its own
     // diagnostic, so this lane never spends a charge in silence.
@@ -653,6 +656,8 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
                   angle: upstream.view.angle,
                   wardrobe: upstream.view.wardrobe,
                   attemptId: upstream.attemptId,
+                  // What the row records: the attempt a restored copy came from.
+                  lineageId: upstream.lineageId,
                   imageId: upstream.imageId,
                 },
               }
@@ -735,7 +740,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     ownerId,
     imageId,
     method: "rendered",
-    upstreamViewId: upstream !== null && upstreamSent ? upstream.attemptId : null,
+    upstreamViewId: upstream !== null && upstreamSent ? upstream.lineageId : null,
   });
   if (finalized === "fenced") {
     // This worker lost the lease before settlement. Its produced asset belongs

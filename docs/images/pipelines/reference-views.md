@@ -115,7 +115,9 @@ it.
   dressed, the same person with the same body to show undressed". Each dialect weaves the clause
   into its own sentence for the slot ([../prompt-programs.md](../prompt-programs.md) §Reference
   slots); no lane writes prompt text of its own.
-- **A row records the upstream attempt it was rendered from** (`upstream_view_id`). The worker
+- **A row records the upstream attempt it was rendered from** (`upstream_view_id`), by that
+  attempt's **lineage** (`referenceViewLineageId`): its own id, or for a restored copy the attempt
+  it copies (`origin_attempt_id`). Every comparison against an upstream compares lineages. The worker
   reads the upstream before reserving, and the reservation confirms under the character lock that
   it is still that slot's approved current attempt; otherwise the slot reserves nothing, renders
   nothing and keeps what it shows, and both the read and the reservation say so
@@ -207,7 +209,9 @@ approval and opening the bytes.
 - **The sheet is projected in build order** (`projectReferenceViewSlots`), so staleness flows down
   it: regenerating the root makes the views built from it stale, and the `bare` views built from
   those stale with them. Undoing an approval does the same, and approving that same attempt again
-  revives the views built from it without rebuilding them.
+  revives the views built from it without rebuilding them. So does approving a restored copy of
+  that attempt: the copy carries the original's lineage, so neither the views built from the
+  original nor the Approve control's count asks for them to be rebuilt.
 - **Attempts are rows.** A new attempt marks the previous current row `superseded` and inserts its
   own, in one transaction; a partial unique index holds *one current row per (character, angle,
   wardrobe)* at the storage layer.
@@ -264,7 +268,8 @@ approval and opening the bytes.
   one, that a rendered attempt's body-image set is still the character's, available bytes,
   retention expiry and that slot's pending/live generation state. It copies the bytes into an
   independent asset and creates a new unreviewed current candidate recording the same upstream and
-  body-image set. The original attempt
+  body-image set, and the original's lineage (`origin_attempt_id`, the original's own origin when
+  it was itself restored). The original attempt
   keeps its verdict and feedback; its cleanup cannot delete the restored candidate's file. A failed
   restoration compensates only its own unused copy. A build admitted after restoration can replace
   the candidate through the ordinary attempt lifecycle.

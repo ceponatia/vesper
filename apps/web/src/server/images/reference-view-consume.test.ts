@@ -37,6 +37,8 @@ const CHARACTER = "chr1";
 const PORTRAIT = "img-portrait";
 const VIEW_ASSET = "img-back-clothed";
 const VIEW_ATTEMPT = "rv-back-clothed-1";
+/** The attempt a restored copy came from — distinct from the attempt id, so the test tells them apart. */
+const VIEW_LINEAGE = "rv-back-clothed-0";
 const readReadyAsset = vi.fn<(imageId: string) => Promise<{ buffer: Buffer; meta: unknown } | null>>();
 
 /** The sheet as the store projects it, with this one slot forced into a state. */
@@ -65,6 +67,7 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         waitingOn: null,
         approvalBuilds: [],
         uploadBuilds: [],
+        lineageId: target ? VIEW_LINEAGE : null,
       };
     }),
   };
@@ -98,6 +101,9 @@ describe("loadConsumableReferenceView", () => {
       ok: true,
       // The attempt a view built FROM this one records as its upstream.
       attemptId: VIEW_ATTEMPT,
+      // What a view built FROM this one records: the lineage, so a restored copy
+      // still counts as the attempt it copies.
+      lineageId: VIEW_LINEAGE,
       imageId: VIEW_ASSET,
       buffer: Buffer.from("view-bytes"),
       // The accepted portrait IS the view's source — that equality is the

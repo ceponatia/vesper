@@ -1052,6 +1052,11 @@ components:
           type: array
           description: What installing an upload in this slot would build now.
           items: { $ref: '#/components/schemas/ReferenceViewSlot' }
+        lineageId:
+          type: [string, 'null']
+          description: >-
+            The current attempt's lineage — its own id, or for a restored copy the attempt it
+            copies. A view built from this one records it.
     BodyReferenceSet:
       type: object
       required: [images, unclothedAllowed, attributes]
