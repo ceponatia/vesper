@@ -153,6 +153,19 @@ export interface CompileImagePromptProgramInput {
    * exactly what a fixed A/B trial needs them to be.
    */
   readonly register?: ImagePromptRegister;
+  /**
+   * Whether this render's route permits intimate content — the caller's own
+   * decision, passed to the dialect as `intimatePermitted`. Absent means not
+   * permitted.
+   *
+   * Deliberately NOT part of the program fingerprint, for the register's
+   * reason: whatever the permission changes about WHAT is asked for already
+   * arrives as claims (a permitting route's reveal facts), which the fingerprint
+   * hashes. What is left to it is wording a dialect adds on top, and every
+   * dialect but one ignores it — so fingerprinting it would re-identify every
+   * other endpoint's intimate render for a sentence none of them writes.
+   */
+  readonly intimatePermitted?: boolean;
   /** The endpoint's probed prompt budget. Empty means no measured limit. */
   readonly budget: ImagePromptBudget;
   /** The negative field's own budget, when the endpoint declares one. */
@@ -394,6 +407,9 @@ export function compileImagePromptProgram(input: CompileImagePromptProgramInput)
       digest.subjects.flatMap((subject) => (subject.pronouns === undefined ? [] : [[subject.ref, subject.pronouns]])),
     ),
     ...(input.register === undefined ? {} : { register: input.register }),
+    // Spread only when granted, so every compile that is not permitted hands
+    // the dialect exactly the input it received before this field existed.
+    ...(input.intimatePermitted === true ? { intimatePermitted: true } : {}),
     budget: input.budget,
     sink,
   });

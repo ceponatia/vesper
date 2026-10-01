@@ -21,8 +21,10 @@ import {
  * registered under its own id; that it never carries a negative prompt,
  * whatever constraints a pack hands it (acceptance #3); that it states
  * nudity explicitly, twice, in the owner's vocabulary, exactly when the
- * subject's own exposure claims read fully bare — never for a partial
- * undress, never for a clothed subject (acceptance #4); and that a numbered
+ * render's route permits intimate content AND the subject's own exposure
+ * claims read fully bare — never on bare coverage alone, never for a partial
+ * undress, never for a clothed subject (acceptance #4, and the owner's
+ * age-gate ruling of the same day); and that a numbered
  * reference drives both the reference introduction and the identity-preserve
  * lock, while a zero-reference compile (the scene chain's bare-prompt rung)
  * falls back to a plain descriptive identity sentence.
@@ -111,15 +113,35 @@ function compilePositive(
   worldDigest: ImageWorldDigest,
   references: readonly { position: number; role: "identity"; subjectRef?: string; description?: string }[] = [],
   entityLabels: Record<string, string> = {},
+  intimatePermitted = false,
 ) {
   return dialect().compilePositive({
     claims: selectImagePositiveClaims(worldDigest),
     operation: worldDigest.operation,
     references,
     entityLabels,
+    ...(intimatePermitted ? { intimatePermitted: true } : {}),
     budget: {},
   });
 }
+
+/** The same compile on a route that permits intimate content — a lane's age-gated intimate reveal. */
+const compilePermitted = (worldDigest: ImageWorldDigest) => compilePositive(worldDigest, [], {}, true);
+
+const NUDITY_WORDS = ["naked", "nude", "no clothes"] as const;
+
+function nudityWords(text: string): string[] {
+  const lower = text.toLowerCase();
+  return NUDITY_WORDS.filter((word) => lower.includes(word));
+}
+
+/** A subject whose torso and pelvis both read bare — and no intimate-anatomy claim at all. */
+const fullyBareDigest = () =>
+  world({
+    subjects: [
+      entity("subject", "nyx", [identityFact("nyx"), exposureFact("nyx", "torso", "bare"), exposureFact("nyx", "pelvis", "bare")]),
+    ],
+  });
 
 describe("the qwen_21_instruction_edit dialect is registered", () => {
   it("resolves by its own id", () => {
@@ -128,44 +150,49 @@ describe("the qwen_21_instruction_edit dialect is registered", () => {
   });
 });
 
-describe("nudity reinforcement (acceptance #4, owner ruling 2026-10-01)", () => {
-  it("states nothing extra for a clothed subject", () => {
+describe("nudity reinforcement (acceptance #4, owner rulings 2026-10-01)", () => {
+  it("states nothing extra for a clothed subject, even on a permitting route", () => {
     const digest = world({
       subjects: [entity("subject", "nyx", [identityFact("nyx"), exposureFact("nyx", "torso", "covered")])],
     });
-    const compiled = compilePositive(digest);
-    expect(compiled.text.toLowerCase()).not.toContain("naked");
-    expect(compiled.text.toLowerCase()).not.toContain("nude");
-    expect(compiled.text.toLowerCase()).not.toContain("no clothes");
+    expect(nudityWords(compilePermitted(digest).text)).toEqual([]);
   });
 
-  it("states nothing extra for a partial undress — torso bare, pelvis covered", () => {
+  it("states nothing extra for a partial undress — torso bare, pelvis covered — even on a permitting route", () => {
     const digest = world({
       subjects: [
         entity("subject", "nyx", [identityFact("nyx"), exposureFact("nyx", "torso", "bare"), exposureFact("nyx", "pelvis", "covered")]),
       ],
     });
-    const compiled = compilePositive(digest);
+    const compiled = compilePermitted(digest);
     expect(compiled.text).toContain("bare at the torso");
-    expect(compiled.text.toLowerCase()).not.toContain("naked");
-    expect(compiled.text.toLowerCase()).not.toContain("nude");
-    expect(compiled.text.toLowerCase()).not.toContain("no clothes");
+    expect(nudityWords(compiled.text)).toEqual([]);
   });
 
-  it("states nudity explicitly, at least twice, in the owner's vocabulary when torso AND pelvis both read bare", () => {
-    const digest = world({
-      subjects: [
-        entity("subject", "nyx", [identityFact("nyx"), exposureFact("nyx", "torso", "bare"), exposureFact("nyx", "pelvis", "bare")]),
-      ],
-    });
-    const compiled = compilePositive(digest);
+  it("states nudity explicitly, at least twice, when the route permits it and torso AND pelvis both read bare", () => {
+    // No `subject.intimate_anatomy` claim anywhere in this digest: the
+    // permission alone licenses the clause, so a permitted bare view of a
+    // subject with no intimate attributes authored still reinforces.
+    const compiled = compilePermitted(fullyBareDigest());
     // The body attributes the facts state are still carried, alongside the
     // reinforcement — never replaced by it.
     expect(compiled.text).toContain("bare at the torso");
     expect(compiled.text).toContain("bare at the pelvis");
-    const lower = compiled.text.toLowerCase();
-    const mentions = ["naked", "nude", "no clothes"].filter((word) => lower.includes(word));
-    expect(mentions.length).toBeGreaterThanOrEqual(2);
+    expect(nudityWords(compiled.text).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("never states it on bare coverage alone — the route did not permit intimate content", () => {
+    // A minor's bare wardrobe, an adult's clothed view with no saved outfit, an
+    // ordinary variant or a non-intimate scene all read exactly like this: the
+    // ordinary exposure sentences every dialect states, and nothing more.
+    const compiled = compilePositive(fullyBareDigest());
+    expect(compiled.text).toContain("bare at the torso");
+    expect(compiled.text).toContain("bare at the pelvis");
+    expect(nudityWords(compiled.text)).toEqual([]);
+    // Only the clause separates the two compiles: the permitted text is this
+    // text with the reinforcement added, not a differently worded prompt.
+    const permitted = compilePermitted(fullyBareDigest());
+    for (const segment of compiled.segments) expect(permitted.text).toContain(segment.text);
   });
 
   it("never fires on a `sheer` reading — only `bare` counts, the same threshold `selectReferenceView` uses", () => {
@@ -174,10 +201,7 @@ describe("nudity reinforcement (acceptance #4, owner ruling 2026-10-01)", () => 
         entity("subject", "nyx", [identityFact("nyx"), exposureFact("nyx", "torso", "sheer"), exposureFact("nyx", "pelvis", "bare")]),
       ],
     });
-    const compiled = compilePositive(digest);
-    const lower = compiled.text.toLowerCase();
-    expect(lower).not.toContain("naked");
-    expect(lower).not.toContain("nude");
+    expect(nudityWords(compilePermitted(digest).text)).toEqual([]);
   });
 });
 
