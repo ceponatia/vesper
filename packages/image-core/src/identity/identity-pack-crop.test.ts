@@ -200,6 +200,7 @@ describe("detector expansion", () => {
       faceExpansionBottomFraction: 0.45,
       squareGrowthTopShare: 0.6,
       minimumOutputSidePx: 256,
+      minimumManualOutputSidePx: 128,
       maximumOutputSidePx: 1024,
       maximumLostPaddingFraction: 0.35,
     });

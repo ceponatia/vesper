@@ -2971,14 +2971,15 @@ describe.skipIf(!ready)("image generator over the seeded Civitai Qwen Image 2.1 
     const effectiveRequest = imageMeta(row?.meta)["effectiveRequest"] as
       | { shape?: Record<string, unknown>; postprocess?: Record<string, unknown> }
       | undefined;
-    // No provider field was ever asked for: the request names "3:4" and the
-    // resolved field/value are both null, the same answer a native request
-    // with no explicit shape at all would record.
+    // No aspect field was sent: the request names "3:4", the edit carried only
+    // the lane's `resolution` pixel budget (1024 at the default 1K tier) — the
+    // field the sent-shape record names for a 2.1 edit — and nothing was
+    // expected back, so the pick is applied afterwards by a local crop.
     expect(effectiveRequest?.shape).toMatchObject({
       mode: "explicit",
       requestedAspect: "3:4",
-      field: null,
-      value: null,
+      field: "resolution",
+      value: 1024,
       expectedAspect: null,
     });
     // `willCrop` (`image-generator-provenance.ts`) fires because the aspect was

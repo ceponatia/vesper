@@ -7,7 +7,7 @@ import {
 } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { sceneStagingById } from "@/contracts/images/scene-staging";
-import { attr, makeProfile } from "@/server/test-support";
+import { attr, makeProfile } from "@/server/test-support/profile-fixtures";
 
 /**
  * The chat lane's half of the intimate-scene LoRA route: which renders leave
