@@ -63,6 +63,11 @@ export type ReferenceViewUnavailableReason =
 export type LoadConsumableReferenceViewResult =
   | {
       readonly ok: true;
+      /**
+       * The slot's approved current attempt these bytes belong to — what a view
+       * built FROM this one records as its upstream (`upstream_view_id`).
+       */
+      readonly attemptId: string;
       /** The view asset — the bytes the render sends. */
       readonly imageId: string;
       readonly buffer: Buffer;
@@ -147,7 +152,7 @@ export async function loadConsumableReferenceView(
     // A slot the registry no longer carries is a slot the set never reports; the
     // selection could only have named it from a registry this build does not have.
     if (summary === undefined) return refuse("none_built");
-    if (!summary.consumable || summary.imageId === null || set.acceptedImageId === null) {
+    if (!summary.consumable || summary.imageId === null || summary.attemptId === null || set.acceptedImageId === null) {
       return refuse(reasonOf(summary.state));
     }
 
@@ -157,6 +162,7 @@ export async function loadConsumableReferenceView(
     const angle = referenceViewAngleById(view.angle);
     return {
       ok: true,
+      attemptId: summary.attemptId,
       imageId: summary.imageId,
       buffer: asset.buffer,
       sourceImageId: set.acceptedImageId,

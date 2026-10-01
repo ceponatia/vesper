@@ -219,6 +219,21 @@ export interface ReferenceViewWardrobeEntry {
    * running without intimate allowance never receives it.
    */
   readonly intimate: boolean;
+  /**
+   * The wardrobe of the SAME angle's view this one is built from, or null for a
+   * view built from the root angle's view in its own wardrobe — see
+   * {@link referenceViewUpstream}. `bare` builds from its own angle dressed, so
+   * the body an undressed view shows is the body that angle already shows.
+   */
+  readonly buildsFrom: ReferenceViewWardrobe | null;
+  /**
+   * How a view in this wardrobe introduces its same-angle upstream view — the
+   * clause woven into the sentence that already names whose image it is, the
+   * way {@link ReferenceViewAngle.sceneBinding} is for a scene. Null exactly
+   * when {@link buildsFrom} is. No `{name}` template, for `sceneBinding`'s
+   * reason; the other two phrasing rules hold.
+   */
+  readonly buildsFromBinding: string | null;
 }
 
 export const referenceViewWardrobeEntries: readonly ReferenceViewWardrobeEntry[] = [
@@ -229,12 +244,19 @@ export const referenceViewWardrobeEntries: readonly ReferenceViewWardrobeEntry[]
     // the model to redesign them. The clause only pins them in place.
     instruction: "{name} wearing exactly the clothing the reference shows, changing nothing else about the garments",
     intimate: false,
+    buildsFrom: null,
+    buildsFromBinding: null,
   },
   {
     id: "bare",
     label: "Undressed",
     instruction: "{name} undressed, wearing nothing at all, {name}'s bare skin in plain view",
     intimate: true,
+    // The upstream image shows this same angle dressed. The clause says what
+    // that image IS and which body it carries; the wardrobe instruction above
+    // says what this render does to it.
+    buildsFrom: "clothed",
+    buildsFromBinding: "seen from this same angle while dressed, the same person with the same body to show undressed",
   },
 ];
 
@@ -266,6 +288,101 @@ export function allReferenceViews(): readonly ReferenceView[] {
   return referenceViewAngles.flatMap((angle) =>
     referenceViewWardrobeEntries.map((wardrobe) => ({ angle: angle.id, wardrobe: wardrobe.id })),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Build order
+// ---------------------------------------------------------------------------
+
+/**
+ * **THE BUILD ORDER** — which approved view each view's body is rendered from.
+ *
+ * Rendered independently, the views are separate guesses at one body below the
+ * waist, and they disagree. So the sheet has a ROOT — the root angle, dressed —
+ * and every other view renders with an approved view of the same person beside
+ * the portrait: each other angle from the root angle in its own wardrobe, and
+ * each undressed view from its own angle dressed, so the body it undresses is
+ * the body that angle already shows. A pure function of the registries: a new
+ * angle builds from the root, and a wardrobe states what it builds from
+ * ({@link ReferenceViewWardrobeEntry.buildsFrom}).
+ *
+ * The studio's controls and the server's queue both read it — which slots may
+ * build now, what an approval builds — so the count an owner is shown and the
+ * count the budget is charged come from one rule.
+ */
+export const REFERENCE_VIEW_ROOT_ANGLE: ReferenceViewAngleId = "front_full";
+
+/**
+ * How a view built from the root angle's view introduces it — the cross-angle
+ * counterpart of {@link ReferenceViewWardrobeEntry.buildsFromBinding}, held to
+ * the same phrasing rules.
+ */
+export const REFERENCE_VIEW_ROOT_ANGLE_BINDING = "seen from the front in the same clothing, the same person with the same body";
+
+/** Two slots are the same slot. */
+export function sameReferenceView(left: ReferenceView, right: ReferenceView): boolean {
+  return left.angle === right.angle && left.wardrobe === right.wardrobe;
+}
+
+/**
+ * The view this one is built from, or null for a root view.
+ *
+ * A wardrobe that names a `buildsFrom` builds from its own angle in that
+ * wardrobe; every other view builds from the root angle in its own wardrobe,
+ * and the root angle's own view in such a wardrobe is a root. Null too for a
+ * wardrobe the registry has dropped — a view nothing can render builds from
+ * nothing.
+ */
+export function referenceViewUpstream(view: ReferenceView): ReferenceView | null {
+  const wardrobe = referenceViewWardrobeById(view.wardrobe);
+  if (wardrobe === undefined) return null;
+  if (wardrobe.buildsFrom !== null) return { angle: view.angle, wardrobe: wardrobe.buildsFrom };
+  return view.angle === REFERENCE_VIEW_ROOT_ANGLE ? null : { angle: REFERENCE_VIEW_ROOT_ANGLE, wardrobe: view.wardrobe };
+}
+
+/** The views built directly from this one, in registry order. */
+export function referenceViewDependents(view: ReferenceView): readonly ReferenceView[] {
+  return allReferenceViews().filter((candidate) => {
+    const upstream = referenceViewUpstream(candidate);
+    return upstream !== null && sameReferenceView(upstream, view);
+  });
+}
+
+/** How many upstream hops separate a view from its root. */
+function buildDepth(view: ReferenceView): number {
+  const bound = allReferenceViews().length;
+  let depth = 0;
+  let upstream = referenceViewUpstream(view);
+  // Bounded by the sheet's size, so a registry edit that made the graph cyclic
+  // stops here instead of looping; such a view simply never has an approved
+  // upstream, and waits.
+  while (upstream !== null && depth < bound) {
+    depth += 1;
+    upstream = referenceViewUpstream(upstream);
+  }
+  return depth;
+}
+
+/** Every view, each one after the view it is built from; registry order within a level. */
+export function referenceViewBuildOrder(): readonly ReferenceView[] {
+  return [...allReferenceViews()].sort((left, right) => buildDepth(left) - buildDepth(right));
+}
+
+/**
+ * How this view's render introduces the upstream view it is built from, or
+ * null for a root view.
+ *
+ * The clause is the registry's, never the lane's: a second identity image of
+ * one person reads as a second person unless something says why it is there,
+ * and the vocabulary that orders the build is the only thing that can say it
+ * honestly. Each dialect weaves it into its own sentence for the slot
+ * (`docs/images/prompt-programs.md` §Reference slots).
+ */
+export function referenceViewUpstreamBinding(view: ReferenceView): string | null {
+  const upstream = referenceViewUpstream(view);
+  if (upstream === null) return null;
+  if (upstream.angle !== view.angle) return REFERENCE_VIEW_ROOT_ANGLE_BINDING;
+  return referenceViewWardrobeById(view.wardrobe)?.buildsFromBinding ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -457,6 +574,25 @@ export const referenceViewSummarySchema = z.object({
    * or stale view reaches a scene.
    */
   consumable: z.boolean(),
+  /**
+   * The upstream slot this one is built from ({@link referenceViewUpstream})
+   * while that slot has no approved current attempt. Nothing may build this
+   * slot until it does, so the studio shows a waiting state in place of a build
+   * control. Null for a root view and for a slot whose upstream is approved.
+   */
+  waitingOn: referenceViewSchema.nullable().default(null),
+  /**
+   * What approving this slot's current attempt would build right now — its
+   * dependents that would then be missing, failed or stale. Empty unless the
+   * slot is `unreviewed`. The Approve control states it, and the review route
+   * charges the same rule's answer after the write.
+   */
+  approvalBuilds: z.array(referenceViewSchema).max(32).default([]),
+  /**
+   * What installing an upload in this slot would build right now — an upload
+   * arrives approved, so it builds what an approval of a NEW attempt would.
+   */
+  uploadBuilds: z.array(referenceViewSchema).max(32).default([]),
 });
 export type ReferenceViewSummary = z.infer<typeof referenceViewSummarySchema>;
 
@@ -489,6 +625,9 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
       failureMessage: null,
       updatedAt: null,
       consumable: false,
+      waitingOn: null,
+      approvalBuilds: [],
+      uploadBuilds: [],
     })),
   };
 }
@@ -513,14 +652,25 @@ export interface ReferenceViewProjectionInput {
   readonly reviewedAt: Date | string | null;
   /** The character's accepted portrait right now. */
   readonly acceptedImageId: string | null;
+  /**
+   * The upstream attempt this row was rendered from ({@link referenceViewUpstream}),
+   * or null/absent for a row rendered from no upstream view: a root view, an
+   * upload, a render whose model had no room for the upstream image, and every
+   * row built before the build order existed.
+   */
+  readonly upstreamViewId?: string | null;
+  /** The upstream slot's approved current attempt right now, or null/absent when it has none. */
+  readonly approvedUpstreamId?: string | null;
 }
 
 /**
- * **The one consumability rule.** A view may be sent to a render iff all five
+ * **The one consumability rule.** A view may be sent to a render iff all six
  * hold: it is the slot's current row and `ready` under the current generation
  * version, it was rendered from the portrait the character has accepted right
- * now, its asset exists and is itself `ready`, the owner has reviewed it, and
- * the slot remains in the character's current age-gated plan.
+ * now, a view rendered from an upstream view was rendered from that slot's
+ * approved current attempt, its asset exists and is itself `ready`, the owner
+ * has reviewed it, and the slot remains in the character's current age-gated
+ * plan.
  *
  * The last condition is the point of the whole review step. A render the owner
  * has not looked at is a guess about what this character's back looks like, and
@@ -537,6 +687,11 @@ export function isConsumableReferenceView(row: ReferenceViewProjectionInput): bo
  * the character's accepted pointer — never by a background write. Re-accepting
  * the earlier portrait makes the same rows current again, which is only possible
  * because nothing rewrote them when the pointer moved.
+ *
+ * The build order is held to the same rule: a view rendered from an upstream
+ * view is stale once that view is no longer its slot's approved current
+ * attempt — superseded, undone, or itself stale — and a row that records no
+ * upstream is never stale by it.
  */
 export function projectReferenceViewState(row: ReferenceViewProjectionInput): ReferenceViewState {
   // Eligibility outranks the row's old verdict. An approved bare attempt must
@@ -559,11 +714,146 @@ export function projectReferenceViewState(row: ReferenceViewProjectionInput): Re
     row.sourceImageId !== row.acceptedImageId ||
     row.imageId === null ||
     row.imageStatus !== "ready" ||
-    row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION
+    row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
+    ((row.upstreamViewId ?? null) !== null && row.upstreamViewId !== (row.approvedUpstreamId ?? null))
   ) {
     return "stale";
   }
   return row.reviewedAt === null ? "unreviewed" : "approved";
+}
+
+// ---------------------------------------------------------------------------
+// The whole sheet, projected in build order
+// ---------------------------------------------------------------------------
+
+/** One slot's current attempt as the sheet projection reads it. */
+export interface ReferenceViewSlotRow extends Omit<ReferenceViewProjectionInput, "eligible" | "approvedUpstreamId"> {
+  readonly attemptId: string;
+}
+
+/** One slot's stored facts: whether the plan holds it, and its current attempt if it has one. */
+export interface ReferenceViewSlotFacts {
+  readonly view: ReferenceView;
+  readonly eligible: boolean;
+  readonly row: ReferenceViewSlotRow | null;
+}
+
+/** One slot as the sheet projection answers it. */
+export interface ReferenceViewSlotProjection extends ReferenceView {
+  readonly state: ReferenceViewState;
+  readonly consumable: boolean;
+  /** The upstream slot this one waits on — see {@link ReferenceViewSummary.waitingOn}. */
+  readonly waitingOn: ReferenceView | null;
+}
+
+/**
+ * An attempt to treat as approved in a what-if projection: an approval about to
+ * be written, or — with `attemptId` null — an upload about to be installed, a
+ * new attempt no stored row was rendered from.
+ */
+export interface ReferenceViewAssumedApproval {
+  readonly view: ReferenceView;
+  readonly attemptId: string | null;
+}
+
+/**
+ * Every slot's state, waiting status and consumability, in the caller's order.
+ *
+ * Projected in {@link referenceViewBuildOrder} because a slot's staleness reads
+ * its upstream's projected answer: a bare view whose clothed view went stale
+ * because the front moved is stale with it, and nothing but the order of
+ * evaluation carries that down. PURE.
+ *
+ * `assume` answers "what would this sheet be if that attempt were approved",
+ * which is the question the Approve control and the upload dialog ask before
+ * the write and the review route asks again after it — one projection, so the
+ * disclosed count and the charged count cannot be computed two ways.
+ */
+export function projectReferenceViewSlots(
+  slots: readonly ReferenceViewSlotFacts[],
+  assume?: ReferenceViewAssumedApproval,
+): ReferenceViewSlotProjection[] {
+  const factsBySlot = new Map(slots.map((slot) => [slotKey(slot.view), slot]));
+  // A slot is here iff it has an approved current attempt (or the assumption
+  // gives it one); the value is that attempt, null for an assumed new one.
+  const approved = new Map<string, string | null>();
+  const projected = new Map<string, ReferenceViewSlotProjection>();
+  for (const view of referenceViewBuildOrder()) {
+    const key = slotKey(view);
+    const facts = factsBySlot.get(key);
+    if (facts === undefined) continue;
+    const upstream = referenceViewUpstream(view);
+    const upstreamKey = upstream === null ? null : slotKey(upstream);
+    const upstreamApproved = upstreamKey !== null && approved.has(upstreamKey);
+    const input: ReferenceViewProjectionInput | null =
+      facts.row === null
+        ? null
+        : {
+            ...facts.row,
+            eligible: facts.eligible,
+            approvedUpstreamId: upstreamKey === null ? null : (approved.get(upstreamKey) ?? null),
+          };
+    const state: ReferenceViewState =
+      input === null ? (facts.eligible ? "missing" : "ineligible") : projectReferenceViewState(input);
+    if (assume !== undefined && sameReferenceView(assume.view, view)) approved.set(key, assume.attemptId);
+    else if (state === "approved" && facts.row !== null) approved.set(key, facts.row.attemptId);
+    projected.set(key, {
+      angle: view.angle,
+      wardrobe: view.wardrobe,
+      state,
+      consumable: input !== null && isConsumableReferenceView(input),
+      waitingOn: upstream !== null && !upstreamApproved ? upstream : null,
+    });
+  }
+  return slots.flatMap((slot) => {
+    const entry = projected.get(slotKey(slot.view));
+    return entry === undefined ? [] : [entry];
+  });
+}
+
+/** What a build re-renders. Never `rejected`: the owner said no to that view. */
+const BUILDABLE_STATES: ReadonlySet<ReferenceViewState> = new Set<ReferenceViewState>(["missing", "failed", "stale"]);
+
+/** The slot-and-state shape both a projection and a wire summary carry. */
+export type ReferenceViewBuildFacts = ReferenceView & {
+  readonly state: ReferenceViewState;
+  readonly waitingOn: ReferenceView | null;
+};
+
+/**
+ * The slots a build may start now: missing, failed or stale, and not waiting on
+ * an upstream view nobody has approved. On a fresh character that is the root
+ * view alone. `rejected` is never rebuilt in bulk, and a plan-withheld slot is
+ * `ineligible` rather than missing.
+ */
+export function referenceViewsReadyToBuild(views: readonly ReferenceViewBuildFacts[]): ReferenceView[] {
+  return views
+    .filter((view) => BUILDABLE_STATES.has(view.state) && view.waitingOn === null)
+    .map((view) => ({ angle: view.angle, wardrobe: view.wardrobe }));
+}
+
+/**
+ * What approving `approved` builds: its direct dependents that are ready to
+ * build once it is approved. Asked of the sheet AFTER the approval, it is the
+ * review route's queue; asked of a what-if projection BEFORE it
+ * ({@link referenceViewBuildsOnApproval}), it is the Approve control's count.
+ */
+export function referenceViewDependentsToBuild(
+  views: readonly ReferenceViewBuildFacts[],
+  approved: ReferenceView,
+): ReferenceView[] {
+  return referenceViewsReadyToBuild(views).filter((view) => {
+    const upstream = referenceViewUpstream(view);
+    return upstream !== null && sameReferenceView(upstream, approved);
+  });
+}
+
+/** {@link referenceViewDependentsToBuild} over the sheet as it would be with `approval` written. */
+export function referenceViewBuildsOnApproval(
+  slots: readonly ReferenceViewSlotFacts[],
+  approval: ReferenceViewAssumedApproval,
+): ReferenceView[] {
+  return referenceViewDependentsToBuild(projectReferenceViewSlots(slots, approval), approval.view);
 }
 
 // ---------------------------------------------------------------------------

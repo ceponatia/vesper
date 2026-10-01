@@ -2097,6 +2097,20 @@ export const characterReferenceViews = pgTable(
      * when the reviewer's account goes is not one. */
     reviewedByUserId: text("reviewed_by_user_id").references(() => users.id),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /**
+     * The upstream slot's attempt this view was rendered FROM — the approved view
+     * whose bytes rode the render as its body reference (`referenceViewUpstream`
+     * in `contracts/images/reference-views.ts`). Read-time staleness compares it
+     * with that slot's approved current attempt, exactly as `source_image_id` is
+     * compared with the accepted portrait.
+     *
+     * Null for the root view, for an upload, for a render whose model had no room
+     * for the upstream image, and for every row built before the build order
+     * existed — none of them was rendered from an upstream view, so none of them
+     * can go stale by one. Not a foreign key: rows are deleted only with their
+     * character, and an id that matches no approved attempt already reads stale.
+     */
+    upstreamViewId: text("upstream_view_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -75,10 +75,45 @@ The portrait-variant lane's machinery pointed at a fixed camera
   the exposure facts; none of them is hand-written.
 
 References are the character's identity pack (`identityPackRenderReferences`), so an ineligible pack
-refuses the view rather than substituting another image. The output is a `reference_view` asset
-carrying the view, the generation version, the model, the LoRA when one was sent, a `bare` view's
-intimate-route record (`meta.intimateRoute`), the identity provenance, the visual digest and the
-program's own meta.
+refuses the view rather than substituting another image, followed by the view's approved upstream
+view when it has one (§Build order). The output is a `reference_view` asset carrying the view, the
+generation version, the model, the LoRA when one was sent, a `bare` view's intimate-route record
+(`meta.intimateRoute`), the upstream view it was rendered from when one was sent
+(`meta.referenceView.upstream`), the identity provenance, the visual digest and the program's own
+meta.
+
+## Build order
+
+The views share one body because they are built in order, from approved views, rather than as
+independent guesses. The order is a pure function of the registries (`referenceViewUpstream`,
+`contracts/images/reference-views.ts`), and the studio's controls and the server's queue both read
+it.
+
+- **The root is `front_full` / `clothed`.** It renders from the identity pack alone.
+- **Every other angle's `clothed` view builds from the root**, and **every `bare` view builds from
+  its own angle's `clothed` view** — a wardrobe names the same-angle wardrobe it builds from
+  (`buildsFrom`), so the body an undressed view shows is the body that angle already shows dressed.
+- **A view builds only once its upstream view is approved.** On a fresh character the build action
+  starts the root alone; every other slot carries `waitingOn` (its upstream slot) and the studio
+  shows a waiting state in place of its build and regenerate controls. A regeneration that names a
+  waiting slot is refused whole with a 409 `waiting`, before anything is charged.
+- **The upstream view rides the render as an optional identity reference** of the same person,
+  after the identity pack's required anchors, so a model with too little capacity drops it like any
+  optional reference (`dropped_for_capacity`) rather than refusing the plan. It is read through
+  `loadConsumableReferenceView`, carries its own asset's appearance revision to the prompt seam as
+  any view does ([../character-prompts.md](../character-prompts.md) §Identity on a
+  reference-anchored render), and is introduced by the registry's clause for the relation
+  (`referenceViewUpstreamBinding`): another angle is "seen from the front in the same clothing, the
+  same person with the same body"; a `bare` view's upstream is "seen from this same angle while
+  dressed, the same person with the same body to show undressed". Each dialect weaves the clause
+  into its own sentence for the slot ([../prompt-programs.md](../prompt-programs.md) §Reference
+  slots); no lane writes prompt text of its own.
+- **A row records the upstream attempt it was rendered from** (`upstream_view_id`). The worker
+  reads the upstream before reserving, and the reservation confirms under the character lock that
+  it is still that slot's approved current attempt; otherwise the slot reserves nothing, renders
+  nothing and keeps what it shows (`upstream_unapproved`). A render whose model had no room for the
+  upstream records none. The root, an upload, and every row built before the build order existed
+  record none, and none of them can go stale by the upstream rule.
 
 ## The age gate
 
@@ -115,9 +150,19 @@ approval and opening the bytes.
 
 - Accepting a portrait writes the identity pointer only. It starts no reference-view job and spends
   no image budget. Re-accepting the current portrait remains a no-op.
-- **Build N reference views** is a separate disclosed action. It charges the daily image budget for
-  exactly the slots the request newly claims. Reference views are a hidden kind, so the storage leg
-  is skipped; backpressure and the daily provider budget still apply.
+- **Build N reference views** is a separate disclosed action. It claims every planned slot that is
+  `missing`, `failed` or `stale` and not waiting on its upstream (`referenceViewsReadyToBuild`), and
+  charges the daily image budget for exactly the slots the request newly claims. Reference views
+  are a hidden kind, so the storage leg is skipped; backpressure and the daily provider budget still
+  apply.
+- **Approval is a spending action.** Approving a view, or uploading one, queues the views built
+  from it that are then `missing`, `failed` or `stale` — never `rejected` — as one build, admitted
+  and charged by the same helper the build action uses. The Approve control and the upload dialog
+  state the count beforehand from each slot's `approvalBuilds` / `uploadBuilds`, computed by the
+  same projection with that approval assumed (`referenceViewBuildsOnApproval`), so the disclosed
+  count and the charged count come from one rule. A refusal leaves the approval standing, queues
+  nothing and is reported per target (`budget_refused`); the build action then offers those views.
+  A rejection or an undo queues nothing.
 - **Each slot has one heartbeat-backed lease.** A request may claim every requested slot that has no
   live lease while another job continues on disjoint slots. An overlapping slot converges on the
   current attempt and reports `busy`; partial admission reports one result per requested target.
@@ -145,9 +190,14 @@ approval and opening the bytes.
 
 - **Staleness is read-time comparison, never a background write.** A view is stale when it is not
   the slot's current row, when its source is not the portrait the character has accepted right now,
-  when its asset is missing or unreadable, or when its generation version is behind. Because nothing
-  is rewritten when the accepted portrait moves, re-accepting the earlier portrait revives exactly
-  the views that were rendered from it.
+  when its asset is missing or unreadable, when its generation version is behind, or when the
+  upstream attempt it was rendered from is no longer that slot's approved current attempt. Because
+  nothing is rewritten when the accepted portrait moves, re-accepting the earlier portrait revives
+  exactly the views that were rendered from it.
+- **The sheet is projected in build order** (`projectReferenceViewSlots`), so staleness flows down
+  it: regenerating the root makes the views built from it stale, and the `bare` views built from
+  those stale with them. Undoing an approval does the same, and approving that same attempt again
+  revives the views built from it without rebuilding them.
 - **Attempts are rows.** A new attempt marks the previous current row `superseded` and inserts its
   own, in one transaction; a partial unique index holds *one current row per (character, angle,
   wardrobe)* at the storage layer.
@@ -170,9 +220,10 @@ approval and opening the bytes.
   replace the displayed attempt; changed attempts offer Refresh before another verdict.
 - Approve and Reject require the displayed attempt id and integer review revision. The server
   serializes reference writes on the character row and checks the current attempt, revision,
-  accepted source bytes, generation version and readable asset. A replaced image or newer verdict
-  returns a recoverable conflict. Undo clears the last verdict and review stamp only at that same
-  revision; it makes the current attempt unreviewed again.
+  accepted source bytes, generation version, upstream attempt and readable asset. A replaced image
+  or newer verdict returns a recoverable conflict, and a view whose upstream was replaced is
+  `incompatible`. Undo clears the last verdict and review stamp only at that same revision; it
+  makes the current attempt unreviewed again.
 - Rejection optionally records Wrong outfit, Wrong angle, Identity mismatch, Image defect and a
   correction note of at most 1,000 characters. Feedback is stored on that attempt and shown in the
   viewer, current card and history. An unfinished note lives at the reference-panel session boundary,
@@ -182,7 +233,8 @@ approval and opening the bytes.
   is review provenance; it does not change generation instructions.
 - An **owner upload** is the second way a slot is ever filled, and it produces the same row with
   `method: uploaded`, already reviewed: an owner who supplies a view has performed the review by
-  supplying it. It runs no model and charges no render budget. Before submission, the shared crop
+  supplying it. The upload itself runs no model and charges no render budget; like an approval, it
+  then queues the views built from it (§Cost and slot leases). Before submission, the shared crop
   dialog previews the exact 3:4 output, including pan, zoom and fitted backdrop; confirmation sends
   the normalized 768×1024 JPEG. The server re-fits it under the avatar upload's decode guards as
   defense in depth. An upload is unavailable while that slot has
@@ -197,8 +249,10 @@ approval and opening the bytes.
   correction and retry. A later attempt never overwrites an earlier attempt's review provenance.
 - History offers **Use this version** for a retained compatible attempt. Restoration checks
   ownership, slot, current attempt and revision, accepted portrait id and content hash, generation
-  version, available bytes, retention expiry and that slot's pending/live generation state. It copies the bytes
-  into an independent asset and creates a new unreviewed current candidate. The original attempt
+  version, that the upstream attempt it was rendered from is still that slot's approved current
+  one, available bytes, retention expiry and that slot's pending/live generation state. It copies
+  the bytes into an independent asset and creates a new unreviewed current candidate recording the
+  same upstream. The original attempt
   keeps its verdict and feedback; its cleanup cannot delete the restored candidate's file. A failed
   restoration compensates only its own unused copy. A build admitted after restoration can replace
   the candidate through the ordinary attempt lifecycle.
@@ -210,8 +264,8 @@ approval and opening the bytes.
   recoverable verdict and read as `unreviewed`.
 - **Consumable** is one function, `isConsumableReferenceView`, and nothing else recomputes it: the
   slot's current row, `ready` under the current generation version, rendered from the portrait
-  accepted right now, with a `ready` asset, reviewed, and still present in the character's current
-  age-gated plan.
+  accepted right now and from its upstream's approved current attempt when it records one, with a
+  `ready` asset, reviewed, and still present in the character's current age-gated plan.
 
 ## Selection — which view a render sends
 
@@ -300,17 +354,19 @@ studio's grid displays them.
 | Route                                                 | What it does                                                                              |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `GET /api/characters/:id/reference-views`             | `{ set, planned }` — every slot; withheld slots are `ineligible`                          |
-| `POST /api/characters/:id/reference-views/build`      | Claims every available `missing` / `failed` / `stale` slot; reports each target outcome   |
-| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — claims available named slots; reports `queued` / `busy` for each target   |
+| `POST /api/characters/:id/reference-views/build`      | Claims every ready `missing` / `failed` / `stale` slot; reports each target outcome       |
+| `POST /api/characters/:id/reference-views/regenerate` | `{ targets }` — claims named slots; `queued` / `busy` per target; 409 `waiting`           |
 | `POST …/reference-views/:angle/:wardrobe/regenerate`  | The one-target form of the batch route above                                              |
-| `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ the settled slot, synchronously                                           |
-| `POST …/reference-views/:angle/:wardrobe/review`      | `{ attemptId, expectedRevision, verdict, feedback? }` ⇒ settled slot                      |
+| `POST …/reference-views/:angle/:wardrobe/upload`      | `{ dataUrl }` ⇒ `{ view, dependents }`, the slot settled synchronously                    |
+| `POST …/reference-views/:angle/:wardrobe/review`      | `{ attemptId, expectedRevision, verdict, feedback? }` ⇒ `{ view, dependents }`            |
 | `GET …/reference-views/:angle/:wardrobe/history`      | `{ entries, retentionDays, currentAttemptId, currentRevision }`                           |
 | `POST …/reference-views/:angle/:wardrobe/restore`     | `{ attemptId, expectedCurrentAttemptId, expectedCurrentRevision }` ⇒ unreviewed candidate |
 
 All routes are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
 A plan-withheld regeneration is refused whole before anything is charged. A review, restoration, or
 upload that loses eligibility after its initial read returns a recoverable 409 `ineligible`.
+`dependents` is the queue outcome of what that write unlocked (§Cost and slot leases): nothing
+queued for a rejection or an undo.
 
 ## Diagnostic codes
 
@@ -322,7 +378,8 @@ upload that loses eligibility after its initial read returns a recoverable 409 `
 | `images.reference_views.visual_cut_failed`    | A view's cut would not assemble; the row fails before spend   |
 | `images.reference_views.provider_unavailable` | No image provider is configured, so nothing was rendered      |
 | `images.reference_views.unknown_view`         | A stored row names an angle or wardrobe the registry dropped  |
-| `images.reference_views.budget_refused`       | Admission refused the build; the acceptance still stands      |
+| `images.reference_views.budget_refused`       | Admission refused a build; an approval that queued it stands  |
 | `images.reference_views.lease_expired`        | An interrupted slot was reclaimed and is ready to retry       |
 | `images.reference_views.view_unavailable`     | A wanted view could not be sent; the render goes on unchanged |
 | `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity  |
+| `images.reference_views.upstream_unapproved`  | A queued view's upstream is no longer approved; nothing ran   |

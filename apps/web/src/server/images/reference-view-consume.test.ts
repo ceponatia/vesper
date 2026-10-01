@@ -36,6 +36,7 @@ const VIEW = { angle: "back_full", wardrobe: "clothed" } as const;
 const CHARACTER = "chr1";
 const PORTRAIT = "img-portrait";
 const VIEW_ASSET = "img-back-clothed";
+const VIEW_ATTEMPT = "rv-back-clothed-1";
 const readReadyAsset = vi.fn<(imageId: string) => Promise<{ buffer: Buffer; meta: unknown } | null>>();
 
 /** The sheet as the store projects it, with this one slot forced into a state. */
@@ -49,7 +50,7 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         angle: view.angle,
         wardrobe: view.wardrobe,
         state: target ? state : ("missing" as const),
-        attemptId: null,
+        attemptId: target ? VIEW_ATTEMPT : null,
         reviewRevision: 0,
         feedback: null,
         imageId: target ? imageId : null,
@@ -61,6 +62,9 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         // The store's own verdict, which this module must READ rather than
         // re-derive from the state beside it.
         consumable: target && state === "approved",
+        waitingOn: null,
+        approvalBuilds: [],
+        uploadBuilds: [],
       };
     }),
   };
@@ -79,7 +83,7 @@ function project(set: ReferenceViewSetSummary) {
 }
 
 describe("loadConsumableReferenceView", () => {
-  it("hands over an approved view's bytes, its asset id and the portrait behind it", async () => {
+  it("hands over an approved view's bytes, its attempt and asset ids and the portrait behind it", async () => {
     project(sheet("approved"));
     const sink = new DiagnosticCollector();
 
@@ -92,6 +96,8 @@ describe("loadConsumableReferenceView", () => {
 
     expect(loaded).toEqual({
       ok: true,
+      // The attempt a view built FROM this one records as its upstream.
+      attemptId: VIEW_ATTEMPT,
       imageId: VIEW_ASSET,
       buffer: Buffer.from("view-bytes"),
       // The accepted portrait IS the view's source — that equality is the

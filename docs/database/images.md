@@ -87,9 +87,10 @@ the two admin bench run records.
   the owner's ruling on this attempt, written by a review or an upload and never cleared, because
   retiring a row overwrites `status` with `superseded` and would otherwise erase every ruling but
   the newest), `reviewed_by_user_id?` (→ `users`, no cascade — the audit survives the reviewer),
-  `reviewed_at?`. One slot of a character's reference view set: attempts are rows, and exactly one
-  per (character, angle, wardrobe) may be `current`
-  (a partial unique index). See
+  `reviewed_at?`, `upstream_view_id?` (the upstream slot's attempt this view was rendered from — no
+  foreign key; null for a root view, an upload, and every row built before the build order). One
+  slot of a character's reference view set: attempts are rows, and exactly one per (character,
+  angle, wardrobe) may be `current` (a partial unique index). See
   [../images/pipelines/reference-views.md](../images/pipelines/reference-views.md).
 - **`image_identity_lora_bindings`** — `identity_pack_id` (→ `image_identity_packs`,
   **FK-cascade**), `lora_id` (→ `image_loras`, **FK-cascade**), `base_checkpoint`,

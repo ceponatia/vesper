@@ -53,20 +53,35 @@ const referenceViewSetResponseSchema = z
     planned: 0,
   });
 
+/** A queue outcome that says nothing was queued — what an unreadable one degrades to. */
+const IDLE_QUEUE_OUTCOME: ReferenceViewQueueOutcome = {
+  queued: false,
+  reason: null,
+  planned: 0,
+  admitted: 0,
+  targets: [],
+};
+
 /** `{ views }` — what a build or regenerate request decided. Never a failure. */
 const referenceViewQueueResponseSchema = z.object({
-  views: referenceViewQueueOutcomeSchema.catch({
-    queued: false,
-    reason: null,
-    planned: 0,
-    admitted: 0,
-    targets: [],
-  }),
+  views: referenceViewQueueOutcomeSchema.catch(IDLE_QUEUE_OUTCOME),
 });
 
 /** `{ view }` — one settled slot, the body every per-view write answers with. */
 const referenceViewResponseSchema = z.object({
   view: referenceViewSummarySchema,
+});
+
+/**
+ * `{ view, dependents }` — a review or an upload: the settled slot, and what
+ * that write queued downstream. An approval or an upload builds the views made
+ * from this one, so it reports the admission outcome the way a build does; a
+ * rejection or an undo reports nothing queued. An unreadable outcome degrades to
+ * nothing queued rather than failing a verdict that already stands.
+ */
+const referenceViewWriteResponseSchema = z.object({
+  view: referenceViewSummarySchema,
+  dependents: referenceViewQueueOutcomeSchema.catch(IDLE_QUEUE_OUTCOME),
 });
 
 /**
@@ -121,7 +136,10 @@ export const referenceViewsApi = {
         targets,
       },
     ),
-  /** Replace one slot with an owner-supplied image. Synchronous — no polling. */
+  /**
+   * Replace one slot with an owner-supplied image. Synchronous — no polling for
+   * the slot itself; the views built from it are queued like an approval's.
+   */
   upload: (
     characterId: string,
     angle: ReferenceViewAngleId,
@@ -129,11 +147,14 @@ export const referenceViewsApi = {
     dataUrl: string,
   ) =>
     apiPost(
-      referenceViewResponseSchema,
+      referenceViewWriteResponseSchema,
       `${referenceViewPath(characterId, angle, wardrobe)}/upload`,
       { dataUrl },
     ),
-  /** A revision-conditional approval, rejection or undo on the displayed attempt. */
+  /**
+   * A revision-conditional approval, rejection or undo on the displayed attempt.
+   * An approval also queues and charges the views built from this one.
+   */
   review: (
     characterId: string,
     angle: ReferenceViewAngleId,
@@ -141,7 +162,7 @@ export const referenceViewsApi = {
     request: ReferenceViewReviewRequest,
   ) =>
     apiPost(
-      referenceViewResponseSchema,
+      referenceViewWriteResponseSchema,
       `${referenceViewPath(characterId, angle, wardrobe)}/review`,
       request,
     ),

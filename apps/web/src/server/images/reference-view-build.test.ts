@@ -7,7 +7,13 @@ import {
   type ResolvedImageProfile,
 } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
-import { allReferenceViews, referenceViewAngles, type ReferenceView } from "@/contracts";
+import {
+  allReferenceViews,
+  referenceViewAngles,
+  referenceViewUpstream,
+  referenceViewUpstreamBinding,
+  type ReferenceView,
+} from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { INTIMATE_SCENE_LORA_ID, INTIMATE_SCENE_LORA_MODEL_SLUG } from "@/contracts/images/intimate-scene-lora";
 import {
@@ -19,9 +25,9 @@ import {
 
 /*
  * The lane cases further down drive `buildReferenceViews` with its IO mocked:
- * the database, the reference-view store, the wardrobe read, the profile
- * resolver, the identity pack, the prompt compiler, the pipeline shell and the
- * render seam. The intimate route itself (`nsfw-lora.ts`) and the plan's age
+ * the database, the reference-view store, the consumable-view seam, the
+ * wardrobe read, the profile resolver, the identity pack, the prompt compiler,
+ * the pipeline shell and the render seam. The intimate route itself (`nsfw-lora.ts`) and the plan's age
  * gate run for real; the route's two IO collaborators — the model registry and
  * the LoRA library — are mocked where they live. The fan-out cases directly
  * below touch none of this.
@@ -48,6 +54,10 @@ vi.mock("./reference-view-store", async (importOriginal) => {
     finalizeReferenceView: vi.fn(),
     failReferenceView: vi.fn(),
   };
+});
+vi.mock("./reference-view-consume", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./reference-view-consume")>();
+  return { ...actual, loadConsumableReferenceView: vi.fn() };
 });
 vi.mock("./avatar", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./avatar")>();
@@ -101,7 +111,8 @@ import { identityPackRenderReferences, type IdentityPackRenderReferencesResult }
 import { resolveImageLoraForRender } from "./image-loras";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { loadImageModels } from "./models";
-import { buildReferenceViews, runReferenceViewBuilds } from "./reference-view-build";
+import { buildReferenceViews, REFERENCE_VIEW_UPSTREAM_UNAPPROVED, runReferenceViewBuilds } from "./reference-view-build";
+import { loadConsumableReferenceView, REFERENCE_VIEW_DROPPED_FOR_CAPACITY } from "./reference-view-consume";
 import {
   failReferenceView,
   finalizeReferenceView,
@@ -353,14 +364,32 @@ function packOk(): Extract<IdentityPackRenderReferencesResult, { ok: true }> {
 
 /**
  * A compiled program stand-in. The compiler is not under test here — which
- * profile it is asked to compile for, and with what reveal, is.
+ * profile it is asked to compile for, and with what reveal and references, is.
+ * It sends every reference it was handed, as a model with room for all of them
+ * would; the capacity case overrides that.
  */
-const COMPILED = {
-  kind: "compiled",
-  prompt: "the compiled view prompt",
-  negativePrompt: null,
-  meta: {},
-} as unknown as CharacterPromptProgram;
+function compiledFrom(input: Parameters<typeof buildCharacterPromptProgram>[0]): CharacterPromptProgram {
+  return {
+    kind: "compiled",
+    prompt: "the compiled view prompt",
+    negativePrompt: null,
+    meta: {},
+    sentReferences: input.references.map((entry) => entry.reference),
+  } as unknown as CharacterPromptProgram;
+}
+
+/** The approved upstream view the consumable seam hands over, named after its slot. */
+function upstreamFor(view: ReferenceView) {
+  return {
+    ok: true as const,
+    attemptId: `rv-${view.angle}-${view.wardrobe}`,
+    imageId: `img-rv-${view.angle}-${view.wardrobe}`,
+    buffer: Buffer.from("upstream-bytes"),
+    sourceImageId: "img-accepted",
+    faceVisibility: "full" as const,
+    appearanceRevision: "v1:upstream",
+  };
+}
 
 function build(targets?: readonly ReferenceView[]) {
   return buildReferenceViews({
@@ -394,7 +423,8 @@ beforeEach(() => {
   vi.mocked(failReferenceView).mockResolvedValue("failed");
   mockResolveProfile.mockResolvedValue(QWEN21_VARIANT);
   vi.mocked(identityPackRenderReferences).mockResolvedValue(packOk());
-  mockProgram.mockReturnValue(COMPILED);
+  mockProgram.mockImplementation(compiledFrom);
+  vi.mocked(loadConsumableReferenceView).mockImplementation(async (input) => upstreamFor(input.view));
   mockIntent.mockResolvedValue({ ok: true, image: Buffer.from("rendered") });
   // The shell's own order: a precondition fails the row before `produce` runs.
   mockPipeline.mockImplementation(async (opts) => {
@@ -531,5 +561,112 @@ describe("a minor's clothed view with no saved outfit", () => {
     expect(failure).toContain("does not resolve to an adult");
     expect(failure).toContain("saved outfit");
     expect(sink.items.some((item) => item.code === IMAGE_CHARACTER_PROMPT_NON_ADULT_EXPOSED)).toBe(true);
+  });
+});
+
+/**
+ * **A view renders from the approved view it is built from** (#670).
+ *
+ * The sheet shares one body because each dependent view renders with its
+ * upstream view beside the identity pack. Four claims, each silent in a
+ * passing render:
+ *
+ * 1. The upstream rides as an OPTIONAL identity reference AFTER the pack's
+ *    required anchors, introduced in the registry's own words and stamped with
+ *    the upstream asset's appearance revision. A lane that put it first, or
+ *    sent it required, would let a view stand in for the portrait's face.
+ * 2. The row records the upstream attempt it was rendered from, which is what
+ *    lets the view go stale when that attempt is replaced.
+ * 3. An upstream that is not approved reserves and renders NOTHING: a view of
+ *    an unapproved body is the exact failure the order exists to stop.
+ * 4. A model with no room for the upstream records no upstream, because the
+ *    view never depended on it.
+ */
+describe("a dependent view's upstream reference", () => {
+  const ROOT_VIEW: ReferenceView = { angle: "front_full", wardrobe: "clothed" };
+  const BACK_CLOTHED: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+  const BACK_BARE: ReferenceView = { angle: "back_full", wardrobe: "bare" };
+
+  it.each([
+    ["another angle dressed, from the front dressed", BACK_CLOTHED],
+    ["an undressed view, from its own angle dressed", BACK_BARE],
+  ])("sends %s behind the pack, and records it", async (_label, view) => {
+    const upstream = referenceViewUpstream(view);
+    if (upstream === null) throw new Error("fixture view has no upstream");
+    const loaded = upstreamFor(upstream);
+
+    const report = await build([view]);
+
+    expect(report).toMatchObject({ built: 1, failed: 0 });
+    expect(vi.mocked(loadConsumableReferenceView).mock.calls[0]?.[0]).toMatchObject({ view: upstream });
+    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ view, upstreamViewId: loaded.attemptId });
+
+    const references = mockProgram.mock.calls[0]?.[0].references ?? [];
+    expect(references).toHaveLength(2);
+    expect(references[0]?.reference).toMatchObject({ role: "identity", required: true, sourceImageId: "img-accepted" });
+    expect(references[1]).toMatchObject({
+      reference: { role: "identity", required: false, sourceImageId: loaded.imageId },
+      subjectId: "chr-nyx",
+      description: referenceViewUpstreamBinding(view),
+      appearanceRevision: loaded.appearanceRevision,
+    });
+    // The renderer receives the same list in the same order the prompt numbered.
+    expect(mockIntent.mock.calls[0]?.[0].references).toEqual(references.map((entry) => entry.reference));
+
+    expect(vi.mocked(finalizeReferenceView).mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: loaded.attemptId });
+    expect(reservedMeta().referenceView).toMatchObject({
+      upstream: { angle: upstream.angle, wardrobe: upstream.wardrobe, attemptId: loaded.attemptId, imageId: loaded.imageId },
+    });
+  });
+
+  it("sends no upstream for the root view, and records none", async () => {
+    await build([ROOT_VIEW]);
+
+    expect(loadConsumableReferenceView).not.toHaveBeenCalled();
+    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: null });
+    expect(mockProgram.mock.calls[0]?.[0].references).toHaveLength(1);
+    expect(vi.mocked(finalizeReferenceView).mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: null });
+    expect(reservedMeta().referenceView).not.toHaveProperty("upstream");
+  });
+
+  it("reserves and renders nothing when the view it is built from is not approved", async () => {
+    vi.mocked(loadConsumableReferenceView).mockResolvedValue({ ok: false, reason: "unreviewed" });
+    const sink = new DiagnosticCollector();
+
+    const report = await buildReferenceViews({
+      jobId: "job-1",
+      characterId: "chr-nyx",
+      ownerId: "usr-1",
+      targets: [BACK_CLOTHED],
+      sink,
+    });
+
+    expect(report).toMatchObject({ built: 0, failed: 1 });
+    expect(mockReserve).not.toHaveBeenCalled();
+    expect(mockPipeline).not.toHaveBeenCalled();
+    expect(mockIntent).not.toHaveBeenCalled();
+    expect(sink.items.some((item) => item.code === REFERENCE_VIEW_UPSTREAM_UNAPPROVED)).toBe(true);
+  });
+
+  it("records no upstream when the model had no room to send it", async () => {
+    mockProgram.mockImplementation((input) => ({
+      ...compiledFrom(input),
+      // A one-slot model: the pack's required anchor took the only slot.
+      sentReferences: input.references.slice(0, 1).map((entry) => entry.reference),
+    }));
+    const sink = new DiagnosticCollector();
+
+    const report = await buildReferenceViews({
+      jobId: "job-1",
+      characterId: "chr-nyx",
+      ownerId: "usr-1",
+      targets: [BACK_CLOTHED],
+      sink,
+    });
+
+    expect(report).toMatchObject({ built: 1, failed: 0 });
+    expect(vi.mocked(finalizeReferenceView).mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: null });
+    expect(reservedMeta().referenceView).not.toHaveProperty("upstream");
+    expect(sink.items.some((item) => item.code === REFERENCE_VIEW_DROPPED_FOR_CAPACITY)).toBe(true);
   });
 });

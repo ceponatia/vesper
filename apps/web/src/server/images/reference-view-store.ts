@@ -9,17 +9,23 @@ import {
   emptyCharacterProfile,
   plannedReferenceViews,
   emptyReferenceViewSetSummary,
-  isConsumableReferenceView,
-  projectReferenceViewState,
+  projectReferenceViewSlots,
   REFERENCE_VIEW_GENERATION_VERSION,
   referenceViewAngleIdSchema,
+  referenceViewBuildsOnApproval,
   referenceViewHistoryVerdict,
   referenceViewFeedbackSchema,
+  referenceViewsReadyToBuild,
+  referenceViewUpstream,
   referenceViewWardrobeSchema,
+  sameReferenceView,
   type ReferenceView,
   type ReferenceViewHistoryEntry,
   type ReferenceViewMethod,
   type ReferenceViewSetSummary,
+  type ReferenceViewSlotFacts,
+  type ReferenceViewSlotProjection,
+  type ReferenceViewSlotRow,
   type ReferenceViewSummary,
   type ReferenceViewReviewRequest,
 } from "@/contracts";
@@ -303,18 +309,29 @@ async function hasLiveReferenceViewJob(executor: ReferenceViewExecutor, characte
 /** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
 export const REFERENCE_VIEW_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
+/**
+ * Why a retained attempt cannot be restored, or null when it can.
+ *
+ * `approvedUpstreamId` is the slot's upstream approved current attempt right
+ * now: an attempt rendered from an upstream view is compatible only with that
+ * same view, exactly as it is only compatible with the portrait it came from —
+ * restoring it beside a different upstream would install a candidate that
+ * already reads stale.
+ */
 function restoreUnavailable(
   row: ReferenceViewRow,
   source: AcceptedPortraitSource,
   busy: boolean,
   eligible: boolean,
+  approvedUpstreamId: string | null,
 ): ReferenceViewHistoryEntry["restoreUnavailable"] {
   if (!eligible) return "ineligible";
   if (row.current) return "current";
   if (row.updatedAt.getTime() < Date.now() - REFERENCE_VIEW_RETENTION_MS) return "expired";
   if (!row.imageId || !row.method) return "unavailable";
   if (!source.ok || row.sourceImageId !== source.imageId || row.sourceContentHash !== source.contentHash ||
-      row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION) return "incompatible";
+      row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
+      (row.upstreamViewId !== null && row.upstreamViewId !== approvedUpstreamId)) return "incompatible";
   if (busy) return "busy";
   return null;
 }
@@ -330,6 +347,19 @@ function slotKey(view: ReferenceView): string {
 
 function planIncludes(plan: readonly ReferenceView[], view: ReferenceView): boolean {
   return plan.some((candidate) => candidate.angle === view.angle && candidate.wardrobe === view.wardrobe);
+}
+
+/**
+ * The approved current attempt of the view this slot is built from, or null —
+ * for a root view, and while that upstream slot has none. Read off a projected
+ * sheet, so an upstream that is itself stale (its own upstream moved) answers
+ * null exactly as the projection says.
+ */
+function approvedUpstreamAttemptId(set: ReferenceViewSetSummary, view: ReferenceView): string | null {
+  const upstream = referenceViewUpstream(view);
+  if (upstream === null) return null;
+  const summary = set.views.find((entry) => sameReferenceView(entry, upstream));
+  return summary?.state === "approved" ? summary.attemptId : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +558,7 @@ export async function referenceViewHistoryEntries(
   const plan = await readReferenceViewPlan(characterId, ownerId, db());
   if (plan === undefined) return [];
   const eligible = planIncludes(plan, view);
+  const approvedUpstream = approvedUpstreamAttemptId(await getReferenceViewSet(characterId, ownerId), view);
 
   return rows.flatMap((row) => {
     const imageId = row.imageId;
@@ -539,7 +570,7 @@ export async function referenceViewHistoryEntries(
         method: row.method,
         verdict: referenceViewHistoryVerdict(row),
         feedback: parseOrNull(referenceViewFeedbackSchema, row.feedback),
-        restoreUnavailable: restoreUnavailable(row, source, busy, eligible),
+        restoreUnavailable: restoreUnavailable(row, source, busy, eligible, approvedUpstream),
         current: row.current,
         createdAt: row.createdAt.toISOString(),
         reviewedAt: row.reviewedAt === null ? null : row.reviewedAt.toISOString(),
@@ -550,33 +581,10 @@ export async function referenceViewHistoryEntries(
   });
 }
 
-/** One row plus the joined facts the projection needs, as one summary. */
-function summarizeRow(
-  view: ReferenceView,
-  row: ReferenceViewRow | undefined,
-  acceptedImageId: string | null,
-  imageStatus: string | null,
-  eligible: boolean,
-): ReferenceViewSummary {
-  if (row === undefined) {
-    return {
-      angle: view.angle,
-      wardrobe: view.wardrobe,
-      state: eligible ? "missing" : "ineligible",
-      attemptId: null,
-      reviewRevision: 0,
-      feedback: null,
-      imageId: null,
-      method: null,
-      reviewedAt: null,
-      failureCode: null,
-      failureMessage: null,
-      updatedAt: null,
-      consumable: false,
-    };
-  }
-  const projection = {
-    eligible,
+/** The facts one current row hands the sheet projection. */
+function slotRowFacts(row: ReferenceViewRow, acceptedImageId: string | null, imageStatus: string | null): ReferenceViewSlotRow {
+  return {
+    attemptId: row.id,
     current: row.current,
     status: row.status,
     sourceImageId: row.sourceImageId,
@@ -585,25 +593,89 @@ function summarizeRow(
     generationVersion: row.generationVersion,
     reviewedAt: row.reviewedAt,
     acceptedImageId,
+    upstreamViewId: row.upstreamViewId,
   };
+}
+
+/** A slot nothing has been built in — what an unreachable lookup degrades to. */
+function unbuiltSummary(view: ReferenceView, eligible: boolean): ReferenceViewSummary {
   return {
     angle: view.angle,
     wardrobe: view.wardrobe,
-    state: projectReferenceViewState(projection),
-    attemptId: row.id,
-    reviewRevision: row.reviewRevision,
-    feedback: parseOrNull(referenceViewFeedbackSchema, row.feedback),
-    // The asset id rides even on a stale or rejected row: the studio shows the
-    // owner what it is calling stale, which is the difference between a state
-    // they can act on and one they have to take on faith.
-    imageId: row.imageId,
-    method: row.method,
-    reviewedAt: row.reviewedAt === null ? null : row.reviewedAt.toISOString(),
-    failureCode: row.failureCode,
-    failureMessage: row.failureMessage,
-    updatedAt: row.updatedAt.toISOString(),
-    consumable: isConsumableReferenceView(projection),
+    state: eligible ? "missing" : "ineligible",
+    attemptId: null,
+    reviewRevision: 0,
+    feedback: null,
+    imageId: null,
+    method: null,
+    reviewedAt: null,
+    failureCode: null,
+    failureMessage: null,
+    updatedAt: null,
+    consumable: false,
+    waitingOn: null,
+    approvalBuilds: [],
+    uploadBuilds: [],
   };
+}
+
+/**
+ * Every slot of the sheet as one summary each, in registry order.
+ *
+ * The states come from ONE projection over the whole sheet
+ * (`projectReferenceViewSlots`), because a slot's staleness reads its
+ * upstream's projected answer; and each slot's disclosed builds come from the
+ * same projection with that slot's approval assumed, so the Approve control's
+ * count is the rule the review route charges by.
+ */
+function projectSheet(input: {
+  bySlot: ReadonlyMap<string, ReferenceViewRow>;
+  statuses: ReadonlyMap<string, string>;
+  acceptedImageId: string | null;
+  eligible: ReadonlySet<string>;
+}): ReferenceViewSummary[] {
+  const facts: ReferenceViewSlotFacts[] = allReferenceViews().map((view) => {
+    const row = input.bySlot.get(slotKey(view));
+    const imageStatus = row === undefined || row.imageId === null ? null : (input.statuses.get(row.imageId) ?? null);
+    return {
+      view,
+      eligible: input.eligible.has(slotKey(view)),
+      row: row === undefined ? null : slotRowFacts(row, input.acceptedImageId, imageStatus),
+    };
+  });
+  const projected = projectReferenceViewSlots(facts);
+  return facts.map((slot) => {
+    const row = input.bySlot.get(slotKey(slot.view));
+    const projection: ReferenceViewSlotProjection | undefined = projected.find((entry) => sameReferenceView(entry, slot.view));
+    if (projection === undefined) return unbuiltSummary(slot.view, slot.eligible);
+    return {
+      angle: slot.view.angle,
+      wardrobe: slot.view.wardrobe,
+      state: projection.state,
+      attemptId: row?.id ?? null,
+      reviewRevision: row?.reviewRevision ?? 0,
+      feedback: row === undefined ? null : parseOrNull(referenceViewFeedbackSchema, row.feedback),
+      // The asset id rides even on a stale or rejected row: the studio shows the
+      // owner what it is calling stale, which is the difference between a state
+      // they can act on and one they have to take on faith.
+      imageId: row?.imageId ?? null,
+      method: row?.method ?? null,
+      reviewedAt: row?.reviewedAt ? row.reviewedAt.toISOString() : null,
+      failureCode: row?.failureCode ?? null,
+      failureMessage: row?.failureMessage ?? null,
+      updatedAt: row === undefined ? null : row.updatedAt.toISOString(),
+      consumable: projection.consumable,
+      waitingOn: projection.waitingOn,
+      // Only an attempt the owner has not ruled on can be approved.
+      approvalBuilds:
+        projection.state === "unreviewed" && slot.row !== null
+          ? referenceViewBuildsOnApproval(facts, { view: slot.view, attemptId: slot.row.attemptId })
+          : [],
+      // An upload installs a NEW approved attempt, which no stored row was
+      // rendered from.
+      uploadBuilds: slot.eligible ? referenceViewBuildsOnApproval(facts, { view: slot.view, attemptId: null }) : [],
+    };
+  });
 }
 
 /**
@@ -654,11 +726,7 @@ export async function getReferenceViewSet(
   return {
     acceptedImageId: accepted,
     building: await hasLiveReferenceViewJob(reader, characterId),
-    views: allReferenceViews().map((view) => {
-      const row = bySlot.get(slotKey(view));
-      const imageStatus = row === undefined || row.imageId === null ? null : (statuses.get(row.imageId) ?? null);
-      return summarizeRow(view, row, accepted, imageStatus, eligibleSlots.has(slotKey(view)));
-    }),
+    views: projectSheet({ bySlot, statuses, acceptedImageId: accepted, eligible: eligibleSlots }),
   };
 }
 
@@ -706,10 +774,19 @@ export async function getReferenceViewSummary(
   sink?: DiagnosticSink,
 ): Promise<ReferenceViewSummary> {
   const set = await getReferenceViewSet(characterId, ownerId, sink);
-  return (
-    set.views.find((entry) => entry.angle === view.angle && entry.wardrobe === view.wardrobe) ??
-    summarizeRow(view, undefined, set.acceptedImageId, null, false)
-  );
+  return set.views.find((entry) => sameReferenceView(entry, view)) ?? unbuiltSummary(view, false);
+}
+
+/** One slot's summary read inside the caller's transaction, so a write answers with what it wrote. */
+async function slotSummaryInTransaction(
+  tx: ReferenceViewTransaction,
+  characterId: string,
+  ownerId: string,
+  view: ReferenceView,
+  sink?: DiagnosticSink,
+): Promise<ReferenceViewSummary> {
+  const set = await getReferenceViewSet(characterId, ownerId, sink, tx);
+  return set.views.find((entry) => sameReferenceView(entry, view)) ?? unbuiltSummary(view, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +802,12 @@ export interface ReserveReferenceViewInput {
   /** The accepted portrait this attempt renders from. */
   sourceImageId: string;
   sourceContentHash: string;
+  /**
+   * The upstream attempt whose bytes this render will send
+   * (`referenceViewUpstream`). Required to be that slot's approved current
+   * attempt for any view that has an upstream; ignored for a root view.
+   */
+  upstreamViewId?: string | null;
 }
 
 /**
@@ -752,6 +835,18 @@ export async function reserveReferenceView(input: ReserveReferenceViewInput): Pr
     if (acceptedImageId !== input.sourceImageId) return null;
     const plan = await readReferenceViewPlan(characterId, input.ownerId, tx);
     if (plan === undefined || !planIncludes(plan, view)) return null;
+    // The build order, under the same lock: a dependent renders only from its
+    // upstream's approved current attempt, and only from the one the worker has
+    // already read. An upstream regenerated, undone or gone stale since the
+    // approval that queued this slot refuses here, before any provider call,
+    // and the slot waits for that view's next approval to queue it again.
+    const upstream = referenceViewUpstream(view);
+    let upstreamViewId: string | null = null;
+    if (upstream !== null) {
+      const approved = approvedUpstreamAttemptId(await getReferenceViewSet(characterId, input.ownerId, undefined, tx), view);
+      if (approved === null || approved !== (input.upstreamViewId ?? null)) return null;
+      upstreamViewId = approved;
+    }
     await tx
       .update(characterReferenceViews)
       // `updated_at` is bumped by the column's own `$onUpdate`, and it is what the
@@ -777,6 +872,7 @@ export async function reserveReferenceView(input: ReserveReferenceViewInput): Pr
         sourceImageId: input.sourceImageId,
         sourceContentHash: input.sourceContentHash,
         generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+        upstreamViewId,
       })
       .returning({ id: characterReferenceViews.id });
     if (!row) throw new Error("character_reference_views insert returned no row");
@@ -813,6 +909,13 @@ export interface FinalizeReferenceViewInput {
   method: ReferenceViewMethod;
   /** Owner id to stamp as the reviewer, for a view that arrives already reviewed (an upload). */
   reviewedByUserId?: string;
+  /**
+   * The upstream attempt the render actually SENT, or null when the model had
+   * no room for it — the reservation recorded the one it was given, and a view
+   * the upstream never reached does not depend on it. Absent keeps the
+   * reservation's record.
+   */
+  upstreamViewId?: string | null;
 }
 
 export interface InstallUploadedReferenceViewInput extends Omit<ReserveReferenceViewInput, "jobId"> {
@@ -844,14 +947,16 @@ export async function installUploadedReferenceView(input: InstallUploadedReferen
       return { status: "changed" };
     }
     if (current) await tx.update(characterReferenceViews).set({ current: false, status: "superseded" }).where(eq(characterReferenceViews.id, current.id));
+    // An upload is the owner's own answer, rendered from nothing upstream, so it
+    // records no upstream and never goes stale by one.
     const [candidate] = await tx.insert(characterReferenceViews).values({
       characterId: input.characterId, angleId: input.view.angle, wardrobe: input.view.wardrobe,
       current: true, status: "ready", sourceImageId: source.imageId, sourceContentHash: source.contentHash,
       generationVersion: REFERENCE_VIEW_GENERATION_VERSION, imageId: input.imageId, method: "uploaded",
-      verdict: "approved", reviewedByUserId: input.ownerId, reviewedAt: new Date(),
-    }).returning();
+      verdict: "approved", reviewedByUserId: input.ownerId, reviewedAt: new Date(), upstreamViewId: null,
+    }).returning({ id: characterReferenceViews.id });
     if (!candidate) throw new Error("reference upload returned no candidate");
-    return { status: "uploaded", view: summarizeRow(input.view, candidate, source.imageId, "ready", true) };
+    return { status: "uploaded", view: await slotSummaryInTransaction(tx, input.characterId, input.ownerId, input.view) };
   });
 }
 
@@ -943,6 +1048,7 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
         status: stale ? "stale" : "ready",
         imageId: input.imageId,
         method: input.method,
+        ...(input.upstreamViewId === undefined ? {} : { upstreamViewId: input.upstreamViewId }),
         // An upload arrives reviewed, so it arrives with a verdict: supplying a
         // view IS the approval, and the row has to say so in the one column
         // that outlives its own supersession.
@@ -1028,6 +1134,13 @@ export async function reviewReferenceView(input: ReferenceViewReviewRequest & {
     const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
     if (!source.ok || row.sourceImageId !== source.imageId || row.sourceContentHash !== source.contentHash ||
         row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION) return { status: "incompatible" };
+    // A view rendered from an upstream view that is no longer that slot's
+    // approved current attempt is stale exactly as one from a replaced portrait
+    // is — and approving it would build its own dependents from a stale body.
+    if (row.upstreamViewId !== null) {
+      const set = await getReferenceViewSet(input.characterId, input.ownerId, input.sink, tx);
+      if (approvedUpstreamAttemptId(set, input.view) !== row.upstreamViewId) return { status: "incompatible" };
+    }
     const [asset] = await tx.select().from(images).where(and(eq(images.id, row.imageId ?? ""), eq(images.ownerId, input.ownerId))).limit(1);
     if (!asset || asset.status !== "ready" || await readImageBytes(asset) === null) return { status: "unavailable" };
     const [updated] = await tx.update(characterReferenceViews).set({
@@ -1038,9 +1151,9 @@ export async function reviewReferenceView(input: ReferenceViewReviewRequest & {
       reviewRevision: row.reviewRevision + 1,
       ...(input.verdict === "reject" ? { feedback: input.feedback ?? null } : {}),
     }).where(and(eq(characterReferenceViews.id, row.id), eq(characterReferenceViews.current, true),
-      eq(characterReferenceViews.reviewRevision, input.expectedRevision))).returning();
+      eq(characterReferenceViews.reviewRevision, input.expectedRevision))).returning({ id: characterReferenceViews.id });
     if (!updated) return { status: "changed" };
-    return { status: "reviewed", view: summarizeRow(input.view, updated, accepted, asset.status, true) };
+    return { status: "reviewed", view: await slotSummaryInTransaction(tx, input.characterId, input.ownerId, input.view, input.sink) };
   });
 }
 
@@ -1073,6 +1186,7 @@ export async function restoreReferenceView(input: {
     source,
     await referenceViewSlotBusy(input.characterId, input.ownerId, input.view),
     true,
+    approvedUpstreamAttemptId(await getReferenceViewSet(input.characterId, input.ownerId), input.view),
   );
   if (unavailable) return { status: unavailable === "current" ? "changed" : unavailable };
   const [asset] = await db().select().from(images).where(and(eq(images.id, attempt.imageId ?? ""),
@@ -1103,21 +1217,28 @@ export async function restoreReferenceView(input: {
       if (!latest) return { status: "unavailable" };
       const busy = current?.status === "pending" ||
         await referenceViewSlotBusy(input.characterId, input.ownerId, input.view, tx);
-      const refusal = restoreUnavailable(latest, latestSource, busy, true);
+      const approvedUpstream = approvedUpstreamAttemptId(
+        await getReferenceViewSet(input.characterId, input.ownerId, undefined, tx),
+        input.view,
+      );
+      const refusal = restoreUnavailable(latest, latestSource, busy, true, approvedUpstream);
       if (refusal) return { status: refusal === "current" ? "changed" : refusal };
       const [liveAsset] = await tx.select({ status: images.status }).from(images).where(eq(images.id, asset.id)).limit(1);
       if (liveAsset?.status !== "ready" || latest.imageId !== asset.id) return { status: "unavailable" };
       // The retained image can expire immediately after this check; the candidate's independent bytes survive it.
       await tx.update(images).set({ status: "ready", bytes: bytes.length }).where(eq(images.id, copy.id));
       if (current) await tx.update(characterReferenceViews).set({ current: false, status: "superseded" }).where(eq(characterReferenceViews.id, current.id));
+      // The copy shows exactly what the original shows, so it was rendered from
+      // the same upstream attempt — which the check above has just confirmed is
+      // still that slot's approved current one.
       const [candidate] = await tx.insert(characterReferenceViews).values({
         characterId: input.characterId, angleId: input.view.angle, wardrobe: input.view.wardrobe,
         current: true, status: "ready", sourceImageId: latestSource.imageId,
         sourceContentHash: latestSource.contentHash, generationVersion: latest.generationVersion,
-        imageId: copy.id, method: latest.method,
-      }).returning();
+        imageId: copy.id, method: latest.method, upstreamViewId: latest.upstreamViewId,
+      }).returning({ id: characterReferenceViews.id });
       if (!candidate) throw new Error("reference restoration returned no candidate");
-      return { status: "restored", view: summarizeRow(input.view, candidate, latestSource.imageId, "ready", true) };
+      return { status: "restored", view: await slotSummaryInTransaction(tx, input.characterId, input.ownerId, input.view) };
     });
     installed = result.status === "restored";
     return result;
@@ -1139,7 +1260,9 @@ export async function restoreReferenceView(input: {
 
 /**
  * The slots a "build what is missing" request should render: every planned view
- * whose projected state is `missing`, `failed` or `stale`.
+ * whose projected state is `missing`, `failed` or `stale` and whose upstream is
+ * approved (`referenceViewsReadyToBuild`) — on a fresh character, the root view
+ * alone. The rest build as their upstream views are approved.
  *
  * Deliberately NOT `rejected` — the owner said no to that view, and a bulk build
  * must not quietly re-render something they turned down. A rejected slot is
@@ -1150,10 +1273,7 @@ export function referenceViewsToRebuild(
   planned: readonly ReferenceView[],
 ): readonly ReferenceView[] {
   const wanted = new Set(planned.map((view) => slotKey(view)));
-  return set.views
-    .filter((view) => wanted.has(slotKey(view)))
-    .filter((view) => view.state === "missing" || view.state === "failed" || view.state === "stale")
-    .map((view) => ({ angle: view.angle, wardrobe: view.wardrobe }));
+  return referenceViewsReadyToBuild(set.views).filter((view) => wanted.has(slotKey(view)));
 }
 
 /**

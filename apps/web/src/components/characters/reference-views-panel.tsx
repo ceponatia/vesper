@@ -3,6 +3,7 @@
 import { useState, type SetStateAction } from "react";
 import {
   referenceViewAngles,
+  referenceViewsReadyToBuild,
   referenceViewWardrobeEntries,
   type CharacterPortraitAcceptance,
 } from "@/contracts";
@@ -15,16 +16,21 @@ import {
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
 import {
+  referenceViewBuildActionLabel,
+  referenceViewBuildQueuedTitle,
+  referenceViewDependentsCopy,
   referenceViewRebuildQueuedTitle,
   referenceViewRefusalCopy,
   referenceViewSelectionActionLabel,
   referenceViewStateCopy,
+  referenceViewUploadConfirmLabel,
+  referenceViewWaitingCopy,
 } from "./reference-view-copy";
 import { ReferenceViewHistory, type ReferenceViewHistorySlot } from "./reference-view-history";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
-import { ReferenceViewFeedbackNote, ReferenceViewReviewer } from "./reference-view-reviewer";
+import { ReferenceViewFeedbackNote, ReferenceViewReviewer, referenceViewLabel } from "./reference-view-reviewer";
 import {
   discardReferenceViewFeedbackDraft,
   writeReferenceViewFeedbackDraft,
@@ -64,6 +70,11 @@ import { settledReferenceViewSelectionKeys } from "./reference-view-selection";
  * one rebuild to finish before the next may be asked for: what a rebuild costs
  * is the image budget's question, and the studio must not invent a second,
  * quieter limit by making the owner click eight times.
+ *
+ * **The sheet builds in order.** A tile whose upstream view is not approved
+ * (`waitingOn`) shows a waiting state instead of a build control; approving a
+ * view, or uploading one, builds the views made from it, and both controls say
+ * how many before they are used.
  */
 
 const POLL_MS = 3000;
@@ -178,19 +189,25 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
   if (!acceptance.acceptedImageId && !inFlight && set.views.every((view) => view.state === "missing" || view.state === "ineligible")) return null;
 
   const bySlot = new Map(set.views.map((view) => [slotKey(view), view]));
-  const buildableViews = set.views.filter(
-    (view) => view.state === "missing" || view.state === "stale" || view.state === "failed",
-  );
+  // The server's own rule: wanted, and not waiting on an unapproved upstream.
+  const buildableViews = referenceViewsReadyToBuild(set.views);
   // Read back off the set rather than out of the checkbox state, so a slot that
   // vanished between tick and submit cannot inflate the count the owner is shown.
   const selectedViews = set.views.filter(
     (view) =>
       view.state !== "ineligible" &&
       view.state !== "pending" &&
+      // A slot that started waiting after it was ticked has nothing approved to
+      // be rebuilt from; the server would refuse the whole selection for it.
+      view.waitingOn === null &&
       view.attemptId !== null &&
       !submitted.has(slotKey(view)) &&
       selected.has(slotKey(view)),
   );
+
+  // What an upload into the open dialog's slot would build — read off the live
+  // set, so a poll that changes the dependents changes the disclosed count.
+  const uploadBuilds = uploadTarget === null ? 0 : (bySlot.get(slotKey(uploadTarget))?.uploadBuilds.length ?? 0);
 
   const refetch = () => {
     views.reload({ silent: true });
@@ -233,7 +250,7 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
       toast.push({ title: "Could not build the views", description: result.error.message, tone: "error" });
       return;
     }
-    reportQueue(result.data.views, `Building ${String(result.data.views.admitted)} reference views…`);
+    reportQueue(result.data.views, referenceViewBuildQueuedTitle(result.data.views.admitted));
     refetch();
   };
 
@@ -315,7 +332,12 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
       refetch();
       return { ok: false, message: result.error.message };
     }
-    toast.push({ title: "View replaced", description: "Your own image is now this angle's reference." });
+    const dependents = referenceViewDependentsCopy(result.data.dependents);
+    toast.push({
+      title: "View replaced",
+      description: dependents ?? "Your own image is now this angle's reference.",
+      ...(result.data.dependents.reason === null ? {} : { tone: "error" as const }),
+    });
     refetch();
     return { ok: true };
   };
@@ -331,13 +353,17 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
             are used in new images.
           </p>
           <p className="text-xs text-paper-500">
+            The front view builds first. Approving it builds the other angles from the same body, and approving each
+            dressed view builds its undressed one.
+          </p>
+          <p className="text-xs text-paper-500">
             Open an image for a closer look. Select attempted views to regenerate them together.
           </p>
           {inFlight || submitting ? <p className="text-xs text-paper-400">Slots that are not building remain available.</p> : null}
         </div>
         {buildableViews.length > 0 && acceptance.acceptedImageId ? (
           <Button size="sm" variant="primary" className="ml-auto" busy={building} onClick={buildAll}>
-            {`Build ${String(buildableViews.length)} reference views`}
+            {referenceViewBuildActionLabel(buildableViews.length)}
           </Button>
         ) : null}
       </div>
@@ -365,7 +391,6 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
             {referenceViewAngles.map((angle) => {
               const view = bySlot.get(slotKey({ angle: angle.id, wardrobe: wardrobe.id }));
               if (!view) return null;
-              const copy = referenceViewStateCopy[view.state];
               const slot = slotKey(view);
               const busy = busySlot === slot;
               const label = `${angle.label}, ${wardrobe.label}`;
@@ -374,13 +399,22 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
               const attempted = view.attemptId !== null;
               const eligible = view.state !== "ineligible";
               const slotBuilding = view.state === "pending" || submitted.has(slot);
+              // Nothing may build this slot until the view it is built from is
+              // approved, so it shows that instead of a build control. An empty
+              // slot reads "waiting"; one with an image keeps its own state chip.
+              const waitingFor = eligible && !slotBuilding && view.waitingOn !== null ? referenceViewLabel(view.waitingOn) : null;
+              const copy =
+                waitingFor !== null && view.state === "missing"
+                  ? { label: referenceViewWaitingCopy.label, tone: referenceViewWaitingCopy.tone, hint: referenceViewWaitingCopy.hint(waitingFor) }
+                  : referenceViewStateCopy[view.state];
+              const rebuildable = attempted && eligible && view.waitingOn === null;
               return (
                 <div
                   key={angle.id}
                   className="flex min-w-0 flex-col gap-3 rounded-card border border-ink-600 bg-ink-800 p-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    {attempted && eligible && !slotBuilding ? (
+                    {rebuildable && !slotBuilding ? (
                       <label className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100">
                         <input
                           type="checkbox"
@@ -418,7 +452,9 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
                       <span className="px-2 text-center text-xs text-paper-500">{copy.label}</span>
                     )}
                   </div>
-                  {view.state === "failed" || view.state === "rejected" || view.state === "stale" || view.state === "ineligible" ? (
+                  {waitingFor !== null ? (
+                    <p className="text-xs leading-relaxed text-paper-400">{referenceViewWaitingCopy.hint(waitingFor)}</p>
+                  ) : view.state === "failed" || view.state === "rejected" || view.state === "stale" || view.state === "ineligible" ? (
                     <p className="text-xs leading-relaxed text-paper-400">
                       {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
                     </p>
@@ -432,7 +468,7 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
                         </Button>
                       </>
                     ) : null}
-                    {attempted && eligible ? (
+                    {rebuildable ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -469,8 +505,10 @@ export function ReferenceViewsPanel({ characterId, planKey, acceptance, onChange
         onClose={() => setUploadTarget(null)}
         name={uploadTarget.label}
         title={`Upload ${uploadTarget.label} view`}
-        description="Crop or fit the image in the 3:4 frame, then confirm the exact preview that will replace this reference view."
-        confirmLabel="Use this reference view"
+        description={uploadBuilds > 0
+          ? "Crop or fit the image in the 3:4 frame, then confirm the exact preview that will replace this reference view. An upload counts as approved, so it also builds the views made from it."
+          : "Crop or fit the image in the 3:4 frame, then confirm the exact preview that will replace this reference view."}
+        confirmLabel={referenceViewUploadConfirmLabel(uploadBuilds)}
         onUpload={uploadReference}
       /> : null}
 

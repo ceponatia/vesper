@@ -7,6 +7,8 @@ import {
   plannedReferenceViews,
   referenceViewAngleById,
   referenceViewFaceVisibility,
+  referenceViewUpstream,
+  referenceViewUpstreamBinding,
   referenceViewWardrobeById,
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
   REFERENCE_VIEW_GENERATION_VERSION,
@@ -40,12 +42,14 @@ import {
   characterPromptTransport,
   characterPromptUnboundRefusal,
   type CharacterPromptProgram,
+  type CharacterPromptReference,
 } from "./character-prompt-program";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { resolveIntimateRoute } from "./nsfw-lora";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { buildStandaloneSubjectCut, standaloneSubjectPromptCut, type StandaloneSubjectCut } from "./standalone-subject-visual";
+import { loadConsumableReferenceView, REFERENCE_VIEW_DROPPED_FOR_CAPACITY } from "./reference-view-consume";
 import {
   failReferenceView,
   finalizeReferenceView,
@@ -85,6 +89,15 @@ import {
  *    character with no accepted portrait builds nothing and says so, and the
  *    job never throws out of itself.
  *
+ * A view with an upstream in the build order (`referenceViewUpstream`) renders
+ * with that view's approved current attempt beside the identity pack, as an
+ * OPTIONAL identity reference of the same person: the pack's anchors stay first
+ * and required, and the upstream is cut to the model's capacity like any
+ * optional reference. It is read through the one consumable seam
+ * (`loadConsumableReferenceView`) before anything is reserved, and the
+ * reservation confirms under the character lock that it is still the approved
+ * attempt — so a view is never rendered from a body the owner has not approved.
+ *
  * The age gate is a GATE, in {@link plannedReferenceViews}, and it runs before
  * anything is reserved — a character whose image age band is not a recognized
  * adult one simply has no bare slots to build. Nothing about it reaches a model.
@@ -95,6 +108,13 @@ const SCOPE = "images.reference_views";
 
 /** A view's render failed. The expected instance is a moderated bare view. */
 export const REFERENCE_VIEW_BUILD_FAILED = `${SCOPE}.build_failed`;
+
+/**
+ * A queued view did not start because the view it is built from is no longer
+ * approved — regenerated, undone or gone stale since the approval that queued
+ * it. Nothing was reserved or rendered; that view's next approval queues it.
+ */
+export const REFERENCE_VIEW_UPSTREAM_UNAPPROVED = `${SCOPE}.upstream_unapproved`;
 
 export interface BuildReferenceViewsInput {
   /** The heartbeat-live job whose payload owns each target lease. */
@@ -330,6 +350,80 @@ async function resolveBareRoute(profile: ResolvedImageProfile, sink: DiagnosticS
   return { ok: true, profile: route.profile, binding: route.binding, provenance: route.provenance };
 }
 
+/**
+ * The approved view one view is built from, shaped to ride its render — the
+ * attempt it came from, its asset, and the reference exactly as both the prompt
+ * seam and the renderer receive it.
+ */
+interface UpstreamReference {
+  readonly view: ReferenceView;
+  /** The upstream slot's approved current attempt — what the dependent row records. */
+  readonly attemptId: string;
+  readonly imageId: string;
+  readonly entry: CharacterPromptReference;
+}
+
+/**
+ * The view this one is built from, read through the one consumable seam: null
+ * for a root view, `"unapproved"` when that slot has no approved current
+ * attempt to send.
+ *
+ * The reference is an OPTIONAL identity reference of the same person, exactly
+ * the shape a scene sends a view in (`scene.ts`): behind the pack's required
+ * anchors, so a model with no room for it drops it rather than refusing the
+ * plan. The registry's clause introduces it (`referenceViewUpstreamBinding`) —
+ * a second image of one person reads as a second person unless something says
+ * why it is there — and its own asset row's appearance revision tells the
+ * prompt seam how much of the person it still shows, as for any view.
+ */
+async function loadUpstreamReference(
+  context: BuildContext,
+  view: ReferenceView,
+): Promise<UpstreamReference | null | "unapproved"> {
+  const upstream = referenceViewUpstream(view);
+  if (upstream === null) return null;
+  const description = referenceViewUpstreamBinding(view);
+  const loaded = await loadConsumableReferenceView({
+    ownerId: context.ownerId,
+    characterId: context.characterId,
+    view: upstream,
+    sink: context.sink,
+  });
+  if (!loaded.ok || description === null) {
+    context.sink.push(
+      diag("warn", REFERENCE_VIEW_UPSTREAM_UNAPPROVED, "the view this one is built from is not approved, so it was not rendered", {
+        path: SCOPE,
+        context: {
+          characterId: context.characterId,
+          angle: view.angle,
+          wardrobe: view.wardrobe,
+          upstreamAngle: upstream.angle,
+          upstreamWardrobe: upstream.wardrobe,
+          reason: loaded.ok ? "no_binding" : loaded.reason,
+        },
+      }),
+    );
+    return "unapproved";
+  }
+  return {
+    view: upstream,
+    attemptId: loaded.attemptId,
+    imageId: loaded.imageId,
+    entry: {
+      reference: {
+        role: "identity",
+        required: false,
+        buffer: loaded.buffer,
+        sourceImageId: loaded.imageId,
+        name: context.name,
+      },
+      subjectId: context.characterId,
+      description,
+      appearanceRevision: loaded.appearanceRevision,
+    },
+  };
+}
+
 /** True when the view produced a ready asset. Never throws. */
 async function buildOneReferenceView(context: BuildContext, view: ReferenceView): Promise<boolean> {
   const { characterId, ownerId, sink } = context;
@@ -340,6 +434,12 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
   // that hand-built one gets a refusal rather than a throw.
   if (angle === undefined || wardrobeEntry === undefined || instruction === null) return false;
 
+  // Read before anything is reserved: a slot whose upstream is not approved
+  // keeps whatever it shows now, spends nothing, and builds on that view's next
+  // approval.
+  const upstream = await loadUpstreamReference(context, view);
+  if (upstream === "unapproved") return false;
+
   const viewId = await reserveReferenceView({
     jobId: context.jobId,
     characterId,
@@ -347,10 +447,12 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     view,
     sourceImageId: context.acceptedImageId,
     sourceContentHash: context.sourceContentHash,
+    upstreamViewId: upstream?.attemptId ?? null,
   });
-  // The character can cross the age gate after the job was admitted. The
-  // reservation rechecks under the character lock and spends nothing for a
-  // slot that is no longer eligible.
+  // The character can cross the age gate after the job was admitted, and the
+  // upstream view can be replaced while this worker waited. The reservation
+  // rechecks both under the character lock and spends nothing for a slot that
+  // is no longer eligible or no longer has that approved upstream.
   if (viewId === null) return false;
 
   const intimate = wardrobeEntry.intimate;
@@ -364,6 +466,21 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       ? await identityPackRenderReferences({ ownerId, characterId, profile: resolved, sink })
       : null;
   const packSelection = packIdentity?.ok === true ? packIdentity : null;
+  // The pack's references first — required, unchanged — then the optional
+  // references this view renders beside them. One list, handed to the prompt
+  // seam and the renderer alike, so the planner reduces both to one send order.
+  const references: readonly CharacterPromptReference[] =
+    packSelection === null
+      ? []
+      : [
+          ...packSelection.references.map((entry) => ({
+            reference: entry.reference,
+            subjectId: characterId,
+            // The accepted portrait's own stamp (issue #551).
+            appearanceRevision: entry.appearanceRevision,
+          })),
+          ...(upstream === null ? [] : [upstream.entry]),
+        ];
 
   const program =
     cut !== null && resolved !== null && packSelection !== null && bareRoute?.ok !== false
@@ -378,12 +495,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
             characters: [{ characterId, revision: context.revision }],
             extraRevisions: [...context.wardrobe.revisions],
           },
-          references: packSelection.references.map((entry) => ({
-            reference: entry.reference,
-            subjectId: characterId,
-            // The accepted portrait's own stamp (issue #551).
-            appearanceRevision: entry.appearanceRevision,
-          })),
+          references,
           operation: (subjects) =>
             characterVariantImageOperation({
               change: characterChangeContract(
@@ -409,6 +521,18 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
         })
       : null;
   const compiled: CharacterPromptProgram | null = program?.kind === "compiled" ? program : null;
+  // Whether the upstream actually rides this render. Planning returns the same
+  // reference objects it was handed, so membership is identity. A view the
+  // upstream never reached does not depend on it and records none.
+  const upstreamSent = upstream !== null && compiled !== null && compiled.sentReferences.includes(upstream.entry.reference);
+  if (upstream !== null && compiled !== null && !upstreamSent) {
+    sink.push(
+      diag("info", REFERENCE_VIEW_DROPPED_FOR_CAPACITY, `the ${upstream.view.angle} reference view did not fit this model's reference capacity`, {
+        path: SCOPE,
+        context: { characterId, angle: upstream.view.angle, wardrobe: upstream.view.wardrobe, for: `${view.angle}:${view.wardrobe}` },
+      }),
+    );
+  }
 
   const precondition = viewPrecondition({ cut, resolved, bareRoute, packIdentity, program });
   let failure: string | null = precondition;
@@ -427,6 +551,18 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
           wardrobe: view.wardrobe,
           generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
           faceVisibility: referenceViewFaceVisibility(angle),
+          // The approved view this one was rendered from, recorded only when it
+          // was actually sent — the identity provenance's honesty rule.
+          ...(upstream !== null && upstreamSent
+            ? {
+                upstream: {
+                  angle: upstream.view.angle,
+                  wardrobe: upstream.view.wardrobe,
+                  attemptId: upstream.attemptId,
+                  imageId: upstream.imageId,
+                },
+              }
+            : {}),
         },
         model: qualifiedImageModelIdentity(resolved?.model),
         // The weights this view ran on, by id and never the locator, and the
@@ -452,7 +588,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
         {
           profile: resolved,
           ...characterPromptTransport(compiled),
-          references: packSelection?.references.map((entry) => entry.reference) ?? [],
+          references: references.map((entry) => entry.reference),
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
           ...(bareRoute?.ok === true && bareRoute.binding !== null ? { resolvedLora: bareRoute.binding } : {}),
         },
@@ -497,6 +633,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     ownerId,
     imageId,
     method: "rendered",
+    upstreamViewId: upstream !== null && upstreamSent ? upstream.attemptId : null,
   });
   if (finalized === "fenced") {
     // This worker lost the lease before settlement. Its produced asset belongs

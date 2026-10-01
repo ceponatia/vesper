@@ -8,7 +8,12 @@ import { Field } from "@/components/ui/field";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Tag } from "@/components/ui/tag";
 import { Textarea } from "@/components/ui/textarea";
-import { referenceViewFeedbackReasonCopy, referenceViewStateCopy } from "./reference-view-copy";
+import {
+  referenceViewApproveActionLabel,
+  referenceViewDependentsCopy,
+  referenceViewFeedbackReasonCopy,
+  referenceViewStateCopy,
+} from "./reference-view-copy";
 import {
   hasReferenceViewFeedbackDraft,
   referenceViewFeedbackForAttempt,
@@ -62,6 +67,10 @@ export function ReferenceViewReviewer({
     if (view.attemptId !== null) onDraftChange(view.attemptId, value);
   };
   const copy = referenceViewStateCopy[view.state];
+  // What approving builds, read off the live set while it still shows the
+  // displayed attempt — the count the server will charge — and off the
+  // displayed attempt itself otherwise.
+  const approvalBuilds = (latest !== undefined && latest.attemptId === view.attemptId ? latest : view).approvalBuilds.length;
 
   const move = (offset: number) => {
     const target = set.views[index + offset];
@@ -89,7 +98,8 @@ export function ReferenceViewReviewer({
     if (!result.ok) { setError(result.error.message); return; }
     if (verdict === "reject") onDraftDiscard(attemptId);
     setView(result.data.view); setRejecting(false);
-    setNotice(verdict === "undo" ? "Review undone. This view needs approval before it can be used." : verdict === "approve" ? "View approved." : "View rejected. Your feedback is saved with this attempt.");
+    const dependents = verdict === "approve" ? referenceViewDependentsCopy(result.data.dependents) : null;
+    setNotice(verdict === "undo" ? "Review undone. This view needs approval before it can be used." : verdict === "approve" ? (dependents === null ? "View approved." : `View approved. ${dependents}`) : "View rejected. Your feedback is saved with this attempt.");
     onChanged();
   };
 
@@ -115,7 +125,7 @@ export function ReferenceViewReviewer({
       </div> : <>
         <ReferenceViewFeedbackNote feedback={view.feedback} />
         <div className="flex flex-wrap items-center gap-2">
-          {view.state === "unreviewed" ? <><Button size="sm" variant="primary" busy={busy} disabled={Boolean(changed) || imageStatus !== "loaded"} onClick={() => { if (imageStatus === "loaded") void review("approve"); }}>Approve</Button><Button size="sm" variant="quiet" disabled={busy || Boolean(changed)} onClick={() => setRejecting(true)}>Reject</Button>{imageStatus !== "loaded" ? <p className="text-sm text-paper-400">Load the reference image before approving it.</p> : null}</> : null}
+          {view.state === "unreviewed" ? <><Button size="sm" variant="primary" busy={busy} disabled={Boolean(changed) || imageStatus !== "loaded"} onClick={() => { if (imageStatus === "loaded") void review("approve"); }}>{referenceViewApproveActionLabel(approvalBuilds)}</Button><Button size="sm" variant="quiet" disabled={busy || Boolean(changed)} onClick={() => setRejecting(true)}>Reject</Button>{imageStatus !== "loaded" ? <p className="text-sm text-paper-400">Load the reference image before approving it.</p> : null}</> : null}
           {view.state === "approved" || view.state === "rejected" ? <Button size="sm" variant="ghost" busy={busy} disabled={Boolean(changed)} onClick={() => void review("undo")}>Undo review</Button> : null}
           {view.state !== "approved" && view.state !== "unreviewed" && view.state !== "rejected" ? <p className="text-sm text-paper-400">{view.failureMessage ?? copy.hint}</p> : null}
         </div>

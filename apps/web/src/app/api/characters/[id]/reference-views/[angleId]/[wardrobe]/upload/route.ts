@@ -4,6 +4,7 @@ import { plannedReferenceViewsForCharacter, uploadReferenceView } from "@/server
 import {
   ownedCharacter,
   parseSlot,
+  queueReviewDependents,
   referenceViewUploadBodySchema,
   type OwnedCharacter,
   type ReferenceViewSlotParams,
@@ -24,6 +25,11 @@ import {
  * The same age gate as generation applies here. Upload is a second way to fill
  * an allowed slot, never a door around the set planner's refusal of intimate
  * slots for a character whose image age is minor or unresolved.
+ *
+ * Because an upload is an approval, it unlocks what an approval does: the views
+ * built from this slot are queued and charged after it installs
+ * (`queueReviewDependents`), reported as `dependents`. The upload itself runs
+ * no model and charges nothing.
  */
 export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharacter>(
   "character",
@@ -55,7 +61,15 @@ export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharact
     if (result.status === "busy") return jsonError("busy", "Reference views are still being built. Wait for them to finish, then upload your image again.", 409);
     if (result.status === "ineligible") return jsonError("ineligible", "Undressed references require a recognized adult apparent age. Update the character profile before uploading this slot.", 409);
     if (result.status === "changed") return jsonError("changed", "This view or its accepted portrait changed during upload. Refresh the reference views, then upload your image again.", 409);
-    return jsonOk({ view: result.view }, 201);
+    const dependents = await queueReviewDependents({
+      characterId: params.id,
+      ownerId: user.id,
+      req,
+      user,
+      view: slot,
+      trigger: "upload",
+    });
+    return jsonOk({ view: result.view, dependents }, 201);
   },
   { limit: "upload" },
 );
