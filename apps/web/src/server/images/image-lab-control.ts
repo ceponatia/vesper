@@ -4,6 +4,7 @@ import {
   chooseAspect,
   type ImageLabControlledKind,
   imageLabRecipeProfile,
+  imageModelEditSizesFromReference,
   type ImageRenderReference,
   mapImageRenderControls,
   referenceCapacity,
@@ -141,6 +142,20 @@ export async function runControlProbe(row: ImageLabExperimentRow, sink?: Diagnos
     .set({ requestedVersionId: versionId, finalPrompt })
     .where(and(eq(imageLabExperiments.id, row.id), eq(imageLabExperiments.ownerId, row.ownerId)));
 
+  // A probe always carries at least one input (refused above when it does
+  // not), so on a model whose edit derives its output shape from the
+  // reference (`imageModelEditSizesFromReference`, today Civitai Qwen Image
+  // 2.1 — docs/images/providers/shape.md §An edit sized from its own
+  // reference) this IS always an edit. The direct mode bypasses
+  // `renderWithModel`/`chooseDimensions` entirely by design (the probe sends
+  // an ordered reference list and a payload it built itself, never a compiled
+  // plan), so it has to make the same call inline: send no aspect at all
+  // rather than the lane's own picked member, which its edit workflow would
+  // refuse outright. The probe also has no local-crop step, unlike the render
+  // path, so the request this records is the honest one — no shape asked
+  // for — rather than a target silently abandoned after being claimed.
+  const probeAspect =
+    imageModelEditSizesFromReference(model) && references.length > 0 ? null : chooseAspect(model).value;
   const rendered = await labRenderer()(
     {
       mode: "direct",
@@ -148,7 +163,7 @@ export async function runControlProbe(row: ImageLabExperimentRow, sink?: Diagnos
       prompt: finalPrompt,
       references,
       controlInput,
-      aspect: chooseAspect(model).value,
+      aspect: probeAspect,
       versionId,
     },
     sink,
