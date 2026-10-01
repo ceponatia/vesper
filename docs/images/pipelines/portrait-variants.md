@@ -133,6 +133,16 @@ variant profile by `server/images/nsfw-lora.ts` for this lane, the chat scene la
 The route is decided **before** the row is reserved, so the row records the model it runs on,
 and binding resolution runs on the final resolved profile.
 
+**The bench is age-gated, on every model** (owner ruling 2026-10-01). Unless the character's
+`identity.apparent_age` resolves to an adult by `imageAgeAllowsIntimate` — the same rule the
+reference-view plan applies to a `bare` view
+([reference-views.md](reference-views.md) §The age gate) — the row fails before any route is
+resolved, any pack is read or any provider is called, with
+`images.variant.nsfw_test_age_gated` (warn) and the owner-facing reason "the anatomy bench
+renders only a character whose apparent age resolves to an adult". A minor band and an
+unresolved age both fail it. The gate reads the same character row the cut is built from, so the
+gate and the prompt cannot disagree. Ordinary variant kinds are not gated.
+
 Unlike the chat lane the 2511 pairing **fails rather than degrades**: a missing model row, LoRA
 row or Civitai credential fails the image row with the leg's own message, because a tame render
 silently substituted for an explicit one is exactly what the bench is testing against. A

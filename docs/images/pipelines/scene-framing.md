@@ -306,6 +306,17 @@ The trigger mirrors the staged sentence's own gates (intimate staging, not a sel
 The route decides only the model and the weights; it grants no intimate content the trigger did
 not.
 
+**The age gate comes first, on every model** (owner ruling 2026-10-01). When any cast member's
+apparent age is not a resolved adult by `imageAgeAllowsIntimate` — the reference-view plan's own
+rule ([reference-views.md](reference-views.md) §The age gate), asked of each member's authored
+sheet and of the resolved attributes their cut states — the whole render leaves the intimate
+route: every attempt runs with `allowIntimate` cleared, so no anatomy LoRA, no intimate reveal,
+no staged act's sentence and no `bare` reference view, and an intimate staging is removed from
+the plan while its camera stays. The render goes on as an ordinary scene and logs
+`images.scene_render.intimate_age_gated` (warn) when it had something intimate to withhold — an
+intimate staging, or an intimate region bared on a subject or the viewer. The chat engine's own
+minor fence upstream is separate and unchanged.
+
 On the 2511 pairing, four legs degrade to the stock render with
 `images.scene_render.lora_unavailable` naming which one (`model` · `model_eligibility` ·
 `library_row` · `credential`); the taken LoRA route logs `images.scene_render.lora_route`. A
@@ -313,5 +324,6 @@ listed model rendering without its LoRA logs `images.intimate_route.no_anatomy_l
 either. The stored locator is the LoRA's public URL and never a credential: `CIVITAI_API_TOKEN`
 is read by one app-side accessor and appended as a query parameter where the binding maps to
 provider input, so no token reaches the database, an image row, or a log line. The image row
-records the model slug, and the resolved LoRA id in `meta` only when weights were sent, beside
+records the model slug, the resolved LoRA id in `meta` only when weights were sent, and — on a
+render that took the intimate route — `meta.intimateRoute` (`{ lora, reason }`), beside
 `{camera, staging}`.

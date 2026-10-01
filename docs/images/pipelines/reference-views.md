@@ -55,10 +55,11 @@ The portrait-variant lane's machinery pointed at a fixed camera
   camera id — not `buildStandaloneLaneCut`, whose intimate consent gate is welded shut for every
   standalone lane.
 - `clothed` loads the saved default outfit exactly as the variant lane does. `bare` passes **no
-  garments**, so the coverage readout reads fully bare and the adapter's exposure facts state it.
-  The lane writes no nudity sentence of its own: how those facts read is the resolved model's
-  dialect. On the anatomy LoRA the coverage alone carries it; on a model that renders the view
-  without one, the Qwen Image 2.1 dialect states the nudity explicitly.
+  garments**, so the coverage readout reads fully bare and the adapter's exposure facts state it;
+  no prompt text asserts nudity — except the `civitai/qwen-image-2.1` dialect
+  (`qwen_21_instruction_edit`), which states it explicitly since this endpoint pairs no anatomy
+  LoRA for `bare` (owner ruling 2026-10-01; see [../prompt-programs.md](../prompt-programs.md)
+  §Families).
 - A `bare` view takes the **intimate route**
   ([../providers/loras.md](../providers/loras.md) §The intimate route), resolved the way the
   `nsfw_test` variant kind resolves it, because the scenes that consume these views take the same
@@ -82,7 +83,11 @@ program's own meta.
 `plannedReferenceViews` drops every intimate view unless the character's `identity.apparent_age`
 resolves to a value the image age vocabulary carries — the adult floor, with no exception. It is a
 **gate in the plan**, never a prompt instruction: the view is simply not built, and nothing about
-the character's age reaches a model. The explicit build route charges the budget from the same
+the character's age reaches a model. The rule is `imageAgeAllowsIntimate`
+(`contracts/images/reference-views.ts`), and it is the one age gate every intimate image lane
+applies: the `nsfw test` bench ([portrait-variants.md](portrait-variants.md) §The `nsfw test`
+anatomy bench) and an intimate chat scene ([scene-framing.md](scene-framing.md) §Staging takes the
+intimate route) ask it too, on every model. The explicit build route charges the budget from the same
 helper the job plans from, so the charge and the work can never be two numbers.
 
 Eligibility is live character truth rather than a creation-time decision. If apparent age later

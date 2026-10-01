@@ -95,13 +95,18 @@ take is one decision, `resolveIntimateRoute` (`server/images/nsfw-lora.ts`), mad
   workflow's `loras` map only past the transport's Qwen 2.1 family gate
   ([civitai-qwen-image-2-1.md](../../image-models/models/civitai-qwen-image-2-1.md)).
 - **The allowance is the route's, never the weights'.** What permits intimate content in a lane —
-  the reference-view age gate and the `bare` wardrobe, the `nsfw test` kind, the scene trigger and
-  its `allowIntimate` rung — is decided before the route is asked, and grants exactly the same on
-  the no-LoRA route as on the LoRA route.
-- **Provenance.** A `bare` view and an `nsfw test` variant record the library id on `meta.lora`
-  only when weights were sent, and `meta.intimateRoute` as `{ lora, reason }`: the id or null, and
-  `anatomy_lora`, `no_anatomy_lora_curated` or `anatomy_lora_unavailable`. A scene row records
-  `meta.lora` only when weights were sent, beside the model that drew it.
+  the `bare` wardrobe, the `nsfw test` kind, the scene trigger and its `allowIntimate` rung — is
+  decided before the route is asked, and grants exactly the same on the no-LoRA route as on the
+  LoRA route.
+- **One age gate stands in front of every lane, on every model.** `imageAgeAllowsIntimate` — the
+  reference-view plan's rule ([../pipelines/reference-views.md](../pipelines/reference-views.md)
+  §The age gate) — keeps `bare` views out of the plan, refuses the `nsfw test` bench before spend,
+  and takes a chat scene with any non-adult cast member off the intimate route. A character
+  failing it never reaches the route at all.
+- **Provenance.** Every row that took the route — a `bare` view, an `nsfw test` variant, an
+  intimate staged scene — records the library id on `meta.lora` only when weights were sent, and
+  `meta.intimateRoute` as `{ lora, reason }`: the id or null, and `anatomy_lora`,
+  `no_anatomy_lora_curated` or `anatomy_lora_unavailable`.
 
 ## RefControl depth row (klein 4B, pilot)
 
