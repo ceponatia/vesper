@@ -184,13 +184,22 @@ describe.skipIf(!ready)("character_body_references constraints", () => {
     expect(await bodyIds(characterId)).toEqual([]);
   });
 
-  it("records no body-image set on a view row unless one is written — the empty set", async () => {
-    const characterId = await seedCharacter("view rows default to the empty body set");
+  // #670's build-order column gets the same "no default, no backfill" treatment
+  // as #671's body-image column (0153's and 0154's own SQL comments): a DEFAULT
+  // here would misattribute an upstream dependency, or a rendered body-image
+  // set, to a row that predates both features and was rendered from neither —
+  // which is exactly what would make every pre-existing view spuriously stale
+  // the moment either rule started reading it.
+  it("records no upstream attempt and no body-image set on a view row unless one is written — the empty answers for every row built before either existed", async () => {
+    const characterId = await seedCharacter("view rows default to no upstream and no body set");
     const viewId = await insertView(characterId, { current: true });
     const [row] = await db()
-      .select({ bodyReferenceSet: characterReferenceViews.bodyReferenceSet })
+      .select({
+        upstreamViewId: characterReferenceViews.upstreamViewId,
+        bodyReferenceSet: characterReferenceViews.bodyReferenceSet,
+      })
       .from(characterReferenceViews)
       .where(eq(characterReferenceViews.id, viewId));
-    expect(row).toEqual({ bodyReferenceSet: null });
+    expect(row).toEqual({ upstreamViewId: null, bodyReferenceSet: null });
   });
 });

@@ -12,6 +12,7 @@ import { readDailyUsage } from "@/server/api";
 import { characterReferenceViews, characters, db, JOB_STALE_MS, jobs } from "@/server/db";
 import {
   endTestPool,
+  expectApiError,
   probeIntegrationDb,
   purgeOwnerRows,
   seedTestUser,
@@ -19,7 +20,11 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { queueReferenceViewBuild, queueReviewDependents } from "../../app/api/characters/[id]/reference-views/shared";
+import {
+  queueReferenceViewBuild,
+  queueReviewDependents,
+  regenerateReferenceViews,
+} from "../../app/api/characters/[id]/reference-views/shared";
 import { createImageAsset, saveImageBuffer } from "./asset-storage";
 import {
   claimReferenceViewLeases,
@@ -318,5 +323,33 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
     expect(slotKeys(outcome.targets)).toEqual(slotKeys(disclosed));
     expect(outcome.targets.every((target) => target.state === "queued")).toBe(true);
     expect(after.used - before.used).toBe(disclosed.length);
+  });
+
+  // The build order's gate at the admission door (#670): a regenerate request
+  // naming ANY slot still waiting on its unapproved upstream refuses the WHOLE
+  // request as a 409 `waiting`, before anything is claimed or charged. The
+  // implementation this kills claims and renders the ready slot (`front`) while
+  // quietly skipping the waiting one (`back`) — a client would see a partial,
+  // silently incomplete build instead of the refusal the docs promise.
+  it("refuses a whole regenerate request, charging and claiming nothing, when one named slot still waits on its upstream", async () => {
+    const state = await fixture();
+    const before = await readDailyUsage(ownerId, "provider_image_day");
+
+    const response = await regenerateReferenceViews({
+      characterId: state.characterId,
+      ownerId,
+      req: routeRequest(state.characterId),
+      user: { id: ownerId },
+      requested: [front, back],
+    });
+    await expectApiError(response, 409, "waiting");
+
+    expect((await readDailyUsage(ownerId, "provider_image_day")).used).toBe(before.used);
+    // Whole-batch, not per-slot: `front` — which was ready to build — was never
+    // claimed either, so a later request can still claim it fresh.
+    const afterJob = await job(state.characterId);
+    expect(
+      (await claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: afterJob, targets: [front] })).claimed,
+    ).toEqual([{ ...front, attemptId: null }]);
   });
 });
