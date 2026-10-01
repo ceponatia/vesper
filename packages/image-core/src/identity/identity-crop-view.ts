@@ -18,6 +18,11 @@ import { IDENTITY_CROP_POLICY_V1, type IdentityCropPolicy } from "./identity-pac
  * Nothing here is authoritative. Every rule enforced below (bounds, squareness,
  * minimum side) is enforced again server-side against the real source bytes; this
  * exists so the user is not offered a rectangle that is going to be refused.
+ *
+ * The editor also has a VIEW transform (#667: zoom in to see a small face well
+ * enough to frame it tightly, and pan while zoomed) — see "Zoom and pan" below.
+ * It never changes what a source pixel is; it only changes how many display
+ * pixels represent one.
  */
 
 /** The editor's selection: a square, in integer source pixels. */
@@ -76,29 +81,145 @@ export function toSourceSpace(point: ViewPoint, scale: number): ViewPoint {
   return { x: point.x / scale, y: point.y / scale };
 }
 
-/** The selection as a display-space square, for absolute positioning. */
+/**
+ * The selection as a display-space square, for absolute positioning. `pan` is
+ * the rendered image's own top-left offset within the viewport (#667's zoom —
+ * see "Zoom and pan" below); it defaults to the origin so every pre-#667
+ * caller, and every unzoomed frame, is unaffected.
+ */
 export function toDisplayRect(
   selection: IdentitySquareSelection,
   scale: number,
+  pan: ViewPoint = { x: 0, y: 0 },
 ): { left: number; top: number; size: number } {
   const k = isPositive(scale) ? scale : 1;
-  return { left: selection.left * k, top: selection.top * k, size: selection.side * k };
+  return { left: selection.left * k + pan.x, top: selection.top * k + pan.y, size: selection.side * k };
+}
+
+/* ------------------------------------------------------------------------ *
+ * Zoom and pan (#667)                                                       *
+ * ------------------------------------------------------------------------ *
+ *
+ * The editor's viewport stays a fixed size; zooming magnifies the rendered
+ * source beyond its contain-fit baseline and panning slides the magnified
+ * image behind the viewport, the same "oversized image, clipped frame"
+ * relationship `packages/image-core/src/geometry/crop.ts` uses for the avatar
+ * upload dialog's crop window — reimplemented narrowly here rather than
+ * imported, because that module's frame IS the output crop, while this one's
+ * viewport is only ever a VIEW onto a separately-selected square. Zoom and pan
+ * never change what a source pixel is: `toSourceSpace` and the selection
+ * geometry above are oblivious to both, as long as the caller supplies the
+ * zoomed scale and accounts for pan when converting an absolute pointer
+ * position (never a delta — pan is a constant translation that cancels out of
+ * one).
+ */
+
+/** Contain-fit (the #667 editor's un-zoomed baseline) is zoom 1; the owner may
+ * magnify up to 4x to frame a small face precisely. Zooming back toward 1
+ * reveals the whole portrait again, which is all "zoom out" means here — unlike
+ * the avatar dialog, there is nothing useful below the whole-portrait view. */
+export const IDENTITY_CROP_MIN_ZOOM = 1;
+export const IDENTITY_CROP_MAX_ZOOM = 4;
+
+/** Keep a zoom level inside the editor's allowed range. */
+export function clampZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return IDENTITY_CROP_MIN_ZOOM;
+  return Math.min(Math.max(zoom, IDENTITY_CROP_MIN_ZOOM), IDENTITY_CROP_MAX_ZOOM);
+}
+
+/** Display pixels per source pixel at a given zoom, built on the contain-fit
+ * baseline (`displayScale`). */
+export function zoomedDisplayScale(source: SourceDimensions, display: DisplayBox, zoom: number): number {
+  return displayScale(source, display) * clampZoom(zoom);
+}
+
+/**
+ * Clamp the rendered image's top-left offset within the viewport, per axis:
+ * while the zoomed image overflows the viewport on that axis it may slide
+ * until an edge meets the viewport (never revealing a gap); on an axis where
+ * it is still smaller than the viewport (a letterboxed axis, e.g. a very wide
+ * source even at max zoom) it may slide within the viewport but never off it.
+ * Same two-regime rule as the avatar dialog's `clampOffset`.
+ */
+export function clampPan(pan: ViewPoint, source: SourceDimensions, display: DisplayBox, zoom: number): ViewPoint {
+  const scale = zoomedDisplayScale(source, display, zoom);
+  const dispW = source.width * scale;
+  const dispH = source.height * scale;
+  const clampAxis = (frameLen: number, dispLen: number, value: number): number => {
+    const lo = Math.min(0, frameLen - dispLen);
+    const hi = Math.max(0, frameLen - dispLen);
+    return Math.min(hi, Math.max(lo, value));
+  };
+  return {
+    x: clampAxis(display.width, dispW, pan.x),
+    y: clampAxis(display.height, dispH, pan.y),
+  };
+}
+
+/** The pan that centres the viewport on a source-pixel point — used to keep a
+ * fixed point (the viewport centre, or the selection's own centre) stationary
+ * while the zoom level changes. */
+export function panCentredOn(point: ViewPoint, source: SourceDimensions, display: DisplayBox, zoom: number): ViewPoint {
+  const scale = zoomedDisplayScale(source, display, zoom);
+  return clampPan({ x: display.width / 2 - point.x * scale, y: display.height / 2 - point.y * scale }, source, display, zoom);
+}
+
+/**
+ * The minimal pan adjustment that brings the selection fully back into the
+ * viewport, or leaves `pan` untouched if it already is (#667).
+ *
+ * A keyboard nudge or a drag moves the SELECTION, never the pan — so while
+ * zoomed in, either can walk the square past the edge of whatever part of the
+ * portrait is currently panned into view, with no way back short of zooming
+ * back out. This is a "scroll into view" nudge, not a re-centre: it shifts
+ * pan by exactly the overflow on each axis that has one, so a square dragged
+ * to an edge stays there instead of jumping to the middle on every move.
+ *
+ * An axis whose selection is already larger than the viewport (an extreme
+ * zoom on a large square) is left alone on that axis rather than fought over:
+ * there is no pan that fits an oversized square fully in view, and forcing
+ * one would make the square's near edge drift unpredictably instead.
+ */
+export function ensureSelectionVisible(
+  selection: IdentitySquareSelection,
+  source: SourceDimensions,
+  display: DisplayBox,
+  zoom: number,
+  pan: ViewPoint,
+): ViewPoint {
+  const scale = zoomedDisplayScale(source, display, zoom);
+  const rect = toDisplayRect(selection, scale, pan);
+  let x = pan.x;
+  let y = pan.y;
+  if (rect.size <= display.width) {
+    if (rect.left < 0) x += -rect.left;
+    else if (rect.left + rect.size > display.width) x -= rect.left + rect.size - display.width;
+  }
+  if (rect.size <= display.height) {
+    if (rect.top < 0) y += -rect.top;
+    else if (rect.top + rect.size > display.height) y -= rect.top + rect.size - display.height;
+  }
+  return clampPan({ x, y }, source, display, zoom);
 }
 
 /**
  * The smallest side the editor allows, in source pixels.
  *
- * Normally the policy minimum (256). A source smaller than that cannot satisfy it
- * at all, and the editor floors at what the source has rather than locking the
- * handles: the server still refuses the save with `crop_too_small`, which is a
- * clearer answer than a selection that will not shrink and never explains why.
+ * Normally the MANUAL policy minimum (128, #667) — lower than the automatic
+ * floor (256) on purpose: this module is exclusively the owner's hand-framed
+ * editor, and a square between the manual and automatic minimums is enlarged
+ * on encode rather than refused (`identityManualCropOutputSide`). A source
+ * smaller than even the manual minimum cannot satisfy it at all, and the
+ * editor floors at what the source has rather than locking the handles: the
+ * server still refuses the save with `crop_too_small`, which is a clearer
+ * answer than a selection that will not shrink and never explains why.
  */
 export function minimumSelectionSide(
   source: SourceDimensions,
   policy: IdentityCropPolicy = IDENTITY_CROP_POLICY_V1,
 ): number {
-  if (!isPositive(source.width) || !isPositive(source.height)) return policy.minimumOutputSidePx;
-  return Math.min(policy.minimumOutputSidePx, Math.floor(Math.min(source.width, source.height)));
+  if (!isPositive(source.width) || !isPositive(source.height)) return policy.minimumManualOutputSidePx;
+  return Math.min(policy.minimumManualOutputSidePx, Math.floor(Math.min(source.width, source.height)));
 }
 
 /** Round to integer source pixels, square, inside the source, at or above the minimum. */

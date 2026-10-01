@@ -392,7 +392,7 @@ export async function runCivitaiLegacyKleinImageModel(
   request: RegistryModelRequest,
 ): Promise<ReplicateImageResult> {
   const token = civitaiApiToken();
-  if (!token) return { ok: false, error: "Civitai API token is not configured" };
+  if (!token) return { ok: false, error: "CIVITAI_API_TOKEN not configured" };
   if ((request.references?.length ?? 0) > 0 || (request.controlReferences?.length ?? 0) > 0) {
     return { ok: false, error: `${model.slug} is currently registered for text-to-image generation only` };
   }

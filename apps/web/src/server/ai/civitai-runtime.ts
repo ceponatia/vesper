@@ -779,7 +779,7 @@ export async function runCivitaiLane(
   request: RegistryModelRequest,
 ): Promise<ReplicateImageResult> {
   const token = civitaiApiToken();
-  if (!token) return { ok: false, error: "Civitai API token is not configured" };
+  if (!token) return { ok: false, error: "CIVITAI_API_TOKEN not configured" };
   let predictionId: string | undefined;
   try {
     lane.validate(model, request);

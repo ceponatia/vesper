@@ -13,6 +13,7 @@ import {
   registerImagePromptBinding,
   REPLICATE_VERSION_UNDISCLOSED,
 } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import {
@@ -50,7 +51,7 @@ import { createImageAsset, HIDDEN_IMAGE_KINDS, imageMeta, saveImageBuffer, type 
 import { createImageLabExperiment } from "./image-lab-create";
 import { setImageLabRendererForTesting, type ImageLabRenderRequest } from "./image-lab-render";
 import { runImageLabExperiment } from "./image-lab-run";
-import { STAGED_PROGRAM_UNBOUND } from "./image-lab-staged";
+import { STAGED_AGE_REFUSAL, STAGED_PROGRAM_UNBOUND } from "./image-lab-staged";
 import {
   deleteImageLabExperiment,
   getImageLabExperimentDetail,
@@ -666,6 +667,8 @@ interface StagedSceneOptions {
   extraControl?: boolean;
   /** Replace the ordered inputs outright — `[]` is the no-reference refusal. */
   inputs?: ImageLabInput[];
+  /** Stage a different sheet than the lane-probe adult — the age gate's cases. */
+  profile?: CharacterProfile;
 }
 
 /**
@@ -685,7 +688,7 @@ async function createStagedScene(
   // settle as `image_prompt_program.missing_required_fact` before the bench
   // ever reached the provider. The parity pin (`image-lab-staged.test.ts`)
   // compiles this same sheet for every staging in the catalog.
-  const characterId = await seedOwnedCharacter(STAGED_SUBJECT, laneProbeProfile());
+  const characterId = await seedOwnedCharacter(STAGED_SUBJECT, opts.profile ?? laneProbeProfile());
   const faceId = await seedCharacterFace(opts.faceOf ?? characterId);
   const control = opts.extraControl ? await seedControlFixture("pose") : null;
   const inputs: ImageLabInput[] = opts.inputs ?? [
@@ -897,6 +900,52 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
     expect(imageMeta(output?.meta).imageLabExperimentId).toBe(id);
     // Hidden by construction: the lab never produces a gallery item.
     expect(HIDDEN_IMAGE_KINDS).toContain("lab_output");
+  });
+
+  /**
+   * PROTECTS: #663/#664 — the direct probe bypasses `renderWithModel` and
+   * `chooseDimensions` entirely (its own doc comment: "a payload the runner
+   * built itself"), so it had its OWN copy of the shape decision
+   * (`chooseAspect(model).value`, unconditional). A probe always carries at
+   * least one input (refused above when it has none), so on Civitai Qwen
+   * Image 2.1 — whose edit derives its output shape from the reference and
+   * refuses an explicit one (`civitaiQwen21Workflow`) — every probe against
+   * it IS an edit, and the unconditional `chooseAspect` value used to send a
+   * shape that lane refuses outright. This is the seeded production row
+   * (migration 0151), not a suite fixture: the fact under test is specific to
+   * that one slug, the same reason `image-generator.int.test.ts` reuses it
+   * rather than planting a copy.
+   */
+  it("sends no aspect on a Civitai Qwen Image 2.1 probe, which is always an edit", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const controlId = await seedControlFixture("pose");
+    const { id, sink } = await createProbe({
+      modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG,
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    // Never refused by the lane's own edit-shape guard (#663/#664) — the
+    // probe now negotiates like the render path instead of asking for a
+    // shape that workflow builder refuses.
+    expect(payload.status).toBe("succeeded");
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.failureCode).toBeNull();
+
+    const request = captured[0];
+    expect(request?.mode).toBe("direct");
+    if (request?.mode === "direct") {
+      expect(request.references).toHaveLength(2);
+      // The one fact under test: no aspect reaches the transport.
+      expect(request.aspect).toBeNull();
+    }
   });
 
   it("records an UNDISCLOSED executed version verbatim and still succeeds", async () => {
@@ -1904,6 +1953,43 @@ describe.skipIf(!ready)("image lab staged scenes", () => {
       dropped: [],
       renumbered: false,
     });
+  });
+
+  /**
+   * THE AGE GATE (owner ruling 2026-10-01): the adult floor the reference-view
+   * plan, the anatomy bench and the chat scene lane apply, on the sheet the cut
+   * would be built from. Refused before the image bytes are read, the LoRA
+   * library is asked or the provider is called — the success case above is the
+   * adult control, on the same lane-probe sheet with its adult band.
+   */
+  it.each([
+    ["a minor apparent-age band", "teen"],
+    ["no resolvable apparent age", null],
+  ])("refuses a staged scene on a character with %s, before any spend", async (_label, band) => {
+    stubSuccessfulRenderer();
+    const adult = laneProbeProfile();
+    const profile: CharacterProfile = {
+      ...adult,
+      attributes:
+        band === null
+          ? adult.attributes.filter((entry) => entry.id !== "identity.apparent_age")
+          : adult.attributes.map((entry) => (entry.id === "identity.apparent_age" ? { ...entry, value: band } : entry)),
+    };
+    const { id, sink } = await createStagedScene({ profile });
+
+    await runImageLabExperiment(id, ownerId, sink);
+
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.status).toBe("failed");
+    expect(experiment?.failureCode).toBe(imageLabDiagnosticCode("subject_age_gated"));
+    // The lab's own WARN, carrying the owner-facing reason the row records.
+    const gated = sink.items.find((item) => item.code === imageLabDiagnosticCode("subject_age_gated"));
+    expect(gated?.severity).toBe("warn");
+    expect(gated?.message).toBe(STAGED_AGE_REFUSAL);
+    // Nothing past the gate ran: no provider call, no result, no LoRA asked.
+    expect(captured).toHaveLength(0);
+    expect(experiment?.resultImageId).toBeNull();
+    expect(codes(sink).some((code) => code.startsWith("image_lora."))).toBe(false);
   });
 
   it("refuses a staging id the registry does not have, before any spend", async () => {

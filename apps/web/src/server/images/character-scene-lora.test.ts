@@ -5,8 +5,9 @@ import {
   imageModelSchema,
   type ResolvedImageProfile,
 } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { sceneStagingById } from "@/contracts/images/scene-staging";
-import { emptyCharacterProfile } from "@/contracts/world/profile";
+import { type CharacterProfile, emptyCharacterProfile } from "@/contracts/world/profile";
 
 /**
  * The chat lane's half of the intimate-scene LoRA route: which renders leave
@@ -61,7 +62,7 @@ import { classifyImageFailure } from "../ai";
 import { db } from "../db";
 import { deleteOwnedImage } from "./asset-deletion";
 import { imageMeta } from "./asset-storage";
-import { renderCharacterSceneImage, type SceneCastMember } from "./character-scene";
+import { renderCharacterSceneImage, SCENE_INTIMATE_AGE_GATED, type SceneCastMember } from "./character-scene";
 import { latestChatLook } from "./chat-look";
 import { resolveImageLoraForRender } from "./image-loras";
 import { resolveImageProfileForTask } from "./model-profiles";
@@ -135,10 +136,25 @@ const stockProfile: ResolvedImageProfile = {
   }),
 };
 
+/** A sheet whose apparent age is `band`, or carries none at all when `band` is null. */
+function profileAged(band: string | null): CharacterProfile {
+  // Built from the contract rather than `@/server/test-support`: that barrel
+  // loads the images barrel, whose modules read exports this suite's module
+  // mocks do not provide.
+  return {
+    ...emptyCharacterProfile(),
+    attributes: band === null ? [] : [{ id: "identity.apparent_age", value: band, source: "base" }],
+  };
+}
+
+/**
+ * A resolved adult: the intimate route is open to her. Every case below that is
+ * not about the age gate draws her, so the gate is never what it measures.
+ */
 const member: SceneCastMember = {
   characterId: "chr-mira",
   name: "Mira",
-  profile: emptyCharacterProfile(),
+  profile: profileAged("late_twenties"),
   identityImageId: "img-avatar",
   lookKey: "look-1",
 };
@@ -283,6 +299,165 @@ describe("the intimate staged render", () => {
     expect(requestAt(0).profile).toBe(stockProfile);
     expect("resolvedLora" in requestAt(0)).toBe(false);
     expect(loggedCodes()).toContain("images.scene_render.lora_unavailable");
+  });
+});
+
+/**
+ * The scene model decides the intimate route (owner ruling 2026-10-01): a chat
+ * whose scene profile resolves to a model the intimate-route policy lists
+ * renders its intimate staged scene on that profile, and every other chat —
+ * whatever its stored pick resolves to — keeps the intimate-model pairing.
+ */
+describe("the intimate staged render follows the chat's resolved scene model", () => {
+  /** A resolved scene profile on `slug`, as the picker hands it to the lane. */
+  function sceneProfileOn(slug: string, id: string): ResolvedImageProfile {
+    return {
+      model: imageModelSchema.parse({
+        id,
+        slug,
+        label: slug,
+        canGenerate: true,
+        canEdit: true,
+        editKind: "multi_reference_compose",
+        identityPreservation: "strong",
+        referenceField: "images",
+        referenceArity: "array",
+        maxReferences: 10,
+      }),
+      profile: imageModelProfileSchema.parse({
+        id: `${id}scene`,
+        imageModelId: id,
+        key: "scene-standard",
+        label: "Scene Standard",
+        task: "scene",
+        operation: "edit",
+        promptStrategy: "instruction_edit",
+      }),
+    };
+  }
+
+  it("renders on the chat's own Qwen Image 2.1 profile with no weights, and never reads 2511", async () => {
+    const qwen21 = sceneProfileOn(CIVITAI_QWEN_IMAGE_21_SLUG, "imgmdlcivqwen21aaaaaaaa");
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(qwen21);
+
+    await render({});
+
+    const request = requestAt(0);
+    expect(request.profile).toBe(qwen21);
+    expect("resolvedLora" in request).toBe(false);
+    // The scene row records why it drew the act without weights.
+    expect(request.intimateRoute).toEqual({ lora: null, reason: "no_anatomy_lora_curated" });
+    expect(mockModels).not.toHaveBeenCalled();
+    // The route's own line, replayed by the lane; no LoRA-route or degrade line.
+    const codes = loggedCodes();
+    expect(codes).toContain("images.intimate_route.no_anatomy_lora");
+    expect(codes).not.toContain("images.scene_render.lora_route");
+    expect(codes).not.toContain("images.scene_render.lora_unavailable");
+  });
+
+  it("keeps the intimate-model pairing for a stored pick on a model the policy does not list", async () => {
+    const seedream = sceneProfileOn("bytedance/seedream-4.5", "imgmdlseedream45aaaaaaaa");
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(seedream);
+
+    await render({ sceneModel: "imgmdlseedream45aaaaaaaa" });
+
+    const request = requestAt(0);
+    expect(request.profile?.model.slug).toBe(INTIMATE_SCENE_LORA_MODEL_SLUG);
+    expect(request.profile?.profile).toBe(seedream.profile);
+    expect(request.resolvedLora).toEqual(binding);
+    expect(loggedCodes()).toContain("images.scene_render.lora_route");
+  });
+});
+
+/**
+ * THE INTIMATE AGE GATE (owner ruling 2026-10-01). One cast member whose
+ * apparent age is not a resolved adult takes the whole render off the intimate
+ * route — on 2511 and on Qwen Image 2.1 alike — and it goes out as an ordinary
+ * scene: no weights, no intimate allowance on any reference, no staged act on
+ * the plan, and one warning naming the gate. The chat engine's own fence
+ * upstream is untouched.
+ */
+describe("the intimate age gate", () => {
+  const minor: SceneCastMember = { ...member, characterId: "chr-wren", name: "Wren", profile: profileAged("teen") };
+  const unresolved: SceneCastMember = { ...member, characterId: "chr-wren", name: "Wren", profile: profileAged(null) };
+  const qwen21Scene: ResolvedImageProfile = {
+    model: imageModelSchema.parse({
+      id: "imgmdlcivqwen21aaaaaaaa",
+      slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+      label: "Qwen Image 2.1 (Civitai)",
+      canGenerate: true,
+      canEdit: true,
+      editKind: "multi_reference_compose",
+      identityPreservation: "strong",
+      referenceField: "images",
+      referenceArity: "array",
+      maxReferences: 10,
+    }),
+    profile: imageModelProfileSchema.parse({
+      id: "imgprfqwen21sceneaaaaaa",
+      imageModelId: "imgmdlcivqwen21aaaaaaaa",
+      key: "scene-standard",
+      label: "Scene Standard",
+      task: "scene",
+      operation: "edit",
+      promptStrategy: "instruction_edit",
+    }),
+  };
+
+  it.each([
+    ["a minor band on 2511", minor, stockProfile],
+    ["no resolvable age on 2511", unresolved, stockProfile],
+    ["a minor band on Qwen Image 2.1", minor, qwen21Scene],
+    ["no resolvable age on Qwen Image 2.1", unresolved, qwen21Scene],
+  ])("renders an ordinary scene for %s", async (_label, subject, sceneProfile) => {
+    vi.mocked(resolveImageProfileForTask).mockResolvedValue(sceneProfile);
+
+    await render({ cast: [subject] });
+
+    const request = requestAt(0);
+    expect(request.profile).toBe(sceneProfile);
+    expect("resolvedLora" in request).toBe(false);
+    expect("intimateRoute" in request).toBe(false);
+    expect(request.plan.staging).toBeUndefined();
+    expect(request.references.every((reference) => reference.allowForIntimate === false)).toBe(true);
+    // No route was even asked: nothing read, nothing routed.
+    expect(mockModels).not.toHaveBeenCalled();
+    expect(mockResolveLora).not.toHaveBeenCalled();
+    const codes = loggedCodes();
+    expect(codes).toContain(SCENE_INTIMATE_AGE_GATED);
+    expect(codes).not.toContain("images.scene_render.lora_route");
+    expect(codes).not.toContain("images.intimate_route.no_anatomy_lora");
+  });
+
+  it("takes the whole render off the route when any one subject of several is not a resolved adult", async () => {
+    await render({ cast: [member, minor] });
+
+    const request = requestAt(0);
+    expect("resolvedLora" in request).toBe(false);
+    expect(request.plan.staging).toBeUndefined();
+    expect(request.references.every((reference) => reference.allowForIntimate === false)).toBe(true);
+    expect(mockModels).not.toHaveBeenCalled();
+    expect(loggedCodes()).toContain(SCENE_INTIMATE_AGE_GATED);
+  });
+
+  it("leaves a resolved adult's intimate staged scene on the route — the control", async () => {
+    await render({ cast: [member] });
+
+    const request = requestAt(0);
+    expect(request.resolvedLora).toEqual(binding);
+    expect(request.plan.staging?.intimate).toBe(true);
+    expect(request.references.every((reference) => reference.allowForIntimate)).toBe(true);
+    expect(request.intimateRoute).toEqual({ lora: INTIMATE_SCENE_LORA_ID, reason: "anatomy_lora" });
+    expect(loggedCodes()).not.toContain(SCENE_INTIMATE_AGE_GATED);
+  });
+
+  it("stays silent for a non-adult in an ordinary scene: nothing intimate was withheld", async () => {
+    mockCompose.mockResolvedValue(plan());
+
+    await render({ cast: [minor] });
+
+    expect(requestAt(0).references.every((reference) => reference.allowForIntimate === false)).toBe(true);
+    expect(loggedCodes()).not.toContain(SCENE_INTIMATE_AGE_GATED);
   });
 });
 

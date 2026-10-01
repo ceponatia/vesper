@@ -153,6 +153,30 @@ export function identityCropOutputSide(
 }
 
 /**
+ * The encoded output side for a MANUAL crop (#667): identical to
+ * {@link identityCropOutputSide} at or above the automatic floor — capped at
+ * the storage ceiling, never enlarged — but a crop between the manual minimum
+ * and the automatic floor is enlarged UP to the automatic floor instead of
+ * being refused or shipped at its raw, few-dozen-pixel size.
+ *
+ * This is deliberately a separate function rather than a branch inside
+ * `identityCropOutputSide`: that function's contract ("nothing raises it") is
+ * exactly the guarantee the automatic path's effective-size evaluation relies
+ * on, and this is the one caller in the service allowed to break it, because
+ * here the softer-but-tighter trade is a disclosed owner choice (the editor
+ * tells the owner before they save; see `identity-pack-copy.ts`), not a
+ * silently invented resolution.
+ */
+export function identityManualCropOutputSide(
+  cropSide: number,
+  policy: IdentityCropPolicy = IDENTITY_CROP_POLICY_V1,
+): number {
+  const side = Math.floor(cropSide);
+  if (side < policy.minimumOutputSidePx) return policy.minimumOutputSidePx;
+  return identityCropOutputSide(side, policy);
+}
+
+/**
  * Expand a detector face box into the square crop the policy describes.
  *
  * The sequence is: pad each edge by its fraction of the face box, square the
@@ -315,6 +339,32 @@ export function validateIdentityCrop(
   source: SourceDimensions,
   policy: IdentityCropPolicy = IDENTITY_CROP_POLICY_V1,
 ): IdentityCropValidation {
+  return validateCropGeometry(crop, source, policy.minimumOutputSidePx);
+}
+
+/**
+ * The hard geometry gate for a MANUAL crop (#667): identical to
+ * {@link validateIdentityCrop} except the size floor is
+ * `policy.minimumManualOutputSidePx` rather than `policy.minimumOutputSidePx`
+ * — an owner may frame a tighter square than the automatic policy would ever
+ * propose (`identityManualCropOutputSide` enlarges it back up on encode). A
+ * separate function rather than a parameter on `validateIdentityCrop` keeps
+ * the automatic entry point's signature, and every existing caller of it,
+ * untouched.
+ */
+export function validateManualIdentityCrop(
+  crop: SourcePixelCrop,
+  source: SourceDimensions,
+  policy: IdentityCropPolicy = IDENTITY_CROP_POLICY_V1,
+): IdentityCropValidation {
+  return validateCropGeometry(crop, source, policy.minimumManualOutputSidePx);
+}
+
+function validateCropGeometry(
+  crop: SourcePixelCrop,
+  source: SourceDimensions,
+  minimumSidePx: number,
+): IdentityCropValidation {
   if (
     !Number.isInteger(crop.left) ||
     !Number.isInteger(crop.top) ||
@@ -337,7 +387,7 @@ export function validateIdentityCrop(
   if (crop.width !== crop.height) {
     return { ok: false, code: "invalid_crop", reason: "not_square" };
   }
-  if (crop.width < policy.minimumOutputSidePx || crop.height < policy.minimumOutputSidePx) {
+  if (crop.width < minimumSidePx || crop.height < minimumSidePx) {
     return { ok: false, code: "crop_too_small", reason: "below_minimum" };
   }
   return { ok: true };

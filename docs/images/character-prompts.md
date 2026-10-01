@@ -452,6 +452,31 @@ asked for "exactly as shown", so the grouped clause asks for consistency ACROSS
 them. No adapter in `@vesper/image-models` touches prompt text, so a prompt
 reaches the provider exactly as it was compiled and hashed.
 
+**`civitai/qwen-image-2.1`'s dialect locks the same way, with a narrower
+repertoire.** Unlike the Qwen edit dialect, it does NOT merge the lock into its
+numbered reference sentence: the "Image N shows …" introduction
+(`operation.reference_role`) and the preserve clause (`subject.identity`) are
+two independent claims rendering two independent sentences, since no
+2.1-specific evidence yet justifies fusing them the way 2511's own trials
+justified fusing its binding. It preserves the same set — face, skin tone and
+apparent age, leaving hair, build, wardrobe and pose to the text — but speaks
+only the single- and grouped-reference forms: it carries none of the
+several-people FUSED cast binding the Qwen edit dialect's third form exists
+for — `variant-standard` is single-subject, but `scene-standard` is not always
+(an ensemble chat scene carries more than one identity-anchored cast member),
+so each subject's lock is still its own independent sentence rather than one
+clause naming "each person". What keeps an ensemble render legible is naming,
+not binding: a cast member the scene naming policy left unlabelled (bound to a
+reference rather than named) is called "the person in Image N" — their own
+identity slot's number — in the lock and in every later claim about them,
+never the shared `"the subject"` placeholder two such subjects would otherwise
+carry alike. It also declares no reference-authority aspects of its own in
+`CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT` (below), unlike the Qwen edit
+dialect's declared set — no 2.1 trial has evidenced that an optional
+appearance fact is redundant beside its reference yet, so its subjects'
+optional appearance detail compiles exactly as every other undeclared
+dialect's does.
+
 **What a lock preserves is that dialect's own set.** The prose family's measured
 sentence names face, hair colour and style, skin tone, body proportions and
 apparent age. The Qwen edit dialect's names face, skin tone and apparent age
@@ -660,9 +685,9 @@ names no hair in either band, so it takes no per-subject edit.
 A committed cut never carries intimate anatomy: the visual-state image selection keeps its
 consent gate shut in every lane. A lane whose route permits it — the chat scene's uncensored
 reference-edit rungs, the staged-scene bench, and the portrait studio's `nsfw test` variant on
-a successfully paired anatomy-LoRA route — passes `intimateReveal` to the seam, which projects
-each cut's exposed intimate anatomy as optional `subject.intimate_anatomy` facts beside the
-digest (`contracts/images/subject-reveal.ts`): silhouette through clothing, surface detail when
+a successfully resolved intimate route, with or without its LoRA — passes `intimateReveal` to the
+seam, which projects each cut's exposed intimate anatomy as optional `subject.intimate_anatomy`
+facts beside the digest (`contracts/images/subject-reveal.ts`): silhouette through clothing, surface detail when
 the region reads bare, untagged anatomy when its region is exposed, sensory never. The facts
 are the route's, sourced `images.subject_reveal`, and the assembly appends them to the subject
 untouched. A lane that passes nothing compiles the cut alone: the portrait, ordinary variant
@@ -670,16 +695,38 @@ and chat-look lanes ([pipelines/scene-subjects.md](pipelines/scene-subjects.md) 
 reveal, [pipelines/portrait-variants.md](pipelines/portrait-variants.md) §The `nsfw test`
 anatomy bench).
 
+Every dialect words these facts and the `subject.exposure` facts beside them —
+and, on every endpoint but one, nothing more. `civitai/qwen-image-2.1` carries
+no anatomy LoRA, so its dialect additionally states nudity in so many words
+once the computed exposure is fully bare — on a route that passes
+`intimateReveal`, and only there: the seam hands that same decision to the
+compile as `intimatePermitted`, and bare coverage on any other route states the
+exposure facts alone
+([prompt-programs.md §Families](prompt-programs.md#families)).
+
 ## Refusals the seam adds
 
-Beyond the layer's own refusals, three belong to this seam. All happen
+Beyond the layer's own refusals, four belong to this seam. All happen
 before provider spend.
 
 | Code                                          | Cause                                                   |
 | --------------------------------------------- | ------------------------------------------------------- |
+| `image_prompt_program.non_adult_exposed`      | a non-adult subject would be drawn chest or groin bare  |
 | `image_prompt_program.pack_missing`           | a bound pack version is not registered                  |
 | `image_prompt_program.references_renumbered`  | planning moves a slot a numbering dialect names         |
 | `visual_state.digest.cast_*`                  | the cast could not be folded into one digest            |
+
+**No non-adult is drawn undressed, on any lane or model** (owner ruling 2026-10-01).
+`non_adult_exposed` is decided first, ahead of the binding, by
+`characterPromptNonAdultExposureRefusal`: a subject whose resolved attributes fail
+`imageAgeAllowsIntimate` (the reference-view plan's adult floor) and whose coverage
+reads `intimateRegionsBare` — the torso or the pelvis `bare`; `sheer`, legs and feet
+do not count — refuses the compile. Exposure facts are stated on every route, so
+closing the intimate route alone cannot keep "is bare" out of such a prompt; refusing
+is the one answer that cannot leak, where drawing the state dressed would be a prompt
+that lies about the cut. A covered non-adult and every adult compile as before. The
+refusal's text names the fix: an outfit covering both — a saved outfit, for a
+portrait, variant or reference view.
 
 A refusal is never a fall-back to a second prompt system: a binding that resolved
 and then failed to compile is a fault on a lane that IS bound, and rendering

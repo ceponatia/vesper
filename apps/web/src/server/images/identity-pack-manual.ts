@@ -1,8 +1,11 @@
+import sharp from "sharp";
 import {
   buildIdentityPackQuality,
   type EnsureIdentityPackResult,
   evaluateIdentityPackIntrinsic,
   IDENTITY_CROP_POLICY_V1,
+  identityBlurScore,
+  identityManualCropOutputSide,
   type ImageIdentityPackFailureCode,
   type ImageIdentityPackV1,
   type ImageIdentityPackWarningCode,
@@ -12,7 +15,7 @@ import {
   type SourceDimensions,
   type SourcePixelCrop,
   squareSourcePixelCrop,
-  validateIdentityCrop,
+  validateManualIdentityCrop,
 } from "@vesper/image-core";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { log } from "@/server/log";
@@ -20,6 +23,7 @@ import { log } from "@/server/log";
 // `./identity-pack-ensure.ts` records on its own import of this file: the barrel
 // would close a real import cycle.
 import { acquireKeyedLockWithin } from "../engine/keyed-lock";
+import { SHARP_DECODE_LIMITS } from "./asset-storage";
 import {
   encodeAndMeasureCrop,
   type EncodedCrop,
@@ -39,8 +43,8 @@ import {
   errorMessage,
   identityPackLockKey,
   type IdentityPackRow,
-  intrinsicPolicy,
   isRetryableIdentityPackFailure,
+  manualIntrinsicPolicy,
   packRowToContract,
   type ResolvedSource,
 } from "./identity-pack-store";
@@ -51,7 +55,14 @@ import {
  *
  * It reserves, stores and promotes through exactly the machinery automatic
  * derivation uses (`./identity-pack-promotion.ts`, `./identity-pack-derive.ts`),
- * so the two paths can never drift on what a revision means.
+ * so the two paths can never drift on what a revision means — with one
+ * deliberate difference (#667): a manual crop is held to its own, lower size
+ * floor (`IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx`, 128 at v1) rather
+ * than the automatic floor (256), and a crop between the two is enlarged to the
+ * automatic floor on encode instead of refused. See `manualIntrinsicPolicy`
+ * (`identity-pack-store.ts` — shared with `projectIdentityPackPolicy`, which
+ * re-judges a stored revision the same way on every later read) and
+ * `encodeManualCropEnlarged` below.
  */
 
 /* ------------------------------------------------------------------------ *
@@ -204,14 +215,23 @@ async function saveManualCropUnderLock(
       reason: "invalid_geometry",
       code: geometry.code,
       blockers: [geometry.code],
-      message: `manual crop rejected: ${geometry.reason}`,
+      message:
+        geometry.reason === "below_minimum"
+          ? `manual crop rejected: below_minimum (minimum ${IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx}px)`
+          : `manual crop rejected: ${geometry.reason}`,
     };
   }
   const crop = geometry.crop;
 
+  // A manual crop below the automatic floor (#667) is enlarged to it on encode
+  // rather than shipped at its raw, smaller size — a disclosed, owner-chosen
+  // trade (the editor names it before save), never a silent one.
+  const outputSide = identityManualCropOutputSide(crop.width, IDENTITY_CROP_POLICY_V1);
+  const enlarged = outputSide > crop.width;
+
   let encoded: EncodedCrop;
   try {
-    encoded = await encodeAndMeasureCrop(source.buffer, crop);
+    encoded = enlarged ? await encodeManualCropEnlarged(source.buffer, crop, outputSide) : await encodeAndMeasureCrop(source.buffer, crop);
   } catch (err) {
     log.warn("images", "manual identity crop encode/measure threw", {
       characterId,
@@ -230,8 +250,7 @@ async function saveManualCropUnderLock(
     blurScore: encoded.blurScore,
     occlusionScore: null,
   });
-  const policy = intrinsicPolicy();
-  const evaluation = evaluateIdentityPackIntrinsic({ method: "manual", crop, quality }, policy);
+  const evaluation = evaluateIdentityPackIntrinsic({ method: "manual", crop, quality }, manualIntrinsicPolicy());
   const ruling = ruleManualBlockers(evaluation.blockers, input);
   if (!ruling.ok) return ruling.rejected;
 
@@ -289,7 +308,7 @@ async function saveManualCropUnderLock(
         // The override does not change the measurements, so what it WAIVED is
         // recorded here rather than being lost: a ready revision's failure
         // message is the audit trail for a blocker somebody accepted.
-        failureMessage: override ? `${policy.version} blockers waived: ${override.blockers.join(", ")}` : null,
+        failureMessage: override ? `${evaluation.policyVersion} blockers waived: ${override.blockers.join(", ")}` : null,
         review,
       }
     : refusedRevision("crop_write_failed", stored.message, { method: "manual", crop, quality, review });
@@ -321,7 +340,7 @@ async function saveManualCropUnderLock(
           packId: finalized.id,
           revision: finalized.revision,
           actorUserId: input.actorUserId,
-          policyVersion: policy.version,
+          policyVersion: evaluation.policyVersion,
         },
       }),
     );
@@ -357,16 +376,47 @@ type ResolvedManualCrop =
  * absurd — but silently re-centring a rectangle that was out of bounds or below
  * the minimum would store a crop the user never framed, so those keep their own
  * refusal and their own reason.
+ *
+ * Validated against `validateManualIdentityCrop` (#667), not the automatic entry
+ * point: an owner may frame a square as small as
+ * `IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx` (128 at v1), smaller than
+ * anything automatic derivation would ever propose — `encodeManualCropEnlarged`
+ * below is what turns that into a full-sized stored crop.
  */
 function resolveManualCrop(input: ManualIdentityCropInput, source: SourceDimensions): ResolvedManualCrop {
   const pixels = input.space === "normalized" ? normalizedCropToSourcePixels(input.crop, source) : input.crop;
-  const first = validateIdentityCrop(pixels, source, IDENTITY_CROP_POLICY_V1);
+  const first = validateManualIdentityCrop(pixels, source, IDENTITY_CROP_POLICY_V1);
   if (first.ok) return { ok: true, crop: pixels };
   if (first.reason !== "not_square") return { ok: false, code: first.code, reason: first.reason };
 
   const squared = squareSourcePixelCrop(pixels, source);
-  const second = validateIdentityCrop(squared, source, IDENTITY_CROP_POLICY_V1);
+  const second = validateManualIdentityCrop(squared, source, IDENTITY_CROP_POLICY_V1);
   return second.ok ? { ok: true, crop: squared } : { ok: false, code: second.code, reason: second.reason };
+}
+
+/**
+ * Encode a manual crop that falls below the automatic floor
+ * (`IDENTITY_CROP_POLICY_V1.minimumOutputSidePx`) but at or above the manual
+ * one (#667). Mirrors `encodeAndMeasureCrop`'s extract → resize → measure
+ * sequence (`identity-pack-derive.ts`) exactly, except this is the one path in
+ * the service allowed to upscale: the owner explicitly framed something
+ * tighter than policy would derive automatically (owner ruling 2026-10-01,
+ * #667 — "a little softer, but framed on the face"), so enlarging here is a
+ * disclosed product choice the editor names before save, never the silently
+ * invented detail `identityCropOutputSide`'s automatic path exists to refuse.
+ *
+ * `lanczos3` (sharp's own default, and a high-quality resampler) is named
+ * explicitly rather than left implicit, since this is the one resize in the
+ * service that is asked to add pixels rather than remove them and a future
+ * default change should not silently degrade it.
+ */
+async function encodeManualCropEnlarged(sourceBuffer: Buffer, crop: SourcePixelCrop, outputSide: number): Promise<EncodedCrop> {
+  const buffer = await sharp(sourceBuffer, SHARP_DECODE_LIMITS)
+    .extract({ left: crop.left, top: crop.top, width: crop.width, height: crop.height })
+    .resize(outputSide, outputSide, { fit: "cover", kernel: "lanczos3" })
+    .toBuffer();
+  const { data, info } = await sharp(buffer, SHARP_DECODE_LIMITS).raw().toBuffer({ resolveWithObject: true });
+  return { buffer, blurScore: identityBlurScore({ data, width: info.width, height: info.height, channels: info.channels }) };
 }
 
 /** What an accepted override waived, for the audit record. */

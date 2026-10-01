@@ -79,6 +79,23 @@ number lives in `packages/image-core/src/identity/identity-pack-policy.ts` behin
 crop moved" is always deliberate. The v1 values are conservative placeholders; blur and occlusion
 thresholds are `null` — defined, not armed.
 
+## A manual crop has its own, lower floor
+
+The editor's owner-drawn square is held to `IdentityCropPolicy.minimumManualOutputSidePx` (128px at v1), not the
+automatic `minimumOutputSidePx` (256px) — a human may frame a tighter face crop than automatic derivation would ever
+propose, and the whole point of the editor's zoom (`identity-crop-dialog.tsx`: a slider and +/- buttons, both
+keyboard-accessible; panning once zoomed by dragging the viewport or by arrow keys when it has focus; the selection
+stays in view after every nudge or drag; all on top of the existing drag/resize square, still in source pixels) is to
+make that framing accurate on a source where the face is a small fraction of the frame. A manual square between the
+two floors is **enlarged** to the
+automatic floor on encode (`identityManualCropOutputSide`, a Lanczos resize that allows upscaling — the one path in the
+service permitted to, since every other crop path refuses rather than inventing detail) rather than refused or stored
+at its raw size; the editor discloses this beside the stored-reference preview before save. Below the manual floor a
+crop is still refused (`crop_too_small`), with the actual minimum named in the refusal. None of this moves
+`derive_v1`: the automatic floor, its heuristic geometry and its golden fixtures are unchanged, and a manual crop keeps
+being evaluated against the same intrinsic thresholds (blur, occlusion, padding) every method uses — only the
+crop-size floor is substituted for the one call.
+
 ## A stored verdict is not eternal truth
 
 Rows persist *measurements*, never `quality.accepted`, so a revision stamped
@@ -166,8 +183,10 @@ timeout) — that outcome is invisible in the re-read summary, so without it a P
 portrait studio shows a quiet `IdentityReferencePanel` (keyed on the character **and** its accepted portrait, so an
 acceptance re-reads instead of showing the previous pack's state; an unaccepted candidate changes no pack field and
 deliberately does not re-read; renders nothing if the read fails) opening
-`identity-crop-dialog.tsx`: a drag/resize square over the canonical source, live preview, plain-language warnings, and
-the `blocked` code in the owner's words when a prepare or reset refuses. The
+`identity-crop-dialog.tsx`: a drag/resize square over the canonical source — zoomable and, once zoomed, pannable, so a
+small face on a full-figure portrait can still be framed precisely — live preview, plain-language warnings (including
+when the framed square will be enlarged on save; see "A manual crop has its own, lower floor" above), and the
+`blocked` code in the owner's words when a prepare or reset refuses. The
 **self-scoped** admin lane `/api/admin/self/identity-packs` adds a bounded preparation `batch` (dry run, hard caps,
 named trial-corpus registry, empty), per-pack `history`, and a recorded `override` waiving a *reviewed
 threshold* only (ownership, bounds and stale-hash refusals stand whoever asks; the revision records actor, reason and

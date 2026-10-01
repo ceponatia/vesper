@@ -66,8 +66,22 @@ export interface IdentityCropPolicy {
   faceExpansionTopFraction: number;
   faceExpansionBottomFraction: number;
   squareGrowthTopShare: number;
-  /** Below this, the crop cannot be encoded without enlargement — refuse instead. */
+  /** Below this, the crop cannot be encoded without enlargement — refuse instead.
+   * This is the AUTOMATIC floor (detector and heuristic methods); it is what
+   * `identityCropOutputSide` never enlarges past. */
   minimumOutputSidePx: number;
+  /**
+   * The floor for a human-framed square only (#667). An owner may frame a
+   * tighter face crop than the automatic policy would ever propose — the whole
+   * point of the editor's zoom is to let them see a small face well enough to do
+   * that — and a crop between this and `minimumOutputSidePx` is enlarged to
+   * `minimumOutputSidePx` on encode rather than refused
+   * (`identityManualCropOutputSide`). Below this, even a manual crop is refused:
+   * there has to be SOME floor beneath which a square stops carrying a face at
+   * all. Owner ruling 2026-10-01 (#667): "the square may go down to about 128
+   * source pixels... a little softer, but framed on the face."
+   */
+  minimumManualOutputSidePx: number;
   /** Stored crops are downscaled to this ceiling, never enlarged to reach it. */
   maximumOutputSidePx: number;
   maximumLostPaddingFraction: number;
@@ -81,6 +95,7 @@ export const IDENTITY_CROP_POLICY_V1: IdentityCropPolicy = {
   faceExpansionBottomFraction: 0.45,
   squareGrowthTopShare: 0.6,
   minimumOutputSidePx: 256,
+  minimumManualOutputSidePx: 128,
   maximumOutputSidePx: 1024,
   maximumLostPaddingFraction: 0.35,
 };

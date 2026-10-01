@@ -4,10 +4,13 @@ The selectable image-model catalog is **DATA in `image_models`**, while the row'
 
 - **Replicate** remains the default backend for the existing catalog, including Qwen Image 2, Qwen 2511/2512, Seedream, Wan, SDXL and the LoRA/preprocessor paths.
 - **fal.ai** currently owns the two Qwen Image 3 rows: `alibaba/qwen-image-3/text-to-image` and `alibaba/qwen-image-3/edit`.
-- **Civitai** owns the admin-only `civitai/flux-2-klein-4b` lane; its
+- **Civitai** owns the admin-only `civitai/flux-2-klein-4b` lane — its
   [model contract](../../image-models/models/civitai-flux-2-klein-4b.md) defines
   the version-specific legacy and native v2 dispatch, including native
-  reference-plus-LoRA inputs and explicit mature-content/payment settings.
+  reference-plus-LoRA inputs and explicit mature-content/payment settings — and
+  the `civitai/qwen-image-2.1` lane, whose
+  [model contract](../../image-models/models/civitai-qwen-image-2-1.md) covers
+  the `variant` and `scene` task defaults.
 - Venice remains removed — no `VENICE_*` env, `server/ai/venice.ts`, or `venice_*` provider ids.
 
 The model list is managed from the admin-only `/settings/image-models` page. Provider routing is below the render-intent seam, so Character Studio, scene rendering and the Admin Image Generator resolve profiles/models the same way regardless of which transport ultimately runs them.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fnv1a32 } from "@vesper/contracts";
 import type { SceneFaceVisibility } from "@vesper/image-core";
+import type { AttributeValue } from "../attributes/value";
 import type { RegionExposure } from "../items/visibility";
 import type { CharacterProfile } from "../world/profile";
 import { imageApparentAgeValue } from "./character-adapter";
@@ -272,6 +273,34 @@ export function allReferenceViews(): readonly ReferenceView[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * THE image age gate for intimate work: whether a character's
+ * `identity.apparent_age` resolves to a value the image age vocabulary carries
+ * — the adult floor ({@link imageApparentAgeValue}).
+ *
+ * One rule for every lane that renders intimate content: the `bare` reference
+ * views ({@link plannedReferenceViews}), the portrait studio's `nsfw_test`
+ * bench, and an intimate chat scene, where any subject failing it takes the
+ * whole render off the intimate route. A minor band fails, and so does a band
+ * the vocabulary cannot value or no band at all — the stricter reading, which
+ * cannot be wrong in the expensive direction.
+ *
+ * EVERY `identity.apparent_age` entry must value as an adult, and at least one
+ * must exist. A profile may carry the attribute more than once — authored,
+ * manual, magic — and `resolveAttributes` picks one by source precedence; the
+ * value a cut states is always one of those entries, so requiring all of them
+ * is at least as strict as resolving and cannot be wrong in the expensive
+ * direction, however the precedence rule moves. Reading only the first entry
+ * could pass an adult while the cut's own age anchor resolved a minor.
+ *
+ * Takes any attribute list, so a lane can ask it of the authored sheet and of
+ * the resolved attributes a render actually states. PURE.
+ */
+export function imageAgeAllowsIntimate(profile: { readonly attributes: readonly AttributeValue[] }): boolean {
+  const bands = profile.attributes.filter((entry) => entry.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID);
+  return bands.length > 0 && bands.every((entry) => imageApparentAgeValue(entry.value) !== null);
+}
+
+/**
  * The views an explicit full-sheet build will create for this character,
  * minus every intimate view when the character's image age band is not a
  * recognized adult one.
@@ -292,8 +321,7 @@ export function allReferenceViews(): readonly ReferenceView[] {
  * reaches the model as a refusal; the view is simply not built.
  */
 export function plannedReferenceViews(profile: Pick<CharacterProfile, "attributes">): readonly ReferenceView[] {
-  const band = profile.attributes.find((entry) => entry.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value;
-  const intimateAllowed = imageApparentAgeValue(band) !== null;
+  const intimateAllowed = imageAgeAllowsIntimate(profile);
   return allReferenceViews().filter((view) => {
     if (!intimateAllowed) return referenceViewWardrobeById(view.wardrobe)?.intimate !== true;
     return true;

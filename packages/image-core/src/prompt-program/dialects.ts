@@ -49,6 +49,7 @@ import type { ImageOperationContract,
 export const imagePromptDialectIds = [
   "qwen_2512_description",
   "qwen_2511_delta_edit",
+  "qwen_21_instruction_edit",
   "seedream_45_prose",
   "seedream_5_lite_prose",
   "wan_27_prose",
@@ -194,6 +195,19 @@ export interface ImageDialectPositiveInput {
    * A/B trial on one seed set.
    */
   readonly register?: ImagePromptRegister;
+  /**
+   * Whether this render's ROUTE permits intimate content — the application's
+   * own decision (a lane's intimate reveal, behind its age and consent gates),
+   * handed down as a fact, never inferred here.
+   *
+   * Absent is "not permitted", and it is the ordinary case: almost every
+   * dialect reads nothing from it, because the intimate facts a permitting
+   * route adds already arrive as claims. It exists for wording a dialect adds
+   * BEYOND the claims — an endpoint that must state nudity in so many words
+   * because it carries no anatomy LoRA — which a claim's own coverage cannot
+   * license: the same bare coverage reads on a route that permits nothing.
+   */
+  readonly intimatePermitted?: boolean;
   readonly budget: ImagePromptBudget;
   readonly sink?: DiagnosticSink;
 }

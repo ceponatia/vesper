@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 import { chooseCropPlacement, imageModelSchema } from "@vesper/image-core";
-import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
+import { CIVITAI_FLUX2_KLEIN4B_SLUG, CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import type { ReplicateClient, ReplicateImageResult } from "@vesper/image-replicate";
 
 /**
@@ -58,6 +58,25 @@ function civitaiModel() {
     canEdit: true,
     aspectMode: "size",
     supportedAspects: ["768*1024", "1536*2048", "3072*4096"],
+  });
+}
+
+/**
+ * The real seeded row's slug and offered shapes (drizzle/0151) — the one
+ * model `imageModelEditSizesFromReference` names today. `CIVITAI_QWEN_IMAGE_21_SLUG`
+ * comes from `@vesper/image-models` rather than a literal copy, so a drift
+ * between that constant and image-core's own hardcoded slug set would show up
+ * here as these cases suddenly behaving like an ordinary aspect_ratio model.
+ */
+function civitaiQwen21Model() {
+  return imageModelSchema.parse({
+    id: "civitai-qwen21-1",
+    slug: CIVITAI_QWEN_IMAGE_21_SLUG,
+    label: "Qwen Image 2.1 (Civitai) Fixture",
+    canGenerate: true,
+    canEdit: true,
+    aspectMode: "aspect_ratio",
+    supportedAspects: ["1:1", "4:3", "3:4", "3:2", "2:3", "16:9", "9:16"],
   });
 }
 
@@ -203,6 +222,97 @@ describe("renderWithModel dimension negotiation", () => {
     });
     expect(edited.shape).toMatchObject({ field: "resolution", value: 1024 });
     expect(imageModelSentShape).toHaveBeenLastCalledWith(expect.objectContaining({ referenceCount: 2 }));
+  });
+});
+
+/**
+ * PROTECTS: #663/#664 — a production edit on Civitai Qwen Image 2.1 used to be
+ * refused outright (`civitaiQwen21Workflow`: "sizes an edit from its
+ * reference; clear the output shape or remove the references") whenever a
+ * caller named a non-null target ratio with at least one reference, which is
+ * every reference-view, portrait-variant and chat-scene render. The fix is in
+ * `chooseDimensions` (`@vesper/image-core`), not here — this wrapper only has
+ * to hand it the reference count, and these cases are what prove the whole
+ * seam together: no aspect reaches the transport, the shape mode still reads
+ * `target_ratio`, and a real image gets cropped toward it.
+ */
+describe("renderWithModel and an edit sized from its own reference (Civitai Qwen Image 2.1)", () => {
+  it("sends no aspect and crops the decoded output toward the default 3:4 target", async () => {
+    vi.mocked(imageModelSentShape).mockImplementation(({ referenceCount }) =>
+      referenceCount !== undefined && referenceCount > 0
+        ? { field: "resolution", value: 1024 }
+        : { field: "width,height", value: "768x1024" },
+    );
+    const image = await solidImage(1200, 1200, { r: 10, g: 20, b: 30 });
+    runModel.mockResolvedValue({ ok: true, image });
+    // A Civitai model's reference must decode — an undecodable buffer rejects
+    // the render outright rather than degrading (`renderWithModel and
+    // Civitai's required reference format` below), which is not this case.
+    const reference = await solidImage(8, 8, { r: 1, g: 2, b: 3 });
+
+    const result = await renderWithModel({
+      model: civitaiQwen21Model(),
+      prompt: "change the jacket",
+      references: [reference],
+    });
+
+    expect(result.ok).toBe(true);
+    // Never reaches the transport — the lane's own refusal (#663/#664) is now
+    // structurally unreachable from this path.
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBeNull();
+    expect(result.outputDimensions).toEqual({ width: 900, height: 1200 });
+    expect(result.shape).toMatchObject({
+      mode: "target_ratio",
+      // What `imageModelSentShape` says actually reached the provider — the
+      // edit's resolution budget, never the create's size.
+      field: "resolution",
+      value: 1024,
+      expectedAspect: null,
+      cropTarget: 3 / 4,
+    });
+    expect(result.shape?.crop).toMatchObject({ targetRatio: 3 / 4 });
+    // The provider's OWN size before the local crop — proves a crop was
+    // actually attempted, not skipped.
+    expect(result.shape?.providerSize).toEqual({ width: 1200, height: 1200 });
+  });
+
+  it("still sends an exact create size and crops nothing with zero references", async () => {
+    vi.mocked(imageModelSentShape).mockImplementation(({ referenceCount }) =>
+      referenceCount !== undefined && referenceCount > 0
+        ? { field: "resolution", value: 1024 }
+        : { field: "width,height", value: "768x1024" },
+    );
+
+    const result = await renderWithModel({ model: civitaiQwen21Model(), prompt: "a portrait" });
+
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBe("3:4");
+    expect(imageModelSentShape).toHaveBeenLastCalledWith(expect.objectContaining({ referenceCount: 0 }));
+    expect(result.shape).toMatchObject({ mode: "target_ratio", cropTarget: null });
+  });
+
+  it("stays fully native on a raw (null) target ratio even while editing", async () => {
+    const reference = await solidImage(8, 8, { r: 1, g: 2, b: 3 });
+    const result = await renderWithModel({
+      model: civitaiQwen21Model(),
+      prompt: "change the jacket",
+      references: [reference],
+      targetRatio: null,
+    });
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).toBeNull();
+    expect(result.shape).toMatchObject({ mode: "provider_default", cropTarget: null });
+  });
+
+  it("leaves a different model's edit negotiation untouched", async () => {
+    // Klein is also a Civitai model with references, but it is not in
+    // `imageModelEditSizesFromReference`'s set — it must keep asking for a
+    // shape exactly as it always has.
+    const reference = await solidImage(8, 8, { r: 1, g: 2, b: 3 });
+    await renderWithModel({
+      model: civitaiModel(),
+      prompt: "change the jacket",
+      references: [reference],
+    });
+    expect(runModel.mock.calls.at(-1)?.[1]?.aspect).not.toBeNull();
   });
 });
 

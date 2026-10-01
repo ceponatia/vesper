@@ -2,7 +2,7 @@
 
 Pose / outfit / expression / setting / `nsfw test` variants of the canonical avatar, rendered
 as reference edits through **the New Variant picker's model** (the registry filtered to
-`canEdit`; default `qwen/qwen-image-edit-2511`, shared with scene images). The identity
+`canEdit`; default `civitai/qwen-image-2.1`, shared with scene images). The identity
 reference(s) come from the identity-pack service
 ([../identity-packs.md](../identity-packs.md) — provenance on `meta.identityReferences`, a
 blocked pack refuses the render). The prompt is the **compiled prompt program** over the
@@ -118,21 +118,45 @@ chaining edits, because drift compounds.
 ## The `nsfw test` anatomy bench
 
 `nsfw test` (`NSFW_TEST_VARIANT_KIND`) is the studio's anatomy bench, and the only variant kind
-that chooses its own model. It pairs the picked variant profile with the registered
-`qwen/qwen-image-edit-2511` row and the same builtin `image_loras` row the chat scene lane
-uses, at that row's curated scale (`server/images/nsfw-lora.ts` assembles the pairing for both
-lanes; the row's `allowedTasks` covers `scene` and `variant`). The pairing is decided **before**
-the row is reserved, so the row records the model it runs on, and binding resolution runs on
-the final resolved profile.
+that may change its own model. It takes the intimate route
+([../providers/loras.md](../providers/loras.md) §The intimate route), resolved from the picked
+variant profile by `server/images/nsfw-lora.ts` for this lane, the chat scene lane and the
+`bare` reference view alike:
 
-Unlike the chat lane it **fails rather than degrades**: a missing model row, LoRA row or
-Civitai credential fails the image row with the leg's own message, because a tame render
+- On a model the route's policy lists — Civitai Qwen Image 2.1 — the bench renders on the picked
+  profile itself, carrying that model's curated anatomy LoRA only when one resolves. That model
+  draws the anatomy unaided, so the no-LoRA render is the test.
+- On every other model it pairs the picked profile with the registered
+  `qwen/qwen-image-edit-2511` row and the same builtin `image_loras` row the chat scene lane
+  uses, at that row's curated scale (the row's `allowedTasks` covers `scene` and `variant`).
+
+The route is decided **before** the row is reserved, so the row records the model it runs on,
+and binding resolution runs on the final resolved profile.
+
+**The bench is age-gated, on every model** (owner ruling 2026-10-01). Unless the character's
+`identity.apparent_age` resolves to an adult by `imageAgeAllowsIntimate` — the same rule the
+reference-view plan applies to a `bare` view
+([reference-views.md](reference-views.md) §The age gate) — the row fails before any route is
+resolved, any pack is read or any provider is called, with
+`images.variant.nsfw_test_age_gated` (warn) and the owner-facing reason "the anatomy bench
+renders only a character whose apparent age resolves to an adult". A minor band and an
+unresolved age both fail it. The gate reads the same character row the cut is built from, so the
+gate and the prompt cannot disagree. Ordinary variant kinds are not gated by the bench — but no
+variant of any kind draws a non-adult undressed: the prompt seam refuses a subject who fails the
+same rule and whose coverage reads the chest or groin bare
+(`image_prompt_program.non_adult_exposed`, [../character-prompts.md](../character-prompts.md)
+§Refusals the seam adds), so a non-adult with no saved outfit fails a `pose` or `setting` row
+before spend, with the seam's reason asking for a saved outfit.
+
+Unlike the chat lane the 2511 pairing **fails rather than degrades**: a missing model row, LoRA
+row or Civitai credential fails the image row with the leg's own message, because a tame render
 silently substituted for an explicit one is exactly what the bench is testing against. A
 failed bench route compiles no program either — the fallback profile is not the model the
-render would have run on. The row records the model slug and the resolved LoRA id in `meta`.
+render would have run on. The row records the model slug, the LoRA id when weights were sent,
+and the route's own `meta.intimateRoute` record.
 
-A SUCCESSFULLY paired route also passes `intimateReveal: true` into the program (§The
-program), so the compiled prompt states the applicable exposed anatomy the bench exists to
-evaluate rather than just the coverage an ordinary variant would state — the same
+A SUCCESSFUL route — with or without a LoRA — also passes `intimateReveal: true` into the
+program (§The program), so the compiled prompt states the applicable exposed anatomy the bench
+exists to evaluate rather than just the coverage an ordinary variant would state — the same
 `subjectIntimateRevealFacts` projection the chat scene lane uses. Covered or inapplicable
 anatomy stays out by that projection's own rule.

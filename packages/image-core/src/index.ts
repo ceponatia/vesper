@@ -85,6 +85,7 @@ export {
   imageAspectInputField,
   imageAspectModes,
   imageControlDefaultsSchema,
+  imageModelEditSizesFromReference,
   imageModelProfileCreateRequestSchema,
   imageModelProfileSchema,
   imageModelProfileUpdateRequestSchema,
@@ -294,6 +295,7 @@ export {
   qwenImage2512NegativePhrase,
   qwenImage2512NegativePack,
   qwenImage2512PositivePack,
+  qwenImage21Dialect,
   qwenImageEdit2511Dialect,
   // The current-look lock scope/coverage predicate (issue #551 Codex finding):
   // the one question the dialect and `character-prompt-program.ts` must answer
@@ -523,6 +525,8 @@ export type {
 } from "./references";
 export {
   HEURISTIC_V1,
+  IDENTITY_CROP_MAX_ZOOM,
+  IDENTITY_CROP_MIN_ZOOM,
   IDENTITY_CROP_POLICY_V1,
   IDENTITY_PACK_DERIVATION_VERSION,
   IDENTITY_PACK_POLICY_VERSION,
@@ -533,11 +537,14 @@ export {
   aggregateTrialGrades,
   buildIdentityPackQuality,
   buildTrialCellPlans,
+  clampPan,
   clampSelection,
+  clampZoom,
   compareTrialCellKeys,
   cropPreviewLayout,
   deriveDetectorCrop,
   displayScale,
+  ensureSelectionVisible,
   evaluateIdentityEffectiveSize,
   evaluateIdentityPackIntrinsic,
   evaluateIdentityProfilePolicy,
@@ -547,6 +554,7 @@ export {
   identityCropHandles,
   identityCropOutputSide,
   identityFaceDetector,
+  identityManualCropOutputSide,
   identityPackAdminOverrideRequestSchema,
   identityPackAdminRevisionSchema,
   identityPackBatchRequestSchema,
@@ -581,6 +589,7 @@ export {
   moveSelection,
   normalizedCropToSourcePixels,
   pairTrialCells,
+  panCentredOn,
   perTrialGradeDimension,
   resizeSelection,
   selectIdentityFaceCandidate,
@@ -605,6 +614,8 @@ export {
   trialVerdicts,
   unblindTrialPairGrade,
   validateIdentityCrop,
+  validateManualIdentityCrop,
+  zoomedDisplayScale,
 } from "./identity";
 export type {
   DetectedFaceCandidate,
@@ -665,6 +676,7 @@ export type {
   TrialStrategyComparison,
   TrialVerdict,
   TrialVerdictValue,
+  ViewPoint,
 } from "./identity";
 export {
   IMAGE_LAB_FINISHING_IDENTITY_STRATEGY,

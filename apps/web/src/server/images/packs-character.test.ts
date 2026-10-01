@@ -21,6 +21,12 @@ import {
   qwenImage2512PortraitPositivePack,
 } from "./packs-qwen-2512-portrait";
 import { characterEndpointPacks } from "./packs-character-endpoints";
+// Side-effect only, like `character-prompt-program.ts`'s own import of this
+// module: Vitest gives this file its own isolated module registry, so without
+// this the civitai/qwen-image-2.1 entries below would resolve `unbound` — not
+// because the coverage is missing, but because nothing in THIS file's graph
+// ever ran the registration this suite is trying to check.
+import "./packs-qwen-21";
 
 /**
  * THE CHARACTER PACK SURFACE (owner ruling 2026-09-01: keep every
@@ -42,7 +48,7 @@ import { characterEndpointPacks } from "./packs-character-endpoints";
 /**
  * The character-image surface as the seeded profile rows actually define it
  * (drizzle `0100_daffy_mystique`, `0104_add-adult-and-identity-image-models`,
- * `0107_curated-model-profiles`).
+ * `0107_curated-model-profiles`, `0152_civitai-qwen-image-2-1-defaults`).
  *
  * Written out rather than read from the database because this is a PURE suite
  * and because the list is the claim: a profile added to a migration without a
@@ -69,6 +75,12 @@ const CHARACTER_SURFACE: readonly {
   { slug: "qwen/qwen-image-edit-2511", task: "variant", profileKey: "variant-standard" },
   { slug: "qwen/qwen-image-edit-2511", task: "scene", profileKey: "scene-standard" },
   { slug: "qwen/qwen-image-edit-2511", task: "chat_look", profileKey: "chat-look-standard" },
+  // Civitai Qwen Image 2.1 — migration 0152 makes it the global `variant` and
+  // `scene` default (owner ruling 2026-10-01); `packs-qwen-21.ts` binds these
+  // same two keys. No portrait and no chat-look row: this endpoint is not
+  // offered for either.
+  { slug: "civitai/qwen-image-2.1", task: "variant", profileKey: "variant-standard" },
+  { slug: "civitai/qwen-image-2.1", task: "scene", profileKey: "scene-standard" },
   // Seedream 4.5.
   { slug: "bytedance/seedream-4.5", task: "portrait", profileKey: "portrait-standard" },
   { slug: "bytedance/seedream-4.5", task: "variant", profileKey: "variant-standard" },

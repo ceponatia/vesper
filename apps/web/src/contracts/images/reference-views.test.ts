@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   allReferenceViews,
+  imageAgeAllowsIntimate,
   selectReferenceView,
   isConsumableReferenceView,
   normalizeReferenceViewTargets,
@@ -174,6 +175,37 @@ describe("the age gate", () => {
 
   it("drops every undressed view when no age band resolves at all", () => {
     expect(plannedReferenceViews({ attributes: [] }).every((view) => view.wardrobe === "clothed")).toBe(true);
+  });
+
+  // A profile may carry the attribute more than once and `resolveAttributes`
+  // settles which one a cut states by source precedence. The gate refuses
+  // unless EVERY entry is an adult, so whichever one the cut resolves, it can
+  // never pass an adult entry while the render states a minor one.
+  it.each([
+    ["adult first, minor second", ["late_twenties", "teen"]],
+    ["minor first, adult second", ["teen", "late_twenties"]],
+    ["adult beside an unvalued band", ["late_twenties", "adult"]],
+  ])("refuses duplicate age entries with any non-adult one — %s", (_label, values) => {
+    const sources = ["creation", "manual"] as const;
+    const profile: { attributes: AttributeValue[] } = {
+      attributes: values.map((value, index): AttributeValue => ({
+        id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID,
+        value,
+        source: sources[index] ?? "creation",
+      })),
+    };
+    expect(imageAgeAllowsIntimate(profile)).toBe(false);
+    expect(plannedReferenceViews(profile).every((view) => view.wardrobe === "clothed")).toBe(true);
+  });
+
+  it("allows duplicate age entries that are all adults", () => {
+    const profile: { attributes: AttributeValue[] } = {
+      attributes: [
+        { id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: "late_twenties", source: "creation" },
+        { id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: "eighteen", source: "manual" },
+      ],
+    };
+    expect(imageAgeAllowsIntimate(profile)).toBe(true);
   });
 });
 

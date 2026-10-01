@@ -4,7 +4,7 @@ A `staged_scene` benches one staging from Vesper's scene-staging registry withou
 
 ## Required setup
 
-- One character.
+- One character whose apparent age resolves to an adult (§The age gate).
 - One identity reference render of that character.
 - One staging id from the registry.
 - A selected/default registered model with an exact provider version.
@@ -27,6 +27,22 @@ The subject is a committed visual cut, realized by `image-lab-staged-visual.ts` 
 A run whose cut cannot be assembled settles the row failed with `visual_digest_unavailable`, before any provider spend. It is never degraded to a name-only render: a prompt production never sends would answer a different question than the row asks. A cut that assembles but compiles to a refusal — a lost required anchor, a missing pack, a renumbered slot — settles under the prompt program's own `image_prompt_program.*` code, the way an `image_lora.*` or `image_profile.*` refusal lands verbatim. A pinned endpoint with no active prompt binding for the scene task settles under `image_prompt_program.unbound` (`STAGED_PROGRAM_UNBOUND`); the bench has no authorized way to word the act until the endpoint is bound.
 
 **The staging's exposure is the act's premise, not the character's wardrobe.** A staged row states bare skin exactly where its registry template describes bare skin, and covered everywhere else, and states the viewer's own exposure the same way. It does not read the character's saved clothing: a dressed character would suppress the bare-region phrasing the template is written around, and the bench would quietly pay for an ordinary portrait. That premise is handed to the assembly as worn coverage (`stagedPremiseWorn`), so the digest's exposure readout and the camera's per-location perception both answer the premise and the two halves of one run cannot disagree about what the shot shows.
+
+## The age gate
+
+A staged scene refuses any character whose `identity.apparent_age` does not resolve to an adult by
+`imageAgeAllowsIntimate` — the adult floor the reference-view plan applies to a `bare` view
+([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §The age gate),
+and the same rule the portrait studio's anatomy bench and the chat scene lane apply (owner ruling
+2026-10-01). A minor band and an unresolved age both fail it, on every model.
+
+The **whole bench** is gated rather than only its reveal: the form offers intimate stagings only,
+and every staged run states an undressed viewer under `allowIntimate` and the intimate reveal
+whatever entry it names, so no staged render may have a non-adult subject. The check runs on the
+sheet the cut would be built from, after the row's own shape checks and before the image bytes are
+read, the LoRA library is asked or the provider is called. The row settles failed under
+`image_lab.subject_age_gated` (warn) with the reason "a staged scene renders only a character whose
+apparent age resolves to an adult; the intimate route is closed to anyone else, on every model".
 
 ## References
 

@@ -62,6 +62,57 @@ A version whose two fields disagree on shape — an array `lora_weights` beside 
 be sent, and resolution refuses with `image_lora.unreachable_configuration` before any provider
 work.
 
+## The intimate route
+
+Three lanes render work that is nude by design: a `bare` reference view, the portrait studio's
+`nsfw test` variant, and an intimate staged chat scene. Which model and which anatomy weights they
+take is one decision, `resolveIntimateRoute` (`server/images/nsfw-lora.ts`), made from the lane's
+**resolved** profile against a reviewed per-model policy (`INTIMATE_ROUTE_POLICIES`,
+`contracts/images/intimate-scene-lora.ts`).
+
+- **A model the policy lists as `optional`** renders on the lane's own resolved profile. The
+  curated anatomy row the policy names rides along when it resolves; when the policy names none,
+  or that row does not resolve, the render goes out with no LoRA and one
+  `images.intimate_route.no_anatomy_lora` info line naming the model and the reason. That is the
+  reviewed route, never a degrade, so no lane fails or falls back on it.
+- **Every other model** takes the intimate-model pairing: the lane's profile on the registered
+  `qwen/qwen-image-edit-2511` row with the built-in intimate-scene row (`INTIMATE_SCENE_LORA_ID`)
+  at its curated scale. Its legs run in order — model row, profile eligibility, library row,
+  credential — and each lane decides what a missing leg costs it: the scene lane degrades to its
+  stock render, while a `bare` view and the `nsfw test` bench fail that one row.
+- The policy lists one model. Civitai Qwen Image 2.1 (`civitai/qwen-image-2.1`) renders bare
+  reference views, `nsfw test` variants and intimate chat scenes on itself, with no LoRA until a
+  curated 2.1 anatomy LoRA is generation-enabled (owner ruling 2026-10-01).
+- **The anatomy row is named in the policy, never discovered.** No library field says "anatomy",
+  so a lookup by compatible model would pair whatever LoRA was next curated for that model with
+  every nude render. A listed model's row is named once its weights are generation-enabled on the
+  provider: a row the provider refuses fails the render it rides, where an absent one costs
+  nothing.
+- **A named row resolves like any production LoRA** — enabled, compatible slug, compatible version
+  against the model's pinned version, `allowedTasks`, both scale bands — and then needs the
+  deployment's Civitai credential when its locator is a Civitai download. On Civitai Qwen Image 2.1
+  it travels as the lane's `civitai_lora_version`/`civitai_lora_strength` pair and reaches the
+  workflow's `loras` map only past the transport's Qwen 2.1 family gate
+  ([civitai-qwen-image-2-1.md](../../image-models/models/civitai-qwen-image-2-1.md)).
+- **The allowance is the route's, never the weights'.** What permits intimate content in a lane —
+  the `bare` wardrobe, the `nsfw test` kind, the scene trigger and its `allowIntimate` rung — is
+  decided before the route is asked, and grants exactly the same on the no-LoRA route as on the
+  LoRA route.
+- **One age gate stands in front of every lane, on every model.** `imageAgeAllowsIntimate` — the
+  reference-view plan's rule ([../pipelines/reference-views.md](../pipelines/reference-views.md)
+  §The age gate) — keeps `bare` views out of the plan, refuses the `nsfw test` bench before spend,
+  and takes a chat scene with any non-adult cast member off the intimate route. A character it
+  gates never reaches the route. What it reads is the character: the scene gate checks the cast's
+  characters, and the player's persona is not age-checked (owner ruling 2026-10-01). Behind the
+  route, the prompt seam refuses on every lane a subject who fails the same rule and whose coverage
+  reads the chest or groin bare (`image_prompt_program.non_adult_exposed`,
+  [../character-prompts.md](../character-prompts.md) §Refusals the seam adds), since exposure facts
+  are stated whether or not the route is taken.
+- **Provenance.** Every row that took the route — a `bare` view, an `nsfw test` variant, an
+  intimate staged scene — records the library id on `meta.lora` only when weights were sent, and
+  `meta.intimateRoute` as `{ lora, reason }`: the id or null, and `anatomy_lora`,
+  `no_anatomy_lora_curated` or `anatomy_lora_unavailable`.
+
 ## RefControl depth row (klein 4B, pilot)
 
 Migration `0137` seeds one curated `image_loras` row (`imglorklein4brefdepthaaa`) for

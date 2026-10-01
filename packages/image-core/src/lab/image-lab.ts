@@ -536,6 +536,12 @@ export type ImageLabExperimentStatus = (typeof imageLabExperimentStatuses)[numbe
  *   plain string — see {@link imageLabStagingSchema} — so the lane is where
  *   membership is checked), or an identity image that is not a render of the
  *   character the row names. Both leave the row claiming a render nothing sent.
+ * - `subject_age_gated` — a `staged_scene` names a character whose apparent
+ *   age does not resolve to an adult (owner ruling 2026-10-01). The bench
+ *   stages intimate acts on an undressed viewer under the intimate reveal, on
+ *   every model, so it refuses the row before any image read, LoRA read or
+ *   provider spend — the same adult floor the reference-view plan, the
+ *   portrait studio's anatomy bench and the chat scene lane apply.
  * - `visual_digest_unavailable` — a `staged_scene` could not realize its
  *   subject's visual cut: the standalone assembly the chat-less lanes share
  *   threw, so there is nothing for the prompt program to compile. Refused before
@@ -568,6 +574,7 @@ export const imageLabFailureCodes = [
   "capacity_exceeded",
   "source_invalid",
   "subject_invalid",
+  "subject_age_gated",
   "visual_digest_unavailable",
   "identity_unavailable",
   "settings_unsupported",

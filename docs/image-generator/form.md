@@ -144,6 +144,17 @@ resolve to a different one, the run refuses rather than substituting it. On a ve
 list IS its size list, the shape select replaces the resolution tier outright, because there the two
 are one provider input.
 
+One family of model is the exception to "the value that reaches the provider is the member that was
+picked": a model whose EDIT operation derives its output shape from the reference rather than from a
+requested size (Civitai Qwen Image 2.1, while editing —
+[../images/providers/shape.md](../images/providers/shape.md) §An edit sized from its own reference).
+There, an Output-shape pick with at least one reference selected sends no `aspect_ratio`/`size` key
+at all — the same payload a blank Output shape would send — and is instead applied afterward by
+cropping the returned image to the picked ratio locally, exactly like a player-facing lane's own
+target ratio. The effective-request summary's `postprocess.cropTarget` names the ratio when this
+happens. A create on the same model (no reference selected) is unaffected and still sends the
+picked member directly.
+
 The distinction is an explicit policy on the shared render request
 (`ImageRenderTarget.aspectRatio`, where `null` means the model's own —
 [../images/providers/shape.md](../images/providers/shape.md)), not a Generator fork of the payload

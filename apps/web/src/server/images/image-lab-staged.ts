@@ -10,6 +10,7 @@ import {
   referenceCapacity,
   withReviewedProfileDefaults,
 } from "@vesper/image-core";
+import { imageAgeAllowsIntimate } from "@/contracts";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { characterSceneImageOperation, type CharacterWorldReadInput } from "@/contracts/images/character-digest";
 import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
@@ -117,6 +118,15 @@ import { lowerScenePlan } from "./scene-lowering";
 const STAGED_SUBJECT_RULE =
   "a staged scene names one character and sends exactly one identity reference of them; the staging template is written " +
   "about that person by name, and without one there is no act to render";
+
+/**
+ * The owner-facing reason for an age-gated staged row — phrased like the
+ * portrait studio's anatomy bench refusal (`NSFW_TEST_AGE_REFUSAL`), because it
+ * is the same rule refusing the same kind of render.
+ */
+export const STAGED_AGE_REFUSAL =
+  "a staged scene renders only a character whose apparent age resolves to an adult; the intimate route is closed to " +
+  "anyone else, on every model";
 
 /** A staged row pointing at a control fixture the recipe has no slot to send. */
 const STAGED_CONTROL_DECLARED =
@@ -278,6 +288,17 @@ export async function runStagedScene(row: ImageLabExperimentRow, sink?: Diagnost
       sink,
       { columns },
     );
+  }
+  // THE AGE GATE (owner ruling 2026-10-01), on the sheet the cut would be built
+  // from: the reference-view plan's own adult floor (`imageAgeAllowsIntimate`).
+  // The WHOLE bench is gated, not just its reveal: the form offers intimate
+  // stagings only, and every staged run states an undressed viewer under
+  // `allowIntimate` and the intimate reveal whatever entry it names, so there is
+  // no staged render a non-adult may legitimately be the subject of. Refused
+  // before the image bytes, the LoRA library and the provider — on every model.
+  // `settleFailed` pushes the WARN under the lab's own code.
+  if (!imageAgeAllowsIntimate(sheet.profile)) {
+    return await settleFailed(row, labFailure("subject_age_gated"), STAGED_AGE_REFUSAL, sink, { columns });
   }
   const visual = tryBuildStagedSubjectVisual(
     { characterId, name: subject, profile: sheet.profile, revision: sheet.revision, entry },

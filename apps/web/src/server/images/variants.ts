@@ -1,5 +1,11 @@
 import { and, eq } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile, outfitItems, type SceneCameraSpec } from "@/contracts";
+import {
+  characterProfileSchema,
+  emptyCharacterProfile,
+  imageAgeAllowsIntimate,
+  outfitItems,
+  type SceneCameraSpec,
+} from "@/contracts";
 import {
   IMAGE_TARGET_ASPECT,
   type ImageLoraRenderBinding,
@@ -14,6 +20,7 @@ import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logEvent } from "../events";
 import { log } from "@/server/log";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import type { IntimateRouteProvenance } from "@/contracts/images/intimate-scene-lora";
 import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
 import { HIDDEN_IMAGE_KINDS, type ImageKind } from "./asset-storage";
@@ -28,7 +35,7 @@ import {
   type CharacterPromptProgramResult,
 } from "./character-prompt-program";
 import { monogramSvg } from "./monogram";
-import { pairProfileWithNsfwLora } from "./nsfw-lora";
+import { resolveIntimateRoute } from "./nsfw-lora";
 import {
   buildStandaloneLaneCut,
   standaloneSubjectPromptCut,
@@ -49,25 +56,42 @@ export interface GenerateVariantInput {
   sink?: DiagnosticSink;
 }
 
-/** The bench kind's refusal, or the model + weights it will run on. */
-type NsfwTestRoute = { ok: true; profile: ResolvedImageProfile; binding: ImageLoraRenderBinding } | { ok: false; error: string };
+/**
+ * The bench kind's refusal, or the model it will run on, the weights it will
+ * send (null on a listed model rendering without its anatomy LoRA), and what
+ * its row records about both.
+ */
+type NsfwTestRoute =
+  | {
+      ok: true;
+      profile: ResolvedImageProfile;
+      binding: ImageLoraRenderBinding | null;
+      provenance: IntimateRouteProvenance;
+    }
+  | { ok: false; error: string };
 
 /**
- * The `nsfw_test` kind's pairing — the studio's half of the anatomy-LoRA route
- * (`nsfw-lora.ts`, shared with the chat scene lane).
+ * The `nsfw_test` kind's intimate route — the studio's half of the route
+ * `nsfw-lora.ts` resolves for every nude-by-design lane.
  *
- * It FAILS rather than degrades, which is the one place this kind departs from
- * the scene lane. A chat render that cannot assemble the LoRA still owes the
- * player a picture, so it falls back to the stock model and says so in a
- * diagnostic. A bench render exists to exercise the weights: quietly producing
- * the tame render on the ordinary variant model would answer a question the
- * owner did not ask, bill for it, and look like a result. The failed row carries
- * the missing leg's own words, which is what the studio tile shows.
+ * On a model the intimate-route policy lists (`INTIMATE_ROUTE_POLICIES`) the
+ * bench renders on the picked profile itself, carrying the model's curated
+ * anatomy LoRA only when one resolves: the reviewed answer for that model is
+ * that it draws the anatomy unaided, so that render IS the test.
+ *
+ * On every other model it pairs the picked profile with the intimate model and
+ * FAILS rather than degrades, which is the one place this kind departs from the
+ * scene lane. A chat render that cannot assemble the LoRA still owes the player
+ * a picture, so it falls back to the stock model and says so in a diagnostic. A
+ * bench render exists to exercise the weights: quietly producing the tame
+ * render on the ordinary variant model would answer a question the owner did
+ * not ask, bill for it, and look like a result. The failed row carries the
+ * missing leg's own words, which is what the studio tile shows.
  */
 async function resolveNsfwTestRoute(profile: ResolvedImageProfile, sink?: DiagnosticSink): Promise<NsfwTestRoute> {
-  const paired = await pairProfileWithNsfwLora(profile, sink);
-  if (!paired.ok) return { ok: false, error: `the NSFW test LoRA is unavailable (${paired.leg}): ${paired.message}` };
-  return { ok: true, profile: paired.profile, binding: paired.binding };
+  const route = await resolveIntimateRoute(profile, sink);
+  if (!route.ok) return { ok: false, error: `the NSFW test LoRA is unavailable (${route.leg}): ${route.message}` };
+  return { ok: true, profile: route.profile, binding: route.binding, provenance: route.provenance };
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +126,18 @@ export type VariantCutInput = StandaloneLaneCutInput;
 export function buildVariantCut(input: VariantCutInput): StandaloneSubjectCut {
   return buildStandaloneLaneCut(input, { camera: VARIANT_EDIT_CAMERA, cameraId: VARIANT_EDIT_CAMERA_ID });
 }
+
+/**
+ * The `nsfw_test` bench was asked of a character whose apparent age is not a
+ * resolved adult (owner ruling 2026-10-01). The row is failed BEFORE any route
+ * is resolved, any pack is read or any provider is called — through
+ * `failedPrecondition`, like the lane's other refusals — whichever model was
+ * picked, because the rule is the character's and not the endpoint's.
+ */
+export const VARIANT_NSFW_TEST_AGE_GATED = "images.variant.nsfw_test_age_gated";
+
+/** What the studio tile says for an age-gated bench row. */
+export const NSFW_TEST_AGE_REFUSAL = "the anatomy bench renders only a character whose apparent age resolves to an adult";
 
 /**
  * The cut could not be assembled at all — a thrown build. The row is failed
@@ -149,7 +185,7 @@ function tryBuildVariantCut(input: Omit<VariantCutInput, "sink">, sink?: Diagnos
 /** Everything the program decision needs, in the order the lane learns it. */
 interface VariantProgramInputs {
   readonly character: { readonly name: string; readonly updatedAt: Date } | undefined;
-  /** The FINAL resolved profile — the intimate model when the bench route paired it. */
+  /** The FINAL resolved profile — the intimate model when the bench route paired it, else the picked one. */
   readonly resolved: ResolvedImageProfile | null;
   readonly cut: StandaloneSubjectCut | null;
   readonly nsfwRoute: NsfwTestRoute | null;
@@ -176,10 +212,12 @@ interface VariantProgramInputs {
  *
  * ## The bench kind
  *
- * `nsfw_test` pairs the picked profile with the intimate model (#457), and
- * binding resolution runs on the FINAL resolved profile — so a successful bench
- * route resolves `qwen/qwen-image-edit-2511` under the picked key, and 2511
- * carries a `variant-standard` row of its own.
+ * `nsfw_test` takes the intimate route (`nsfw-lora.ts`), and binding
+ * resolution runs on the FINAL resolved profile. On a model the intimate-route
+ * policy lists, that is the picked profile itself; on every other model the
+ * route pairs the picked profile with the intimate model (#457), so a
+ * successful bench route resolves `qwen/qwen-image-edit-2511` under the picked
+ * key, and 2511 carries a `variant-standard` row of its own.
  *
  * A FAILED bench route is the case worth guarding explicitly. `resolved` then
  * falls back to the picked profile, which the ordinary variant binding does
@@ -187,9 +225,10 @@ interface VariantProgramInputs {
  * would store a program describing a render nobody made. So it is skipped.
  *
  * A SUCCESSFUL bench route also passes `intimateReveal: true` to the shared
- * seam (#430): the cut's own `intimateAllowed` stays `false` either way (a
- * route-level projection beside the digest, not a change to what the digest
- * itself may carry), but the seam projects the cut's applicable exposed
+ * seam (#430) — whether or not it carries a LoRA, because the allowance is the
+ * route's, never the weights': the cut's own `intimateAllowed` stays `false`
+ * either way (a route-level projection beside the digest, not a change to what
+ * the digest itself may carry), but the seam projects the cut's applicable exposed
  * anatomy as typed `subject.intimate_anatomy` facts through the same
  * `subjectIntimateRevealFacts` projection the scene lane and the staged
  * bench already use — covered or inapplicable anatomy stays out by the
@@ -304,14 +343,6 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   // choice to make and silently used it.
   const picked = demo ? null : await resolveImageProfileForTask("variant", input.modelId, input.sink);
   const nsfwTest = input.kind === NSFW_TEST_VARIANT_KIND;
-  // Resolved BEFORE the row is reserved, like every other model decision in this
-  // lane: the row records the model it will run on, so a pairing decided later
-  // would be a row that lies about its own render.
-  const nsfwRoute = nsfwTest && picked ? await resolveNsfwTestRoute(picked, input.sink) : null;
-  // The picked profile ON the intimate model for the bench kind; the picked
-  // profile itself for every other variant, unchanged.
-  const resolved = nsfwRoute?.ok ? nsfwRoute.profile : picked;
-  const model = resolved?.model ?? null;
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
     characterProfileSchema,
@@ -320,6 +351,28 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     undefined,
     "characters.profile",
   );
+  // The bench's age gate, on the one read the cut is built from — the same
+  // rule the reference-view plan applies to a `bare` view. Ahead of the route,
+  // so an age-gated bench resolves no intimate model, reads no LoRA and
+  // compiles no reveal on ANY model.
+  const ageGated = nsfwTest && character !== undefined && !imageAgeAllowsIntimate(profile);
+  if (ageGated) {
+    input.sink?.push(
+      diag("warn", VARIANT_NSFW_TEST_AGE_GATED, "the anatomy bench was refused: the character's apparent age is not a resolved adult", {
+        path: "images.variant",
+        context: { characterId: input.characterId, model: picked?.model.slug ?? null },
+      }),
+    );
+  }
+  // Resolved BEFORE the row is reserved, like every other model decision in this
+  // lane: the row records the model it will run on, so a pairing decided later
+  // would be a row that lies about its own render.
+  const nsfwRoute = nsfwTest && picked && !ageGated ? await resolveNsfwTestRoute(picked, input.sink) : null;
+  // The bench kind's route profile — the picked profile ON the intimate model,
+  // or the picked profile itself on a listed model; the picked profile itself
+  // for every other variant, unchanged.
+  const resolved = nsfwRoute?.ok ? nsfwRoute.profile : picked;
+  const model = resolved?.model ?? null;
   const load = character
     ? await loadDefaultWardrobeWithRevisions(input.userId, outfitItems(profile), input.sink)
     : { wardrobe: [], revisions: [] };
@@ -344,8 +397,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         input.sink,
       )
     : null;
+  // An age-gated bench reads no pack: the row fails before anything would use it.
   const packIdentity: IdentityPackRenderReferencesResult | null =
-    !demo && character && resolved
+    !demo && character && resolved && !ageGated
       ? await identityPackRenderReferences({
           ownerId: input.userId,
           characterId: input.characterId,
@@ -382,8 +436,14 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         demo,
         model: demo ? "demo" : qualifiedImageModelIdentity(model),
         // The weights this row ran on, by id — the same field the scene lane
-        // records, and never the locator.
-        ...(nsfwRoute?.ok ? { lora: nsfwRoute.binding.id } : {}),
+        // records, and never the locator — and the bench route's own record:
+        // the LoRA it sent or null, and why. Absent on every other kind.
+        ...(nsfwRoute?.ok
+          ? {
+              ...(nsfwRoute.binding === null ? {} : { lora: nsfwRoute.binding.id }),
+              intimateRoute: nsfwRoute.provenance,
+            }
+          : {}),
         ...(packSelection ? { identityReferences: packSelection.provenance } : {}),
         // The visual moment that shaped the prompt, attached at RESERVE time
         // beside the model decisions: a thrown or refused produce carries no
@@ -394,21 +454,25 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         ...(compiled?.meta ?? {}),
       },
     },
-    // The row is on record for a missing character too — failed, unlogged. A
-    // cut that would not assemble is checked FIRST: a program is never built
+    // The row is on record for a missing character too — failed, unlogged. An
+    // age-gated bench is refused first: nothing past the gate was resolved for
+    // it. A cut that would not assemble comes next: a program is never built
     // over a cut that does not exist, so the two answers cannot both arise.
     failedPrecondition: character
-      ? cut === null
-        ? "the variant's visual cut could not be assembled"
-        : programPrecondition
+      ? ageGated
+        ? NSFW_TEST_AGE_REFUSAL
+        : cut === null
+          ? "the variant's visual cut could not be assembled"
+          : programPrecondition
       : `character ${input.characterId} not found`,
     produce: async (asset) => {
       // Only reached once the character loaded, so the name fallback never fires.
       if (demo) return { ok: true, image: monogramSvg(monogramLabel) };
       // Precondition this lane can't satisfy, not a generation that failed: no diagnostic.
       if (!resolved) return { ok: false, error: "no image model is registered for portrait variants" };
-      // The bench kind IS its LoRA: a missing leg fails the row with the reason
-      // rather than rendering the tame picture the owner was testing against.
+      // The bench kind IS its intimate route: a missing leg of the intimate-model
+      // pairing fails the row with the reason rather than rendering the tame
+      // picture the owner was testing against.
       if (nsfwRoute && !nsfwRoute.ok) return { ok: false, error: nsfwRoute.error };
       // The pack refusal: an ineligible pack REFUSES the render — the
       // substitution the integration spec forbids. The evaluation already
@@ -430,8 +494,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
           references: packSelection.references.map((entry) => entry.reference),
           target: { aspectRatio: IMAGE_TARGET_ASPECT },
           // Already resolved against this model, version and task above, so the
-          // render path leaves it alone and sends exactly these weights.
-          ...(nsfwRoute?.ok ? { resolvedLora: nsfwRoute.binding } : {}),
+          // render path leaves it alone and sends exactly these weights — and a
+          // listed model's no-LoRA route sends none.
+          ...(nsfwRoute?.ok && nsfwRoute.binding !== null ? { resolvedLora: nsfwRoute.binding } : {}),
         },
         input.sink,
       );
