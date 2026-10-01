@@ -337,6 +337,8 @@ export function imageLabRoleLabel(role: ImageReferenceRole): string {
   switch (role) {
     case "identity":
       return "identity reference";
+    case "body":
+      return "body reference";
     case "location":
       return "location reference";
     case "style":

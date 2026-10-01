@@ -634,6 +634,10 @@ function referenceAssignment(
     case "reference":
       // The neutral role makes no semantic claim, so neither does its sentence.
       return `Image ${position} is a reference image.`;
+    // Unreachable: this dialect declares `bindsBodyReferences: false`, so the
+    // character seam never plans a body image onto it. Null rather than a
+    // guessed sentence — an unworded mandatory claim refuses before spend.
+    case "body":
     case "mask":
     case "pose":
     case "depth":
@@ -2640,6 +2644,9 @@ export const qwenImageEdit2511Dialect: ImagePromptDialectDefinition = {
   // Numbered references are the Qwen Edit family's documented convention
   // (owner ruling 2026-08-24: a family behavior, never a single endpoint's).
   referenceSyntax: "numbered_images",
+  // No reviewed wording for a full-body image beside the identity binding; the
+  // character seam drops one before it reaches this dialect.
+  bindsBodyReferences: false,
   supportsWeights: false,
   supportsLiteralQuotes: true,
   // Probed and there is nothing: no default negative (no field), no preprompt,

@@ -120,6 +120,15 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  *    compiled indistinguishable "Use Image 1/2 for the subject's face"
  *    instructions). See {@link subjectPhrase}'s own doc for what is and is not
  *    reused from 2511's own naming apparatus.
+ * 5. A `body` slot — a full-body image the reference-view build sends beside
+ *    the identity pack (#671) — is introduced as that subject's BODY and
+ *    nothing else: its body shape, proportions and height are taken from it,
+ *    the face only from the subject's identity images, and the clothing and
+ *    backdrop from this prompt ({@link bodyReferenceIntroduction}). It is not
+ *    an identity slot, so the identity-preserve lock never counts it: the
+ *    lock asks face, skin tone and apparent age to agree across every
+ *    identity image, and the portrait owns the face (owner ruling
+ *    2026-10-01). `bindsBodyReferences` is true for this dialect alone.
  *
  * **No negative channel at all** (acceptance #3): the probed schema exposes
  * `negativePrompt`, but every bound profile runs at the blank `cfgScale` (1),
@@ -168,6 +177,54 @@ function claimSlot(
 }
 
 /**
+ * What a slot's sentence may say about the rest of the payload — read off the
+ * program's own references and claims for the subject the slot shows. Only the
+ * `body` role reads it; every other role's sentence is about its own image.
+ */
+interface ReferenceSlotContext {
+  /** The send positions of the subject's IDENTITY images — where the face comes from. */
+  readonly identityPositions: readonly number[];
+  /**
+   * The prompt states something the subject wears (a garment, or a region that
+   * reads covered), so the clothing is the prompt's to give. False on a render
+   * that has the subject wearing nothing at all, where naming clothing would
+   * only anchor on it.
+   */
+  readonly clothingFromPrompt: boolean;
+}
+
+/** "Image 1" or "Images 1 and 2" — the identity lock's own spelling. */
+function imagesPhrase(positions: readonly number[]): string {
+  const numbers = positions.map(String);
+  return numbers.length === 1 ? `Image ${numbers[0] ?? ""}` : `Images ${listWords(numbers)}`;
+}
+
+/**
+ * A `body` slot's sentence: the image is this subject's body, and it is the
+ * source of the body's shape, proportions and height ONLY.
+ *
+ * Every other part of the person is assigned a source in the same sentence,
+ * positively — the face to the subject's identity images, the clothing and the
+ * backdrop to this prompt — rather than listing what not to copy, since a
+ * negated noun anchors on the thing it negates. Assigning the clothing to the
+ * prompt is what dresses an UNDRESSED body image on a dressed render: the
+ * wardrobe sentences already say what to wear, and this sentence agrees with
+ * them instead of contradicting them. A render whose subject wears nothing at
+ * all names no clothing ({@link ReferenceSlotContext.clothingFromPrompt}).
+ */
+function bodyReferenceIntroduction(position: number, subjectLabel: string | null, context: ReferenceSlotContext): string {
+  const whose = subjectLabel === null ? "the subject's" : `${subjectLabel}'s`;
+  const sources = [
+    "take only its body shape, proportions and height",
+    ...(context.identityPositions.length === 0 ? [] : [`take the face only from ${imagesPhrase(context.identityPositions)}`]),
+    context.clothingFromPrompt ? "take the clothing and backdrop from this prompt" : "take the backdrop from this prompt",
+  ];
+  // Semicolons, not a list: each source is its own clause, and the first one's
+  // own commas ("shape, proportions and height") must not run into the next.
+  return `Image ${position} shows ${whose} body: ${sources.join("; ")}.`;
+}
+
+/**
  * One numbered assignment, in the Qwen family's "identify each image and its
  * purpose" shape (owner ruling 2026-08-24). Adapted from
  * `dialect-qwen-2511.ts`'s `referenceAssignment`: identity is INCLUDED here
@@ -189,11 +246,14 @@ function referenceIntroduction(
   position: number,
   subjectLabel: string | null,
   description: string | undefined,
+  context: ReferenceSlotContext,
 ): string | null {
   const qualified = (subject: string): string => (description === undefined ? subject : `${subject}, ${description}`);
   switch (role) {
     case "identity":
       return `Image ${position} shows ${qualified(subjectLabel ?? "the subject")}.`;
+    case "body":
+      return bodyReferenceIntroduction(position, subjectLabel, context);
     case "before":
       return `Image ${position} is the image to edit.`;
     case "location":
@@ -227,9 +287,18 @@ function referenceIntroduction(
 
 /** Every identity slot this subject's payload carries, in send order. */
 function identitySlotsFor(input: ImageDialectPositiveInput, ref: string | undefined): readonly ImageDialectReference[] {
+  return slotsFor(input, "identity", ref);
+}
+
+/** Every slot of one role showing this subject, in send order. */
+function slotsFor(
+  input: ImageDialectPositiveInput,
+  role: ImageReferenceRole,
+  ref: string | undefined,
+): readonly ImageDialectReference[] {
   if (ref === undefined) return [];
   return input.references
-    .filter((slot) => slot.role === "identity" && slot.subjectRef === ref)
+    .filter((slot) => slot.role === role && slot.subjectRef === ref)
     .slice()
     .sort((left, right) => left.position - right.position);
 }
@@ -304,12 +373,25 @@ function subjectPhrase(input: ImageDialectPositiveInput, ref: string | undefined
  * two claims about when she was photographed, and demanding exactness against
  * both at once is demanding a contradiction.
  */
-function identityLockSentence(subject: string | null, slots: readonly ImageDialectReference[]): string {
+function identityLockSentence(
+  subject: string | null,
+  slots: readonly ImageDialectReference[],
+  bodySlots: readonly ImageDialectReference[] = [],
+): string {
   const positions = slots.map((slot) => String(slot.position));
   const images = positions.length === 1 ? `Image ${positions[0]}` : `Images ${listWords(positions)}`;
   const named = subject ?? "the subject";
   const exactly = positions.length === 1 ? "exactly as shown" : "consistent with these references";
-  return `Use ${images} for ${named}'s face, skin tone and apparent age, ${exactly}; ${named}'s hair, build, wardrobe and pose follow this prompt's own description.`;
+  // A body image is the body's second source beside the text, never its only
+  // one: the build text stays in the prompt (owner ruling 2026-10-01, text
+  // attributes are never superseded by a body image), so the lock names both
+  // rather than telling the model the build is the text's alone while the
+  // body sentence hands it to an image.
+  const rest =
+    bodySlots.length === 0
+      ? `${named}'s hair, build, wardrobe and pose follow this prompt's own description`
+      : `${named}'s hair, wardrobe and pose follow this prompt's own description, and ${named}'s build follows that description and ${imagesPhrase(bodySlots.map((slot) => slot.position))}`;
+  return `Use ${images} for ${named}'s face, skin tone and apparent age, ${exactly}; ${rest}.`;
 }
 
 /**
@@ -490,7 +572,10 @@ function renderClaim(
       // gets its own "Image N …" sentence rather than 2512's before/product stub.
       const slot = claimSlot(input, state, claim.value as ImageReferenceRole, claim.subjectRef);
       if (slot === null) return null;
-      const introduction = referenceIntroduction(slot.role, slot.position, subject, slot.description);
+      const introduction = referenceIntroduction(slot.role, slot.position, subject, slot.description, {
+        identityPositions: identitySlotsFor(input, claim.subjectRef).map((identity) => identity.position),
+        clothingFromPrompt: claim.subjectRef === undefined || !wearsNothingAtAll(input.claims, claim.subjectRef),
+      });
       return introduction === null ? null : say(introduction);
     }
 
@@ -530,7 +615,7 @@ function renderClaim(
         // same plain descriptive sentence 2512 compiles unconditionally.
         return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
       }
-      return say(identityLockSentence(subject, slots));
+      return say(identityLockSentence(subject, slots, slotsFor(input, "body", claim.subjectRef)));
     }
     case "subject.face_visibility": {
       const visibility = imageSceneObscuredFace(claim.value);
@@ -736,6 +821,8 @@ export const qwenImage21Dialect: ImagePromptDialectDefinition = {
   // Qwen-family numbered references (owner ruling 2026-08-24): the checkpoint
   // takes 1-10 ordered references for its edit operation.
   referenceSyntax: "numbered_images",
+  // The reference-view build's full-body images (#671): see the module doc.
+  bindsBodyReferences: true,
   supportsWeights: false,
   supportsLiteralQuotes: true,
   // Nothing probed injects a default on this endpoint; a blank negativePrompt
