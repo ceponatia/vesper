@@ -284,12 +284,20 @@ export function allReferenceViews(): readonly ReferenceView[] {
  * the vocabulary cannot value or no band at all — the stricter reading, which
  * cannot be wrong in the expensive direction.
  *
+ * EVERY `identity.apparent_age` entry must value as an adult, and at least one
+ * must exist. A profile may carry the attribute more than once — authored,
+ * manual, magic — and `resolveAttributes` picks one by source precedence; the
+ * value a cut states is always one of those entries, so requiring all of them
+ * is at least as strict as resolving and cannot be wrong in the expensive
+ * direction, however the precedence rule moves. Reading only the first entry
+ * could pass an adult while the cut's own age anchor resolved a minor.
+ *
  * Takes any attribute list, so a lane can ask it of the authored sheet and of
  * the resolved attributes a render actually states. PURE.
  */
 export function imageAgeAllowsIntimate(profile: { readonly attributes: readonly AttributeValue[] }): boolean {
-  const band = profile.attributes.find((entry) => entry.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID)?.value;
-  return imageApparentAgeValue(band) !== null;
+  const bands = profile.attributes.filter((entry) => entry.id === VISUAL_IMAGE_AGE_ATTRIBUTE_ID);
+  return bands.length > 0 && bands.every((entry) => imageApparentAgeValue(entry.value) !== null);
 }
 
 /**

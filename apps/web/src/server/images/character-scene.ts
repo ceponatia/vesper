@@ -319,6 +319,9 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // view; and an intimate staging leaves the plan, so the row does not record
   // an act it never drew. The camera stays, as on the sanitized retry. The chat
   // engine's own minor fence upstream is untouched; this is the image lane's.
+  // It reads the CAST's characters only: the player's persona (the viewer,
+  // `input.playerProfile`) is deliberately not age-checked here (owner ruling
+  // 2026-10-01 — persona image generation is not in production use).
   const nonAdult = nonAdultSubjectIds(cast, appliedVisuals);
   const intimateAgeAllowed = nonAdult.length === 0;
   const gatedPlan: SceneRenderPlan =
