@@ -55,6 +55,10 @@ vi.mock("./reference-view-store", async (importOriginal) => {
     failReferenceView: vi.fn(),
   };
 });
+vi.mock("./body-reference-store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./body-reference-store")>();
+  return { ...actual, loadBodyReferencesForBuild: vi.fn() };
+});
 vi.mock("./reference-view-consume", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./reference-view-consume")>();
   return { ...actual, loadConsumableReferenceView: vi.fn() };
@@ -102,6 +106,7 @@ import { db } from "../db";
 import type { ImageRow } from "./asset-storage";
 import { runImagePipeline, type ImagePipelineOptions } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
+import { loadBodyReferencesForBuild, type LoadedBodyReference } from "./body-reference-store";
 import {
   buildCharacterPromptProgram,
   type CharacterPromptProgram,
@@ -111,7 +116,12 @@ import { identityPackRenderReferences, type IdentityPackRenderReferencesResult }
 import { resolveImageLoraForRender } from "./image-loras";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { loadImageModels } from "./models";
-import { buildReferenceViews, REFERENCE_VIEW_UPSTREAM_UNAPPROVED, runReferenceViewBuilds } from "./reference-view-build";
+import {
+  buildReferenceViews,
+  REFERENCE_VIEW_BODY_REFERENCE_DROPPED,
+  REFERENCE_VIEW_UPSTREAM_UNAPPROVED,
+  runReferenceViewBuilds,
+} from "./reference-view-build";
 import { loadConsumableReferenceView, REFERENCE_VIEW_DROPPED_FOR_CAPACITY } from "./reference-view-consume";
 import {
   failReferenceView,
@@ -375,6 +385,7 @@ function compiledFrom(input: Parameters<typeof buildCharacterPromptProgram>[0]):
     negativePrompt: null,
     meta: {},
     sentReferences: input.references.map((entry) => entry.reference),
+    droppedReferences: [],
   } as unknown as CharacterPromptProgram;
 }
 
@@ -418,6 +429,8 @@ beforeEach(() => {
   stubCharacter(profileWithAge("late_twenties"));
   vi.mocked(readAcceptedPortraitSource).mockResolvedValue({ ok: true, imageId: "img-accepted", contentHash: "hash-1" });
   vi.mocked(loadDefaultWardrobeWithRevisions).mockResolvedValue({ wardrobe: [], revisions: [] });
+  // No body images unless a case gives the character some.
+  vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ setKey: null, loaded: [] });
   mockReserve.mockImplementation(async (input) => `view-${input.view.angle}-${input.view.wardrobe}`);
   vi.mocked(finalizeReferenceView).mockResolvedValue("ready");
   vi.mocked(failReferenceView).mockResolvedValue("failed");
@@ -668,5 +681,110 @@ describe("a dependent view's upstream reference", () => {
     expect(vi.mocked(finalizeReferenceView).mock.calls[0]?.[0]).toMatchObject({ upstreamViewId: null });
     expect(reservedMeta().referenceView).not.toHaveProperty("upstream");
     expect(sink.items.some((item) => item.code === REFERENCE_VIEW_DROPPED_FOR_CAPACITY)).toBe(true);
+  });
+});
+
+/**
+ * **A view renders with the character's body images** (#671).
+ *
+ * Four claims, each silent in a passing render:
+ *
+ * 1. Routing: a dressed view sends every body image, dressed ones first; an
+ *    undressed view sends the undressed ones only — after the pack's required
+ *    anchors and the upstream view, as OPTIONAL `body` references of the
+ *    character. A lane that sent one as an identity reference would let a body
+ *    photograph's face into the identity lock.
+ * 2. The reservation carries the set the worker read, so the store can refuse
+ *    a render of a set the owner has since changed.
+ * 3. Only the images the program actually sends are recorded, and the renderer
+ *    receives exactly the program's send list.
+ * 4. A body image the program could not send is said, with the program's own
+ *    reason, and the view still renders.
+ */
+describe("the character's body images", () => {
+  const ROOT_VIEW: ReferenceView = { angle: "front_full", wardrobe: "clothed" };
+  const BACK_BARE: ReferenceView = { angle: "back_full", wardrobe: "bare" };
+  const UNCLOTHED: LoadedBodyReference = { slot: 1, imageId: "img-body-1", tag: "unclothed", buffer: Buffer.from("body-1") };
+  const CLOTHED: LoadedBodyReference = { slot: 2, imageId: "img-body-2", tag: "clothed", buffer: Buffer.from("body-2") };
+  const SET_KEY = "img-body-1:unclothed,img-body-2:clothed";
+
+  beforeEach(() => {
+    vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ setKey: SET_KEY, loaded: [UNCLOTHED, CLOTHED] });
+  });
+
+  /** The body references one compile was handed, by image id, in send order. */
+  const bodyImagesSent = (call = 0): (string | undefined)[] =>
+    (mockProgram.mock.calls[call]?.[0].references ?? [])
+      .filter((entry) => entry.reference.role === "body")
+      .map((entry) => entry.reference.sourceImageId);
+
+  it("sends every body image to a dressed view, dressed first, behind the pack, and records the set it read", async () => {
+    const report = await build([ROOT_VIEW]);
+
+    expect(report).toMatchObject({ built: 1, failed: 0 });
+    const references = mockProgram.mock.calls[0]?.[0].references ?? [];
+    expect(references.map((entry) => entry.reference.role)).toEqual(["identity", "body", "body"]);
+    expect(bodyImagesSent()).toEqual([CLOTHED.imageId, UNCLOTHED.imageId]);
+    for (const entry of references.slice(1)) {
+      expect(entry).toMatchObject({ reference: { role: "body", required: false }, subjectId: "chr-nyx" });
+      // Never a reference-authority input: a body image does not supersede the text.
+      expect(entry.appearanceRevision).toBeUndefined();
+      expect(entry.description).toBeUndefined();
+    }
+    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ bodyReferenceSet: SET_KEY });
+    expect(reservedMeta().referenceView).toMatchObject({
+      bodyReferences: [
+        { slot: CLOTHED.slot, imageId: CLOTHED.imageId, tag: "clothed" },
+        { slot: UNCLOTHED.slot, imageId: UNCLOTHED.imageId, tag: "unclothed" },
+      ],
+    });
+    expect(mockIntent.mock.calls[0]?.[0].references).toEqual(references.map((entry) => entry.reference));
+  });
+
+  it("sends only the undressed body images to an undressed view, after its own angle's dressed view", async () => {
+    await build([BACK_BARE]);
+
+    const references = mockProgram.mock.calls[0]?.[0].references ?? [];
+    expect(references.map((entry) => [entry.reference.role, entry.reference.required])).toEqual([
+      ["identity", true],
+      ["identity", false],
+      ["body", false],
+    ]);
+    expect(bodyImagesSent()).toEqual([UNCLOTHED.imageId]);
+  });
+
+  it("records and renders only what the program sends, and says why the rest stayed behind", async () => {
+    mockProgram.mockImplementation((input) => {
+      const dropped = input.references.find((entry) => entry.reference.sourceImageId === UNCLOTHED.imageId);
+      return {
+        ...compiledFrom(input),
+        sentReferences: input.references.filter((entry) => entry !== dropped).map((entry) => entry.reference),
+        droppedReferences: dropped === undefined ? [] : [{ reference: dropped.reference, reason: "role_not_allowed" }],
+      } as unknown as CharacterPromptProgram;
+    });
+    const sink = new DiagnosticCollector();
+
+    const report = await buildReferenceViews({ jobId: "job-1", characterId: "chr-nyx", ownerId: "usr-1", targets: [ROOT_VIEW], sink });
+
+    expect(report).toMatchObject({ built: 1, failed: 0 });
+    expect(reservedMeta().referenceView).toMatchObject({
+      bodyReferences: [{ slot: CLOTHED.slot, imageId: CLOTHED.imageId, tag: "clothed" }],
+    });
+    const sent = mockIntent.mock.calls[0]?.[0].references ?? [];
+    expect(sent.map((reference) => reference.sourceImageId)).not.toContain(UNCLOTHED.imageId);
+    const dropped = sink.items.filter((item) => item.code === REFERENCE_VIEW_BODY_REFERENCE_DROPPED);
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]?.severity).toBe("info");
+    expect(dropped[0]?.context).toMatchObject({ imageId: UNCLOTHED.imageId, reason: "role_not_allowed" });
+  });
+
+  it("sends and records no body image for a character with none", async () => {
+    vi.mocked(loadBodyReferencesForBuild).mockResolvedValue({ setKey: null, loaded: [] });
+
+    await build([ROOT_VIEW]);
+
+    expect(bodyImagesSent()).toEqual([]);
+    expect(mockReserve.mock.calls[0]?.[0]).toMatchObject({ bodyReferenceSet: null });
+    expect(reservedMeta().referenceView).not.toHaveProperty("bodyReferences");
   });
 });
