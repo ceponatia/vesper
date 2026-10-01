@@ -117,7 +117,7 @@ const wardrobeFact = (subjectRef: string, value: string): ImageWorldFact =>
 
 function compilePositive(
   worldDigest: ImageWorldDigest,
-  references: readonly { position: number; role: "identity"; subjectRef?: string; description?: string }[] = [],
+  references: readonly { position: number; role: "identity" | "body"; subjectRef?: string; description?: string }[] = [],
   entityLabels: Record<string, string> = {},
   intimatePermitted = false,
 ) {
@@ -410,6 +410,63 @@ describe("no negative channel at all (acceptance #3)", () => {
     expect(compiled.outcomes).toHaveLength(constraints.length);
     for (const outcome of compiled.outcomes) {
       expect(outcome.transport.kind).toBe("dropped");
+    }
+  });
+});
+
+/**
+ * A `body` slot (#671) is the subject's body and never a second face: the
+ * portrait owns the face, so the body image stays out of the identity lock —
+ * which asks face, skin tone and apparent age to agree across every identity
+ * image — and its sentence assigns the face to the identity image and the
+ * clothing to the prompt, which is what dresses an undressed body image on a
+ * dressed render.
+ */
+describe("a body slot is the subject's body, never a second face", () => {
+  const bodyFact = (subjectRef: string) => ({
+    role: "body" as const,
+    subjectRef,
+    required: false,
+    source: { owner: "test", key: "body" },
+  });
+  const SLOTS = [
+    { position: 1, role: "identity" as const, subjectRef: "nyx" },
+    { position: 2, role: "body" as const, subjectRef: "nyx" },
+  ];
+  const compileWith = (facts: readonly ImageWorldFact[]) =>
+    compilePositive(
+      world({ subjects: [entity("subject", "nyx", facts)], references: [referenceFact("nyx"), bodyFact("nyx")] }),
+      SLOTS,
+      { nyx: "Nyx" },
+    );
+
+  it("introduces the body by number and takes only its shape from it — the face from the identity image, the clothing from the prompt", () => {
+    const compiled = compileWith([identityFact("nyx"), wardrobeFact("nyx", "a red wool sweater")]);
+    expect(compiled.text).toContain("Image 2 shows Nyx's body: take only its body shape, proportions and height");
+    expect(compiled.text).toContain("take the face only from Image 1");
+    expect(compiled.text).toContain("take the clothing and backdrop from this prompt");
+    // The wardrobe sentence still says what to wear.
+    expect(compiled.text).toContain("Nyx wears a red wool sweater.");
+  });
+
+  it("keeps the body image out of the identity lock, and names it as the build's second source beside the text", () => {
+    const compiled = compileWith([identityFact("nyx"), wardrobeFact("nyx", "a red wool sweater")]);
+    expect(compiled.text).toContain("Use Image 1 for Nyx's face, skin tone and apparent age, exactly as shown");
+    expect(compiled.text).not.toContain("Images 1 and 2");
+    expect(compiled.text).toContain("Nyx's build follows that description and Image 2");
+  });
+
+  it("names no clothing for a subject the prompt has wearing nothing at all", () => {
+    const compiled = compileWith([identityFact("nyx"), exposureFact("nyx", "torso", "bare"), exposureFact("nyx", "pelvis", "bare")]);
+    expect(compiled.text).toContain("Image 2 shows Nyx's body");
+    expect(compiled.text).toContain("take the backdrop from this prompt");
+    expect(compiled.text).not.toContain("clothing and backdrop");
+  });
+
+  it("is the one dialect that declares it binds a body slot", () => {
+    expect(dialect().bindsBodyReferences).toBe(true);
+    for (const id of ["qwen_2511_delta_edit", "qwen_2512_description", "seedream_45_prose", "pony_compel_tags"]) {
+      expect(imagePromptDialect(id)?.bindsBodyReferences, id).toBe(false);
     }
   });
 });
