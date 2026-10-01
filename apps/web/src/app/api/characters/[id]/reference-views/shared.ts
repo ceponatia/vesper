@@ -2,12 +2,18 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import {
   normalizeReferenceViewTargets,
+  referenceViewAngleById,
   referenceViewAngleIdSchema,
+  referenceViewDependentsToBuild,
   referenceViewSchema,
   referenceViewReviewRequestSchema,
+  referenceViewWardrobeById,
   referenceViewWardrobeSchema,
+  referenceViewsWaitingInBatch,
+  sameReferenceView,
   type ReferenceView,
   type ReferenceViewQueueOutcome,
+  type ReferenceViewReviewRequest,
 } from "@/contracts";
 import { parseOrNull } from "@/lib/parse";
 import { imageRenderRejection, jsonError, jsonOk, startJobAfterAdmission } from "@/server/api";
@@ -89,6 +95,16 @@ export const referenceViewRegenerateBodySchema = z.object({
 /** How many views this character's next full build would render. */
 export function plannedCount(characterId: string, ownerId: string): Promise<number> {
   return plannedReferenceViewsForCharacter(characterId, ownerId).then((views) => views.length);
+}
+
+/** A slot in the studio's own words, for a refusal the owner reads. */
+function slotLabel(view: ReferenceView): string {
+  return `${referenceViewAngleById(view.angle)?.label ?? view.angle}, ${referenceViewWardrobeById(view.wardrobe)?.label ?? view.wardrobe}`;
+}
+
+/** Nothing queued and nothing to say about it — a write that unlocked no build. */
+function idleQueueOutcome(planned: number): ReferenceViewQueueOutcome {
+  return { queued: false, reason: null, planned, admitted: 0, targets: [] };
 }
 
 export interface QueueReferenceViewBuildInput {
@@ -226,6 +242,43 @@ export async function queueReferenceViewBuild(
 }
 
 /**
+ * Queue what a review or an upload unlocked: the views built FROM that slot
+ * (`referenceViewDependentsToBuild`) that are now missing, failed or stale.
+ *
+ * Only an approval unlocks anything — an upload is one, because supplying a
+ * view is the owner's review of it — so a rejection or an undo queues nothing.
+ * The targets are read AFTER the write has committed, by the same rule the
+ * Approve control's count was computed with before it, and are admitted and
+ * charged by {@link queueReferenceViewBuild} exactly as a build is: the charge
+ * is the work. A verdict undone elsewhere in between unlocks nothing; a
+ * dependent another request already claimed answers `busy`; and a budget
+ * refusal leaves the approval standing, reported per target.
+ */
+export async function queueReviewDependents(input: {
+  characterId: string;
+  ownerId: string;
+  req: NextRequest;
+  user: { id: string };
+  view: ReferenceView;
+  trigger: ReferenceViewReviewRequest["verdict"] | "upload";
+}): Promise<ReferenceViewQueueOutcome> {
+  const planned = await plannedReferenceViewsForCharacter(input.characterId, input.ownerId);
+  if (input.trigger !== "approve" && input.trigger !== "upload") return idleQueueOutcome(planned.length);
+  const set = await getReferenceViewSet(input.characterId, input.ownerId);
+  const targets = referenceViewDependentsToBuild(set.views, input.view).filter((view) =>
+    planned.some((entry) => sameReferenceView(entry, view)),
+  );
+  return queueReferenceViewBuild({
+    characterId: input.characterId,
+    ownerId: input.ownerId,
+    req: input.req,
+    user: input.user,
+    targets,
+    planned: planned.length,
+  });
+}
+
+/**
  * The one explicit-regeneration path: validate the named slots against the
  * character's plan, then hand the surviving list to {@link queueReferenceViewBuild}
  * as ONE batch.
@@ -243,6 +296,17 @@ export async function queueReferenceViewBuild(
  * gate withholds them from — is a 404 the way an unknown character id is: the
  * resource does not exist. Building the rest and staying quiet about the refusal
  * would let a client discover the age gate by counting renders.
+ *
+ * A slot still waiting on its upstream view (`waitingOn`) refuses the whole
+ * request the same way, as a 409 `waiting`: it has no approved body to be built
+ * from, and it builds by itself when that view is approved. So does a slot
+ * built from ANOTHER slot this same request names (`referenceViewsWaitingInBatch`):
+ * the request is about to replace its upstream, so its render could only land
+ * on nothing or on the attempt being superseded — a charge with no usable view.
+ *
+ * And a slot whose dependents are still rendering (`downstreamBuilding`)
+ * refuses it as a 409 `busy`: replacing that view now would let those renders
+ * land stale, paid for and offered by Build again.
  */
 export async function regenerateReferenceViews(input: {
   characterId: string;
@@ -264,6 +328,30 @@ export async function regenerateReferenceViews(input: {
     const named = refused.map((view) => `${view.angle}/${view.wardrobe}`).join(", ");
     return jsonError("not_found", `no such reference view: ${named}`, 404);
   }
+  const waiting = targets.filter(
+    (view) => (set.views.find((entry) => sameReferenceView(entry, view))?.waitingOn ?? null) !== null,
+  );
+  if (waiting.length > 0) {
+    const named = waiting.map(slotLabel).join("; ");
+    return jsonError(
+      "waiting",
+      `${named} ${waiting.length === 1 ? "builds" : "build"} from a view that is not approved yet. Approve that view first.`,
+      409,
+    );
+  }
+  const replacing = targets.filter(
+    (view) => set.views.find((entry) => sameReferenceView(entry, view))?.downstreamBuilding === true,
+  );
+  if (replacing.length > 0) return jsonError("busy", referenceViewWriteMessages.busy, 409);
+  const waitingInBatch = referenceViewsWaitingInBatch(targets);
+  if (waitingInBatch.length > 0) {
+    const named = waitingInBatch.map(slotLabel).join("; ");
+    return jsonError(
+      "waiting",
+      `${named} ${waitingInBatch.length === 1 ? "builds" : "build"} from another view in this request. Rebuild and approve that view first; approving it rebuilds the views made from it.`,
+      409,
+    );
+  }
 
   const outcome = await queueReferenceViewBuild({
     characterId,
@@ -281,7 +369,7 @@ export const referenceViewWriteMessages = {
   not_found: "This character or attempt is no longer available.",
   not_ready: "This image cannot be reviewed yet. Refresh to see its current status.",
   changed: "This view changed elsewhere. Refresh and review the current image before trying again.",
-  incompatible: "This image does not match the accepted portrait or current reference version. Choose a compatible image or regenerate.",
+  incompatible: "This image does not match the accepted portrait, the approved view it was built from, the current body images, or the current reference version. Choose a compatible image or regenerate.",
   ineligible: "Undressed references require a recognized adult apparent age. Update the character profile before using this slot.",
   busy: "Reference views are still being built. Wait for them to finish, then refresh.",
   expired: "This image is outside the history retention window. Choose a more recent image or regenerate.",

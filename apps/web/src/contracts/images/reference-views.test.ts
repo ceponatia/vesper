@@ -6,23 +6,43 @@ import {
   isConsumableReferenceView,
   normalizeReferenceViewTargets,
   plannedReferenceViews,
+  projectReferenceViewSlots,
   projectReferenceViewState,
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
   REFERENCE_VIEW_GENERATION_VERSION,
+  REFERENCE_VIEW_ROOT_ANGLE,
+  REFERENCE_VIEW_ROOT_ANGLE_BINDING,
+  referenceViewAncestors,
   referenceViewAngleById,
   referenceViewAngleIds,
   referenceViewAngles,
+  referenceViewBuildOrder,
+  referenceViewBuildsOnApproval,
+  referenceViewDependents,
+  referenceViewDependentsToBuild,
+  referenceViewDescendantBusy,
+  referenceViewDescendants,
   referenceViewFaceVisibility,
   referenceViewFeedbackReasons,
   referenceViewReviewRequestSchema,
   referenceViewRestoreRequestSchema,
   referenceViewQueueOutcomeSchema,
   referenceViewHistoryVerdict,
+  referenceViewLineageId,
+  referenceViewLineBusy,
+  referenceViewsReadyToBuild,
+  referenceViewsWaitingInBatch,
+  referenceViewUpstream,
+  referenceViewUpstreamBinding,
   referenceViewWardrobeEntries,
   referenceViewWardrobes,
+  sameReferenceView,
+  type ReferenceView,
   type ReferenceViewAngleId,
   type ReferenceViewHistoryVerdict,
   type ReferenceViewProjectionInput,
+  type ReferenceViewSlotFacts,
+  type ReferenceViewSlotRow,
   type ReferenceViewStatus,
   type ReferenceViewVerdict,
 } from "./reference-views";
@@ -67,6 +87,10 @@ const everyPhrase = (): string[] => [
   ...referenceViewAngles.map((entry) => entry.instruction),
   ...referenceViewWardrobeEntries.map((entry) => entry.instruction),
   REFERENCE_VIEW_BACKGROUND_CLAUSE,
+  // The clauses a dependent view's render introduces its upstream view with
+  // reach the model verbatim too.
+  ...referenceViewWardrobeEntries.flatMap((entry) => (entry.buildsFromBinding === null ? [] : [entry.buildsFromBinding])),
+  REFERENCE_VIEW_ROOT_ANGLE_BINDING,
 ];
 
 describe("the reference view registry", () => {
@@ -153,6 +177,25 @@ describe("the phrasing rules that keep a view from painting a second person", ()
 
   it("states the geometry that is, never the one that is not", () => {
     for (const phrase of everyPhrase()) expect(phrase).not.toMatch(NEGATION);
+  });
+});
+
+/**
+ * #669: the back views kept generating with the head turned to glance over
+ * the shoulder, because the pre-fix instruction asked for a TURN ("head
+ * turned away from the lens") rather than stating the head's resting
+ * geometry. Pinned here, beside the generic phrasing-rule sweep above,
+ * because that sweep only forbids the NEGATION pattern and a bare
+ * "turn(ed)" is not a negation — a regression back to turn-shaped wording
+ * would pass every test above and still reproduce the bug.
+ */
+describe("back_full states the back of the head positively (#669)", () => {
+  it("never asks for a turn, and states the head facing the same way as the body", () => {
+    const back = referenceViewAngleById("back_full")!;
+    expect(back.instruction).not.toMatch(/\bturn(ed|s|ing)?\b/i);
+    expect(back.instruction).toContain("{name}'s head facing straight ahead in the same direction as {name}'s body");
+    expect(back.instruction).toContain("the back of {name}'s head and hair toward the lens");
+    expect(back.instruction).toContain("{name}'s face fully hidden from the camera");
   });
 });
 
@@ -276,6 +319,21 @@ describe("what a stored row projects to, and what may be sent to a render", () =
     ["its asset is gone", { imageId: null, imageStatus: null }, "stale", false],
     ["it was built by wording this code no longer emits", { generationVersion: 0 }, "stale", false],
     ["its slot is no longer in the character's age-gated plan", { eligible: false }, "ineligible", false],
+    // The build order's rule: a view rendered from an upstream view stands only
+    // while that view is its slot's approved current attempt.
+    ["rendered from its upstream's approved current attempt", { upstreamViewId: "up-1", approvedUpstreamId: "up-1" }, "approved", true],
+    ["its upstream view was regenerated and re-approved", { upstreamViewId: "up-1", approvedUpstreamId: "up-2" }, "stale", false],
+    ["its upstream view has no approved current attempt", { upstreamViewId: "up-1", approvedUpstreamId: null }, "stale", false],
+    ["it records no upstream — uploaded, or built before the build order", { upstreamViewId: null, approvedUpstreamId: null }, "approved", true],
+    // The body-image rule (#671): a rendered view stands only while the
+    // character's body-image set is the one it was rendered against, and a row
+    // that records none was rendered against the empty set.
+    ["rendered with no body image, and the character still has none", { method: "rendered", bodyReferenceSet: null, currentBodyReferenceSet: null }, "approved", true],
+    ["rendered before the character's first body image", { method: "rendered", bodyReferenceSet: null, currentBodyReferenceSet: "img-a:clothed" }, "stale", false],
+    ["rendered against the character's body-image set now", { method: "rendered", bodyReferenceSet: "img-a:clothed", currentBodyReferenceSet: "img-a:clothed" }, "approved", true],
+    ["its body image was re-tagged since", { method: "rendered", bodyReferenceSet: "img-a:clothed", currentBodyReferenceSet: "img-a:unclothed" }, "stale", false],
+    ["its body images were all removed since", { method: "rendered", bodyReferenceSet: "img-a:clothed", currentBodyReferenceSet: null }, "stale", false],
+    ["uploaded — no body image was rendered into it", { method: "uploaded", bodyReferenceSet: null, currentBodyReferenceSet: "img-a:clothed" }, "approved", true],
   ];
 
   it.each(cases)("%s ⇒ %s", (_name, patch, state, consumable) => {
@@ -289,6 +347,333 @@ describe("what a stored row projects to, and what may be sent to a render", () =
   // would happily re-render.
   it("keeps a rejection visible even when the portrait also moved on", () => {
     expect(projectReferenceViewState({ ...base, status: "rejected", acceptedImageId: "portrait-b" })).toBe("rejected");
+  });
+});
+
+const slotKeyOf = (view: ReferenceView): string => `${view.angle}:${view.wardrobe}`;
+const slotSet = (views: readonly ReferenceView[]): Set<string> => new Set(views.map(slotKeyOf));
+const ROOT: ReferenceView = { angle: REFERENCE_VIEW_ROOT_ANGLE, wardrobe: "clothed" };
+
+/**
+ * **Which approved view each view's body is rendered from.**
+ *
+ * The owner's order (#670): the front clothed view first, the other angles
+ * dressed from it, and each undressed view from its own angle dressed. Derived
+ * from the registries rather than copied, so an added angle is checked for the
+ * same rule. The implementations this kills: a graph with a second root (two
+ * views rendered from nothing, two bodies), a bare view built from the front
+ * instead of its own angle, and a build order that renders a view before the
+ * one it is built from.
+ */
+describe("the build order", () => {
+  it("has exactly one root, the front dressed", () => {
+    expect(allReferenceViews().filter((view) => referenceViewUpstream(view) === null)).toEqual([ROOT]);
+  });
+
+  it("builds every other angle dressed from the root, and the root's own undressed view from it", () => {
+    const expected: ReferenceView[] = [
+      ...referenceViewAngles
+        .filter((angle) => angle.id !== REFERENCE_VIEW_ROOT_ANGLE)
+        .map((angle): ReferenceView => ({ angle: angle.id, wardrobe: "clothed" })),
+      { angle: REFERENCE_VIEW_ROOT_ANGLE, wardrobe: "bare" },
+    ];
+    expect(slotSet(referenceViewDependents(ROOT))).toEqual(slotSet(expected));
+  });
+
+  it("builds each undressed view from its own angle dressed, and builds nothing from an undressed view", () => {
+    for (const angle of referenceViewAngles) {
+      const bare: ReferenceView = { angle: angle.id, wardrobe: "bare" };
+      expect(referenceViewUpstream(bare), angle.id).toEqual({ angle: angle.id, wardrobe: "clothed" });
+      expect(referenceViewDependents(bare), angle.id).toEqual([]);
+    }
+  });
+
+  it("orders every view after the view it is built from", () => {
+    const order = referenceViewBuildOrder();
+    expect(slotSet(order)).toEqual(slotSet(allReferenceViews()));
+    order.forEach((view, index) => {
+      const upstream = referenceViewUpstream(view);
+      if (upstream === null) return;
+      expect(order.findIndex((entry) => sameReferenceView(entry, upstream)), slotKeyOf(view)).toBeLessThan(index);
+    });
+  });
+
+  // A second identity image of one person reads as a second person unless the
+  // prompt says why it is there, so every dependent carries the registry's
+  // clause — and the root, which sends no upstream, carries none.
+  it("introduces every upstream view in the registry's words, and the root's in none", () => {
+    expect(referenceViewUpstreamBinding(ROOT)).toBeNull();
+    for (const view of allReferenceViews()) {
+      if (referenceViewUpstream(view) === null) continue;
+      expect(referenceViewUpstreamBinding(view)?.trim().length ?? 0, slotKeyOf(view)).toBeGreaterThan(0);
+    }
+    // The two relations say different things: another angle in the same
+    // clothing, and this angle dressed for a render that undresses it.
+    expect(referenceViewUpstreamBinding({ angle: "back_full", wardrobe: "clothed" }))
+      .not.toBe(referenceViewUpstreamBinding({ angle: "back_full", wardrobe: "bare" }));
+  });
+});
+
+/**
+ * **The sheet, projected in build order** — what may build now, what waits,
+ * and what an approval builds.
+ *
+ * Three money-shaped invariants, each invisible until the bill or the picture
+ * is wrong:
+ *
+ * 1. **Only a slot whose upstream is approved may build.** A fresh sheet builds
+ *    the root alone; everything else waits. A view built before its upstream
+ *    was approved is a view of an unapproved body.
+ * 2. **Staleness flows down the order.** Regenerating the root makes the views
+ *    built from it stale, and the undressed views built from THOSE stale with
+ *    them — the implementation this kills compares each row only with its own
+ *    upstream row's id and misses an upstream that is itself stale.
+ * 3. **The disclosed count is the charged count.** What the Approve control
+ *    shows (a what-if projection before the write) equals what the review route
+ *    queues (the projection after it). Asserted directly below rather than
+ *    trusted, because the two are computed at different moments.
+ */
+/**
+ * **One request may not rebuild a view and a view built from it** (#670).
+ *
+ * The request replaces the upstream, so the dependent's worker finds either no
+ * approved upstream (a charge for nothing) or the attempt being superseded (a
+ * render that lands stale) — and approving the new upstream then charges it
+ * again. The implementation this kills checks only the sheet's `waitingOn`,
+ * which reads "ready" for both before the request runs, and the transitive case
+ * (the root beside an undressed view two hops down) that a direct-parent check
+ * misses.
+ */
+describe("a batch that names a view and a view built from it", () => {
+  const LEFT: ReferenceView = { angle: "side_left", wardrobe: "clothed" };
+  const LEFT_BARE: ReferenceView = { angle: "side_left", wardrobe: "bare" };
+  const RIGHT: ReferenceView = { angle: "side_right", wardrobe: "clothed" };
+
+  it("holds back every target built from another target, directly or through another view", () => {
+    expect(referenceViewsWaitingInBatch([ROOT, LEFT])).toEqual([LEFT]);
+    expect(referenceViewsWaitingInBatch([LEFT_BARE, ROOT])).toEqual([LEFT_BARE]);
+    expect(referenceViewsWaitingInBatch([ROOT, LEFT, LEFT_BARE])).toEqual([LEFT, LEFT_BARE]);
+  });
+
+  it("holds back nothing when no target is built from another", () => {
+    expect(referenceViewsWaitingInBatch([LEFT, RIGHT])).toEqual([]);
+    expect(referenceViewsWaitingInBatch([LEFT_BARE, RIGHT])).toEqual([]);
+    expect(referenceViewsWaitingInBatch(allReferenceViews().filter((view) => referenceViewUpstream(view) === null))).toEqual([]);
+  });
+
+  // Replacing a view while a view built from it renders strands that render;
+  // the rule looks through every level, and never at the slot's own lease.
+  it("calls a view busy for replacement when any view built from it is building", () => {
+    expect(referenceViewDescendantBusy(ROOT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewDescendantBusy(LEFT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewDescendantBusy(LEFT, [RIGHT, ROOT])).toBe(false);
+    expect(referenceViewDescendantBusy(LEFT, [LEFT])).toBe(false);
+  });
+
+  // The lease claim's rule: two slots on one line never build at once, in
+  // either direction and at any depth; siblings are not on one line.
+  it("calls a slot busy when a view on its line — above or below it — is building", () => {
+    expect(referenceViewLineBusy(LEFT_BARE, [ROOT])).toBe(true);
+    expect(referenceViewLineBusy(ROOT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewLineBusy(LEFT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewLineBusy(LEFT, [RIGHT])).toBe(false);
+    expect(referenceViewLineBusy(LEFT_BARE, [RIGHT])).toBe(false);
+    expect(referenceViewLineBusy(LEFT, [LEFT])).toBe(false);
+  });
+
+  it("reads ancestors and descendants off the one build order", () => {
+    expect(referenceViewAncestors(LEFT_BARE)).toEqual([LEFT, ROOT]);
+    expect(referenceViewAncestors(ROOT)).toEqual([]);
+    expect(slotSet(referenceViewDescendants(ROOT))).toEqual(
+      slotSet(allReferenceViews().filter((view) => !sameReferenceView(view, ROOT))),
+    );
+    expect(referenceViewDescendants(LEFT)).toEqual([LEFT_BARE]);
+  });
+});
+
+describe("the sheet, projected in build order", () => {
+  const ACCEPTED = "portrait-a";
+  const APPROVED_AT = new Date("2026-01-01T00:00:00Z");
+  const BACK: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+  const BACK_BARE: ReferenceView = { angle: "back_full", wardrobe: "bare" };
+  const LEFT: ReferenceView = { angle: "side_left", wardrobe: "clothed" };
+  const RIGHT: ReferenceView = { angle: "side_right", wardrobe: "clothed" };
+  const FRONT_BARE: ReferenceView = { angle: REFERENCE_VIEW_ROOT_ANGLE, wardrobe: "bare" };
+  const ADULT_PLAN = plannedReferenceViews(withBand("eighteen"));
+  const CLOTHED_PLAN = plannedReferenceViews(withBand("teen"));
+
+  /** A ready, current attempt from the accepted portrait — unreviewed unless patched. */
+  const attempt = (attemptId: string, patch: Partial<ReferenceViewSlotRow> = {}): ReferenceViewSlotRow => ({
+    attemptId,
+    current: true,
+    status: "ready",
+    sourceImageId: ACCEPTED,
+    imageId: `img-${attemptId}`,
+    imageStatus: "ready",
+    generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+    reviewedAt: null,
+    acceptedImageId: ACCEPTED,
+    upstreamViewId: null,
+    ...patch,
+  });
+  const approved = (attemptId: string, upstreamViewId: string | null = null): ReferenceViewSlotRow =>
+    attempt(attemptId, { reviewedAt: APPROVED_AT, upstreamViewId });
+
+  /** Every slot, with the rows given and the plan's eligibility. */
+  const sheet = (
+    rows: ReadonlyArray<readonly [ReferenceView, ReferenceViewSlotRow]>,
+    plan: readonly ReferenceView[] = ADULT_PLAN,
+  ): ReferenceViewSlotFacts[] =>
+    allReferenceViews().map((view) => ({
+      view,
+      eligible: plan.some((entry) => sameReferenceView(entry, view)),
+      row: rows.find(([slot]) => sameReferenceView(slot, view))?.[1] ?? null,
+    }));
+  const slot = (facts: readonly ReferenceViewSlotFacts[], view: ReferenceView) =>
+    projectReferenceViewSlots(facts).find((entry) => sameReferenceView(entry, view));
+
+  /** The same sheet with one slot's current attempt approved — the write the review route makes. */
+  const withApproval = (facts: readonly ReferenceViewSlotFacts[], view: ReferenceView): ReferenceViewSlotFacts[] =>
+    facts.map((entry) =>
+      sameReferenceView(entry.view, view) && entry.row !== null ? { ...entry, row: { ...entry.row, reviewedAt: APPROVED_AT } } : entry,
+    );
+
+  it("builds the root alone on a fresh sheet, and every other slot waits on its own upstream", () => {
+    const facts = sheet([]);
+    const projected = projectReferenceViewSlots(facts);
+    expect(referenceViewsReadyToBuild(projected)).toEqual([ROOT]);
+    for (const entry of projected) {
+      expect(entry.waitingOn, slotKeyOf(entry)).toEqual(referenceViewUpstream(entry));
+    }
+  });
+
+  it("discloses on approval exactly what the review route then queues — the root's four dependents", () => {
+    const facts = sheet([[ROOT, attempt("front-1")]]);
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: "front-1" });
+    expect(slotSet(disclosed)).toEqual(slotSet(referenceViewDependents(ROOT)));
+    const queued = referenceViewDependentsToBuild(projectReferenceViewSlots(withApproval(facts, ROOT)), ROOT);
+    expect(queued).toEqual(disclosed);
+  });
+
+  it("builds no undressed view on an age-gated character's root approval", () => {
+    const facts = sheet([[ROOT, attempt("front-1")]], CLOTHED_PLAN);
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: "front-1" });
+    expect(slotSet(disclosed)).toEqual(slotSet([BACK, LEFT, RIGHT]));
+    expect(slot(facts, FRONT_BARE)?.state).toBe("ineligible");
+  });
+
+  it("builds each dressed angle's undressed view when that angle is approved", () => {
+    const facts = sheet([
+      [ROOT, approved("front-1")],
+      [BACK, attempt("back-1", { upstreamViewId: "front-1" })],
+    ]);
+    expect(slot(facts, BACK)?.state).toBe("unreviewed");
+    expect(referenceViewBuildsOnApproval(facts, { view: BACK, attemptId: "back-1" })).toEqual([BACK_BARE]);
+  });
+
+  it("never rebuilds a rejected dependent on an approval", () => {
+    const facts = sheet([
+      [ROOT, attempt("front-1")],
+      [BACK, attempt("back-1", { status: "rejected", reviewedAt: APPROVED_AT, upstreamViewId: "front-0" })],
+    ]);
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: "front-1" });
+    expect(slotSet(disclosed)).toEqual(slotSet([LEFT, RIGHT, FRONT_BARE]));
+  });
+
+  it("makes a regenerated root's dependents stale and waiting, down the order, and rebuilds them on its approval", () => {
+    const facts = sheet([
+      // The root was regenerated: a new attempt nobody has approved yet.
+      [ROOT, attempt("front-2")],
+      [BACK, approved("back-1", "front-1")],
+      [LEFT, approved("left-1", "front-1")],
+      [RIGHT, approved("right-1", "front-1")],
+      [FRONT_BARE, approved("front-bare-1", "front-1")],
+      [BACK_BARE, approved("back-bare-1", "back-1")],
+    ]);
+    for (const view of [BACK, LEFT, RIGHT, FRONT_BARE]) {
+      expect(slot(facts, view), slotKeyOf(view)).toMatchObject({ state: "stale", consumable: false, waitingOn: ROOT });
+    }
+    // Its own upstream row is unchanged, but that row is stale — so is this.
+    expect(slot(facts, BACK_BARE)).toMatchObject({ state: "stale", consumable: false, waitingOn: BACK });
+    expect(referenceViewsReadyToBuild(projectReferenceViewSlots(facts))).toEqual([]);
+
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: "front-2" });
+    expect(slotSet(disclosed)).toEqual(slotSet([BACK, LEFT, RIGHT, FRONT_BARE]));
+    expect(referenceViewDependentsToBuild(projectReferenceViewSlots(withApproval(facts, ROOT)), ROOT)).toEqual(disclosed);
+  });
+
+  it("rebuilds nothing when the same root attempt is approved again after an undo", () => {
+    const facts = sheet([
+      [ROOT, attempt("front-1")],
+      [BACK, approved("back-1", "front-1")],
+      [LEFT, approved("left-1", "front-1")],
+      [RIGHT, approved("right-1", "front-1")],
+      [FRONT_BARE, approved("front-bare-1", "front-1")],
+    ]);
+    // Undone, the views built from it read stale...
+    expect(slot(facts, BACK)?.state).toBe("stale");
+    // ...and approving that very attempt again makes them current, so nothing is spent.
+    expect(referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: "front-1" })).toEqual([]);
+    expect(slot(withApproval(facts, ROOT), BACK)?.state).toBe("approved");
+  });
+
+  it("builds on an upload what an approval of a new attempt would, and leaves a view built from no upstream alone", () => {
+    const facts = sheet([
+      [ROOT, approved("front-1")],
+      [BACK, approved("back-1", "front-1")],
+      [LEFT, approved("left-1", "front-1")],
+      // An uploaded or pre-order view: rendered from no upstream view.
+      [RIGHT, approved("right-1", null)],
+    ]);
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: null });
+    expect(slotSet(disclosed)).toEqual(slotSet([BACK, LEFT, FRONT_BARE]));
+  });
+
+  it("marks a whole rendered sheet stale when the body images change, rebuilding nothing but the root", () => {
+    const BODY = "img-a:clothed";
+    const rendered = (row: ReferenceViewSlotRow): ReferenceViewSlotRow => ({ ...row, method: "rendered", currentBodyReferenceSet: BODY });
+    const facts = sheet([
+      // Every view rendered before the character's first body image.
+      [ROOT, rendered(approved("front-1"))],
+      [BACK, rendered(approved("back-1", "front-1"))],
+      [FRONT_BARE, rendered(approved("front-bare-1", "front-1"))],
+      [BACK_BARE, rendered(approved("back-bare-1", "back-1"))],
+    ]);
+    for (const view of [ROOT, BACK, FRONT_BARE, BACK_BARE]) {
+      expect(slot(facts, view), slotKeyOf(view)).toMatchObject({ state: "stale", consumable: false });
+    }
+    // Nothing rebuilds by itself; the owner's build starts at the root, and the
+    // rest wait on its approval as they always do.
+    expect(referenceViewsReadyToBuild(projectReferenceViewSlots(facts))).toEqual([ROOT]);
+  });
+
+  // "Use this version" restores an earlier attempt as a NEW row. Compared by
+  // attempt id, the views built from the original read stale against the copy
+  // forever, and rebuilding them buys byte-identical renders; compared by
+  // lineage, approving the copy revives them exactly as Undo then Approve does.
+  it("revives the views built from an attempt when a restored copy of it is approved", () => {
+    const copy = { attemptId: "front-3", originAttemptId: "front-1" };
+    expect(referenceViewLineageId(copy)).toBe("front-1");
+    const facts = sheet([
+      [ROOT, attempt(copy.attemptId, { originAttemptId: copy.originAttemptId })],
+      [BACK, approved("back-1", "front-1")],
+      [LEFT, approved("left-1", "front-1")],
+    ]);
+    // Unreviewed, the copy approves nothing yet, so its dependents wait...
+    expect(slot(facts, BACK)).toMatchObject({ state: "stale", waitingOn: ROOT });
+    // ...and approving it builds only what was never built from its original.
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: referenceViewLineageId(copy) });
+    expect(slotSet(disclosed)).toEqual(slotSet([RIGHT, FRONT_BARE]));
+    expect(slot(withApproval(facts, ROOT), BACK)).toMatchObject({ state: "approved", consumable: true });
+  });
+
+  it("never marks a view stale by the upstream rule when it records no upstream", () => {
+    const facts = sheet([
+      [ROOT, attempt("front-2")],
+      [BACK, approved("back-1", null)],
+    ]);
+    // Still usable, still the owner's — but nothing may rebuild it until the root is approved.
+    expect(slot(facts, BACK)).toMatchObject({ state: "approved", consumable: true, waitingOn: ROOT });
   });
 });
 

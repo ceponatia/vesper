@@ -29,7 +29,11 @@ import {
  * on the same subject; and that a numbered reference drives both the
  * reference introduction and the identity-preserve lock, while a
  * zero-reference compile (the scene chain's bare-prompt rung) falls back to a
- * plain descriptive identity sentence.
+ * plain descriptive identity sentence; and that a shot hiding the subject's
+ * face entirely drops "face" from the identity lock and states positively
+ * that it stays hidden, and gets this dialect's own positive face-visibility
+ * sentence rather than the shared family's "do not rotate" negation — a
+ * partially turned face is unaffected by either change (#669).
  *
  * Fixture helpers are local copies of `prompt-program.test.ts`'s own
  * (`fact`/`entity`/`operation`/`world`): that file's are module-private, and a
@@ -117,7 +121,7 @@ const wardrobeFact = (subjectRef: string, value: string): ImageWorldFact =>
 
 function compilePositive(
   worldDigest: ImageWorldDigest,
-  references: readonly { position: number; role: "identity"; subjectRef?: string; description?: string }[] = [],
+  references: readonly { position: number; role: "identity" | "body"; subjectRef?: string; description?: string }[] = [],
   entityLabels: Record<string, string> = {},
   intimatePermitted = false,
 ) {
@@ -376,6 +380,107 @@ describe("reference-bound subjects with no display label are named distinctly", 
   });
 });
 
+/** A `subject.face_visibility` fact, in the exact shape `scene-lowering.ts` writes it. */
+const faceVisibilityFact = (subjectRef: string, value: "hidden" | "partial"): ImageWorldFact =>
+  fact({
+    key: `${subjectRef}.face_visibility`,
+    concept: "subject.face_visibility",
+    value,
+    subjectRef,
+    disposition: "required_visual",
+    priority: 0.99,
+  });
+
+/** The hair-concealment fact, in the exact shape `prompt-program.test.ts`'s own fixture uses. */
+const hairConcealmentFact = (subjectRef: string): ImageWorldFact =>
+  fact({
+    key: `${subjectRef}.hair_concealment`,
+    concept: "subject.hair_concealment",
+    value: "hair fully covered",
+    subjectRef,
+    disposition: "required_visual",
+    priority: 0.99,
+  });
+
+/**
+ * #669: a back reference view (and any `away`-camera 2.1 render) asked the
+ * identity images to preserve a face the shot cannot show, so the model
+ * resolved the contradiction by turning the subject back toward the camera.
+ * `partial` visibility is UNCHANGED — only `hidden` adapts the lock and gets
+ * this dialect's own positive face-visibility sentence; the shared family's
+ * "do not rotate" wording would anchor on the very turn the reference-view
+ * registry's `back_full` instruction was rewritten to avoid (see that
+ * registry's own file).
+ */
+describe("the identity lock and face-visibility sentence adapt to a hidden face (#669)", () => {
+  const compileFor = (facts: readonly ImageWorldFact[]) =>
+    compilePositive(
+      world({ subjects: [entity("subject", "nyx", facts)], references: [referenceFact("nyx")] }),
+      [{ position: 1, role: "identity", subjectRef: "nyx" }],
+      { nyx: "Nyx" },
+    );
+
+  it("keeps the full face-preserve lock when nothing hides the face", () => {
+    const compiled = compileFor([identityFact("nyx")]);
+    expect(compiled.text).toContain("Use Image 1 for Nyx's face, skin tone and apparent age, exactly as shown");
+  });
+
+  it("drops face from the lock, asks only skin tone and apparent age, and says the face stays hidden, when the shot hides it", () => {
+    const compiled = compileFor([identityFact("nyx"), faceVisibilityFact("nyx", "hidden")]);
+    expect(compiled.text).toContain("Use Image 1 for Nyx's skin tone and apparent age, exactly as shown");
+    expect(compiled.text).toContain("Nyx's face stays hidden from the camera in this shot");
+    expect(compiled.text).not.toContain("for Nyx's face");
+  });
+
+  it("keeps the full lock for a partially turned face — only `hidden` adapts it", () => {
+    const compiled = compileFor([identityFact("nyx"), faceVisibilityFact("nyx", "partial")]);
+    expect(compiled.text).toContain("Use Image 1 for Nyx's face, skin tone and apparent age, exactly as shown");
+  });
+
+  it("states the hidden-face sentence positively, with no 'do not' negation, naming the back of the head and hair", () => {
+    const compiled = compileFor([identityFact("nyx"), faceVisibilityFact("nyx", "hidden")]);
+    expect(compiled.text).toContain(
+      "Nyx faces directly away from the camera, so only the back of Nyx's head and hair is visible; " +
+        "keep Nyx's hair color and style, build and skin tone exactly from the reference",
+    );
+    expect(compiled.text.toLowerCase()).not.toContain("do not");
+    expect(compiled.text.toLowerCase()).not.toMatch(/\bturn/);
+  });
+
+  it("keeps the shared family's partial-face wording unchanged, 'do not rotate' included", () => {
+    const compiled = compileFor([identityFact("nyx"), faceVisibilityFact("nyx", "partial")]);
+    expect(compiled.text).toContain(
+      "Nyx's face is partly turned from the camera; preserve the visible features, hair color and style, " +
+        "build and skin tone exactly from the reference — do not rotate Nyx to face the camera.",
+    );
+  });
+
+  it("drops hair from the hidden-face sentence when the subject's hair is fully concealed", () => {
+    const compiled = compileFor([identityFact("nyx"), faceVisibilityFact("nyx", "hidden"), hairConcealmentFact("nyx")]);
+    expect(compiled.text).toContain(
+      "Nyx faces directly away from the camera, so only the back of Nyx's head is visible; " +
+        "keep Nyx's build and skin tone exactly from the reference",
+    );
+  });
+
+  it("drops 'from the reference' when this subject has no identity image of their own in the payload", () => {
+    // Two subjects, only one with an identity reference — the same ensemble
+    // hazard `faceVisibilityAnchor` exists to avoid: a shared "exactly from
+    // the reference" would point at a photograph of somebody else.
+    const digest = world({
+      subjects: [
+        entity("subject", "nyx", [identityFact("nyx"), faceVisibilityFact("nyx", "hidden")]),
+        entity("subject", "vex", [identityFact("vex", "a man with a beard"), faceVisibilityFact("vex", "hidden")]),
+      ],
+      references: [referenceFact("nyx")],
+      operation: operation({ subjectCount: 2 }),
+    });
+    const compiled = compilePositive(digest, [{ position: 1, role: "identity", subjectRef: "nyx" }], { nyx: "Nyx", vex: "Vex" });
+    expect(compiled.text).toContain("keep Vex's hair color and style, build and skin tone exactly");
+    expect(compiled.text).not.toContain("keep Vex's hair color and style, build and skin tone exactly from the reference");
+  });
+});
+
 describe("no negative channel at all (acceptance #3)", () => {
   it("declares none/unsupported", () => {
     expect(dialect().negativeSyntax).toBe("none");
@@ -410,6 +515,63 @@ describe("no negative channel at all (acceptance #3)", () => {
     expect(compiled.outcomes).toHaveLength(constraints.length);
     for (const outcome of compiled.outcomes) {
       expect(outcome.transport.kind).toBe("dropped");
+    }
+  });
+});
+
+/**
+ * A `body` slot (#671) is the subject's body and never a second face: the
+ * portrait owns the face, so the body image stays out of the identity lock —
+ * which asks face, skin tone and apparent age to agree across every identity
+ * image — and its sentence assigns the face to the identity image and the
+ * clothing to the prompt, which is what dresses an undressed body image on a
+ * dressed render.
+ */
+describe("a body slot is the subject's body, never a second face", () => {
+  const bodyFact = (subjectRef: string) => ({
+    role: "body" as const,
+    subjectRef,
+    required: false,
+    source: { owner: "test", key: "body" },
+  });
+  const SLOTS = [
+    { position: 1, role: "identity" as const, subjectRef: "nyx" },
+    { position: 2, role: "body" as const, subjectRef: "nyx" },
+  ];
+  const compileWith = (facts: readonly ImageWorldFact[]) =>
+    compilePositive(
+      world({ subjects: [entity("subject", "nyx", facts)], references: [referenceFact("nyx"), bodyFact("nyx")] }),
+      SLOTS,
+      { nyx: "Nyx" },
+    );
+
+  it("introduces the body by number and takes only its shape from it — the face from the identity image, the clothing from the prompt", () => {
+    const compiled = compileWith([identityFact("nyx"), wardrobeFact("nyx", "a red wool sweater")]);
+    expect(compiled.text).toContain("Image 2 shows Nyx's body: take only its body shape, proportions and height");
+    expect(compiled.text).toContain("take the face only from Image 1");
+    expect(compiled.text).toContain("take the clothing and backdrop from this prompt");
+    // The wardrobe sentence still says what to wear.
+    expect(compiled.text).toContain("Nyx wears a red wool sweater.");
+  });
+
+  it("keeps the body image out of the identity lock, and names it as the build's second source beside the text", () => {
+    const compiled = compileWith([identityFact("nyx"), wardrobeFact("nyx", "a red wool sweater")]);
+    expect(compiled.text).toContain("Use Image 1 for Nyx's face, skin tone and apparent age, exactly as shown");
+    expect(compiled.text).not.toContain("Images 1 and 2");
+    expect(compiled.text).toContain("Nyx's build follows that description and Image 2");
+  });
+
+  it("names no clothing for a subject the prompt has wearing nothing at all", () => {
+    const compiled = compileWith([identityFact("nyx"), exposureFact("nyx", "torso", "bare"), exposureFact("nyx", "pelvis", "bare")]);
+    expect(compiled.text).toContain("Image 2 shows Nyx's body");
+    expect(compiled.text).toContain("take the backdrop from this prompt");
+    expect(compiled.text).not.toContain("clothing and backdrop");
+  });
+
+  it("is the one dialect that declares it binds a body slot", () => {
+    expect(dialect().bindsBodyReferences).toBe(true);
+    for (const id of ["qwen_2511_delta_edit", "qwen_2512_description", "seedream_45_prose", "pony_compel_tags"]) {
+      expect(imagePromptDialect(id)?.bindsBodyReferences, id).toBe(false);
     }
   });
 });

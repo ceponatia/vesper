@@ -1,0 +1,13 @@
+-- A reference view's LINEAGE (#670): "Use this version" restores an earlier
+-- attempt as a new row with its own id, so a view built from the original --
+-- which records that original's id as its upstream -- read stale against the copy
+-- forever, and rebuilding it bought byte-identical work. Each restored copy now
+-- records the attempt it copies (that attempt's own origin when it is itself a
+-- copy); a row's lineage is `origin_attempt_id ?? id`, a dependent records its
+-- upstream's lineage, and staleness compares lineages.
+--
+-- NULLABLE with no default and NO backfill, on purpose: NULL means "not a copy",
+-- which is true of every rendered and uploaded row. A copy restored before this
+-- column existed reads as its own lineage, so the views built from its original
+-- stay stale exactly as they read before; nothing already current changes state.
+ALTER TABLE "character_reference_views" ADD COLUMN "origin_attempt_id" text;

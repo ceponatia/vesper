@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 import {
+  bodyReferenceSetSchema,
+  emptyBodyReferenceSet,
+  type BodyReferenceRetagRequest,
+  type BodyReferenceSlot,
+  type BodyReferenceUploadRequest,
   referenceViewHistoryEntrySchema,
   referenceViewQueueOutcomeSchema,
   referenceViewSetSummarySchema,
@@ -17,7 +22,7 @@ import {
   type ReferenceViewReviewRequest,
 } from "@/contracts";
 
-import { apiGet, apiPost } from "./http";
+import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "./http";
 
 // ---------------------------------------------------------------------------
 // Reference views
@@ -47,26 +52,58 @@ const referenceViewSetResponseSchema = z
     set: referenceViewSetSummarySchema,
     /** How many views a full build would render for this character, after the age gate. */
     planned: z.number().catch(0),
+    /**
+     * The character's body images — the inputs the views are built from. Its
+     * own catch, so a body this client cannot read costs the body-image area
+     * and never the views beside it.
+     */
+    bodyReferences: bodyReferenceSetSchema.catch(emptyBodyReferenceSet()),
   })
   .catch({
     set: { acceptedImageId: null, building: false, views: [] },
     planned: 0,
+    bodyReferences: emptyBodyReferenceSet(),
   });
+
+/** `{ bodyReferences }` — the character's body images after one write. */
+const bodyReferenceWriteResponseSchema = z.object({
+  bodyReferences: bodyReferenceSetSchema,
+});
+
+/** One body-image slot's path, spelled once. */
+function bodyReferencePath(characterId: string, slot: BodyReferenceSlot): string {
+  return `/api/characters/${characterId}/body-references/${String(slot)}`;
+}
+
+/** A queue outcome that says nothing was queued — what an unreadable one degrades to. */
+const IDLE_QUEUE_OUTCOME: ReferenceViewQueueOutcome = {
+  queued: false,
+  reason: null,
+  planned: 0,
+  admitted: 0,
+  targets: [],
+};
 
 /** `{ views }` — what a build or regenerate request decided. Never a failure. */
 const referenceViewQueueResponseSchema = z.object({
-  views: referenceViewQueueOutcomeSchema.catch({
-    queued: false,
-    reason: null,
-    planned: 0,
-    admitted: 0,
-    targets: [],
-  }),
+  views: referenceViewQueueOutcomeSchema.catch(IDLE_QUEUE_OUTCOME),
 });
 
 /** `{ view }` — one settled slot, the body every per-view write answers with. */
 const referenceViewResponseSchema = z.object({
   view: referenceViewSummarySchema,
+});
+
+/**
+ * `{ view, dependents }` — a review or an upload: the settled slot, and what
+ * that write queued downstream. An approval or an upload builds the views made
+ * from this one, so it reports the admission outcome the way a build does; a
+ * rejection or an undo reports nothing queued. An unreadable outcome degrades to
+ * nothing queued rather than failing a verdict that already stands.
+ */
+const referenceViewWriteResponseSchema = z.object({
+  view: referenceViewSummarySchema,
+  dependents: referenceViewQueueOutcomeSchema.catch(IDLE_QUEUE_OUTCOME),
 });
 
 /**
@@ -121,7 +158,10 @@ export const referenceViewsApi = {
         targets,
       },
     ),
-  /** Replace one slot with an owner-supplied image. Synchronous — no polling. */
+  /**
+   * Replace one slot with an owner-supplied image. Synchronous — no polling for
+   * the slot itself; the views built from it are queued like an approval's.
+   */
   upload: (
     characterId: string,
     angle: ReferenceViewAngleId,
@@ -129,11 +169,14 @@ export const referenceViewsApi = {
     dataUrl: string,
   ) =>
     apiPost(
-      referenceViewResponseSchema,
+      referenceViewWriteResponseSchema,
       `${referenceViewPath(characterId, angle, wardrobe)}/upload`,
       { dataUrl },
     ),
-  /** A revision-conditional approval, rejection or undo on the displayed attempt. */
+  /**
+   * A revision-conditional approval, rejection or undo on the displayed attempt.
+   * An approval also queues and charges the views built from this one.
+   */
   review: (
     characterId: string,
     angle: ReferenceViewAngleId,
@@ -141,7 +184,7 @@ export const referenceViewsApi = {
     request: ReferenceViewReviewRequest,
   ) =>
     apiPost(
-      referenceViewResponseSchema,
+      referenceViewWriteResponseSchema,
       `${referenceViewPath(characterId, angle, wardrobe)}/review`,
       request,
     ),
@@ -154,6 +197,21 @@ export const referenceViewsApi = {
     expectedCurrentRevision: number,
   ) => apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/restore`,
     { attemptId, expectedCurrentAttemptId, expectedCurrentRevision }),
+  /**
+   * The character's full-body images, the reference views' inputs. Every write
+   * is synchronous and free, marks the views out of date and builds nothing;
+   * each names the image the owner saw, so a write that crossed another tab's
+   * is a recoverable 409 `changed`.
+   */
+  bodyReferences: {
+    /** Fill a slot, or replace the image the owner saw there. */
+    upload: (characterId: string, slot: BodyReferenceSlot, request: BodyReferenceUploadRequest) =>
+      apiPost(bodyReferenceWriteResponseSchema, `${bodyReferencePath(characterId, slot)}/upload`, request),
+    retag: (characterId: string, slot: BodyReferenceSlot, request: BodyReferenceRetagRequest) =>
+      apiPatch(bodyReferenceWriteResponseSchema, bodyReferencePath(characterId, slot), request),
+    remove: (characterId: string, slot: BodyReferenceSlot, imageId: string) =>
+      apiDelete(withQuery(bodyReferencePath(characterId, slot), { imageId })),
+  },
   /** Every image this slot has produced, with its verdict. Read-only — it moves nothing. */
   history: (
     characterId: string,

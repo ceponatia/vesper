@@ -1,0 +1,12 @@
+-- Reference views build in dependency order (#670): the front clothed view first,
+-- the other angles from it, and each undressed view from its own angle's clothed
+-- view. Each row records the upstream attempt its render was given as a body
+-- reference, and a view reads stale once that attempt is no longer its slot's
+-- approved current one -- the same read-time comparison `source_image_id` gets
+-- against the accepted portrait.
+--
+-- NULLABLE with no default and NO backfill, on purpose: NULL means "rendered from
+-- no upstream view", which is the honest answer for every existing row. Those
+-- rows were all rendered from the portrait alone, so none of them can go stale by
+-- the upstream rule, and nothing already built or approved is invalidated.
+ALTER TABLE "character_reference_views" ADD COLUMN "upstream_view_id" text;

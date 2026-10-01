@@ -256,6 +256,19 @@ export interface ImagePromptDialectDefinition {
   readonly negativeSyntax: "natural_language" | "compact_tags" | "compel_tags" | "none";
   readonly negativeTransport: "dedicated_field" | "inline_instruction" | "positive_replacement" | "unsupported";
   readonly referenceSyntax: "none" | "numbered_images" | "role_labels";
+  /**
+   * Whether this dialect words a `body` reference slot honestly — a full-body
+   * image of a subject the payload also carries an identity image of, taken
+   * for body shape, proportions and height only (`imageReferenceRoles`).
+   *
+   * Declared per dialect rather than inferred from `referenceSyntax`, because
+   * the wording is a reviewed instruction about what the image is NOT the
+   * source of, and a dialect that merely numbers slots has no such sentence.
+   * The character seam drops a `body` reference before planning on a dialect
+   * that declares false and reports it as dropped, so the image never reaches
+   * a dialect that would have to refuse it or mis-bind it as an identity image.
+   */
+  readonly bindsBodyReferences: boolean;
   readonly supportsWeights: boolean;
   readonly supportsLiteralQuotes: boolean;
   /** What this endpoint adds on its own. Empty means "probed and there is nothing". */

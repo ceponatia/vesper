@@ -622,6 +622,7 @@ export function PortraitStudio({
 
       <ReferenceViewsPanel
         characterId={characterId}
+        name={name}
         planKey={referencePlanKey}
         acceptance={acceptance}
         onChanged={onAvatarChanged}

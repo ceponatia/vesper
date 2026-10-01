@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { characterReferenceViews, characters, db, images } from "@/server/db";
+import { characterBodyReferences, characterReferenceViews, characters, db, images } from "@/server/db";
 import { isUniqueViolation } from "@/server/api";
 import { canonicalImageRow, endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 
@@ -61,10 +61,10 @@ async function seedCharacter(name: string): Promise<string> {
 }
 
 /** Only the id the FKs point at matters here — no file is written. */
-async function seedImage(): Promise<string> {
+async function seedImage(kind: "reference_view" | "body_reference" = "reference_view"): Promise<string> {
   const [row] = await db()
     .insert(images)
-    .values(canonicalImageRow({ ownerId, kind: "reference_view" as const, status: "ready" as const }))
+    .values(canonicalImageRow({ ownerId, kind, status: "ready" as const }))
     .returning({ id: images.id });
   if (!row) throw new Error("[reference-views-schema] seeding image inserted no row");
   return row.id;
@@ -127,5 +127,81 @@ describe.skipIf(!ready)("character_reference_views constraints", () => {
       .from(characterReferenceViews)
       .where(eq(characterReferenceViews.id, viewId));
     expect(row).toEqual({ imageId: null, sourceImageId: null });
+  });
+});
+
+/**
+ * `character_body_references` (#671): the storage guarantees the body-image
+ * store assumes rather than re-checks. One current image per slot and no slot
+ * outside the two is what makes a third image unrepresentable; the image FK
+ * cascading is what keeps a slot from pointing at bytes that are gone, and is
+ * how the sweep's purge of a retired image removes its row.
+ */
+describe.skipIf(!ready)("character_body_references constraints", () => {
+  async function insertBody(
+    characterId: string,
+    over: Partial<typeof characterBodyReferences.$inferInsert> = {},
+  ): Promise<string> {
+    const [row] = await db()
+      .insert(characterBodyReferences)
+      .values({ characterId, slot: 1, imageId: await seedImage("body_reference"), tag: "clothed", ...over })
+      .returning({ id: characterBodyReferences.id });
+    if (!row) throw new Error("[reference-views-schema] inserting a body image returned no row");
+    return row.id;
+  }
+
+  async function bodyIds(characterId: string): Promise<string[]> {
+    const rows = await db()
+      .select({ id: characterBodyReferences.id })
+      .from(characterBodyReferences)
+      .where(eq(characterBodyReferences.characterId, characterId));
+    return rows.map((row) => row.id);
+  }
+
+  it("permits one current image per slot, any number of retired ones, and no third slot", async () => {
+    const characterId = await seedCharacter("one current body image per slot");
+    await insertBody(characterId, { slot: 1 });
+    await expect(insertBody(characterId, { slot: 1 })).rejects.toSatisfy(isUniqueViolation);
+    await insertBody(characterId, { slot: 1, current: false });
+    await insertBody(characterId, { slot: 1, current: false });
+    await insertBody(characterId, { slot: 2, tag: "unclothed" });
+    expect(await bodyIds(characterId)).toHaveLength(4);
+
+    await expect(insertBody(characterId, { slot: 3 })).rejects.toThrow();
+    await expect(insertBody(characterId, { slot: 0, current: false })).rejects.toThrow();
+  });
+
+  it("takes a body image's row with its image, and every row with the character", async () => {
+    const characterId = await seedCharacter("body images die with their asset and character");
+    const imageId = await seedImage("body_reference");
+    await insertBody(characterId, { slot: 1, imageId });
+    await insertBody(characterId, { slot: 2 });
+
+    await db().delete(images).where(eq(images.id, imageId));
+    expect(await bodyIds(characterId)).toHaveLength(1);
+
+    await db().delete(characters).where(eq(characters.id, characterId));
+    expect(await bodyIds(characterId)).toEqual([]);
+  });
+
+  // #670's build-order column gets the same "no default, no backfill" treatment
+  // as #671's body-image column (0153's and 0154's own SQL comments): a DEFAULT
+  // here would misattribute an upstream dependency, or a rendered body-image
+  // set, to a row that predates both features and was rendered from neither —
+  // which is exactly what would make every pre-existing view spuriously stale
+  // the moment either rule started reading it.
+  it("records no upstream attempt and no body-image set on a view row unless one is written — the empty answers for every row built before either existed", async () => {
+    const characterId = await seedCharacter("view rows default to no upstream and no body set");
+    const viewId = await insertView(characterId, { current: true });
+    const [row] = await db()
+      .select({
+        upstreamViewId: characterReferenceViews.upstreamViewId,
+        bodyReferenceSet: characterReferenceViews.bodyReferenceSet,
+        // 0156's lineage column too: a default would call every row a copy.
+        originAttemptId: characterReferenceViews.originAttemptId,
+      })
+      .from(characterReferenceViews)
+      .where(eq(characterReferenceViews.id, viewId));
+    expect(row).toEqual({ upstreamViewId: null, bodyReferenceSet: null, originAttemptId: null });
   });
 });

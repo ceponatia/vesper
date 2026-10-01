@@ -81,15 +81,24 @@ acceptance is cleared. Each tile carries the view or a placeholder and a promine
 chip from the exhaustive state map in
 `reference-view-copy.ts` — *not built*, *building…*, *needs your eye*, *approved*, *rejected*,
 *failed*, *out of date* — plus the actions that state allows: **Review** opens the full-size viewer, **Regenerate** appears on
-anything already attempted, and **Upload** sits in its **More** menu.
+anything already attempted whose upstream view is approved, and **Upload** sits in its **More** menu.
+**The sheet builds in order** ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md)
+§Build order): a tile whose upstream view is not approved shows a *waiting* chip on an empty slot (an
+attempted slot keeps its own state chip) and a hint naming the view it builds from, in place of its
+build controls and its selection checkbox.
 Review guidance appears once above the grid; actionable failures remain on their tile. Clicking a
 tile's image opens it in the shared `ImageLightbox` ([conventions.md](conventions.md)
 §Image lightbox), captioned with its angle and wardrobe. The viewer offers comparison with the
-accepted portrait, previous/next, approval, rejection and undo. Opening or closing it alone changes
-no verdict. Rejection can capture optional reasons and a correction retained with that attempt;
-the notes are review history and do not alter generation prompts. A **Build N reference views**
+accepted portrait, previous/next, approval, rejection and undo; Undo on an approved view is
+disabled, with a line saying why, while views built from it are still rendering. Opening or
+closing it alone changes no verdict. Rejection can capture optional reasons and a correction retained with that attempt;
+the notes are review history and do not alter generation prompts. Approving is a spending action
+when views are built from the one being approved: the control reads **Approve · builds N views**,
+and the upload dialog's confirm reads **Use this reference view · builds N views**, each counted by
+the rule the server charges by. A **Build N reference views**
 button appears when a portrait is accepted and any
-slot is missing, stale or failed, labelled with the count the server will actually render. The
+slot is missing, stale or failed and not waiting on an unapproved upstream view, labelled with the
+count the server will actually render. The
 panel polls while a build is live or any slot is pending. Loading and retrieval errors remain
 visible, with a retry action; a failed refresh keeps the last loaded views on screen.
 
@@ -98,12 +107,17 @@ carries a checkbox; ticking any of them raises **Regenerate N selected views** a
 selection** above the grid, and that action submits the whole selection as one request. The per-card
 **Regenerate** is the same request with one target, so both paths are admitted, charged and run
 identically. The submit action is disabled while a build is live for the character, hinted with the
-busy-refusal line from the same copy map the tiles read, but the selection can still be assembled
+busy-refusal line from the same copy map the tiles read; a tile whose dependent views are still
+rendering disables its Regenerate, its checkbox and its **Upload image** with that same line, since
+replacing it would strand those renders. The selection can still be assembled
 meanwhile, and only the slots a batch actually claimed read busy. A queued batch clears the
 selection for queued slots and slots the server reports as already busy. Budget and storage
-refusals keep their selections, so the owner never has to tick the same slots twice. N is the size
-of the selection, and every other count on this panel comes from the reference-view registries and
-the character's plan.
+refusals keep their selections, so the owner never has to tick the same slots twice. A tile built
+from a ticked view — directly or through another — has its checkbox unticked and disabled, hinted
+that it rebuilds when that view is approved, and a view ticked before its upstream was is left out
+of the request with a line saying so: one request never rebuilds a view and a view built from it.
+N is the number of views the request will rebuild, and every other count on this panel comes from
+the reference-view registries and the character's plan.
 
 **History** sits with Upload in the **More** menu on every tile that has been attempted, and opens that slot's past
 images (`reference-view-history.tsx`): a dialog over the sheet listing every image the slot has
@@ -115,6 +129,25 @@ candidate; the original attempt's verdict and feedback remain history. Availabil
 compatibility explanations sit beside ineligible entries. The dialog shows how many days a
 replaced image keeps its bytes, derived from the retention window
 ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle).
+
+Once a portrait is accepted the panel opens with **Body images**
+(`body-references-section.tsx`; [../images/pipelines/body-reference-images.md](../images/pipelines/body-reference-images.md)):
+two slot cards, each a thumbnail beside its controls on every width. An empty slot offers **Add body
+image**; a filled one offers a **Clothed / Unclothed** radio group that re-tags it in place and a
+**More** menu with **Replace image** and **Remove** (through `ConfirmDialog`). Unclothed is disabled,
+with its reason, for a character below the adult gate, and a stored undressed image the gate now
+withholds carries a *not used* chip and a line saying so. The sheet read says whether the image
+model a build would use right now takes body images for dressed and for undressed views: an image
+no view it reaches can use carries the same *not used* chip with "not used by the current image
+model", an undressed image only one kind of view uses says which, and each tag's hint says what it
+is sent to on the current model. While the sheet is building, every body-image control is disabled
+with a line saying the images can change once the build finishes — the server refuses a change
+mid-build as `busy`. Add and Replace open the shared 3:4 crop
+dialog with an aside — beside the image on a wide screen, below it on a phone — holding the tag
+choice (slot 1 starts Clothed, slot 2 Unclothed), the character's written build attributes with a
+note to make the image agree with them, and the one-line real-person note. Every change is free,
+toasts that the views are now out of date, and rebuilds nothing; the panel's build action is the
+next step.
 
 Accepting a portrait changes the character's identity source without starting reference renders.
 The reference-view panel discloses the number of missing views and requires a separate **Build N

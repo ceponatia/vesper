@@ -69,6 +69,10 @@ function referenceRoleBinding(binding: CompileReferenceBinding, position: number
   switch (role) {
     case "identity":
       return `Image ${position}: the identity reference — the person this render depicts. Preserve their face, hair, build, and apparent age.`;
+    case "body":
+      // Never the face: a body image's face is not the person's (owner ruling
+      // 2026-10-01, #671), so the sentence assigns every other source by name.
+      return `Image ${position}: a body reference for the person this render depicts. Take only their body shape, proportions, and height from it; take the face from the identity reference and the clothing and backdrop from this prompt.`;
     case "location":
       return `Image ${position}: the location reference — the place this render is set. Preserve its architecture, furnishing, and lighting.`;
     case "style":

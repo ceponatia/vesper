@@ -39,6 +39,7 @@ import {
 } from "@/server/test-support";
 import {
   buildCharacterPromptProgram,
+  characterPromptSendsBodyReferences,
   characterPromptTransport,
   isCharacterPromptCompiled,
   variantChangeOperation,
@@ -1703,5 +1704,139 @@ describe("the preservation contract the reference's own stamp decides", () => {
     );
     expect(nyxRedundant.some((key) => key.includes("hair."))).toBe(false);
     expect(nyxRedundant.some((key) => key.includes("build."))).toBe(false);
+  });
+});
+
+/**
+ * **A body reference through the seam** (#671): a full-body image of the
+ * subject, sent for the body alone. Four claims a wrong seam would break
+ * silently:
+ *
+ * 1. On the dialect that words the role it rides as its own numbered slot of
+ *    that subject — never an identity slot, so the identity lock keeps taking
+ *    the face from the portrait alone.
+ * 2. On a dialect that cannot word it, it is dropped BEFORE planning and
+ *    reported, so neither the prompt nor the payload carries an image the
+ *    program could not describe — even under a policy that would allow it.
+ * 3. A policy that does not allow it, and a model with no room left, drop it
+ *    with the planner's own reason, after every identity image.
+ * 4. It changes no appearance text: the reference-authority selection belongs
+ *    to identity images alone.
+ */
+describe("a body reference through the seam", () => {
+  const QWEN21_SLUG = "civitai/qwen-image-2.1";
+  const BODY_POLICY = {
+    allowedRoles: ["identity", "style", "body"],
+    requiredRoles: ["identity"],
+    roleOrder: ["identity", "style", "body"],
+  };
+  const portrait = (): CharacterPromptReference => ({
+    reference: { role: "identity", required: true, buffer: Buffer.from("portrait"), name: LANE_PROBE_NAME },
+    subjectId: LANE_PROBE_SUBJECT_ID,
+  });
+  const body = (bytes: string): CharacterPromptReference => ({
+    reference: { role: "body", required: false, buffer: Buffer.from(bytes), name: LANE_PROBE_NAME },
+    subjectId: LANE_PROBE_SUBJECT_ID,
+  });
+  const qwen21 = (policy: unknown = BODY_POLICY) => programProfile({ slug: QWEN21_SLUG, policy });
+
+  it("sends it on the dialect that binds it, as the subject's body and never an identity slot", () => {
+    const bodyImage = body("body-1");
+    const program = compiled(buildCharacterPromptProgram(programInput({ profile: qwen21(), references: [portrait(), bodyImage] })));
+
+    expect(program.sentReferences).toContain(bodyImage.reference);
+    expect(program.numberedReferences.map((reference) => reference.role)).toEqual(["identity", "body"]);
+    expect(program.droppedReferences).toEqual([]);
+    expect(program.prompt).toContain(`Image 2 shows ${LANE_PROBE_NAME}'s body`);
+    expect(program.prompt).toContain(`Use Image 1 for ${LANE_PROBE_NAME}'s face, skin tone and apparent age, exactly as shown`);
+  });
+
+  it("drops it before planning on a dialect that cannot word it, even where the policy allows it", () => {
+    const bodyImage = body("body-1");
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({ profile: programProfile({ slug: QWEN_2511_SLUG, policy: BODY_POLICY }), references: [portrait(), bodyImage] }),
+      ),
+    );
+
+    expect(program.sentReferences).not.toContain(bodyImage.reference);
+    expect(program.droppedReferences).toEqual([{ reference: bodyImage.reference, reason: "dialect_unbound" }]);
+  });
+
+  it("drops it under a policy that does not allow it, with the planner's reason", () => {
+    const bodyImage = body("body-1");
+    const program = compiled(
+      buildCharacterPromptProgram(
+        programInput({
+          profile: qwen21({ allowedRoles: ["identity", "style"], requiredRoles: ["identity"], roleOrder: ["identity", "style"] }),
+          references: [portrait(), bodyImage],
+        }),
+      ),
+    );
+
+    expect(program.sentReferences).not.toContain(bodyImage.reference);
+    expect(program.droppedReferences).toEqual([{ reference: bodyImage.reference, reason: "role_not_allowed" }]);
+    expect(program.prompt).not.toContain("body:");
+  });
+
+  it("cuts body images to the model's capacity after every identity image, renumbering nothing", () => {
+    // The fixture model takes three references: the portrait, the upstream view and one body image.
+    const upstream: CharacterPromptReference = {
+      reference: { role: "identity", required: false, buffer: Buffer.from("upstream"), name: LANE_PROBE_NAME },
+      subjectId: LANE_PROBE_SUBJECT_ID,
+      description: "seen from the front in the same clothing, the same person with the same body",
+    };
+    const first = body("body-1");
+    const second = body("body-2");
+    const anchor = portrait();
+    const program = compiled(
+      buildCharacterPromptProgram(programInput({ profile: qwen21(), references: [anchor, upstream, first, second] })),
+    );
+
+    expect(program.sentReferences).toEqual([anchor.reference, upstream.reference, first.reference]);
+    expect(program.droppedReferences).toEqual([{ reference: second.reference, reason: "model_capacity" }]);
+    expect(program.prompt).toContain(`Image 3 shows ${LANE_PROBE_NAME}'s body`);
+    expect(program.prompt).toContain("Images 1 and 2");
+  });
+
+  it("changes no appearance text — the reference-authority selection is the identity images' alone", () => {
+    const without = compiled(buildCharacterPromptProgram(programInput({ profile: qwen21(), references: [portrait()] })));
+    const withBody = compiled(buildCharacterPromptProgram(programInput({ profile: qwen21(), references: [portrait(), body("body-1")] })));
+    const facts = (program: CharacterPromptProgram) =>
+      program.keptClaimIds.filter((id) => !id.startsWith("operation.reference.")).sort();
+
+    expect(facts(withBody)).toEqual(facts(without));
+  });
+});
+
+/**
+ * `characterPromptSendsBodyReferences` answers BEFORE a render what the seam
+ * would do with a body image on a resolved profile — the studio's "not used"
+ * line reads it. Each row is a compile above's outcome, restated as the
+ * predicate: a disagreement would tell an owner their image is used on a route
+ * that drops it, or hide one that is sent.
+ */
+describe("whether a resolved profile sends body images", () => {
+  const BODY_POLICY = {
+    allowedRoles: ["identity", "style", "body"],
+    requiredRoles: ["identity"],
+    roleOrder: ["identity", "style", "body"],
+  };
+  const sends = (slug: string, policy?: unknown) =>
+    characterPromptSendsBodyReferences({
+      profile: programProfile({ slug, ...(policy === undefined ? {} : { policy }) }),
+      task: "variant",
+      bindingProfileKey: VARIANT_KEY,
+    });
+
+  it.each([
+    ["the Qwen 2.1 dialect under a policy that allows the role", "civitai/qwen-image-2.1", BODY_POLICY, true],
+    ["the Qwen 2.1 dialect under an open policy", "civitai/qwen-image-2.1", undefined, true],
+    ["a policy that does not allow the role", "civitai/qwen-image-2.1", { allowedRoles: ["identity", "style"], requiredRoles: ["identity"] }, false],
+    ["a per-role cap of zero", "civitai/qwen-image-2.1", { ...BODY_POLICY, maxPerRole: { body: 0 } }, false],
+    ["a dialect that cannot word the role, whatever the policy", QWEN_2511_SLUG, BODY_POLICY, false],
+    ["a model with no binding for the task", "test-only/character-prompt-seam-unbound-body", BODY_POLICY, false],
+  ] as const)("%s ⇒ %s", (_label, slug, policy, expected) => {
+    expect(sends(slug, policy)).toBe(expected);
   });
 });
