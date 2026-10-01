@@ -1065,6 +1065,13 @@
       "when": 1790550000000,
       "tag": "0151_civitai-qwen-image-2-1",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1790866800000,
+      "tag": "0152_civitai-qwen-image-2-1-defaults",
+      "breakpoints": true
     }
   ]
 }
