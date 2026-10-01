@@ -26,11 +26,13 @@ The same fields are compatible with Vesper's normalized LoRA control vocabulary
 it sees them.
 
 The production intimate-scene route, the portrait studio's `nsfw_test` variant
-bench, and the bare reference view all run on this endpoint, pairing their
+bench, and the bare reference view run on this endpoint whenever the lane's
+resolved model is one the intimate-route policy does not list, pairing their
 picked profile with the curated NSFW `image_loras` library row through these
-same `lora_weights`/`lora_scale` fields rather than swapping onto a different
-model ([scene-framing.md](../../images/pipelines/scene-framing.md) §Staging adds
-the LoRA, [portrait-variants.md](../../images/pipelines/portrait-variants.md)
+same `lora_weights`/`lora_scale` fields
+([loras.md](../../images/providers/loras.md) §The intimate route,
+[scene-framing.md](../../images/pipelines/scene-framing.md) §Staging takes the
+intimate route, [portrait-variants.md](../../images/pipelines/portrait-variants.md)
 §The `nsfw test` anatomy bench).
 
 The long-lived built-in 2511 registry row was originally probed before LoRA

@@ -284,23 +284,34 @@ The resolved `{camera, staging}` ids land on `images.meta` for the lightbox and 
 selfie drops both the staged arrangement and the possession clause, and the selfie sanitize
 retry strips `staging` alongside the exposure fields.
 
-## Staging adds the LoRA
+## Staging takes the intimate route
 
-The stock scene model follows every compositional instruction but cannot draw explicit
-anatomy, so an `intimate` staging on the uncensored reference route pairs the lane's own
-resolved profile with the registered `qwen/qwen-image-edit-2511` row — resolved from the
-registry by base slug, so the row carrying the probed `lora_weights`/`lora_scale` bindings is
-the one used — and the curated `image_loras` row at its default scale (`images/scene-lora.ts`,
-over the shared pairing in `images/nsfw-lora.ts`).
+An `intimate` staging on the uncensored reference route takes the intimate route
+([../providers/loras.md](../providers/loras.md) §The intimate route; `images/scene-lora.ts`
+over `images/nsfw-lora.ts`), decided by the chat's resolved scene model:
+
+- **A model the route's policy lists** — Civitai Qwen Image 2.1 — draws the act itself, so the
+  render stays on the chat's own resolved scene profile and carries that model's curated anatomy
+  LoRA only when one resolves. `qwen/qwen-image-edit-2511` is never paired in.
+- **Every other model** follows every compositional instruction but cannot draw explicit
+  anatomy, so the route pairs the lane's own resolved profile with the registered
+  `qwen/qwen-image-edit-2511` row — resolved from the registry by base slug, so the row carrying
+  the probed `lora_weights`/`lora_scale` bindings is the one used — and the curated
+  `image_loras` row at its default scale. A chat whose stored pick resolves to such a model keeps
+  this pairing.
 
 The trigger mirrors the staged sentence's own gates (intimate staging, not a selfie,
 `allowIntimate`, reference route, an identity anchor), so the sanitize retry — which strips
-`staging` — renders LoRA-free without a second rule, and every other render is untouched.
+`staging` — renders off the route without a second rule, and every other render is untouched.
+The route decides only the model and the weights; it grants no intimate content the trigger did
+not.
 
-Four legs degrade to the stock render with `images.scene_render.lora_unavailable` naming which
-one (`model` · `model_eligibility` · `library_row` · `credential`); the taken route
-logs `images.scene_render.lora_route`. The stored locator is the LoRA's public URL and never a
-credential: `CIVITAI_API_TOKEN` is read by one app-side accessor and appended as a query
-parameter where the binding maps to provider input, so no token reaches the database, an image
-row, or a log line. The image row records the model slug and the resolved LoRA id in `meta`
-beside `{camera, staging}`.
+On the 2511 pairing, four legs degrade to the stock render with
+`images.scene_render.lora_unavailable` naming which one (`model` · `model_eligibility` ·
+`library_row` · `credential`); the taken LoRA route logs `images.scene_render.lora_route`. A
+listed model rendering without its LoRA logs `images.intimate_route.no_anatomy_lora` instead of
+either. The stored locator is the LoRA's public URL and never a credential: `CIVITAI_API_TOKEN`
+is read by one app-side accessor and appended as a query parameter where the binding maps to
+provider input, so no token reaches the database, an image row, or a log line. The image row
+records the model slug, and the resolved LoRA id in `meta` only when weights were sent, beside
+`{camera, staging}`.

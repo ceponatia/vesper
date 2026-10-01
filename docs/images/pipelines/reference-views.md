@@ -55,20 +55,27 @@ The portrait-variant lane's machinery pointed at a fixed camera
   camera id — not `buildStandaloneLaneCut`, whose intimate consent gate is welded shut for every
   standalone lane.
 - `clothed` loads the saved default outfit exactly as the variant lane does. `bare` passes **no
-  garments**, so the coverage readout reads fully bare and the adapter's exposure facts state it;
-  no prompt text asserts nudity.
-- A `bare` view runs on the **anatomy LoRA**, paired the way the `nsfw_test` variant kind pairs it,
-  because the scenes that consume these views run on those weights. A pairing that cannot be
-  assembled fails that view alone, with the missing leg's own words; the clothed views are
-  unaffected.
+  garments**, so the coverage readout reads fully bare and the adapter's exposure facts state it.
+  The lane writes no nudity sentence of its own: how those facts read is the resolved model's
+  dialect. On the anatomy LoRA the coverage alone carries it; on a model that renders the view
+  without one, the Qwen Image 2.1 dialect states the nudity explicitly.
+- A `bare` view takes the **intimate route**
+  ([../providers/loras.md](../providers/loras.md) §The intimate route), resolved the way the
+  `nsfw_test` variant kind resolves it, because the scenes that consume these views take the same
+  route. On a model the route's policy lists — Civitai Qwen Image 2.1 — the view renders on the
+  resolved `variant` profile itself, carrying that model's curated anatomy LoRA only when one
+  resolves. On every other model it runs on the anatomy LoRA paired with
+  `qwen/qwen-image-edit-2511`, and a pairing that cannot be assembled fails that view alone, with
+  the missing leg's own words; the clothed views are unaffected.
 - The instruction is the angle clause, the wardrobe clause and the backdrop clause, name-bound. The
   compiler supplies the identity lock (adapted to the angle's face visibility), the age anchor and
   the exposure facts; none of them is hand-written.
 
 References are the character's identity pack (`identityPackRenderReferences`), so an ineligible pack
 refuses the view rather than substituting another image. The output is a `reference_view` asset
-carrying the view, the generation version, the model, the LoRA, the identity provenance, the visual
-digest and the program's own meta.
+carrying the view, the generation version, the model, the LoRA when one was sent, a `bare` view's
+intimate-route record (`meta.intimateRoute`), the identity provenance, the visual digest and the
+program's own meta.
 
 ## The age gate
 
