@@ -6,7 +6,6 @@ import {
   IDENTITY_CROP_POLICY_V1,
   identityBlurScore,
   identityManualCropOutputSide,
-  type IdentityPackIntrinsicPolicy,
   type ImageIdentityPackFailureCode,
   type ImageIdentityPackV1,
   type ImageIdentityPackWarningCode,
@@ -44,8 +43,8 @@ import {
   errorMessage,
   identityPackLockKey,
   type IdentityPackRow,
-  intrinsicPolicy,
   isRetryableIdentityPackFailure,
+  manualIntrinsicPolicy,
   packRowToContract,
   type ResolvedSource,
 } from "./identity-pack-store";
@@ -61,7 +60,9 @@ import {
  * floor (`IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx`, 128 at v1) rather
  * than the automatic floor (256), and a crop between the two is enlarged to the
  * automatic floor on encode instead of refused. See `manualIntrinsicPolicy`
- * and `encodeManualCropEnlarged` below.
+ * (`identity-pack-store.ts` — shared with `projectIdentityPackPolicy`, which
+ * re-judges a stored revision the same way on every later read) and
+ * `encodeManualCropEnlarged` below.
  */
 
 /* ------------------------------------------------------------------------ *
@@ -416,40 +417,6 @@ async function encodeManualCropEnlarged(sourceBuffer: Buffer, crop: SourcePixelC
     .toBuffer();
   const { data, info } = await sharp(buffer, SHARP_DECODE_LIMITS).raw().toBuffer({ resolveWithObject: true });
   return { buffer, blurScore: identityBlurScore({ data, width: info.width, height: info.height, channels: info.channels }) };
-}
-
-/**
- * The intrinsic policy a MANUAL crop is judged against (#667).
- *
- * Blur, occlusion and padding thresholds are exactly what every method uses
- * (`intrinsicPolicy()`, respecting the test seam) — only the crop-SIZE floor
- * differs, because `resolveManualCrop` above already enforced the manual
- * floor before any crop reaches this evaluation. Without this override,
- * `evaluateIdentityPackIntrinsic`'s own `minimumCropWidthPx`/`minimumCropHeightPx`
- * (256 at v1 — the AUTOMATIC floor, a defense-in-depth mirror of
- * `IDENTITY_CROP_POLICY_V1.minimumOutputSidePx`) would hard-block every manual
- * crop below 256 that this feature exists to allow — and unlike the policy's
- * other blockers, `crop_too_small` is not overridable by an admin (geometry
- * is a hard check for everyone), so there would be no way to save one at all.
- *
- * Known limitation: the stored row's `policyVersion` column is stamped from
- * the global `IDENTITY_PACK_POLICY_VERSION` at reservation time
- * (`identity-pack-promotion.ts`), not from whichever policy object actually
- * judged the revision. If `INTRINSIC_POLICY_V1`'s crop-size floor is ever
- * tightened, a later re-judge of an already-accepted manual crop would apply
- * the TIGHTENED floor rather than the looser one it was actually accepted
- * under. Fixing that needs the reservation/promotion path to record which
- * floor applied, which is outside this module.
- */
-function manualIntrinsicPolicy(): IdentityPackIntrinsicPolicy {
-  const base = intrinsicPolicy();
-  const manualFloor = IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx;
-  const minimumCropWidthPx = Math.min(base.minimumCropWidthPx, manualFloor);
-  const minimumCropHeightPx = Math.min(base.minimumCropHeightPx, manualFloor);
-  if (minimumCropWidthPx === base.minimumCropWidthPx && minimumCropHeightPx === base.minimumCropHeightPx) {
-    return base;
-  }
-  return { ...base, version: `${base.version}+manual_floor`, minimumCropWidthPx, minimumCropHeightPx };
 }
 
 /** What an accepted override waived, for the audit record. */

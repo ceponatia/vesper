@@ -544,6 +544,7 @@ export {
   cropPreviewLayout,
   deriveDetectorCrop,
   displayScale,
+  ensureSelectionVisible,
   evaluateIdentityEffectiveSize,
   evaluateIdentityPackIntrinsic,
   evaluateIdentityProfilePolicy,

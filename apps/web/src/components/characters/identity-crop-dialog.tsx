@@ -6,6 +6,7 @@ import {
   clampSelection,
   clampZoom,
   cropPreviewLayout,
+  ensureSelectionVisible,
   fitDisplayBox,
   IDENTITY_CROP_MAX_ZOOM,
   IDENTITY_CROP_MIN_ZOOM,
@@ -64,6 +65,10 @@ const PENDING_REFRESH_MS = 3000;
 const NUDGE_PX = 8;
 /** One +/- button press or slider notch, in zoom multiples (#667). */
 const ZOOM_STEP = 0.25;
+/** Keyboard pan nudge on the zoomed viewport, in display pixels (shift = 4×;
+ * #667). Display, not source, pixels — unlike `NUDGE_PX` — because panning
+ * moves the VIEW, which has no source-pixel meaning of its own. */
+const PAN_STEP = 40;
 
 export interface IdentityCropDialogProps {
   open: boolean;
@@ -341,6 +346,17 @@ export function IdentityCropDialog({
     setPan(panCentredOn(centre, source, display, z));
   };
 
+  // Every selection change keeps the square in view (#667): a keyboard nudge
+  // or a drag moves the selection, never the pan, so while zoomed in either
+  // one can otherwise walk the square past the edge of whatever part of the
+  // portrait is currently panned into view, with no way back short of zooming
+  // back out. A minimal "scroll into view" shift, not a re-centre — see
+  // `ensureSelectionVisible`.
+  const applySelection = (next: IdentitySquareSelection) => {
+    setSelection(next);
+    if (source) setPan(ensureSelectionVisible(next, source, display, zoom, pan));
+  };
+
   const startDrag = (e: React.PointerEvent, mode: "move" | "resize", handle: IdentityCropHandle) => {
     const frame = frameRef.current;
     if (!frame || !selection || !source) return;
@@ -401,7 +417,7 @@ export function IdentityCropDialog({
       );
       return;
     }
-    setSelection(
+    applySelection(
       drag.mode === "move"
         ? moveSelection(drag.base, toSourceSpace({ x: e.clientX - drag.startX, y: e.clientY - drag.startY }, scale), source)
         : resizeSelection(
@@ -417,12 +433,42 @@ export function IdentityCropDialog({
     if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
   };
 
+  // Arrow keys pan the viewport while it (not the selection) has focus (#667)
+  // — the keyboard equivalent of dragging the background in `startPan`, so
+  // panning is not pointer-only. A no-op at zoom 1 (nothing to pan to), and
+  // the frame is out of the tab order there (see its `tabIndex` below).
+  const onViewportKeyDown = (e: React.KeyboardEvent) => {
+    if (!source || zoom <= IDENTITY_CROP_MIN_ZOOM) return;
+    const step = e.shiftKey ? PAN_STEP * 4 : PAN_STEP;
+    const nudge = (dx: number, dy: number) => {
+      e.preventDefault();
+      setPan(clampPan({ x: pan.x + dx, y: pan.y + dy }, source, display, zoom));
+    };
+    switch (e.key) {
+      case "ArrowLeft":
+        return nudge(step, 0);
+      case "ArrowRight":
+        return nudge(-step, 0);
+      case "ArrowUp":
+        return nudge(0, step);
+      case "ArrowDown":
+        return nudge(0, -step);
+      default:
+        return;
+    }
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!selection || !source) return;
     const step = e.shiftKey ? NUDGE_PX * 4 : NUDGE_PX;
+    // `stopPropagation` on every recognized key: this group sits inside the
+    // viewport frame, which has its OWN arrow-key handler (`onViewportKeyDown`,
+    // #667) for panning. Without this, nudging the selection while it has
+    // focus would also bubble up and pan the view on the same keypress.
     const move = (x: number, y: number) => {
       e.preventDefault();
-      setSelection(moveSelection(selection, { x, y }, source));
+      e.stopPropagation();
+      applySelection(moveSelection(selection, { x, y }, source));
     };
     switch (e.key) {
       case "ArrowLeft":
@@ -436,10 +482,12 @@ export function IdentityCropDialog({
       case "+":
       case "=":
         e.preventDefault();
-        return setSelection(clampSelection({ ...selection, side: selection.side + step }, source));
+        e.stopPropagation();
+        return applySelection(clampSelection({ ...selection, side: selection.side + step }, source));
       case "-":
         e.preventDefault();
-        return setSelection(clampSelection({ ...selection, side: selection.side - step }, source));
+        e.stopPropagation();
+        return applySelection(clampSelection({ ...selection, side: selection.side - step }, source));
       default:
         return;
     }
@@ -584,8 +632,14 @@ export function IdentityCropDialog({
                 onPointerMove={onPointerMove}
                 onPointerUp={endDrag}
                 onPointerCancel={endDrag}
+                onKeyDown={onViewportKeyDown}
+                // Only in the tab order while there is somewhere to pan to —
+                // a stop that does nothing at zoom 1 is worse than no stop.
+                tabIndex={zoom > IDENTITY_CROP_MIN_ZOOM ? 0 : -1}
+                aria-label="Zoomed portrait view — arrow keys pan"
                 className={cx(
                   "relative touch-none overflow-hidden rounded-card border border-ink-600 select-none",
+                  "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-400",
                   zoom > IDENTITY_CROP_MIN_ZOOM && "cursor-grab active:cursor-grabbing",
                 )}
                 style={{ width: display.width, height: display.height }}
@@ -674,7 +728,7 @@ export function IdentityCropDialog({
               </div>
               <p className="text-[11px] text-paper-600">
                 {zoom > IDENTITY_CROP_MIN_ZOOM
-                  ? "Drag the dimmed area to pan while zoomed in."
+                  ? "Drag the dimmed area to pan, or focus it and use the arrow keys."
                   : "Zoom in to frame a small face more precisely."}
               </p>
             </div>

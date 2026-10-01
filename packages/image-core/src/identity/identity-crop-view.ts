@@ -165,6 +165,44 @@ export function panCentredOn(point: ViewPoint, source: SourceDimensions, display
 }
 
 /**
+ * The minimal pan adjustment that brings the selection fully back into the
+ * viewport, or leaves `pan` untouched if it already is (#667).
+ *
+ * A keyboard nudge or a drag moves the SELECTION, never the pan — so while
+ * zoomed in, either can walk the square past the edge of whatever part of the
+ * portrait is currently panned into view, with no way back short of zooming
+ * back out. This is a "scroll into view" nudge, not a re-centre: it shifts
+ * pan by exactly the overflow on each axis that has one, so a square dragged
+ * to an edge stays there instead of jumping to the middle on every move.
+ *
+ * An axis whose selection is already larger than the viewport (an extreme
+ * zoom on a large square) is left alone on that axis rather than fought over:
+ * there is no pan that fits an oversized square fully in view, and forcing
+ * one would make the square's near edge drift unpredictably instead.
+ */
+export function ensureSelectionVisible(
+  selection: IdentitySquareSelection,
+  source: SourceDimensions,
+  display: DisplayBox,
+  zoom: number,
+  pan: ViewPoint,
+): ViewPoint {
+  const scale = zoomedDisplayScale(source, display, zoom);
+  const rect = toDisplayRect(selection, scale, pan);
+  let x = pan.x;
+  let y = pan.y;
+  if (rect.size <= display.width) {
+    if (rect.left < 0) x += -rect.left;
+    else if (rect.left + rect.size > display.width) x -= rect.left + rect.size - display.width;
+  }
+  if (rect.size <= display.height) {
+    if (rect.top < 0) y += -rect.top;
+    else if (rect.top + rect.size > display.height) y -= rect.top + rect.size - display.height;
+  }
+  return clampPan({ x, y }, source, display, zoom);
+}
+
+/**
  * The smallest side the editor allows, in source pixels.
  *
  * Normally the MANUAL policy minimum (128, #667) — lower than the automatic
