@@ -124,6 +124,19 @@ compatibility explanations sit beside ineligible entries. The dialog shows how m
 replaced image keeps its bytes, derived from the retention window
 ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md) §Lifecycle).
 
+Once a portrait is accepted the panel opens with **Body images**
+(`body-references-section.tsx`; [../images/pipelines/body-reference-images.md](../images/pipelines/body-reference-images.md)):
+two slot cards, each a thumbnail beside its controls on every width. An empty slot offers **Add body
+image**; a filled one offers a **Clothed / Unclothed** radio group that re-tags it in place and a
+**More** menu with **Replace image** and **Remove** (through `ConfirmDialog`). Unclothed is disabled,
+with its reason, for a character below the adult gate, and a stored undressed image the gate now
+withholds carries a *not used* chip and a line saying so. Add and Replace open the shared 3:4 crop
+dialog with an aside — beside the image on a wide screen, below it on a phone — holding the tag
+choice (slot 1 starts Clothed, slot 2 Unclothed), the character's written build attributes with a
+note to make the image agree with them, and the one-line real-person note. Every change is free,
+toasts that the views are now out of date, and rebuilds nothing; the panel's build action is the
+next step.
+
 Accepting a portrait changes the character's identity source without starting reference renders.
 The reference-view panel discloses the number of missing views and requires a separate **Build N
 reference views** action before it admits and charges the batch.

@@ -23,6 +23,9 @@
   lost reservation race fails loudly instead of leaving a slot with two views the studio must choose
   between. `character_reference_views(character_id, angle_id, wardrobe, created_at)` is the per-slot
   history read, and its leading column doubles as the per-character lookup.
+- `character_body_references(character_id, slot) WHERE current` — the same partial-unique device,
+  one current body image per slot; with the slot's `1`/`2` check it makes a third image
+  unrepresentable, and its leading column is the per-character lookup.
 - `image_identity_lora_bindings(identity_pack_id) WHERE state = 'active'` — the same
   partial-unique device, so promoting a second character LoRA for one pack fails loudly instead of
   leaving two rows that both claim to be the character's likeness. The composite

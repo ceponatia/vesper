@@ -11,8 +11,9 @@ owns the views.
 Owns the view vocabulary, the build lane, the review lifecycle, and the storage the set lives in.
 Does not own: the shared render shell and asset rules ([../asset-registry.md](../asset-registry.md)),
 the identity references every view render sends ([../identity-packs.md](../identity-packs.md)), the
-compiled prompt program ([../character-prompts.md](../character-prompts.md)), or portrait acceptance
-itself, which makes the explicit build action available.
+full-body images every view is built with ([body-reference-images.md](body-reference-images.md)),
+the compiled prompt program ([../character-prompts.md](../character-prompts.md)), or portrait
+acceptance itself, which makes the explicit build action available.
 
 ## What a view depicts
 
@@ -76,11 +77,14 @@ The portrait-variant lane's machinery pointed at a fixed camera
 
 References are the character's identity pack (`identityPackRenderReferences`), so an ineligible pack
 refuses the view rather than substituting another image, followed by the view's approved upstream
-view when it has one (§Build order). The output is a `reference_view` asset carrying the view, the
-generation version, the model, the LoRA when one was sent, a `bare` view's intimate-route record
-(`meta.intimateRoute`), the upstream view it was rendered from when one was sent
-(`meta.referenceView.upstream`), the identity provenance, the visual digest and the program's own
-meta.
+view when it has one (§Build order), then the character's body images the view's wardrobe takes, as
+optional `body` references ([body-reference-images.md](body-reference-images.md) §Routing). The
+renderer receives exactly the send list the prompt program was compiled against. The output is a
+`reference_view` asset carrying the view, the generation version, the model, the LoRA when one was
+sent, a `bare` view's intimate-route record (`meta.intimateRoute`), the upstream view it was
+rendered from when one was sent (`meta.referenceView.upstream`), the body images it sent
+(`meta.referenceView.bodyReferences`), the identity provenance, the visual digest and the program's
+own meta.
 
 ## Build order
 
@@ -190,8 +194,10 @@ approval and opening the bytes.
 
 - **Staleness is read-time comparison, never a background write.** A view is stale when it is not
   the slot's current row, when its source is not the portrait the character has accepted right now,
-  when its asset is missing or unreadable, when its generation version is behind, or when the
-  upstream attempt it was rendered from is no longer that slot's approved current attempt. Because
+  when its asset is missing or unreadable, when its generation version is behind, when the
+  upstream attempt it was rendered from is no longer that slot's approved current attempt, or —
+  for a rendered view — when the body-image set it was rendered against is no longer the
+  character's ([body-reference-images.md](body-reference-images.md) §Out of date). Because
   nothing is rewritten when the accepted portrait moves, re-accepting the earlier portrait revives
   exactly the views that were rendered from it.
 - **The sheet is projected in build order** (`projectReferenceViewSlots`), so staleness flows down
@@ -220,9 +226,10 @@ approval and opening the bytes.
   replace the displayed attempt; changed attempts offer Refresh before another verdict.
 - Approve and Reject require the displayed attempt id and integer review revision. The server
   serializes reference writes on the character row and checks the current attempt, revision,
-  accepted source bytes, generation version, upstream attempt and readable asset. A replaced image
-  or newer verdict returns a recoverable conflict, and a view whose upstream was replaced is
-  `incompatible`. Undo clears the last verdict and review stamp only at that same revision; it
+  accepted source bytes, generation version, upstream attempt, body-image set and readable asset. A
+  replaced image or newer verdict returns a recoverable conflict, and a view whose upstream was
+  replaced, or a rendered view whose body images changed, is `incompatible`. Undo clears the last
+  verdict and review stamp only at that same revision; it
   makes the current attempt unreviewed again.
 - Rejection optionally records Wrong outfit, Wrong angle, Identity mismatch, Image defect and a
   correction note of at most 1,000 characters. Feedback is stored on that attempt and shown in the
@@ -250,9 +257,10 @@ approval and opening the bytes.
 - History offers **Use this version** for a retained compatible attempt. Restoration checks
   ownership, slot, current attempt and revision, accepted portrait id and content hash, generation
   version, that the upstream attempt it was rendered from is still that slot's approved current
-  one, available bytes, retention expiry and that slot's pending/live generation state. It copies
-  the bytes into an independent asset and creates a new unreviewed current candidate recording the
-  same upstream. The original attempt
+  one, that a rendered attempt's body-image set is still the character's, available bytes,
+  retention expiry and that slot's pending/live generation state. It copies the bytes into an
+  independent asset and creates a new unreviewed current candidate recording the same upstream and
+  body-image set. The original attempt
   keeps its verdict and feedback; its cleanup cannot delete the restored candidate's file. A failed
   restoration compensates only its own unused copy. A build admitted after restoration can replace
   the candidate through the ordinary attempt lifecycle.
@@ -264,8 +272,9 @@ approval and opening the bytes.
   recoverable verdict and read as `unreviewed`.
 - **Consumable** is one function, `isConsumableReferenceView`, and nothing else recomputes it: the
   slot's current row, `ready` under the current generation version, rendered from the portrait
-  accepted right now and from its upstream's approved current attempt when it records one, with a
-  `ready` asset, reviewed, and still present in the character's current age-gated plan.
+  accepted right now and from its upstream's approved current attempt when it records one, rendered
+  (unless uploaded) against the character's current body-image set, with a `ready` asset, reviewed,
+  and still present in the character's current age-gated plan.
 
 ## Selection — which view a render sends
 
@@ -347,7 +356,9 @@ lightbox's admin-only panel renders it ([../../ui/conventions.md](../../ui/conve
 `reference_view` is a `HIDDEN_IMAGE_KINDS` member ([../asset-registry.md](../asset-registry.md)): it
 is absent from the portrait strip, the Gallery, entity cloning, the file route's public widening and
 the storage quota. Its owner reads the bytes through the ordinary owner file route, which is how the
-studio's grid displays them.
+studio's grid displays them. The body images the views are built with are the hidden
+`body_reference` kind, under the same rules, and never a scene's reference
+([body-reference-images.md](body-reference-images.md)).
 
 ## Routes
 
@@ -366,7 +377,8 @@ All routes are owner-only and rooted at the character. A slot the registry has n
 A plan-withheld regeneration is refused whole before anything is charged. A review, restoration, or
 upload that loses eligibility after its initial read returns a recoverable 409 `ineligible`.
 `dependents` is the queue outcome of what that write unlocked (§Cost and slot leases): nothing
-queued for a rejection or an undo.
+queued for a rejection or an undo. The set read also returns the character's body images, whose own
+routes are in [body-reference-images.md](body-reference-images.md) §Routes.
 
 ## Diagnostic codes
 
@@ -383,3 +395,6 @@ queued for a rejection or an undo.
 | `images.reference_views.view_unavailable`     | A wanted view could not be sent; the render goes on unchanged |
 | `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity  |
 | `images.reference_views.upstream_unapproved`  | A queued view's upstream is no longer approved; nothing ran   |
+
+The body-image codes, `images.reference_views.body_reference_dropped` among them, are in
+[body-reference-images.md](body-reference-images.md) §Diagnostic codes.

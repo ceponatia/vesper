@@ -501,19 +501,21 @@ paths:
       description: >-
         A pure read. Every angle × wardrobe slot is reported; a slot the age-gated plan withholds is
         ineligible. Each slot says whether it waits on its upstream view and what approving it, or
-        uploading into it, would build.
+        uploading into it, would build. The character's body images, the inputs every view is
+        built with, are read beside the sheet.
       x-vesper-source: apps/web/src/app/api/characters/[id]/reference-views/route.ts
       responses:
         '200':
-          description: The sheet and the planned count.
+          description: The sheet, the planned count and the body images.
           content:
             application/json:
               schema:
                 type: object
-                required: [set, planned]
+                required: [set, planned, bodyReferences]
                 properties:
                   set: { $ref: '#/components/schemas/ReferenceViewSet' }
                   planned: { type: integer, minimum: 0 }
+                  bodyReferences: { $ref: '#/components/schemas/BodyReferenceSet' }
         '404': { $ref: '#/components/responses/Error' }
         default: { $ref: '#/components/responses/Error' }
 
@@ -703,6 +705,106 @@ paths:
               schema: { $ref: '#/components/schemas/ApiError' }
         default: { $ref: '#/components/responses/Error' }
 
+  /api/characters/{id}/body-references/{slot}:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/BodyReferenceSlot'
+    patch:
+      tags: [Reference views]
+      summary: Re-tag one body image
+      description: >-
+        Names the image the owner saw. Marks the reference views out of date and builds nothing.
+        Tagging an image unclothed for a character below the adult gate is refused.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/body-references/[slot]/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag, expectedImageId]
+              properties:
+                tag: { type: string, enum: [clothed, unclothed] }
+                expectedImageId: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: The character's body images after the write.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyReferenceWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: ineligible or changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [Reference views]
+      summary: Remove one body image
+      description: >-
+        Retires exactly the image the owner saw; its bytes wait out the retention window. Marks the
+        reference views out of date and builds nothing.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/body-references/[slot]/route.ts
+      parameters:
+        - in: query
+          name: imageId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 128 }
+      responses:
+        '200':
+          description: The character's body images after the write.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyReferenceWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /api/characters/{id}/body-references/{slot}/upload:
+    parameters:
+      - $ref: '#/components/parameters/CharacterId'
+      - $ref: '#/components/parameters/BodyReferenceSlot'
+    post:
+      tags: [Reference views]
+      summary: Put an owner-supplied full-body image in one slot
+      description: >-
+        Fills an empty slot (expectedImageId null) or replaces the image the owner saw; the
+        replaced image is retired. Synchronous, model-free and uncharged; marks the reference views
+        out of date and builds nothing. There are two slots, so any other slot is a 404.
+      x-vesper-source: apps/web/src/app/api/characters/[id]/body-references/[slot]/upload/route.ts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dataUrl, tag, expectedImageId]
+              properties:
+                dataUrl: { type: string, minLength: 1, maxLength: 3000000 }
+                tag: { type: string, enum: [clothed, unclothed] }
+                expectedImageId: { type: [string, 'null'], maxLength: 128 }
+      responses:
+        '201':
+          description: The character's body images after the write.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyReferenceWriteResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: ineligible or changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+        default: { $ref: '#/components/responses/Error' }
+
 components:
   parameters:
     CharacterId:
@@ -725,6 +827,11 @@ components:
       name: wardrobe
       required: true
       schema: { type: string, enum: [clothed, bare] }
+    BodyReferenceSlot:
+      in: path
+      name: slot
+      required: true
+      schema: { type: string, enum: ['1', '2'] }
   responses:
     Error:
       description: Error response.
@@ -942,6 +1049,38 @@ components:
           type: array
           description: What installing an upload in this slot would build now.
           items: { $ref: '#/components/schemas/ReferenceViewSlot' }
+    BodyReferenceSet:
+      type: object
+      required: [images, unclothedAllowed, attributes]
+      properties:
+        images:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            required: [slot, imageId, tag, withheld, updatedAt]
+            properties:
+              slot: { type: integer, enum: [1, 2] }
+              imageId: { type: string }
+              tag: { type: string, enum: [clothed, unclothed] }
+              withheld: { type: boolean, description: An unclothed image the adult gate keeps from every render. }
+              updatedAt: { type: [string, 'null'] }
+        unclothedAllowed: { type: boolean }
+        attributes:
+          type: array
+          description: The character's build-aspect attributes in the registry's words.
+          items:
+            type: object
+            required: [id, label, value]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              value: { type: string }
+    BodyReferenceWriteResult:
+      type: object
+      required: [bodyReferences]
+      properties:
+        bodyReferences: { $ref: '#/components/schemas/BodyReferenceSet' }
     ReferenceViewSet:
       type: object
       required: [acceptedImageId, building, views]

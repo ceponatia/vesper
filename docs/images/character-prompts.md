@@ -407,6 +407,15 @@ order stops agreeing with its profile's policy, and fires before spend rather
 than after a plausible image of the wrong composition is saved. A dialect that
 names references by role, or names none, cannot misname a slot it never asserts.
 
+A **`body`** reference — a full-body image of a cast member, for the body alone — reaches only a
+dialect that declares it words the role (`bindsBodyReferences`); on any other the seam drops it
+before planning. The seam hands back every offered reference the send list leaves out with its
+reason (`droppedReferences`: the policy, a role cap, the model's capacity, or `dialect_unbound`),
+so a lane can say which of its optional images went missing. A body image is never an identity
+reference: it plays no part in the identity anchor, the naming policy or the reference-authority
+selection below, so it never withholds a text attribute
+([pipelines/body-reference-images.md](pipelines/body-reference-images.md) §The role binding).
+
 ## Identity on a reference-anchored render
 
 An edit lane's stable identity comes from the reference image. Inherent sheet
@@ -475,7 +484,10 @@ carry alike. It also declares no reference-authority aspects of its own in
 dialect's declared set — no 2.1 trial has evidenced that an optional
 appearance fact is redundant beside its reference yet, so its subjects'
 optional appearance detail compiles exactly as every other undeclared
-dialect's does.
+dialect's does. When the payload also carries `body` slots of the subject, the
+lock still counts identity slots alone and names the body images as the
+build's second source beside the text ("…build follows that description and
+Image 3"), never as a source of the face.
 
 **What a lock preserves is that dialect's own set.** The prose family's measured
 sentence names face, hair colour and style, skin tone, body proportions and
