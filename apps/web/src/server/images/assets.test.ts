@@ -11,11 +11,23 @@ vi.mock("../db", async (importOriginal) => {
   return { ...actual, db: vi.fn() };
 });
 
-import { db, type Db } from "../db";
+// The render-lease heartbeat, observed rather than replaced: every call still
+// reaches the real write (and through it the fake database below).
+vi.mock("./asset-storage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./asset-storage")>();
+  return { ...actual, refreshRenderLease: vi.fn(actual.refreshRenderLease) };
+});
+
+import { db, JOB_HEARTBEAT_INTERVAL_MS, type Db } from "../db";
 import { absoluteImagePath, dataRoot, imageRelativePath } from "./paths";
-import { imageMeta, writeWebpAtomic } from "./asset-storage";
+import { imageMeta, refreshRenderLease, writeWebpAtomic } from "./asset-storage";
 import { planFailedImageRetirement } from "./asset-maintenance";
-import { runImagePipeline, type ImagePipelineOutcome, type ImagePipelineThrown } from "./assets";
+import {
+  runImagePipeline,
+  type ImagePipelineOutcome,
+  type ImagePipelineThrown,
+  type ImageProduceResult,
+} from "./assets";
 import { monogramSvg } from "./monogram";
 
 const symlinksAvailable = canCreateSymlinks();
@@ -364,6 +376,92 @@ describe("runImagePipeline", () => {
     expect(order).toEqual([`reserved:${RESERVED.id}`, "produce"]);
     expect(sink.items[0]?.code).toBe("images.chat_look.failed");
     expect(sink.items[0]?.context).toBeUndefined();
+  });
+
+  /**
+   * The render lease (#674, docs/images/asset-registry.md §The sweep): the
+   * sweep fails a pending row only once its lease has gone quiet, so a lease
+   * that starts late, or stops while the provider is still working, is exactly
+   * how a live render's row gets failed under it.
+   */
+  it("leases its row before the render starts, beats while it runs, and stops once it settles", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { client } = fakePipelineDb();
+      vi.mocked(db).mockReturnValue(client);
+      const lease = vi.mocked(refreshRenderLease);
+      lease.mockClear();
+      const stamps = () => lease.mock.calls.map(([imageId, atMs]) => ({ imageId, atMs }));
+      const image = await testPngBuffer();
+      let entered: (() => void) | undefined;
+      const producing = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      let finish: ((result: ImageProduceResult) => void) | undefined;
+      const produced = new Promise<ImageProduceResult>((resolve) => {
+        finish = resolve;
+      });
+      const stampsWhenProduceStarted: number[] = [];
+
+      const run = runImagePipeline({
+        asset,
+        produce: () => {
+          stampsWhenProduceStarted.push(lease.mock.calls.length);
+          entered?.();
+          return produced;
+        },
+      });
+      await producing;
+      const t0 = Date.now();
+
+      // Stamped once on the reserved row before the provider was asked…
+      expect(stampsWhenProduceStarted).toEqual([1]);
+      expect(stamps()).toEqual([{ imageId: RESERVED.id, atMs: t0 }]);
+      // …then refreshed on the job heartbeat's cadence for as long as it runs.
+      // The first refresh never settles — a dead connection, an exhausted pool —
+      // and must not hold back the one after it: beats are independent.
+      lease.mockImplementationOnce(() => new Promise<boolean>(() => undefined));
+      await vi.advanceTimersByTimeAsync(JOB_HEARTBEAT_INTERVAL_MS);
+      await vi.advanceTimersByTimeAsync(JOB_HEARTBEAT_INTERVAL_MS);
+      expect(stamps()).toEqual([
+        { imageId: RESERVED.id, atMs: t0 },
+        { imageId: RESERVED.id, atMs: t0 + JOB_HEARTBEAT_INTERVAL_MS },
+        { imageId: RESERVED.id, atMs: t0 + 2 * JOB_HEARTBEAT_INTERVAL_MS },
+      ]);
+
+      finish?.({ ok: true, image });
+      expect((await run).status).toBe("ready");
+      const settled = lease.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10 * JOB_HEARTBEAT_INTERVAL_MS);
+      expect(lease.mock.calls.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a lease write that fails never fails the render, and a render that throws still releases its lease", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { client, updates } = fakePipelineDb();
+      vi.mocked(db).mockReturnValue(client);
+      const lease = vi.mocked(refreshRenderLease);
+      lease.mockClear();
+      lease.mockRejectedValueOnce(new Error("connection terminated unexpectedly"));
+
+      const result = await runImagePipeline({
+        asset,
+        produce: () => Promise.reject(new Error("provider exploded")),
+      });
+
+      // The row records the render's own failure; the heartbeat's is swallowed.
+      expect(result).toEqual({ imageId: RESERVED.id, status: "failed" });
+      expect(rowError(updates.at(-1))).toBe("provider exploded");
+      expect(lease).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(10 * JOB_HEARTBEAT_INTERVAL_MS);
+      expect(lease).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
