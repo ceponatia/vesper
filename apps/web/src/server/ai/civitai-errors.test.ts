@@ -4,14 +4,18 @@ import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiI
 
 describe("Civitai error contract", () => {
   it("classifies HTTP failures without provider response text", () => {
+    // `lora_metadata` here, not `workflow_status`: this table is pinning the
+    // STATUS-code mapping in general, and `workflow_status` is the one stage
+    // (#673) whose retryable statuses now override to `reconcile` instead of
+    // `automatic` — covered on its own below, not conflated with this table.
     const failures = [
       [400, "never"], [401, "never"], [402, "never"], [403, "never"], [404, "never"],
       [409, "reconcile"], [429, "automatic"], [503, "automatic"],
     ] as const;
 
     for (const [status, retry] of failures) {
-      expect(civitaiHttpFailure(status, "workflow_status")).toMatchObject({
-        code: `civitai_http_${String(status)}`, retry, stage: "workflow_status", httpStatus: status,
+      expect(civitaiHttpFailure(status, "lora_metadata")).toMatchObject({
+        code: `civitai_http_${String(status)}`, retry, stage: "lora_metadata", httpStatus: status,
       });
     }
     expect(civitaiHttpFailure(503, "submit", false)).toMatchObject({
@@ -130,7 +134,10 @@ describe("Civitai error contract", () => {
   });
 
   it("retains only safe RFC7807 validation paths and uses bounded jitter", () => {
-    const failure = civitaiHttpFailure(429, "workflow_status", true, civitaiValidationPaths({
+    // lora_metadata, not workflow_status: this is a pre-submit GET, so the
+    // ordinary `automatic` wording applies — see the dedicated
+    // workflow_status/reconcile tests above and below for #673's override.
+    const failure = civitaiHttpFailure(429, "lora_metadata", true, civitaiValidationPaths({
       title: "secret title", detail: "prompt=private", errors: {
         "steps[0].input.resolution": ["token=secret"], "not a path": ["private"],
       },
