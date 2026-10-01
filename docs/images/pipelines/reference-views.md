@@ -83,7 +83,9 @@ program's own meta.
 ## The age gate
 
 `plannedReferenceViews` drops every intimate view unless the character's `identity.apparent_age`
-resolves to a value the image age vocabulary carries — the adult floor, with no exception. It is a
+resolves to a value the image age vocabulary carries — the adult floor, with no exception. A
+profile carrying that attribute more than once passes only when every entry is an adult value,
+so no source precedence can resolve a minor band behind an adult one. It is a
 **gate in the plan**, never a prompt instruction: the view is simply not built, and nothing about
 the character's age reaches a model. The rule is `imageAgeAllowsIntimate`
 (`contracts/images/reference-views.ts`), and it is the one age gate every intimate image lane

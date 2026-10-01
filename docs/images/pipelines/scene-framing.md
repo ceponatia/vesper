@@ -314,8 +314,9 @@ route: every attempt runs with `allowIntimate` cleared, so no anatomy LoRA, no i
 no staged act's sentence and no `bare` reference view, and an intimate staging is removed from
 the plan while its camera stays. The render goes on as an ordinary scene and logs
 `images.scene_render.intimate_age_gated` (warn) when it had something intimate to withhold — an
-intimate staging, or an intimate region bared on a subject or the viewer. The chat engine's own
-minor fence upstream is separate and unchanged.
+intimate staging, or an intimate region bared on a subject or the viewer. The gate reads the
+cast's characters only: the player's persona, the viewer, is not age-checked (owner ruling
+2026-10-01). The chat engine's own minor fence upstream is separate and unchanged.
 
 On the 2511 pairing, four legs degrade to the stock render with
 `images.scene_render.lora_unavailable` naming which one (`model` · `model_eligibility` ·
