@@ -303,6 +303,10 @@ export async function queueReviewDependents(input: {
  * built from ANOTHER slot this same request names (`referenceViewsWaitingInBatch`):
  * the request is about to replace its upstream, so its render could only land
  * on nothing or on the attempt being superseded — a charge with no usable view.
+ *
+ * And a slot whose dependents are still rendering (`downstreamBuilding`)
+ * refuses it as a 409 `busy`: replacing that view now would let those renders
+ * land stale, paid for and offered by Build again.
  */
 export async function regenerateReferenceViews(input: {
   characterId: string;
@@ -335,6 +339,10 @@ export async function regenerateReferenceViews(input: {
       409,
     );
   }
+  const replacing = targets.filter(
+    (view) => set.views.find((entry) => sameReferenceView(entry, view))?.downstreamBuilding === true,
+  );
+  if (replacing.length > 0) return jsonError("busy", referenceViewWriteMessages.busy, 409);
   const waitingInBatch = referenceViewsWaitingInBatch(targets);
   if (waitingInBatch.length > 0) {
     const named = waitingInBatch.map(slotLabel).join("; ");

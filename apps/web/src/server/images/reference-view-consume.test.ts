@@ -68,6 +68,7 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         approvalBuilds: [],
         uploadBuilds: [],
         lineageId: target ? VIEW_LINEAGE : null,
+        downstreamBuilding: false,
       };
     }),
   };

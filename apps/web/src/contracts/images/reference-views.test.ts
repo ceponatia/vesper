@@ -20,6 +20,7 @@ import {
   referenceViewBuildsOnApproval,
   referenceViewDependents,
   referenceViewDependentsToBuild,
+  referenceViewDescendantBusy,
   referenceViewDescendants,
   referenceViewFaceVisibility,
   referenceViewFeedbackReasons,
@@ -438,6 +439,15 @@ describe("a batch that names a view and a view built from it", () => {
     expect(referenceViewsWaitingInBatch([LEFT, RIGHT])).toEqual([]);
     expect(referenceViewsWaitingInBatch([LEFT_BARE, RIGHT])).toEqual([]);
     expect(referenceViewsWaitingInBatch(allReferenceViews().filter((view) => referenceViewUpstream(view) === null))).toEqual([]);
+  });
+
+  // Replacing a view while a view built from it renders strands that render;
+  // the rule looks through every level, and never at the slot's own lease.
+  it("calls a view busy for replacement when any view built from it is building", () => {
+    expect(referenceViewDescendantBusy(ROOT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewDescendantBusy(LEFT, [LEFT_BARE])).toBe(true);
+    expect(referenceViewDescendantBusy(LEFT, [RIGHT, ROOT])).toBe(false);
+    expect(referenceViewDescendantBusy(LEFT, [LEFT])).toBe(false);
   });
 
   it("reads ancestors and descendants off the one build order", () => {

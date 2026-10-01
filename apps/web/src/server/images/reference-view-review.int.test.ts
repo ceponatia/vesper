@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import {
@@ -9,7 +10,8 @@ import {
   type ReferenceView,
 } from "@/contracts";
 import { characterReferenceViews, characters, db, images, jobs } from "@/server/db";
-import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
+import { endTestPool, expectApiError, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
+import { regenerateReferenceViews } from "../../app/api/characters/[id]/reference-views/shared";
 import { createImageAsset, readImageBytes, saveImageBuffer } from "./asset-storage";
 import { absoluteImagePath } from "./paths";
 import { referenceViewSweepPass } from "./reference-view-maintenance";
@@ -394,6 +396,49 @@ describe.skipIf(!ready)("reference review and recovery", () => {
       ...state.input, view, attemptId: restored.view.attemptId ?? "", expectedRevision: 0, verdict: "approve",
     })).status).toBe("reviewed");
     expect(await getReferenceViewSummary(state.input.characterId, ownerId, back)).toMatchObject({ state: "unreviewed", waitingOn: null });
+  });
+
+  // Replacing a view while a view built from it is rendering strands that
+  // render: it lands stale, already charged, and Build offers it again. So an
+  // upload, a restoration and a regeneration of the upstream all wait — the
+  // slot's own lease is idle here; only its dependent is building.
+  it("refuses to replace a view while a view built from it is rendering", async () => {
+    const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+    const state = await fixture(back);
+    const original = state.upstreamViewId;
+    if (original === null) throw new Error("fixture front attempt missing");
+
+    // A second, approved front attempt — leaving the original retained for restoration.
+    const frontJob = await state.claimSlot(view);
+    const second = await reserveReferenceView({ ...state.reserve, view, upstreamViewId: null, jobId: frontJob });
+    if (second === null) throw new Error("second front attempt was not reserved");
+    const image = await asset(state.input.characterId, "reference_view");
+    await finalizeReferenceView({ jobId: frontJob, viewId: second, characterId: state.input.characterId, ownerId, imageId: image.id, method: "rendered" });
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, frontJob));
+    expect((await reviewReferenceView({ ...state.input, view, attemptId: second, expectedRevision: 0, verdict: "approve" })).status).toBe("reviewed");
+
+    // `back` starts rebuilding from it: a live lease and a pending attempt.
+    const backJob = await state.claimSlot();
+    expect(await reserveReferenceView({ ...state.reserve, upstreamViewId: second, jobId: backJob })).not.toBeNull();
+    expect(await getReferenceViewSummary(state.input.characterId, ownerId, view)).toMatchObject({ downstreamBuilding: true });
+
+    const dataUrl = `data:image/png;base64,${(await testPngBuffer()).toString("base64")}`;
+    expect((await uploadReferenceView({ ...state.input, view, dataUrl })).status).toBe("busy");
+    expect((await restoreReferenceView({
+      characterId: state.input.characterId, ownerId, view, attemptId: original,
+      expectedCurrentAttemptId: second, expectedCurrentRevision: 1,
+    })).status).toBe("busy");
+    expect((await referenceViewHistoryEntries(state.input.characterId, ownerId, view))
+      .find((entry) => entry.id === original)?.restoreUnavailable).toBe("busy");
+    const response = await regenerateReferenceViews({
+      characterId: state.input.characterId,
+      ownerId,
+      req: new NextRequest(`https://vesper.test/api/characters/${state.input.characterId}/reference-views/regenerate`, { method: "POST" }),
+      user: { id: ownerId },
+      requested: [view],
+    });
+    await expectApiError(response, 409, "busy");
+    expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(second);
   });
 
   it("refuses foreign, wrong-slot, expired, unreadable, incompatible and busy attempts", async () => {

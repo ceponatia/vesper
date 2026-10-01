@@ -586,8 +586,9 @@ paths:
         '404': { $ref: '#/components/responses/Error' }
         '409':
           description: >-
-            not_accepted, or waiting — a named slot's upstream view is not approved, or a named slot
-            is built from another named slot.
+            not_accepted; waiting — a named slot's upstream view is not approved, or a named slot is
+            built from another named slot; or busy — a view built from a named slot is still
+            rendering.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -614,7 +615,9 @@ paths:
                   views: { $ref: '#/components/schemas/ReferenceViewQueueOutcome' }
         '404': { $ref: '#/components/responses/Error' }
         '409':
-          description: not_accepted, or waiting — the slot's upstream view is not approved.
+          description: >-
+            not_accepted; waiting — the slot's upstream view is not approved; or busy — a view built
+            from this slot is still rendering.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -702,7 +705,9 @@ paths:
         '400': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
         '409':
-          description: not_accepted, busy, ineligible or changed.
+          description: >-
+            not_accepted, busy (this slot, or a view built from it, is building), ineligible or
+            changed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }
@@ -1052,6 +1057,11 @@ components:
           type: array
           description: What installing an upload in this slot would build now.
           items: { $ref: '#/components/schemas/ReferenceViewSlot' }
+        downstreamBuilding:
+          type: boolean
+          description: >-
+            A view built from this one is building; regenerating, uploading or restoring this slot
+            is refused as busy until it settles.
         lineageId:
           type: [string, 'null']
           description: >-

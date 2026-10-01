@@ -106,7 +106,9 @@ carries a checkbox; ticking any of them raises **Regenerate N selected views** a
 selection** above the grid, and that action submits the whole selection as one request. The per-card
 **Regenerate** is the same request with one target, so both paths are admitted, charged and run
 identically. The submit action is disabled while a build is live for the character, hinted with the
-busy-refusal line from the same copy map the tiles read, but the selection can still be assembled
+busy-refusal line from the same copy map the tiles read; a tile whose dependent views are still
+rendering disables its Regenerate, its checkbox and its **Upload image** with that same line, since
+replacing it would strand those renders. The selection can still be assembled
 meanwhile, and only the slots a batch actually claimed read busy. A queued batch clears the
 selection for queued slots and slots the server reports as already busy. Budget and storage
 refusals keep their selections, so the owner never has to tick the same slots twice. A tile built

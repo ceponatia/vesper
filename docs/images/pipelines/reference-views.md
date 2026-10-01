@@ -176,6 +176,11 @@ approval and opening the bytes.
 - **Each slot has one heartbeat-backed lease.** A request may claim every requested slot that has no
   live lease while another job continues on disjoint slots. An overlapping slot converges on the
   current attempt and reports `busy`; partial admission reports one result per requested target.
+- **A view is not replaced while views built from it are rendering.** Regenerating, uploading or
+  restoring a slot is refused as `busy` while any slot built from it — directly or through another
+  — holds a live lease or a pending attempt (`referenceViewDescendantBusy`; each slot's
+  `downstreamBuilding`): replacing the upstream mid-render would let those renders land stale,
+  already charged and offered by the build action again.
 - **A batch is one job, one admission and one charge over its newly claimed targets.** The character,
   the accepted portrait's bytes and the wardrobe are read once; from there every admitted target's
   provider request begins without waiting for another target in the same batch to settle. There is
@@ -253,7 +258,8 @@ approval and opening the bytes.
   dialog previews the exact 3:4 output, including pan, zoom and fitted backdrop; confirmation sends
   the normalized 768×1024 JPEG. The server re-fits it under the avatar upload's decode guards as
   defense in depth. An upload is unavailable while that slot has
-  a live lease or pending attempt; work on another slot does not block it. After processing the bytes,
+  a live lease or pending attempt, or while a view built from it does; work on any other slot does
+  not block it. After processing the bytes,
   installation rechecks generation activity, the
   accepted source and the current attempt/revision under the character lock before replacing the
   slot. A busy or changed result preserves the existing attempt and asks the owner to retry; only
@@ -266,7 +272,8 @@ approval and opening the bytes.
   ownership, slot, current attempt and revision, accepted portrait id and content hash, generation
   version, that the upstream attempt it was rendered from is still that slot's approved current
   one, that a rendered attempt's body-image set is still the character's, available bytes,
-  retention expiry and that slot's pending/live generation state. It copies the bytes into an
+  retention expiry and the pending/live generation state of that slot and of every slot built from
+  it. It copies the bytes into an
   independent asset and creates a new unreviewed current candidate recording the same upstream and
   body-image set, and the original's lineage (`origin_attempt_id`, the original's own origin when
   it was itself restored). The original attempt

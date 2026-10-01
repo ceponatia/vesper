@@ -11,7 +11,7 @@ import {
   installUploadedReferenceView,
   plannedReferenceViewsForCharacter,
   readAcceptedPortraitSource,
-  referenceViewSlotBusy,
+  referenceViewReplacementBusy,
   type InstallUploadedReferenceViewResult,
 } from "./reference-view-store";
 
@@ -83,7 +83,9 @@ export async function uploadReferenceView(input: UploadReferenceViewInput): Prom
   if (!plan.some((view) => view.angle === input.view.angle && view.wardrobe === input.view.wardrobe)) {
     return { status: "ineligible" };
   }
-  if (await referenceViewSlotBusy(input.characterId, input.ownerId, input.view)) return { status: "busy" };
+  // Busy while the slot builds, and while any view built from it does: an
+  // upload replaces the upstream those renders were started from.
+  if (await referenceViewReplacementBusy(input.characterId, input.ownerId, input.view)) return { status: "busy" };
   const current = await currentReferenceViewRow(input.characterId, input.view);
 
   const asset = await createImageAsset({

@@ -14,6 +14,7 @@ import {
   referenceViewAngleIdSchema,
   referenceViewBodySetMoved,
   referenceViewBuildsOnApproval,
+  referenceViewDescendantBusy,
   referenceViewHistoryVerdict,
   referenceViewFeedbackSchema,
   referenceViewLineageId,
@@ -314,9 +315,57 @@ export async function referenceViewSlotBusy(
   return live.some((job) => payloadLeases(job.payload).some((lease) => slotKey(lease) === slotKey(view)));
 }
 
-/** Any leased slot keeps the set's background-status and polling surfaces active. */
-async function hasLiveReferenceViewJob(executor: ReferenceViewExecutor, characterId: string): Promise<boolean> {
-  return (await liveReferenceViewLeaseJobs(executor, characterId, new Date())).length > 0;
+/** Every slot a heartbeat-live build holds a lease on, from jobs already read. */
+function leasedSlots(live: readonly ReferenceViewLeaseJob[]): ReferenceView[] {
+  return live.flatMap((job) => payloadLeases(job.payload).map((lease) => ({ angle: lease.angle, wardrobe: lease.wardrobe })));
+}
+
+/**
+ * Every slot that is building right now: leased by a heartbeat-live job, or
+ * holding a pending current attempt. Read on the caller's connection, so a
+ * write under the character lock sees what the lock serializes.
+ */
+async function buildingReferenceViewSlots(
+  executor: ReferenceViewExecutor,
+  characterId: string,
+  ownerId: string,
+  now: Date = new Date(),
+): Promise<ReferenceView[]> {
+  const leased = leasedSlots(await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId));
+  const pending = await executor
+    .select({ angleId: characterReferenceViews.angleId, wardrobe: characterReferenceViews.wardrobe })
+    .from(characterReferenceViews)
+    .where(and(
+      eq(characterReferenceViews.characterId, characterId),
+      eq(characterReferenceViews.current, true),
+      eq(characterReferenceViews.status, "pending"),
+    ));
+  return [
+    ...leased,
+    ...pending.flatMap((row) => {
+      const angle = parseOrNull(referenceViewAngleIdSchema, row.angleId);
+      const wardrobe = parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
+      return angle === null || wardrobe === null ? [] : [{ angle, wardrobe }];
+    }),
+  ];
+}
+
+/**
+ * Whether replacing this slot's view must wait: the slot itself belongs to a
+ * live build, or a view built from it — directly or through another — is
+ * building (`referenceViewDescendantBusy`). Replacing the upstream mid-render
+ * would let those renders land stale, paid for and offered by Build again, so
+ * an upload, a restoration and a regeneration of the slot all answer `busy`.
+ */
+export async function referenceViewReplacementBusy(
+  characterId: string,
+  ownerId: string,
+  view: ReferenceView,
+  executor: ReferenceViewExecutor = db(),
+  now: Date = new Date(),
+): Promise<boolean> {
+  if (await referenceViewSlotBusy(characterId, ownerId, view, executor, now)) return true;
+  return referenceViewDescendantBusy(view, await buildingReferenceViewSlots(executor, characterId, ownerId, now));
 }
 
 /** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
@@ -602,7 +651,7 @@ export async function referenceViewHistoryEntries(
     .orderBy(desc(characterReferenceViews.createdAt));
   const statuses = await readViewImageStatuses(rows);
   const source = await readAcceptedPortraitSource(characterId, ownerId);
-  const busy = await referenceViewSlotBusy(characterId, ownerId, view);
+  const busy = await referenceViewReplacementBusy(characterId, ownerId, view);
   const character = await readReferenceViewCharacter(characterId, ownerId, db());
   if (character === undefined) return [];
   const eligible = planIncludes(character.plan, view);
@@ -674,6 +723,7 @@ function unbuiltSummary(view: ReferenceView, eligible: boolean): ReferenceViewSu
     approvalBuilds: [],
     uploadBuilds: [],
     lineageId: null,
+    downstreamBuilding: false,
   };
 }
 
@@ -693,6 +743,8 @@ function projectSheet(input: {
   eligible: ReadonlySet<string>;
   /** The character's body-image set now — what every rendered row is compared against. */
   bodyReferenceSet: string | null;
+  /** The slots building right now — leased by a live job, or holding a pending attempt. */
+  building: readonly ReferenceView[];
 }): ReferenceViewSummary[] {
   const facts: ReferenceViewSlotFacts[] = allReferenceViews().map((view) => {
     const row = input.bySlot.get(slotKey(view));
@@ -737,6 +789,7 @@ function projectSheet(input: {
       // rendered from.
       uploadBuilds: slot.eligible ? referenceViewBuildsOnApproval(facts, { view: slot.view, attemptId: null }) : [],
       lineageId: slot.row === null ? null : referenceViewLineageId(slot.row),
+      downstreamBuilding: referenceViewDescendantBusy(slot.view, input.building),
     };
   });
 }
@@ -786,15 +839,25 @@ export async function getReferenceViewSet(
     bySlot.set(slotKey({ angle, wardrobe }), row);
   }
 
+  // Any leased slot keeps the set's background-status and polling surfaces
+  // active; leased and pending slots together are what a replacement waits on.
+  const live = await liveReferenceViewLeaseJobs(reader, characterId, new Date());
+  const pendingSlots = [...bySlot.values()].flatMap((row): ReferenceView[] => {
+    if (row.status !== "pending") return [];
+    const angle = parseOrNull(referenceViewAngleIdSchema, row.angleId);
+    const wardrobe = parseOrNull(referenceViewWardrobeSchema, row.wardrobe);
+    return angle === null || wardrobe === null ? [] : [{ angle, wardrobe }];
+  });
   return {
     acceptedImageId: accepted,
-    building: await hasLiveReferenceViewJob(reader, characterId),
+    building: live.length > 0,
     views: projectSheet({
       bySlot,
       statuses,
       acceptedImageId: accepted,
       eligible: eligibleSlots,
       bodyReferenceSet: character.bodyReferenceSet,
+      building: [...leasedSlots(live), ...pendingSlots],
     }),
   };
 }
@@ -1038,7 +1101,7 @@ export async function installUploadedReferenceView(input: InstallUploadedReferen
     if (!planIncludes(plan, input.view)) return { status: "ineligible" };
     const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
     if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "not_accepted" };
-    if (await referenceViewSlotBusy(input.characterId, input.ownerId, input.view, tx)) return { status: "busy" };
+    if (await referenceViewReplacementBusy(input.characterId, input.ownerId, input.view, tx)) return { status: "busy" };
     const current = await currentReferenceViewRow(input.characterId, input.view, tx);
     if (source.imageId !== input.sourceImageId || source.contentHash !== input.sourceContentHash ||
         (current?.id ?? null) !== input.expectedCurrentAttemptId || (current?.reviewRevision ?? 0) !== input.expectedCurrentRevision) {
@@ -1289,7 +1352,7 @@ export async function restoreReferenceView(input: {
   const unavailable = restoreUnavailable(
     attempt,
     source,
-    await referenceViewSlotBusy(input.characterId, input.ownerId, input.view),
+    await referenceViewReplacementBusy(input.characterId, input.ownerId, input.view),
     true,
     approvedUpstreamLineageId(await getReferenceViewSet(input.characterId, input.ownerId), input.view),
     initial.bodyReferenceSet,
@@ -1322,7 +1385,7 @@ export async function restoreReferenceView(input: {
       const [latest] = await tx.select().from(characterReferenceViews).where(eq(characterReferenceViews.id, attempt.id)).limit(1);
       if (!latest) return { status: "unavailable" };
       const busy = current?.status === "pending" ||
-        await referenceViewSlotBusy(input.characterId, input.ownerId, input.view, tx);
+        await referenceViewReplacementBusy(input.characterId, input.ownerId, input.view, tx);
       const approvedUpstream = approvedUpstreamLineageId(
         await getReferenceViewSet(input.characterId, input.ownerId, undefined, tx),
         input.view,

@@ -214,6 +214,9 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
       // A slot that started waiting after it was ticked has nothing approved to
       // be rebuilt from; the server would refuse the whole selection for it.
       view.waitingOn === null &&
+      // A view whose dependents are still rendering may not be replaced yet;
+      // the server would refuse the whole selection as busy.
+      !view.downstreamBuilding &&
       view.attemptId !== null &&
       !submitted.has(slotKey(view)) &&
       selected.has(slotKey(view)),
@@ -335,7 +338,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
 
   const pickUpload = (view: ReferenceViewSummary) => {
     const slot = slotKey(view);
-    if (view.state === "pending" || submitted.has(slot) || submitting || busySlot !== null) return;
+    if (view.state === "pending" || view.downstreamBuilding || submitted.has(slot) || submitting || busySlot !== null) return;
     const angle = referenceViewAngles.find((entry) => entry.id === view.angle)?.label ?? view.angle;
     const wardrobe = referenceViewWardrobeEntries.find((entry) => entry.id === view.wardrobe)?.label ?? view.wardrobe;
     setUploadTarget({ angle: view.angle, wardrobe: view.wardrobe, label: `${angle}, ${wardrobe}` });
@@ -345,9 +348,9 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
     const target = uploadTarget;
     if (!target) return { ok: false, message: "Choose a reference-view slot again." };
     const current = set?.views.find((view) => slotKey(view) === slotKey(target));
-    if (current?.state === "pending" || submitted.has(slotKey(target)) || submitting) {
+    if (current?.state === "pending" || current?.downstreamBuilding === true || submitted.has(slotKey(target)) || submitting) {
       refetch();
-      return { ok: false, message: "That slot is building. Wait for it to finish, then confirm this image again." };
+      return { ok: false, message: "That slot, or a view built from it, is building. Wait for it to finish, then confirm this image again." };
     }
     const slot = slotKey(target);
     setBusySlot(slot);
@@ -447,13 +450,17 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                   ? { label: referenceViewWaitingCopy.label, tone: referenceViewWaitingCopy.tone, hint: referenceViewWaitingCopy.hint(waitingFor) }
                   : referenceViewStateCopy[view.state];
               const rebuildable = attempted && eligible && view.waitingOn === null;
+              // Views built from this one are still rendering: replacing it now
+              // (regenerate or upload) would strand them, so it waits like a
+              // building slot does, with the same hint.
+              const replacementBlocked = slotBuilding || view.downstreamBuilding;
               return (
                 <div
                   key={angle.id}
                   className="flex min-w-0 flex-col gap-3 rounded-card border border-ink-600 bg-ink-800 p-3"
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    {rebuildable && !slotBuilding ? (
+                    {rebuildable && !replacementBlocked ? (
                       <label
                         className="touch-target flex cursor-pointer items-center gap-2 text-sm font-medium text-paper-100"
                         title={ancestorSelected(view) ? referenceViewSelectionBlockedHint : undefined}
@@ -518,8 +525,8 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                         size="sm"
                         variant="ghost"
                         busy={slotBuilding}
-                        disabled={slotBuilding}
-                        title={slotBuilding ? referenceViewRefusalCopy.busy : undefined}
+                        disabled={replacementBlocked}
+                        title={replacementBlocked ? referenceViewRefusalCopy.busy : undefined}
                         onClick={() => void regenerate([view])}
                       >
                         Regenerate
@@ -529,7 +536,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || slotBuilding || submitting || busySlot !== null },
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || replacementBlocked || submitting || busySlot !== null },
                         ...(attempted ? [{
                           label: "History",
                           // Read-only: a busy upload or review must not disable history.

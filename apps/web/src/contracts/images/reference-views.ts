@@ -373,6 +373,20 @@ export function referenceViewDescendants(view: ReferenceView): ReferenceView[] {
   );
 }
 
+/**
+ * Whether any view built from this one — directly or through another — is in
+ * `busy`: the slots with a heartbeat-live lease or a pending attempt.
+ *
+ * Replacing a view (regenerate, upload, restore) while views built from it are
+ * rendering lets those renders land stale: paid for, unusable, and offered by
+ * Build again. So every write that replaces a view waits while this is true,
+ * and the studio disables those controls. The view's OWN lease is not this
+ * question — that is the ordinary per-slot `busy`. PURE.
+ */
+export function referenceViewDescendantBusy(view: ReferenceView, busy: readonly ReferenceView[]): boolean {
+  return referenceViewDescendants(view).some((descendant) => busy.some((slot) => sameReferenceView(slot, descendant)));
+}
+
 /** Every view, each one after the view it is built from; registry order within a level. */
 export function referenceViewBuildOrder(): readonly ReferenceView[] {
   return [...allReferenceViews()].sort(
@@ -631,6 +645,12 @@ export const referenceViewSummarySchema = z.object({
    * records it, so restoring an attempt revives what was built from it.
    */
   lineageId: z.string().nullable().default(null),
+  /**
+   * A view built from this one is building ({@link referenceViewDescendantBusy}).
+   * Regenerating, uploading or restoring this slot is refused as `busy` until it
+   * settles, because replacing the upstream mid-render strands those renders.
+   */
+  downstreamBuilding: z.boolean().default(false),
 });
 export type ReferenceViewSummary = z.infer<typeof referenceViewSummarySchema>;
 
@@ -667,6 +687,7 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
       approvalBuilds: [],
       uploadBuilds: [],
       lineageId: null,
+      downstreamBuilding: false,
     })),
   };
 }
