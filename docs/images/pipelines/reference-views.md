@@ -88,8 +88,9 @@ resolves to a value the image age vocabulary carries — the adult floor, with n
 the character's age reaches a model. The rule is `imageAgeAllowsIntimate`
 (`contracts/images/reference-views.ts`), and it is the one age gate every intimate image lane
 applies: the `nsfw test` bench ([portrait-variants.md](portrait-variants.md) §The `nsfw test`
-anatomy bench) and an intimate chat scene ([scene-framing.md](scene-framing.md) §Staging takes the
-intimate route) ask it too, on every model. The explicit build route charges the budget from the same
+anatomy bench), an intimate chat scene ([scene-framing.md](scene-framing.md) §Staging takes the
+intimate route) and the Image Lab's staged scene ([../../image-lab/staged-scene.md](../../image-lab/staged-scene.md)
+§The age gate) ask it too, on every model. The explicit build route charges the budget from the same
 helper the job plans from, so the charge and the work can never be two numbers.
 
 Eligibility is live character truth rather than a creation-time decision. If apparent age later
