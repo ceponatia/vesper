@@ -489,6 +489,16 @@ lock still counts identity slots alone and names the body images as the
 build's second source beside the text ("…build follows that description and
 Image 3"), never as a source of the face.
 
+**A `hidden` face visibility drops "face" from this dialect's lock** (#669):
+where a back reference view's identity images, or any `away`-oriented scene
+shot on this model, cannot show the face at all, the lock asks the identity
+images for skin tone and apparent age only and states positively that the
+face stays hidden for this shot, rather than asking the model to preserve a
+face the shot cannot show — the same contradiction that, left uncorrected,
+resolves by rotating the subject back toward the camera (see below, "A face
+the shot cannot show adapts the lock"). `partial` visibility is unaffected
+and keeps the full lock.
+
 **What a lock preserves is that dialect's own set.** The prose family's measured
 sentence names face, hair colour and style, skin tone, body proportions and
 apparent age. The Qwen edit dialect's names face, skin tone and apparent age
@@ -671,6 +681,23 @@ the lock survived would leave exactly the failure it exists to end. Whether the
 two end up adjacent is the dialect's: one that emits a sentence per claim may
 let another subject's identity claim fall between them, while one that groups its
 binding band writes the adaptation immediately after the sentence it corrects.
+
+**`civitai/qwen-image-2.1` speaks its own sentence for `hidden`, never the
+shared family's "do not rotate" wording** (#669). The shared sentence above
+closes with a negation — "do not rotate {name} to face the camera" — which
+anchors on the very turn it forbids, and which reads oddly beside this
+dialect's own reference-view registry entry
+([pipelines/reference-views.md](pipelines/reference-views.md) §What a view
+depicts), itself rewritten positive for the same reason. So this dialect's
+`hidden` sentence states the geometry the shot DOES show instead: the subject
+faces directly away, with only the back of the head — and the hair, unless a
+`subject.hair_concealment` claim says it is fully covered — visible, and the
+build and skin tone, plus hair color and style when it is not concealed, are
+kept exactly from the reference when one is in the payload. `partial`
+visibility is untouched and still compiles the shared family's sentence
+unchanged. The same rule governs an ordinary chat scene shot from behind on
+this model, not only a reference view — the adaptation is keyed on face
+visibility, not on which caller asked for the render.
 
 **The preservation set is anchored per subject, never per payload.** "Preserve
 … exactly from the reference" is said only where an identity reference for

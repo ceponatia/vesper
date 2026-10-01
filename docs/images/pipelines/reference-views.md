@@ -36,6 +36,13 @@ acceptance itself, which makes the explicit build action available.
   geometry mirrored. A model resolves a frame direction more reliably than a possessive one, and
   stating both means either half alone still lands the same picture. The two side entries are
   therefore exact left/right mirrors of each other, each naming its own side before the frame's.
+- **`back_full` states the head's geometry positively, never as a turn** (#669): the character
+  faces away from the camera with the head facing the same direction as the body, only the back of
+  the head and hair toward the lens, the face fully hidden. The earlier wording asked for the head
+  "turned away from the lens" — a turn is still a turn whichever word points at it, and a model
+  asked for one routinely resolved it as a glance back over the shoulder, undoing the back view it
+  was meant to produce. The replacement states the resting geometry the shot already has instead of
+  naming a motion away from something, which is what rule 3 below actually requires.
 - The two wardrobe states are `clothed` (as the portrait is dressed) and `bare` (undressed).
   `bare` carries `intimate: true`, and that flag is the single gate for three things: the age
   refusal, the intimate reveal, and eligibility to be sent to a lane running without intimate
@@ -73,7 +80,15 @@ The portrait-variant lane's machinery pointed at a fixed camera
   the missing leg's own words; the clothed views are unaffected.
 - The instruction is the angle clause, the wardrobe clause and the backdrop clause, name-bound. The
   compiler supplies the identity lock (adapted to the angle's face visibility), the age anchor and
-  the exposure facts; none of them is hand-written.
+  the exposure facts; none of them is hand-written. On `civitai/qwen-image-2.1`, `back_full`'s
+  `hidden` face visibility drops "face" from the identity lock — asking the identity images for
+  skin tone and apparent age only, and stating positively that the face stays hidden for this shot
+  — and states a 2.1-owned positive sentence about the back of the head and hair rather than the
+  shared dialect family's "do not rotate" wording (#669, following up #428's fix on the shared
+  families). The same adaptation fires on any ordinary chat scene shot from behind on this model,
+  not only a reference view: the rule lives in the dialect, keyed on face visibility, not on which
+  caller asked for the render. See
+  [../character-prompts.md](../character-prompts.md) §Identity on a reference-anchored render.
 
 References are the character's identity pack (`identityPackRenderReferences`), so an ineligible pack
 refuses the view rather than substituting another image, followed by the view's approved upstream
