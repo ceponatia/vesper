@@ -85,6 +85,7 @@ export {
   imageAspectInputField,
   imageAspectModes,
   imageControlDefaultsSchema,
+  imageModelEditSizesFromReference,
   imageModelProfileCreateRequestSchema,
   imageModelProfileSchema,
   imageModelProfileUpdateRequestSchema,

@@ -308,10 +308,18 @@ export function civitaiQwen21Workflow(
   if (references.length > MAX_REFERENCES) {
     throw new Error(`${LANE_NAME} accepts at most ${String(MAX_REFERENCES)} reference images`);
   }
-  // Refused, not ignored. An edit sends no size — the provider sizes it from
-  // the reference and ignores an explicit width/height — and a ratio in the
-  // lane's supported set needs no local crop, so a chosen shape would be
-  // neither sent nor applied while the run record still claimed it.
+  // Transport defense-in-depth, not the render path's own guard against this
+  // (#663/#664). An edit sends no size — the provider sizes it from the
+  // reference and ignores an explicit width/height — so a chosen shape here
+  // would be neither sent nor applied while the run record still claimed it.
+  // `chooseDimensions` (`@vesper/image-core`, `imageModelEditSizesFromReference`)
+  // now asks for no shape at all on this lane's edit whenever a render names a
+  // non-null target ratio, and `renderWithModel` crops the RETURNED pixels
+  // toward that target instead of expecting the provider to honor a shape it
+  // cannot accept — so a production or Generator render should never reach
+  // this branch with a non-null `request.aspect` on an edit any more. It stays
+  // as the one place that still refuses rather than silently drops one, in
+  // case a future caller builds a workflow directly and skips that seam.
   if (references.length > 0 && request.aspect !== null && request.aspect !== undefined) {
     throw new Error(`${LANE_NAME} sizes an edit from its reference; clear the output shape or remove the references`);
   }

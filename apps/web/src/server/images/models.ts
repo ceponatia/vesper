@@ -363,11 +363,19 @@ export async function renderWithModel(
   // Absent facts spread to nothing, and a factless request resolves to the pure
   // `chooseAspect` answer — the direct callers keep exactly their old shapes. A
   // native request skips the negotiation outright: nothing is bucketed toward a
-  // target it never named.
+  // target it never named. `referenceCount` comes from the caller's raw input,
+  // ahead of reference preparation below — it only has to say whether this is
+  // a create or an edit, and the UNPREPARED count already answers that; it is
+  // what lets `chooseDimensions` ask for no shape at all on a model whose edit
+  // derives its output shape from the reference (`imageModelEditSizesFromReference`).
   const dimensions =
     targetRatio === null
       ? providerDefaultDimensions()
-      : chooseDimensions(model, { targetRatio, ...input.dimensionFacts });
+      : chooseDimensions(model, {
+          targetRatio,
+          referenceCount: input.references?.length ?? 0,
+          ...input.dimensionFacts,
+        });
   const aspectField = imageAspectInputField(model);
   const aspectValue = dimensions.input[aspectField];
   const preparationTarget = referencePreparationTarget(model);
