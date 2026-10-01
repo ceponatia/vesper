@@ -2,12 +2,13 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { eq } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { db, images } from "../db";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { log } from "@/server/log";
 import { absoluteImagePath, containedAbsoluteImagePath, imageRelativePath, type StoredImagePath } from "./paths";
 
 export type ImageRow = typeof images.$inferSelect;
@@ -136,13 +137,70 @@ function pendingPathFor(absolutePath: string): string {
 const metaSchema = z.record(z.string(), z.unknown());
 
 /**
- * The write-path merge: the stored jsonb re-parsed at the trust boundary, plus
- * the fields this update contributes. Deliberately NOT built on `imageMeta` —
- * `parseOr` additionally JSON-decodes a string column value and drops a
- * `__proto__` key, and the write path is where that hardening belongs.
+ * The render lease (docs/images/asset-registry.md §The sweep): epoch
+ * milliseconds of the last heartbeat `runImagePipeline` wrote on its own
+ * reserved row. Only a `pending` row carries one — saving and failing retire it
+ * — and the sweep reads it to tell a render that is still running from one
+ * whose process died.
  */
-function mergeMeta(raw: unknown, extra: Record<string, unknown>): Record<string, unknown> {
-  return { ...parseOr(metaSchema, raw, {}), ...extra };
+export const RENDER_LEASE_META_KEY = "renderLeaseAtMs";
+
+/** What a `ready` row never carries: a failure it no longer has, and a lease nobody holds. */
+const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY] as const;
+
+/**
+ * The write-path merge: the stored jsonb re-parsed at the trust boundary, minus
+ * the keys this transition retires, plus the fields this update contributes.
+ * Deliberately NOT built on `imageMeta` — `parseOr` additionally JSON-decodes a
+ * string column value and drops a `__proto__` key, and the write path is where
+ * that hardening belongs.
+ */
+function mergeMeta(
+  raw: unknown,
+  extra: Record<string, unknown>,
+  retire: readonly string[] = [],
+): Record<string, unknown> {
+  const kept = Object.entries(parseOr(metaSchema, raw, {})).filter(([key]) => !retire.includes(key));
+  return { ...Object.fromEntries(kept), ...extra };
+}
+
+/**
+ * The SQL-side form of {@link mergeMeta}: the row's own `meta` (anything but an
+ * object reads as `{}`), minus `retire`, plus `patch` — evaluated by Postgres
+ * against the version of the row the UPDATE actually writes. A write that must
+ * not lose a concurrent one (the lease heartbeat, the sweep's guarded reclaim)
+ * merges here instead of reading `meta` into JS and writing it back.
+ */
+export function mergeMetaSql(patch: Record<string, unknown>, retire: readonly string[] = []): SQL {
+  let base: SQL = sql`(case when jsonb_typeof(${images.meta}) = 'object' then ${images.meta} else '{}'::jsonb end)`;
+  for (const key of retire) base = sql`(${base} - ${key}::text)`;
+  return sql`${base} || ${JSON.stringify(patch)}::jsonb`;
+}
+
+/**
+ * The failure record a failed row carries: the error text, and `failedAt` —
+ * retention's clock (`planFailedImageRetirement` in asset-maintenance.ts),
+ * stamped at the failure because `created_at` is when the row was RESERVED. One
+ * shape for both writers of a failure: {@link failImage} and the sweep's guarded
+ * reclaim.
+ */
+export function failureStamp(error: string, at: Date = new Date()): { error: string; failedAt: string } {
+  return { error: error.slice(0, 500), failedAt: at.toISOString() };
+}
+
+/**
+ * One render-lease heartbeat: stamp `atMs` on the row while, and only while, it
+ * is still `pending`. The merge runs in SQL, so it writes the lease key and
+ * nothing else, and a row a save or a failure has already settled is left
+ * exactly as that write left it. True when the pending row took the stamp.
+ */
+export async function refreshRenderLease(imageId: string, atMs: number): Promise<boolean> {
+  const touched = await db()
+    .update(images)
+    .set({ meta: mergeMetaSql({ [RENDER_LEASE_META_KEY]: atMs }) })
+    .where(and(eq(images.id, imageId), eq(images.status, "pending")))
+    .returning({ id: images.id });
+  return touched.length > 0;
 }
 
 /**
@@ -163,6 +221,11 @@ export function imageMeta(meta: unknown): Record<string, unknown> {
  * provenance under `render`), merged in the SAME update as the file facts so
  * the row never says "ready" without it. The file facts win a key collision —
  * width/height/bytes describe the file that actually landed.
+ *
+ * A `ready` row carries no `error`, `failedAt` or render lease. A render can
+ * land on a row that is already `failed` — the sweep reclaimed it while the
+ * render was still running — and the image is real and paid for, so the row
+ * becomes `ready` anyway, cleanly, with an `images.save_late_landing` warning.
  */
 export async function saveImageBuffer(
   imageId: string,
@@ -182,15 +245,40 @@ export async function saveImageBuffer(
       // `bytes` is also the storage-quota column; it is written here, at the
       // one place a file actually lands on disk, so
       // the quota measures reality rather than intent.
-      .set({ status: "ready", bytes: info.bytes, meta: mergeMeta(row.meta, { ...(extraMeta ?? {}), ...info }) })
+      .set({
+        status: "ready",
+        bytes: info.bytes,
+        meta: mergeMeta(row.meta, { ...(extraMeta ?? {}), ...info }, READY_RETIRED_META_KEYS),
+      })
       .where(eq(images.id, imageId))
       .returning();
+    if (updated && row.status === "failed") reportLateLanding(row, sink);
     return updated ?? null;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     sink?.push(diag("error", "images.save_failed", message.slice(0, 300), { context: { imageId } }));
     return failImage(imageId, message, extraMeta);
   }
+}
+
+/**
+ * A render landed on a row that was already `failed`, and the save made it
+ * `ready`. The diagnostic makes the resurrection deliberate and visible: the
+ * log line pairs with the sweep's own "stale pending row marked failed".
+ */
+function reportLateLanding(row: ImageRow, sink: DiagnosticSink | undefined): void {
+  const previous = imageMeta(row.meta);
+  const context = {
+    imageId: row.id,
+    ...(typeof previous.error === "string" ? { clearedError: previous.error.slice(0, 300) } : {}),
+    ...(typeof previous.failedAt === "string" ? { failedAt: previous.failedAt } : {}),
+  };
+  sink?.push(
+    diag("warn", "images.save_late_landing", "a render landed on a row already marked failed; the row is ready", {
+      context,
+    }),
+  );
+  log.warn("images", "late render landed on a failed row; marked ready", context);
 }
 
 /** The asset classes the Gallery hub may act on (list / favorite / delete). */
@@ -236,8 +324,10 @@ export const HIDDEN_IMAGE_KINDS = [
  * `failedAt` is stamped here because `created_at` is when the row was RESERVED,
  * not when it failed — a row that was `ready` for a month before its file
  * vanished fails today. Retention reads this stamp
- * (`planFailedImageRetirement` in asset-maintenance.ts), so writing it at the one choke point every
- * failure passes through is what keeps that clock honest.
+ * (`planFailedImageRetirement` in asset-maintenance.ts), so writing it wherever a
+ * failure is recorded — here, and in the sweep's guarded reclaim through the same
+ * {@link failureStamp} — is what keeps that clock honest. A failed row holds no
+ * render lease.
  */
 export async function failImage(
   imageId: string,
@@ -249,11 +339,7 @@ export async function failImage(
     .update(images)
     .set({
       status: "failed",
-      meta: mergeMeta(row?.meta, {
-        ...(extraMeta ?? {}),
-        error: error.slice(0, 500),
-        failedAt: new Date().toISOString(),
-      }),
+      meta: mergeMeta(row?.meta, { ...(extraMeta ?? {}), ...failureStamp(error) }, [RENDER_LEASE_META_KEY]),
     })
     .where(eq(images.id, imageId))
     .returning();

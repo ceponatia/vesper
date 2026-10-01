@@ -1,11 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { and, eq, gt, inArray } from "drizzle-orm";
-import { db, images, jobs, reclaimOrphanedJobs } from "../db";
+import { and, eq, gt, inArray, lt, sql } from "drizzle-orm";
+import { db, images, jobs, JOB_STALE_MS, reclaimOrphanedJobs } from "../db";
 import { log } from "@/server/log";
 import { runRetentionPasses } from "@/server/retention";
 import { absoluteImagePath, containedAbsoluteImagePath, dataRoot, imagesDirectoryPath } from "./paths";
-import { imageMeta, failImage } from "./asset-storage";
+import { imageMeta, failImage, failureStamp, mergeMetaSql, RENDER_LEASE_META_KEY } from "./asset-storage";
 import { purgeImagesWhere, clearEntityImagePointers } from "./asset-deletion";
 import { identityPackMaintenance, referenceViewMaintenance } from "./asset-lifecycle-hooks";
 
@@ -26,8 +26,28 @@ export interface SweepOptions {
   now?: Date;
 }
 
-/** Files/rows younger than this are left alone — they may be mid-protocol. */
-const SWEEP_GRACE_MS = 10 * 60_000;
+/**
+ * Orphan files and crash-leftover `*.pending.webp` temps younger than this (by
+ * mtime) are left alone — a write may be mid-protocol.
+ */
+const ORPHAN_FILE_GRACE_MS = 10 * 60_000;
+
+/**
+ * How long a `pending` row with NO render lease may wait before the sweep fails
+ * it. A leased row is judged by its lease alone: it is reclaimed once the lease
+ * has been silent for {@link JOB_STALE_MS}, however long the render has run.
+ *
+ * An unleased row was reserved outside `runImagePipeline`, by a direct
+ * `createImageAsset` caller — the image lab, the Image Generator settle, the
+ * identity-pack trial and derive, reference-view upload and copy, uploads —
+ * which does not beat. Each of those reserves its row once the bytes are already
+ * in hand, so its age is the only signal left and two hours is far beyond any
+ * such write.
+ */
+const UNLEASED_PENDING_ROW_GRACE_MS = 2 * 60 * 60_000;
+
+/** The text a reclaimed pending row records — what the failed tile reads. */
+const STALE_PENDING_ROW_ERROR = "stale pending row reclaimed by image_sweep";
 
 /**
  * How long a `failed` row outlives the failure that produced it.
@@ -110,11 +130,54 @@ function failedAtMs(row: FailedImageCandidate): number {
 }
 
 /**
+ * Fail every `pending` row whose render is presumed dead, in ONE guarded UPDATE,
+ * and return the ids it actually failed.
+ *
+ * - **Leased** (`runImagePipeline` beats `meta.renderLeaseAtMs` every 30 s): dead
+ *   once the lease has been silent for {@link JOB_STALE_MS}. A render still
+ *   running keeps its row however long it takes.
+ * - **Unleased**: dead once the row is older than
+ *   {@link UNLEASED_PENDING_ROW_GRACE_MS}.
+ *
+ * The decision lives in the statement's own WHERE, never in a row read earlier:
+ * a save landing or a heartbeat committing before this UPDATE is what Postgres
+ * re-checks it against, so either one wins and the row is left alone. The
+ * failure stamp merges in SQL for the same reason. The lease is cast only once
+ * it is known to be a JSON number, so a malformed value reads as "no lease"
+ * instead of failing the statement.
+ */
+export async function reclaimStalePendingRows(now: Date, ownerId?: string): Promise<string[]> {
+  const lease = sql`${images.meta} -> ${RENDER_LEASE_META_KEY}::text`;
+  const leaseAtMs = sql`(${images.meta} ->> ${RENDER_LEASE_META_KEY}::text)::numeric`;
+  const presumedDead = sql`case
+    when jsonb_typeof(${lease}) = 'number' then ${leaseAtMs} < ${now.getTime() - JOB_STALE_MS}::numeric
+    else ${lt(images.createdAt, new Date(now.getTime() - UNLEASED_PENDING_ROW_GRACE_MS))}
+  end`;
+  const reclaimed = await db()
+    .update(images)
+    .set({
+      status: "failed",
+      meta: mergeMetaSql(failureStamp(STALE_PENDING_ROW_ERROR, now), [RENDER_LEASE_META_KEY]),
+    })
+    .where(
+      and(
+        eq(images.status, "pending"),
+        ownerId === undefined ? undefined : eq(images.ownerId, ownerId),
+        presumedDead,
+      ),
+    )
+    .returning({ id: images.id });
+  return reclaimed.map((row) => row.id);
+}
+
+/**
  * Idempotent rows↔files reconciliation (docs/images/asset-registry.md). Both directions:
- * ready rows whose file vanished are marked failed; files without a row (and
- * crash-leftover `.pending.webp` temps) older than the grace period are
- * removed. Never throws, and every scanned or row-derived path passes through
- * the same DATA_ROOT containment and symlink checks as ordinary asset access.
+ * ready rows whose file vanished are marked failed; pending rows whose render is
+ * presumed dead are reclaimed ({@link reclaimStalePendingRows}); files without a
+ * row (and crash-leftover `.pending.webp` temps) older than
+ * {@link ORPHAN_FILE_GRACE_MS} are removed. Never throws, and every scanned or
+ * row-derived path passes through the same DATA_ROOT containment and symlink
+ * checks as ordinary asset access.
  *
  * A third pass RETIRES what the first two produce: a row failed longer ago than
  * {@link FAILED_ROW_RETENTION_MS} is hard-deleted, so a failure is user-visible
@@ -133,7 +196,7 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
   };
   try {
     const baseQuery = db()
-      .select({ id: images.id, ownerId: images.ownerId, path: images.path, status: images.status, createdAt: images.createdAt })
+      .select({ id: images.id, ownerId: images.ownerId, path: images.path, status: images.status })
       .from(images);
     const rows = opts.ownerId ? await baseQuery.where(eq(images.ownerId, opts.ownerId)) : await baseQuery;
     result.rowsScanned = rows.length;
@@ -171,7 +234,7 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
       if (!isPendingTemp && rowPaths.has(relative)) continue;
       try {
         const stat = await fs.stat(absolute);
-        if (now.getTime() - stat.mtimeMs < SWEEP_GRACE_MS) continue;
+        if (now.getTime() - stat.mtimeMs < ORPHAN_FILE_GRACE_MS) continue;
         await fs.unlink(absolute);
         if (isPendingTemp) {
           result.stalePendingFilesRemoved += 1;
@@ -186,24 +249,29 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
     }
 
     for (const row of rows) {
+      if (row.status !== "ready") continue;
       try {
-        if (row.status === "ready") {
-          const exists = await fileExists(absoluteImagePath(row));
-          if (exists) continue;
-          // Through `failImage` rather than a bare status update so the row carries
-          // the `failedAt` stamp retention reads: this is precisely the transition
-          // whose failure time is nothing like its `created_at`.
-          await failImage(row.id, "ready row lost its file; reclaimed by image_sweep");
-          result.rowsMarkedFailed += 1;
-          log.warn("images", "ready row lost its file; marked failed", { imageId: row.id, path: row.path });
-        } else if (row.status === "pending" && now.getTime() - row.createdAt.getTime() >= SWEEP_GRACE_MS) {
-          await failImage(row.id, "stale pending row reclaimed by image_sweep");
-          result.rowsMarkedFailed += 1;
-          log.warn("images", "stale pending row marked failed", { imageId: row.id });
-        }
+        const exists = await fileExists(absoluteImagePath(row));
+        if (exists) continue;
+        // Through `failImage` rather than a bare status update so the row carries
+        // the `failedAt` stamp retention reads: this is precisely the transition
+        // whose failure time is nothing like its `created_at`.
+        await failImage(row.id, "ready row lost its file; reclaimed by image_sweep");
+        result.rowsMarkedFailed += 1;
+        log.warn("images", "ready row lost its file; marked failed", { imageId: row.id, path: row.path });
       } catch (err) {
         result.errors.push(`row ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
       }
+    }
+
+    // Pending rows are judged at write time, not from the read above: counted
+    // only when the guarded UPDATE actually failed them.
+    try {
+      const reclaimed = await reclaimStalePendingRows(now, opts.ownerId);
+      result.rowsMarkedFailed += reclaimed.length;
+      for (const imageId of reclaimed) log.warn("images", "stale pending row marked failed", { imageId });
+    } catch (err) {
+      result.errors.push(`pending reclaim: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Last, so a row this pass just marked failed carries a stamp of NOW and is

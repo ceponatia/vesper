@@ -1,4 +1,5 @@
 import { describeProviderError } from "../ai";
+import { JOB_HEARTBEAT_INTERVAL_MS } from "../db";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   type ImageRow,
@@ -6,6 +7,7 @@ import {
   createImageAsset,
   saveImageBuffer,
   failImage,
+  refreshRenderLease,
 } from "./asset-storage";
 import { kickImageSweep } from "./asset-maintenance";
 
@@ -119,6 +121,12 @@ export interface ImagePipelineResult {
  * generation failure now records a warn diagnostic in every lane.
  * `images.avatar.generate_failed` and `images.variant.generate_failed` joined
  * the entity lane's long-standing `images.entity.generate_failed`.
+ *
+ * **The render lease.** From the moment generation starts until it settles, the
+ * shell beats a lease into its own row ({@link holdRenderLease}), which is how
+ * the sweep tells a render still running — a Civitai queue wait, every rung of a
+ * scene chain — from one whose process died (docs/images/asset-registry.md
+ * §The sweep).
  */
 export async function runImagePipeline(opts: ImagePipelineOptions): Promise<ImagePipelineResult> {
   // Periodic maintenance rides the work it maintains:
@@ -135,6 +143,7 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
     return { imageId: asset.id, status: "failed" };
   }
 
+  const releaseLease = await holdRenderLease(asset.id);
   const startedMs = Date.now();
   try {
     const produced = await opts.produce(asset);
@@ -164,5 +173,42 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
     }
     opts.onThrown?.({ imageId: asset.id, message, startedMs });
     return { imageId: asset.id, status: "failed" };
+  } finally {
+    releaseLease();
   }
+}
+
+/**
+ * Hold the render lease on a reserved row for as long as its render runs: one
+ * stamp now, then one every {@link JOB_HEARTBEAT_INTERVAL_MS} (30 s), against the
+ * sweep's 15-minute silence bound (`JOB_STALE_MS`). Returns the release the pipeline's
+ * `finally` calls once the render settles — saved, failed or thrown.
+ *
+ * This is the job heartbeat's shape (`launchInsertedJob` in `api/jobs.ts`), not
+ * the timer the sweep refuses to be: it is scoped to one render's lifetime,
+ * cleared in `finally`, unref'd so it never holds the process open, and each
+ * beat is a guarded write that a row which already left `pending` ignores.
+ * Best-effort like that heartbeat too: a failed write is swallowed, and a lease
+ * the database stops taking simply ages until the sweep reclaims the row, as it
+ * would for a render whose process died; if this render then lands after all,
+ * the save takes the late-landing path (`saveImageBuffer`). A beat never
+ * overlaps the one before it, so a stalled database queues no pile of them.
+ */
+async function holdRenderLease(imageId: string): Promise<() => void> {
+  let beating = false;
+  const beat = async (): Promise<void> => {
+    if (beating) return;
+    beating = true;
+    try {
+      await refreshRenderLease(imageId, Date.now());
+    } catch {
+      // Heartbeats are best-effort. The lease expires if the database remains unavailable.
+    } finally {
+      beating = false;
+    }
+  };
+  await beat();
+  const timer = setInterval(() => void beat(), JOB_HEARTBEAT_INTERVAL_MS);
+  timer.unref?.();
+  return () => clearInterval(timer);
 }

@@ -18,9 +18,18 @@ import {
 import type { CharacterProfile } from "@/contracts/world/profile";
 import { characters, db, images, items, locations } from "../db";
 import { absoluteImagePath, dataRoot } from "./paths";
-import { createImageAsset, failImage, GALLERY_IMAGE_KINDS, saveImageBuffer, type ImageRow } from "./asset-storage";
+import {
+  createImageAsset,
+  failImage,
+  GALLERY_IMAGE_KINDS,
+  imageMeta,
+  refreshRenderLease,
+  RENDER_LEASE_META_KEY,
+  saveImageBuffer,
+  type ImageRow,
+} from "./asset-storage";
 import { deleteOwnedImage, deleteOwnedImages } from "./asset-deletion";
-import { sweepOrphans } from "./asset-maintenance";
+import { reclaimStalePendingRows, sweepOrphans } from "./asset-maintenance";
 import { monogramSvg } from "./monogram";
 import { generateAvatar, generateAvatarsBatch } from "./avatar";
 import { generateEntityImage, generateEntityImagesBatch, missingEntityImageIds } from "./entity";
@@ -35,6 +44,10 @@ const ready = await probeIntegrationDb("images assets.int.test", "images");
 
 let temp: TempDataRoot | undefined;
 let userId = "";
+/** Owners seeded per sweep case, so each case's counters see only its own rows. */
+const sweepOwners: string[] = [];
+
+const MINUTE = 60_000;
 
 beforeAll(async () => {
   if (!ready) return;
@@ -47,9 +60,33 @@ afterAll(async () => {
   // DATA_ROOT before the database work keeps the env untouched even if a delete
   // throws. `cleanup` restores the PREVIOUS DATA_ROOT rather than deleting it.
   await temp?.cleanup();
-  await purgeOwnerRows([userId]);
+  await purgeOwnerRows([userId, ...sweepOwners]);
   await endTestPool();
 });
+
+async function sweepOwner(prefix: string): Promise<string> {
+  const id = (await seedTestUser(prefix)).id;
+  sweepOwners.push(id);
+  return id;
+}
+
+/**
+ * A `pending` row reserved `ageMs` before `now`, carrying a render lease last
+ * beaten `leaseAgeMs` before `now` — or no lease at all, the shape a direct
+ * `createImageAsset` caller leaves.
+ */
+async function pendingRowAt(ownerId: string, now: Date, ageMs: number, leaseAgeMs?: number): Promise<string> {
+  const meta = { render: { seed: 7 } };
+  const asset = await createImageAsset({ ownerId, kind: "entity", entityKind: "world", meta });
+  await db()
+    .update(images)
+    .set({
+      createdAt: new Date(now.getTime() - ageMs),
+      ...(leaseAgeMs === undefined ? {} : { meta: { ...meta, [RENDER_LEASE_META_KEY]: now.getTime() - leaseAgeMs } }),
+    })
+    .where(eq(images.id, asset.id));
+  return asset.id;
+}
 
 describe.skipIf(!ready)("asset registry protocol", () => {
   it("creates a pending row, then writes the file and flips to ready", async () => {
@@ -125,9 +162,13 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     const lost = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world" });
     await db().update(images).set({ status: "ready" }).where(eq(images.id, lost.id));
 
-    // stale pending row that never got a file
+    // stale pending row that never got a file — unleased, as a direct
+    // `createImageAsset` caller leaves it, so past the 2 h fallback grace
     const stale = await createImageAsset({ ownerId: userId, kind: "entity", entityKind: "world" });
-    await db().update(images).set({ createdAt: old }).where(eq(images.id, stale.id));
+    await db()
+      .update(images)
+      .set({ createdAt: new Date(Date.now() - 3 * 60 * MINUTE) })
+      .where(eq(images.id, stale.id));
 
     // a row that failed over a day ago — retention's target, and the proof the
     // third pass is actually wired into the sweep rather than merely written
@@ -159,6 +200,114 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     const again = await sweepOrphans({ ownerId: userId });
     expect(again.orphanFilesRemoved).toBe(0);
     expect(again.rowsMarkedFailed).toBe(0);
+  });
+
+  // #674: a render can legitimately run far past ten minutes (a Civitai queue
+  // wait, every rung of a scene chain), so a leased row is judged by its lease
+  // alone, and only an unleased one by its age.
+  it("sweepOrphans fails a pending row once its render lease goes quiet, or after 2 h when it has none", async () => {
+    const ownerId = await sweepOwner("images-int-lease");
+    const now = new Date();
+    const running = await pendingRowAt(ownerId, now, 40 * MINUTE, 30_000);
+    const silent = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);
+    const unleasedHour = await pendingRowAt(ownerId, now, 60 * MINUTE);
+    const unleasedOld = await pendingRowAt(ownerId, now, 3 * 60 * MINUTE);
+
+    const result = await sweepOrphans({ ownerId, now });
+
+    expect(result.errors).toEqual([]);
+    expect(result.rowsMarkedFailed).toBe(2);
+    expect((await imageRow(running))?.status).toBe("pending");
+    expect((await imageRow(unleasedHour))?.status).toBe("pending");
+    for (const id of [silent, unleasedOld]) {
+      const row = await imageRow(id);
+      expect(row?.status).toBe("failed");
+      // The same stamp failImage writes — retention's clock is the sweep's own now.
+      expect(row?.meta).toEqual({
+        render: { seed: 7 },
+        error: "stale pending row reclaimed by image_sweep",
+        failedAt: now.toISOString(),
+      });
+    }
+  });
+
+  it("the pending reclaim judges each row at write time: a save or a heartbeat that lands first wins", async () => {
+    // Every row below reads as dead to anyone who looked a moment ago — reserved
+    // 40 min back, lease silent for 20. The reclaim's decision lives in its own
+    // UPDATE, so the writes that land before it are what it judges.
+    const ownerId = await sweepOwner("images-int-reclaim");
+    const now = new Date();
+    const landed = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);
+    const beating = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);
+    const dead = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);
+    // A row that is already `ready` is never a pending reclaim's to touch,
+    // whatever its age or a stale lease left behind say.
+    const readyOld = await pendingRowAt(ownerId, now, 3 * 60 * MINUTE, 20 * MINUTE);
+    await db().update(images).set({ status: "ready" }).where(eq(images.id, readyOld));
+
+    expect((await saveImageBuffer(landed, monogramSvg("Landed")))?.status).toBe("ready");
+    expect(await refreshRenderLease(beating, now.getTime())).toBe(true);
+
+    expect(await reclaimStalePendingRows(now, ownerId)).toEqual([dead]);
+    const landedRow = await imageRow(landed);
+    expect(landedRow?.status).toBe("ready");
+    expect(imageMeta(landedRow?.meta)).not.toHaveProperty("error");
+    expect((await imageRow(beating))?.status).toBe("pending");
+    expect((await imageRow(readyOld))?.status).toBe("ready");
+    expect((await imageRow(dead))?.status).toBe("failed");
+  });
+
+  it("the render-lease heartbeat merges one key in SQL and never touches a row that left pending", async () => {
+    const ownerId = await sweepOwner("images-int-heartbeat");
+    const meta = { render: { seed: 3 }, lookKey: "abc" };
+
+    const saving = await createImageAsset({ ownerId, kind: "entity", entityKind: "world", meta });
+    expect(await refreshRenderLease(saving.id, 1_000)).toBe(true);
+    expect(await refreshRenderLease(saving.id, 2_000)).toBe(true);
+    expect((await imageRow(saving.id))?.meta).toEqual({ ...meta, [RENDER_LEASE_META_KEY]: 2_000 });
+    // Saving retires the lease, and a beat arriving after the save is refused.
+    const saved = await saveImageBuffer(saving.id, monogramSvg("Leased"));
+    expect(saved?.status).toBe("ready");
+    expect(imageMeta(saved?.meta)).toMatchObject(meta);
+    expect(imageMeta(saved?.meta)).not.toHaveProperty(RENDER_LEASE_META_KEY);
+    expect(await refreshRenderLease(saving.id, 3_000)).toBe(false);
+    expect(imageMeta((await imageRow(saving.id))?.meta)).not.toHaveProperty(RENDER_LEASE_META_KEY);
+
+    // Failing retires it the same way.
+    const failing = await createImageAsset({ ownerId, kind: "entity", entityKind: "world", meta });
+    expect(await refreshRenderLease(failing.id, 1_000)).toBe(true);
+    const failed = await failImage(failing.id, "provider exploded");
+    expect(failed?.meta).toMatchObject({ ...meta, error: "provider exploded" });
+    expect(imageMeta(failed?.meta)).not.toHaveProperty(RENDER_LEASE_META_KEY);
+    expect(await refreshRenderLease(failing.id, 2_000)).toBe(false);
+  });
+
+  it("a render that lands on a row the sweep failed comes back ready and clean, with a diagnostic", async () => {
+    // The paid image is real, so the row is resurrected — deliberately and
+    // visibly, never as a `ready` row still reading "reclaimed by image_sweep".
+    const ownerId = await sweepOwner("images-int-late");
+    const now = new Date();
+    const id = await pendingRowAt(ownerId, now, 40 * MINUTE, 20 * MINUTE);
+    expect((await sweepOrphans({ ownerId, now })).rowsMarkedFailed).toBe(1);
+    expect((await imageRow(id))?.status).toBe("failed");
+    const sink = new DiagnosticCollector();
+
+    const saved = await saveImageBuffer(id, monogramSvg("Late"), sink);
+
+    expect(saved?.status).toBe("ready");
+    const meta = imageMeta(saved?.meta);
+    expect(meta).toMatchObject({ render: { seed: 7 }, width: 768, height: 1024 });
+    expect(meta).not.toHaveProperty("error");
+    expect(meta).not.toHaveProperty("failedAt");
+    expect(meta).not.toHaveProperty(RENDER_LEASE_META_KEY);
+    const late = sink.items.filter((d) => d.code === "images.save_late_landing");
+    expect(late).toHaveLength(1);
+    expect(late[0]?.severity).toBe("warn");
+    expect(late[0]?.context).toMatchObject({
+      imageId: id,
+      clearedError: "stale pending row reclaimed by image_sweep",
+      failedAt: now.toISOString(),
+    });
   });
 
   it("skips the file side entirely when the rows are empty but files exist", async () => {

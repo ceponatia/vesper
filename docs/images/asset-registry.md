@@ -112,7 +112,38 @@ as a link with nowhere to go.
 ## The sweep
 
 An idempotent `image_sweep` job reconciles rows against files in both directions, logging orphans as
-warnings.
+warnings. What it reclaims:
+
+- A `ready` row whose file is gone is marked `failed`.
+- A `pending` row is marked `failed` only once its render is presumed dead (owner ruling
+  2026-10-01). A row reserved by `runImagePipeline` carries a **render lease** and is failed once
+  that lease has been silent for **15 minutes** (`JOB_STALE_MS`), however long the render itself
+  runs — a Civitai queue wait, every rung of a scene chain. A row with no lease was reserved by a
+  direct `createImageAsset` caller (the image lab, the Image Generator settle, identity-pack trial
+  and derive, reference-view upload and copy, uploads), which reserves once its bytes are in hand;
+  it is failed once it is **2 hours** old.
+- A file with no row, or a crash-leftover `*.pending.webp` temp, is removed once its mtime is
+  **10 minutes** old.
+
+**The pending reclaim is decided at write time.** It is one guarded `UPDATE` whose own `WHERE`
+re-checks `status = 'pending'` and the lease (or, for an unleased row, its age) — never a row the
+sweep read earlier — so a save or a heartbeat that commits first wins, and the sweep counts only the
+rows that statement actually failed. Its failure stamp (`error`, `failedAt`) merges into `meta` in
+SQL, and a lease value that is not a JSON number reads as no lease rather than failing the statement.
+
+**The render lease** is `meta.renderLeaseAtMs`, epoch milliseconds. `runImagePipeline` stamps it on
+its own row as generation starts, then every 30 seconds (`JOB_HEARTBEAT_INTERVAL_MS`) until the
+render settles — saved, failed or thrown. Each beat merges that one key into `meta` in SQL, guarded
+by `status = 'pending'`, so it never overwrites what a save or a failure wrote and never touches a
+row that already left `pending`. Beats are best-effort: a failed write is swallowed, and a lease that
+stops beating — a crashed process, a database that stays unreachable — ages until a sweep reclaims
+the row. Only a `pending` row carries a lease; saving and failing remove it.
+
+**A late landing is a save.** When a render lands on a row that is already `failed` — the sweep
+reclaimed it while the render was still running — the image is real, so the save marks the row
+`ready` with `meta.error` and `meta.failedAt` removed, pushes an `images.save_late_landing` warn
+diagnostic, and the lane's `onReady` hooks run as for any save. A `ready` row never carries `error`,
+`failedAt` or a lease.
 
 **It is kicked by image work, not by a timer** (`kickImageSweep`, called at the top of
 `runImagePipeline`): fire-and-forget, at most one pass per 6h — an in-process throttle plus a
@@ -126,6 +157,11 @@ doubles under a second instance, while a kick off work the app is already doing 
 infrastructure and runs precisely when orphans are being created. It is deliberately kicked BEFORE
 the generation — a render that dies mid-flight is the row a later sweep must reclaim, so the kick
 must not depend on reaching the end.
+
+The render lease's interval is not that kind of timer. It belongs to one render, lives exactly as
+long as that render, and is cleared in the pipeline's `finally` and unref'd — the job heartbeat's
+shape (`launchInsertedJob` in `server/api/jobs.ts`). It has an owner, never outlives its work, and a
+second instance beats only for its own renders.
 
 **Derived-asset passes ride the same tick.** The identity-pack service contributes its consistency
 findings and its bounded retired-crop cleanup, and the reference view set contributes its own
@@ -147,10 +183,10 @@ retunable), so a row goes `pending` → `failed` → gone rather than staying `f
 row is real feedback for a while — the scene strip, the portrait studio and the entity studio each
 paint a "this render failed" tile from one — and garbage afterwards: no file, no bytes, no reader.
 
-The clock is `meta.failedAt`, stamped by `failImage` at the choke point every failure passes
-through, because `created_at` is when the row was *reserved*: a row that was `ready` for a month
-before its file vanished fails today, and ageing it by creation would erase the tile in the same
-tick it appeared. Rows failed before that stamp existed fall back to `created_at` and are past the
+The clock is `meta.failedAt`, stamped wherever a failure is recorded — `failImage`, and the sweep's
+pending reclaim through the same `failureStamp` — because `created_at` is when the row was
+*reserved*: a row that was `ready` for a month before its file vanished fails today, and ageing it
+by creation would erase the tile in the same tick it appeared. Rows failed before that stamp existed fall back to `created_at` and are past the
 window by definition.
 
 Retirement runs LAST, so a row this pass just marked failed always survives it. It goes through
