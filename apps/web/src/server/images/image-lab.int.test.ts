@@ -13,6 +13,7 @@ import {
   registerImagePromptBinding,
   REPLICATE_VERSION_UNDISCLOSED,
 } from "@vesper/image-core";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { sceneStagingById, type SceneStaging } from "@/contracts/images/scene-staging";
 import type { CharacterProfile } from "@/contracts/world/profile";
 import {
@@ -899,6 +900,52 @@ describe.skipIf(!ready)("image lab experiment runs", () => {
     expect(imageMeta(output?.meta).imageLabExperimentId).toBe(id);
     // Hidden by construction: the lab never produces a gallery item.
     expect(HIDDEN_IMAGE_KINDS).toContain("lab_output");
+  });
+
+  /**
+   * PROTECTS: #663/#664 — the direct probe bypasses `renderWithModel` and
+   * `chooseDimensions` entirely (its own doc comment: "a payload the runner
+   * built itself"), so it had its OWN copy of the shape decision
+   * (`chooseAspect(model).value`, unconditional). A probe always carries at
+   * least one input (refused above when it has none), so on Civitai Qwen
+   * Image 2.1 — whose edit derives its output shape from the reference and
+   * refuses an explicit one (`civitaiQwen21Workflow`) — every probe against
+   * it IS an edit, and the unconditional `chooseAspect` value used to send a
+   * shape that lane refuses outright. This is the seeded production row
+   * (migration 0151), not a suite fixture: the fact under test is specific to
+   * that one slug, the same reason `image-generator.int.test.ts` reuses it
+   * rather than planting a copy.
+   */
+  it("sends no aspect on a Civitai Qwen Image 2.1 probe, which is always an edit", async () => {
+    stubSuccessfulRenderer();
+    const identityId = await seedReadyImage("avatar");
+    const controlId = await seedControlFixture("pose");
+    const { id, sink } = await createProbe({
+      modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG,
+      inputs: [
+        { position: 1, role: "identity", imageId: identityId },
+        { position: 2, role: "pose", imageId: controlId },
+      ],
+      controlImageId: controlId,
+      controlKind: "pose",
+    });
+
+    const payload = await runImageLabExperiment(id, ownerId, sink);
+
+    // Never refused by the lane's own edit-shape guard (#663/#664) — the
+    // probe now negotiates like the render path instead of asking for a
+    // shape that workflow builder refuses.
+    expect(payload.status).toBe("succeeded");
+    const experiment = await getImageLabExperimentDetail(id, ownerId);
+    expect(experiment?.failureCode).toBeNull();
+
+    const request = captured[0];
+    expect(request?.mode).toBe("direct");
+    if (request?.mode === "direct") {
+      expect(request.references).toHaveLength(2);
+      // The one fact under test: no aspect reaches the transport.
+      expect(request.aspect).toBeNull();
+    }
   });
 
   it("records an UNDISCLOSED executed version verbatim and still succeeds", async () => {

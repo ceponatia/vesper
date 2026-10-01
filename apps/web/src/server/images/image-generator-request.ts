@@ -4,6 +4,7 @@ import {
   controlReferenceTransport,
   effectiveImageLoraSelection,
   imageAspectInputField,
+  imageModelEditSizesFromReference,
   type ImageModel,
   type ImageModelProfile,
   type ImageProviderInputDescriptor,
@@ -435,14 +436,20 @@ export async function prepareGeneratorRequest(
   // request for the small one with the huge one. For production that is a
   // sensible resolution; for a bench it is the operator's choice being replaced.
   //
-  // `plannedShape.value === null` is exempt: on a model whose edit derives its
-  // output shape from the reference, `plannedShapeInput` resolves to no key at
-  // all ON PURPOSE even though the picked ratio is one of this version's own
-  // declared members — nothing was substituted, the pick is honored by a local
-  // crop instead of a provider field (`effectiveRequestRecord`'s `willCrop`).
-  // That is a different mechanism, not the silent substitution this guard
-  // exists to catch.
-  if (shape.requested !== null && plannedShape.value !== null && plannedShape.value !== shape.requested) {
+  // The ONE exemption is scoped to exactly the case it exists for: a model
+  // whose edit derives its output shape from the reference
+  // (`imageModelEditSizesFromReference`), actually editing
+  // (`plan.references.length > 0`). There, `plannedShapeInput` resolves to no
+  // key at all ON PURPOSE even though the picked ratio is one of this
+  // version's own declared members — nothing was substituted, the pick is
+  // honored by a local crop instead of a provider field
+  // (`effectiveRequestRecord`'s `willCrop`). Any OTHER null planned shape next
+  // to an explicit request — a model with no usable shape at all, a genuine
+  // mapper miss — is still the silent substitution this guard exists to
+  // catch, and still refuses.
+  const shapelessByReferenceSizing =
+    plannedShape.value === null && plan.references.length > 0 && imageModelEditSizesFromReference(sentModel);
+  if (shape.requested !== null && plannedShape.value !== shape.requested && !shapelessByReferenceSizing) {
     return await refuse(
       row,
       imageGeneratorDiagnosticCode("control_refused"),
