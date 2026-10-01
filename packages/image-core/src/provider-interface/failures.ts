@@ -37,12 +37,33 @@ const TRANSIENT =
  * Replicate balance ran out mid-test.
  */
 const BILLING = /insufficient credit|payment required|\b402\b|billing/;
+/**
+ * A message that already states its own retry disposition as `deliberate`,
+ * `never`, or `reconcile` is never `transient`, no matter which other words
+ * it also contains (#673). This is the provider-neutral half of closing the
+ * double-spend path an exhausted Civitai workflow-status poll opened: that
+ * message said `retry=automatic` and "temporarily unavailable" even once a
+ * paid workflow already existed, and `executeSceneChain` reruns a `transient`
+ * rung, which is a second paid submit while the first — already billed — may
+ * still finish untracked. A describer that is explicit about its own retry
+ * semantics is authoritative over this classifier's keyword guessing, so an
+ * `automatic` disposition (the only one this never excludes) is the one case
+ * left for the keyword rules below to confirm or override.
+ *
+ * Checked AFTER billing and content-rejection, never before: a provider
+ * answering about payment or about the prompt itself is a more specific and
+ * more useful reading than a generic non-transient retry disposition would
+ * be, so those two keep deciding first exactly as they did before this rule
+ * existed.
+ */
+const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
 
 /** Classify an already-described provider failure message. */
 export function classifyImageFailureMessage(message: string): ImageFailureReason {
   const text = message.toLowerCase();
   if (BILLING.test(text)) return "other";
   if (CONTENT_REJECTION.test(text)) return "content_rejection";
+  if (NON_TRANSIENT_DISPOSITION.test(text)) return "other";
   if (TRANSIENT.test(text)) return "transient";
   return "other";
 }
