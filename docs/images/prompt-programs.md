@@ -405,9 +405,11 @@ vocabulary that produced the image is the only thing that can describe it
 honestly — and it rides on the SLOT rather than the claim, so it cannot be paired
 with the wrong image whatever order the claims resolve in. Unset, every dialect
 compiles byte-identically to what it did before the field existed; the two
-families that name no slots at all ignore it. Today one lane supplies it: a scene
-sending a character's reference view
-([pipelines/reference-views.md](pipelines/reference-views.md) §Consumption and reference ordering).
+families that name no slots at all ignore it. Two lanes supply it, both from the
+reference-view registry: a scene sending a character's reference view
+([pipelines/reference-views.md](pipelines/reference-views.md) §Consumption and reference ordering),
+and a reference view rendered from the approved view it is built from
+([pipelines/reference-views.md](pipelines/reference-views.md) §Build order).
 
 ## Packs and bindings
 
