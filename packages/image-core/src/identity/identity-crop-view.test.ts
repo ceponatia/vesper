@@ -1,17 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampPan,
   clampSelection,
+  clampZoom,
   cropPreviewLayout,
   defaultSelection,
   displayScale,
   fitDisplayBox,
+  IDENTITY_CROP_MAX_ZOOM,
+  IDENTITY_CROP_MIN_ZOOM,
   minimumSelectionSide,
   moveSelection,
+  panCentredOn,
   resizeSelection,
   selectionFromCrop,
   selectionToNormalized,
   toDisplayRect,
   toSourceSpace,
+  zoomedDisplayScale,
   type IdentitySquareSelection,
 } from "./identity-crop-view";
 import { heuristicCropV1, normalizedCropToSourcePixels } from "./identity-pack-crop";
@@ -51,6 +57,67 @@ describe("display mapping", () => {
 
   it("places the selection in display pixels", () => {
     expect(toDisplayRect({ left: 100, top: 200, side: 400 }, 0.5)).toEqual({ left: 50, top: 100, size: 200 });
+  });
+
+  it("offsets the selection's display rect by the current pan", () => {
+    expect(toDisplayRect({ left: 100, top: 200, side: 400 }, 0.5, { x: -30, y: 10 })).toEqual({
+      left: 20,
+      top: 110,
+      size: 200,
+    });
+  });
+});
+
+describe("zoom and pan (#667)", () => {
+  const display = { width: 340, height: 460 };
+
+  it("clamps zoom to the editor's range, with 1 as the contain-fit baseline", () => {
+    expect(clampZoom(0.2)).toBe(IDENTITY_CROP_MIN_ZOOM);
+    expect(clampZoom(1)).toBe(1);
+    expect(clampZoom(2.5)).toBe(2.5);
+    expect(clampZoom(50)).toBe(IDENTITY_CROP_MAX_ZOOM);
+    expect(clampZoom(Number.NaN)).toBe(IDENTITY_CROP_MIN_ZOOM);
+  });
+
+  it("scales display pixels per source pixel by the zoom level", () => {
+    const base = displayScale(PORTRAIT, display);
+    expect(zoomedDisplayScale(PORTRAIT, display, 1)).toBeCloseTo(base);
+    expect(zoomedDisplayScale(PORTRAIT, display, 2)).toBeCloseTo(base * 2);
+    // Out-of-range zoom is clamped first, same as `clampZoom`.
+    expect(zoomedDisplayScale(PORTRAIT, display, 100)).toBeCloseTo(base * IDENTITY_CROP_MAX_ZOOM);
+  });
+
+  it("never pans at zoom 1 — the whole image already fits the viewport", () => {
+    expect(clampPan({ x: 40, y: -40 }, PORTRAIT, display, 1)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("keeps the zoomed image covering the viewport on an overflowing axis", () => {
+    // At zoom 2 the rendered image is far larger than the 340x460 viewport on
+    // both axes, so pan may range from 0 down to `viewport - rendered` and no
+    // further either way.
+    const scale = zoomedDisplayScale(PORTRAIT, display, 2);
+    const dispW = PORTRAIT.width * scale;
+    const dispH = PORTRAIT.height * scale;
+    expect(clampPan({ x: 1000, y: 1000 }, PORTRAIT, display, 2)).toEqual({ x: 0, y: 0 });
+    expect(clampPan({ x: -10000, y: -10000 }, PORTRAIT, display, 2)).toEqual({
+      x: display.width - dispW,
+      y: display.height - dispH,
+    });
+  });
+
+  it("centres the pan on a source point and still clamps the result", () => {
+    // The selection's own centre, zoomed in — the pan this would need keeps
+    // that point in the middle of the viewport.
+    const centred = panCentredOn({ x: PORTRAIT.width / 2, y: PORTRAIT.height / 2 }, PORTRAIT, display, 2);
+    const scale = zoomedDisplayScale(PORTRAIT, display, 2);
+    expect(centred.x + (PORTRAIT.width / 2) * scale).toBeCloseTo(display.width / 2);
+    expect(centred.y + (PORTRAIT.height / 2) * scale).toBeCloseTo(display.height / 2);
+
+    // A point near the source's top-left corner would want a positive pan past
+    // what keeping the image covered allows — clamped rather than letterboxed.
+    const cornered = panCentredOn({ x: 0, y: 0 }, PORTRAIT, display, 2);
+    expect(cornered.x).toBeLessThanOrEqual(0);
+    expect(cornered.y).toBeLessThanOrEqual(0);
   });
 });
 
@@ -92,16 +159,19 @@ describe("clamping", () => {
     expect(clampSelection({ left: -50, top: -80, side: 400 }, PORTRAIT)).toEqual({ left: 0, top: 0, side: 400 });
   });
 
-  it("enforces the policy minimum side and the source ceiling", () => {
-    expect(minimumSelectionSide(PORTRAIT)).toBe(IDENTITY_CROP_POLICY_V1.minimumOutputSidePx);
-    expect(clampSelection({ left: 0, top: 0, side: 10 }, PORTRAIT).side).toBe(256);
+  it("enforces the MANUAL policy minimum side and the source ceiling (#667)", () => {
+    // The editor's floor is the manual minimum (128), lower than the automatic
+    // policy's 256 — a square between the two is enlarged on encode rather than
+    // refused (`identityManualCropOutputSide`).
+    expect(minimumSelectionSide(PORTRAIT)).toBe(IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx);
+    expect(clampSelection({ left: 0, top: 0, side: 10 }, PORTRAIT).side).toBe(128);
     expect(clampSelection({ left: 0, top: 0, side: 5000 }, PORTRAIT).side).toBe(768);
   });
 
-  it("floors the minimum at what a source smaller than the policy minimum can give", () => {
-    const tiny = { width: 200, height: 260 };
-    expect(minimumSelectionSide(tiny)).toBe(200);
-    expect(clampSelection({ left: 0, top: 0, side: 10 }, tiny)).toEqual({ left: 0, top: 0, side: 200 });
+  it("floors the minimum at what a source smaller than the manual minimum can give", () => {
+    const tiny = { width: 100, height: 140 };
+    expect(minimumSelectionSide(tiny)).toBe(100);
+    expect(clampSelection({ left: 0, top: 0, side: 10 }, tiny)).toEqual({ left: 0, top: 0, side: 100 });
   });
 });
 
@@ -154,9 +224,11 @@ describe("corner resize", () => {
   });
 
   it("never shrinks below the minimum side", () => {
+    // #667: the editor's floor is the manual minimum (128), not the automatic
+    // policy's 256.
     const resized = resizeSelection(selection, "se", { x: 205, y: 305 }, PORTRAIT);
-    expect(resized.side).toBe(256);
-    expect(resized).toEqual({ left: 200, top: 300, side: 256 });
+    expect(resized.side).toBe(128);
+    expect(resized).toEqual({ left: 200, top: 300, side: 128 });
   });
 
   it("caps growth at the room between the anchor and the source edge", () => {
@@ -166,11 +238,12 @@ describe("corner resize", () => {
   });
 
   it("slides back inside when the anchor is too close to an edge to hold the minimum", () => {
-    // Anchor (740, 300) has only 28px of room, well under the 256 minimum: the side
-    // stays legal and the square moves rather than becoming unsavable.
+    // Anchor (740, 300) has only 28px of room, well under the 128 manual minimum
+    // (#667): the side stays legal and the square moves rather than becoming
+    // unsavable.
     const cornered: IdentitySquareSelection = { left: 740, top: 300, side: 28 };
     const resized = resizeSelection(cornered, "se", { x: 760, y: 320 }, PORTRAIT);
-    expect(resized).toEqual({ left: 512, top: 300, side: 256 });
+    expect(resized).toEqual({ left: 640, top: 300, side: 128 });
   });
 });
 

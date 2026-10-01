@@ -1,14 +1,15 @@
-import type {
-  IdentityPackSummaryStatus,
-  IdentityReferenceStrategy,
-  ImageIdentityPackFailureCode,
-  ImageIdentityPackTrialRefusalCode,
-  ImageIdentityPackWarningCode,
-  TrialCellCounts,
-  TrialCellStatus,
-  TrialGradeDimension,
-  TrialRunStatus,
-  TrialVerdictValue,
+import {
+  IDENTITY_CROP_POLICY_V1,
+  type IdentityPackSummaryStatus,
+  type IdentityReferenceStrategy,
+  type ImageIdentityPackFailureCode,
+  type ImageIdentityPackTrialRefusalCode,
+  type ImageIdentityPackWarningCode,
+  type TrialCellCounts,
+  type TrialCellStatus,
+  type TrialGradeDimension,
+  type TrialRunStatus,
+  type TrialVerdictValue,
 } from "@vesper/image-core";
 import type { TagTone } from "@/components/ui/tag";
 
@@ -66,6 +67,33 @@ export function identityPackCodeCopy(code: ImageIdentityPackWarningCode | ImageI
     case "derivation_failed":
       return "Preparing the reference failed. Try again — if it keeps failing, regenerate the portrait.";
   }
+}
+
+/**
+ * `crop_too_small`, with the actual floor it was measured against (#667).
+ *
+ * `identityPackCodeCopy("crop_too_small")` stays a single generic sentence
+ * because it is shared by two different floors — the automatic policy's 256px
+ * and the editor's own 128px manual minimum — and a static string cannot name
+ * both. The editor calls this instead whenever it already knows which floor
+ * applied, so the owner reads an actual number rather than "too small".
+ */
+export function identityCropTooSmallCopy(minimumSidePx: number): string {
+  return `That crop is smaller than ${minimumSidePx} source pixels, the smallest a reference can be. Make the square bigger and save again.`;
+}
+
+/**
+ * What the owner sees beside the stored-reference preview when the framed
+ * square is below the automatic floor (#667): disclosure, not a warning — a
+ * manual crop in this range still saves, just softer. Returns `null` at or
+ * above the floor, where nothing is enlarged.
+ */
+export function identityManualCropEnlargementNotice(
+  selectedSidePx: number,
+  policy = IDENTITY_CROP_POLICY_V1,
+): string | null {
+  if (selectedSidePx >= policy.minimumOutputSidePx) return null;
+  return `This ${selectedSidePx}px square will be enlarged to ${policy.minimumOutputSidePx}px when saved — a little softer, but framed on the face.`;
 }
 
 /** Status chip label + tone, shared by the portrait-studio block and the editor. */

@@ -2,10 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  clampPan,
   clampSelection,
+  clampZoom,
   cropPreviewLayout,
-  displayScale,
   fitDisplayBox,
+  IDENTITY_CROP_MAX_ZOOM,
+  IDENTITY_CROP_MIN_ZOOM,
+  IDENTITY_CROP_POLICY_V1,
   type IdentityCropHandle,
   identityCropHandles,
   type IdentityPackResponseWire,
@@ -14,12 +18,15 @@ import {
   imageIdentityPackFailureCodeSchema,
   imageIdentityPackWarningCodeSchema,
   moveSelection,
+  panCentredOn,
   resizeSelection,
   selectionFromCrop,
   selectionToNormalized,
   type SourceDimensions,
   toDisplayRect,
   toSourceSpace,
+  type ViewPoint,
+  zoomedDisplayScale,
 } from "@vesper/image-core";
 import {
   identityPackConflictSummary,
@@ -32,22 +39,31 @@ import {
   type IdentityPackSummaryWire,
   type IdentityPackWriteGuard,
 } from "@/lib/client/api";
-import { identityPackCodeCopy, identityPackSummaryChip } from "./identity-pack-copy";
+import {
+  identityCropTooSmallCopy,
+  identityManualCropEnlargementNotice,
+  identityPackCodeCopy,
+  identityPackSummaryChip,
+} from "./identity-pack-copy";
 import { IdentityPackInspector } from "./identity-pack-inspector";
 import { useIsAdmin } from "@/components/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
 import { cx } from "@/components/ui/cx";
 import { Dialog } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
 
-/** The editor's viewport, in CSS px — the source is contain-fit inside it. */
+/** The editor's viewport, in CSS px — the source is contain-fit inside it at
+ * zoom 1 (`IDENTITY_CROP_MIN_ZOOM`). */
 const EDITOR_BOX = { width: 340, height: 460 };
 const PREVIEW_SIDE = 176;
 /** One delayed re-read while a pack is preparing. Never a loop — see the effect. */
 const PENDING_REFRESH_MS = 3000;
 /** Keyboard nudge, in source pixels (shift = 4×). */
 const NUDGE_PX = 8;
+/** One +/- button press or slider notch, in zoom multiples (#667). */
+const ZOOM_STEP = 0.25;
 
 export interface IdentityCropDialogProps {
   open: boolean;
@@ -72,12 +88,22 @@ function parsedFailureCopy(code: string | null): string | null {
  * A refused write in the owner's words: the measured failure code first (the 422
  * body's stable code, which has copy), then an envelope code that happens to be one,
  * and only then the server's own sentence.
+ *
+ * `crop_too_small` is special-cased to name the actual floor it was measured
+ * against (#667): the automatic policy's 256px for `ensure`/`reset-automatic`,
+ * the editor's own 128px manual minimum for `save()` — `identityPackCodeCopy`'s
+ * generic sentence can't say either number because it is shared by both.
  */
-function writeErrorCopy(error: ApiError): string {
+function writeErrorCopy(error: ApiError, tooSmallMinimumSidePx: number): string {
   const measured = identityPackRejectionCode(error);
+  if (measured === "crop_too_small") return identityCropTooSmallCopy(tooSmallMinimumSidePx);
   if (measured) return identityPackCodeCopy(measured);
   const envelope = imageIdentityPackFailureCodeSchema.safeParse(error.code);
-  if (envelope.success) return identityPackCodeCopy(envelope.data);
+  if (envelope.success) {
+    return envelope.data === "crop_too_small"
+      ? identityCropTooSmallCopy(tooSmallMinimumSidePx)
+      : identityPackCodeCopy(envelope.data);
+  }
   return error.message || "That crop could not be saved.";
 }
 
@@ -92,14 +118,19 @@ function submissionOf(selection: IdentitySquareSelection, source: SourceDimensio
 
 interface DragState {
   pointerId: number;
-  mode: "move" | "resize";
+  mode: "move" | "resize" | "pan";
   handle: IdentityCropHandle;
-  /** The rendered image's top-left in client coords, captured at press. */
+  /** The rendered image's top-left in client coords, captured at press —
+   * including the current pan, so a resize/move drag started mid-zoom still
+   * converts pointer position to source pixels correctly (#667). Unused by a
+   * "pan" drag, which works from `startX`/`startY` deltas instead. */
   originX: number;
   originY: number;
   startX: number;
   startY: number;
   base: IdentitySquareSelection;
+  /** The pan in effect when THIS drag started — a "pan" drag's own base. */
+  basePan: ViewPoint;
 }
 
 const HANDLE_POSITION: Record<IdentityCropHandle, string> = {
@@ -133,6 +164,11 @@ export function IdentityCropDialog({
   const isAdmin = useIsAdmin();
   const [summary, setSummary] = useState<IdentityPackSummaryWire | null>(summaryProp);
   const [selection, setSelection] = useState<IdentitySquareSelection | null>(null);
+  // The view transform (#667): zoom 1 is today's contain-fit baseline, so an
+  // untouched dialog looks exactly as it did before this feature. Pan is a
+  // display-pixel offset, meaningless (and always {0,0}) at zoom 1.
+  const [zoom, setZoom] = useState(IDENTITY_CROP_MIN_ZOOM);
+  const [pan, setPan] = useState<ViewPoint>({ x: 0, y: 0 });
   const [loaded, setLoaded] = useState<{ imageId: string; width: number; height: number } | null>(null);
   const [loadFailedFor, setLoadFailedFor] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "ensure" | "reset" | "refresh" | null>(null);
@@ -213,6 +249,10 @@ export function IdentityCropDialog({
     setPrevSeedKey(seedKey);
     setSelection(source ? selectionFromCrop(storedCrop, source) : null);
     setConfirmReset(false);
+    // A fresh square starts from the whole-portrait view (#667) — a leftover
+    // zoom/pan from a previous crop or a previous source would misframe one.
+    setZoom(IDENTITY_CROP_MIN_ZOOM);
+    setPan({ x: 0, y: 0 });
   }
 
   // Latest onRefresh for the async paths — an inline arrow from the panel must not
@@ -268,8 +308,13 @@ export function IdentityCropDialog({
   }, [open, pendingKey, characterId]);
 
   const display = source ? fitDisplayBox(source, EDITOR_BOX) : { width: 0, height: 0 };
-  const scale = source ? displayScale(source, display) : 1;
-  const rect = selection ? toDisplayRect(selection, scale) : null;
+  // The zoomed scale (#667): `zoom` 1 reproduces the original contain-fit
+  // `displayScale`, so every unzoomed computation below is unchanged.
+  const scale = source ? zoomedDisplayScale(source, display, zoom) : 1;
+  // The rendered portrait's own size at the current zoom — bigger than `display`
+  // once zoomed in, and positioned at `pan` within the fixed-size viewport.
+  const zoomedDisplay = source ? { width: source.width * scale, height: source.height * scale } : { width: 0, height: 0 };
+  const rect = selection ? toDisplayRect(selection, scale, pan) : null;
   const preview = selection && source ? cropPreviewLayout(selection, source, PREVIEW_SIDE) : null;
   const guard = guardOf(summary);
   const storedSelection = source ? selectionFromCrop(storedCrop, source) : null;
@@ -279,9 +324,22 @@ export function IdentityCropDialog({
     (selection.left !== storedSelection.left ||
       selection.top !== storedSelection.top ||
       selection.side !== storedSelection.side);
+  const enlargementNotice = selection ? identityManualCropEnlargementNotice(selection.side) : null;
 
   const frameRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
+
+  // Zoom around the SELECTION's own centre, not the viewport's, so the face the
+  // owner is framing stays on screen as they zoom in (#667's whole point).
+  const zoomTo = (nextZoom: number) => {
+    if (!source) return;
+    const z = clampZoom(nextZoom);
+    const centre = selection
+      ? { x: selection.left + selection.side / 2, y: selection.top + selection.side / 2 }
+      : { x: source.width / 2, y: source.height / 2 };
+    setZoom(z);
+    setPan(panCentredOn(centre, source, display, z));
+  };
 
   const startDrag = (e: React.PointerEvent, mode: "move" | "resize", handle: IdentityCropHandle) => {
     const frame = frameRef.current;
@@ -291,11 +349,14 @@ export function IdentityCropDialog({
       pointerId: e.pointerId,
       mode,
       handle,
-      originX: box.left,
-      originY: box.top,
+      // The rendered image's own top-left, not the frame's — they differ once
+      // panned (#667).
+      originX: box.left + pan.x,
+      originY: box.top + pan.y,
       startX: e.clientX,
       startY: e.clientY,
       base: selection,
+      basePan: pan,
     };
     // Capture on the FRAME (not the pressed handle) so one pair of move/up handlers
     // serves the body and all four grips.
@@ -304,9 +365,42 @@ export function IdentityCropDialog({
     e.stopPropagation();
   };
 
+  // Drag the background to pan while zoomed (#667). Only reachable when the
+  // pointer did NOT land on the selection or a handle — those call
+  // `stopPropagation` in `startDrag` before this ever runs. A no-op at zoom 1:
+  // the whole portrait is already in view, so there is nothing to slide.
+  const startPan = (e: React.PointerEvent) => {
+    const frame = frameRef.current;
+    if (!frame || !source || zoom <= IDENTITY_CROP_MIN_ZOOM) return;
+    dragRef.current = {
+      pointerId: e.pointerId,
+      mode: "pan",
+      handle: "se",
+      originX: 0,
+      originY: 0,
+      startX: e.clientX,
+      startY: e.clientY,
+      base: selection ?? { left: 0, top: 0, side: 0 },
+      basePan: pan,
+    };
+    frame.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId || !source) return;
+    if (drag.mode === "pan") {
+      setPan(
+        clampPan(
+          { x: drag.basePan.x + (e.clientX - drag.startX), y: drag.basePan.y + (e.clientY - drag.startY) },
+          source,
+          display,
+          zoom,
+        ),
+      );
+      return;
+    }
     setSelection(
       drag.mode === "move"
         ? moveSelection(drag.base, toSourceSpace({ x: e.clientX - drag.startX, y: e.clientY - drag.startY }, scale), source)
@@ -374,7 +468,7 @@ export function IdentityCropDialog({
       void reread("background");
       return;
     }
-    setNotice({ tone: "error", text: writeErrorCopy(result.error) });
+    setNotice({ tone: "error", text: writeErrorCopy(result.error, IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx) });
   };
 
   /** Prepare/reset share one shape: run, adopt the new summary, or explain the refusal. */
@@ -385,7 +479,11 @@ export function IdentityCropDialog({
     if (!activeRef.current) return;
     setBusy(null);
     if (!result.ok) {
-      setNotice({ tone: "error", text: writeErrorCopy(result.error) });
+      // `ensure`/`reset-automatic` never save a hand-drawn square, so a
+      // `crop_too_small` here — if the automatic derivation ever produced one —
+      // was measured against the AUTOMATIC floor, not the manual one `save()`
+      // uses below.
+      setNotice({ tone: "error", text: writeErrorCopy(result.error, IDENTITY_CROP_POLICY_V1.minimumOutputSidePx) });
       return;
     }
     applySummary(result.data.summary);
@@ -479,54 +577,106 @@ export function IdentityCropDialog({
           ) : !source || !selection || !rect ? (
             <p className="text-sm text-paper-500">Loading the portrait…</p>
           ) : (
-            <div
-              ref={frameRef}
-              onPointerMove={onPointerMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
-              className="relative touch-none overflow-hidden rounded-card border border-ink-600 select-none"
-              style={{ width: display.width, height: display.height }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- local asset route sized to the crop geometry; next/image cannot drive this preview */}
-              <img
-                src={imageUrl(sourceImageId)}
-                alt={name}
-                draggable={false}
-                className="pointer-events-none absolute inset-0 h-full w-full"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-ink-950/55" />
+            <div className="flex flex-col gap-2">
               <div
-                role="group"
-                tabIndex={0}
-                aria-label="Face crop — drag to move, arrow keys to nudge, corner grips to resize"
-                onPointerDown={(e) => startDrag(e, "move", "se")}
-                onKeyDown={onKeyDown}
-                className="absolute cursor-move rounded-sm outline outline-accent-400 focus-visible:outline-2"
-                style={{ left: rect.left, top: rect.top, width: rect.size, height: rect.size }}
+                ref={frameRef}
+                onPointerDown={startPan}
+                onPointerMove={onPointerMove}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+                className={cx(
+                  "relative touch-none overflow-hidden rounded-card border border-ink-600 select-none",
+                  zoom > IDENTITY_CROP_MIN_ZOOM && "cursor-grab active:cursor-grabbing",
+                )}
+                style={{ width: display.width, height: display.height }}
               >
-                {/* The un-dimmed cut-out: the same image, back-offset inside a clipping
-                    box so only the selected square shows through. The clip lives on this
-                    inner div rather than the selection itself, which would also clip the
-                    corner grips that sit outside its edges. */}
-                <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- same source, un-dimmed inside the selection */}
-                  <img
-                    src={imageUrl(sourceImageId)}
-                    alt=""
-                    draggable={false}
-                    aria-hidden="true"
-                    className="absolute max-w-none"
-                    style={{ left: -rect.left, top: -rect.top, width: display.width, height: display.height }}
-                  />
+                {/* eslint-disable-next-line @next/next/no-img-element -- local asset route sized to the crop geometry; next/image cannot drive this preview */}
+                <img
+                  src={imageUrl(sourceImageId)}
+                  alt={name}
+                  draggable={false}
+                  className="pointer-events-none absolute max-w-none"
+                  style={{ left: pan.x, top: pan.y, width: zoomedDisplay.width, height: zoomedDisplay.height }}
+                />
+                <div className="pointer-events-none absolute inset-0 bg-ink-950/55" />
+                <div
+                  role="group"
+                  tabIndex={0}
+                  aria-label="Face crop — drag to move, arrow keys to nudge, corner grips to resize"
+                  onPointerDown={(e) => startDrag(e, "move", "se")}
+                  onKeyDown={onKeyDown}
+                  className="absolute cursor-move rounded-sm outline outline-accent-400 focus-visible:outline-2"
+                  style={{ left: rect.left, top: rect.top, width: rect.size, height: rect.size }}
+                >
+                  {/* The un-dimmed cut-out: the same image, back-offset inside a clipping
+                      box so only the selected square shows through. The clip lives on this
+                      inner div rather than the selection itself, which would also clip the
+                      corner grips that sit outside its edges. The offset is the selection's
+                      OWN zoomed display position — never `rect`, which also carries `pan`,
+                      cancelling out of this box's self-relative coordinate space. */}
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- same source, un-dimmed inside the selection */}
+                    <img
+                      src={imageUrl(sourceImageId)}
+                      alt=""
+                      draggable={false}
+                      aria-hidden="true"
+                      className="absolute max-w-none"
+                      style={{
+                        left: -(selection.left * scale),
+                        top: -(selection.top * scale),
+                        width: zoomedDisplay.width,
+                        height: zoomedDisplay.height,
+                      }}
+                    />
+                  </div>
+                  {identityCropHandles.map((handle) => (
+                    <span
+                      key={handle}
+                      onPointerDown={(e) => startDrag(e, "resize", handle)}
+                      className={cx("absolute size-3 rounded-full border border-ink-900 bg-accent-400", HANDLE_POSITION[handle])}
+                    />
+                  ))}
                 </div>
-                {identityCropHandles.map((handle) => (
-                  <span
-                    key={handle}
-                    onPointerDown={(e) => startDrag(e, "resize", handle)}
-                    className={cx("absolute size-3 rounded-full border border-ink-900 bg-accent-400", HANDLE_POSITION[handle])}
-                  />
-                ))}
               </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  aria-label="Zoom out"
+                  disabled={zoom <= IDENTITY_CROP_MIN_ZOOM}
+                  onClick={() => zoomTo(zoom - ZOOM_STEP)}
+                >
+                  −
+                </Button>
+                <label className="flex flex-1 items-center gap-2 text-xs text-paper-400">
+                  <span className="shrink-0">Zoom</span>
+                  <Slider
+                    value={zoom}
+                    min={IDENTITY_CROP_MIN_ZOOM}
+                    max={IDENTITY_CROP_MAX_ZOOM}
+                    step={0.05}
+                    unit="×"
+                    onChange={zoomTo}
+                    className="flex-1"
+                  />
+                </label>
+                <Button
+                  size="sm"
+                  variant="quiet"
+                  aria-label="Zoom in"
+                  disabled={zoom >= IDENTITY_CROP_MAX_ZOOM}
+                  onClick={() => zoomTo(zoom + ZOOM_STEP)}
+                >
+                  +
+                </Button>
+              </div>
+              <p className="text-[11px] text-paper-600">
+                {zoom > IDENTITY_CROP_MIN_ZOOM
+                  ? "Drag the dimmed area to pan while zoomed in."
+                  : "Zoom in to frame a small face more precisely."}
+              </p>
             </div>
           )}
 
@@ -557,6 +707,7 @@ export function IdentityCropDialog({
                 {selection.side} × {selection.side} px at {selection.left}, {selection.top}
               </p>
             ) : null}
+            {enlargementNotice ? <p className="text-[11px] text-accent-300">{enlargementNotice}</p> : null}
 
             <div className="flex flex-wrap gap-2">
               {canPrepare ? (
