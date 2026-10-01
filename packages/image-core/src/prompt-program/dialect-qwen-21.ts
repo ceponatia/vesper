@@ -358,6 +358,30 @@ function subjectPhrase(input: ImageDialectPositiveInput, ref: string | undefined
 }
 
 /**
+ * Whether this subject's `subject.face_visibility` claim (if any) resolves to
+ * `hidden` — read directly from the program's claims the way
+ * {@link wearsNothingAtAll} reads exposure claims, because
+ * {@link identityLockSentence} has to know this BEFORE the `subject.identity`
+ * claim's own render, and a lock that waited for the separate
+ * `subject.face_visibility` claim to compile first would depend on claim
+ * order rather than on the fact itself.
+ *
+ * `false` for `partial` and for a subject with no such claim at all (`full`
+ * visibility never gets one — {@link imageSceneObscuredFace}'s own doc) and
+ * for an unbound claim: a partially turned face is still evidence for the
+ * lock, so only a fully hidden one earns the adapted wording (#669).
+ */
+function subjectFaceHidden(claims: readonly ImagePositiveClaim[], ref: string | undefined): boolean {
+  if (ref === undefined) return false;
+  for (const claim of claims) {
+    if (claim.concept === "subject.face_visibility" && claim.subjectRef === ref) {
+      return imageSceneObscuredFace(claim.value) === "hidden";
+    }
+  }
+  return false;
+}
+
+/**
  * The identity-preserve lock for a subject the payload carries a photograph
  * of: face, skin tone and apparent age exactly as the reference(s) show; hair,
  * build, wardrobe and pose stay the TEXT's. Modelled on
@@ -372,11 +396,23 @@ function subjectPhrase(input: ImageDialectPositiveInput, ref: string | undefined
  * one, exactly as 2511's grouped lock does — two photographs of one person are
  * two claims about when she was photographed, and demanding exactness against
  * both at once is demanding a contradiction.
+ *
+ * `faceHidden` (#669) drops the face from what the identity images are asked
+ * for — a back reference view's identity images (the portrait, and since #670
+ * the approved front view) both show a face the back shot cannot show, so
+ * asking the model to preserve it is the same contradiction the shared
+ * family's {@link faceVisibilitySentence} exists to name, just inside the
+ * lock rather than beside it. The lock still asks for skin tone and apparent
+ * age from those images — a back view carries no evidence against either —
+ * and says positively that the face stays hidden, rather than falling silent
+ * about it: a lock that simply omitted "face" would leave nothing telling the
+ * model the omission was deliberate.
  */
 function identityLockSentence(
   subject: string | null,
   slots: readonly ImageDialectReference[],
   bodySlots: readonly ImageDialectReference[] = [],
+  faceHidden = false,
 ): string {
   const positions = slots.map((slot) => String(slot.position));
   const images = positions.length === 1 ? `Image ${positions[0]}` : `Images ${listWords(positions)}`;
@@ -391,7 +427,39 @@ function identityLockSentence(
     bodySlots.length === 0
       ? `${named}'s hair, build, wardrobe and pose follow this prompt's own description`
       : `${named}'s hair, wardrobe and pose follow this prompt's own description, and ${named}'s build follows that description and ${imagesPhrase(bodySlots.map((slot) => slot.position))}`;
+  if (faceHidden) {
+    return `Use ${images} for ${named}'s skin tone and apparent age, ${exactly}; ${named}'s face stays hidden from the camera in this shot; ${rest}.`;
+  }
   return `Use ${images} for ${named}'s face, skin tone and apparent age, ${exactly}; ${rest}.`;
+}
+
+/**
+ * The 2.1-owned sentence for a shot that hides the subject's face entirely
+ * (#669 — the back reference view and any `away`-camera scene on this
+ * dialect). NOT the shared family's {@link faceVisibilitySentence}: that
+ * sentence closes "do not rotate {name} to face the camera", a negation that
+ * anchors on the very turn it forbids (the reference-view registry's own rule
+ * 3, `apps/web` `contracts/images/reference-views.ts`) and that reads oddly
+ * beside that registry's now-positive `back_full` instruction. This sentence
+ * states the same geometry the registry states — the back of the head and
+ * hair are what the shot DOES show — as a fact rather than a prohibition.
+ *
+ * `partial` visibility keeps the shared family sentence unchanged: a partly
+ * turned face is still evidence worth preserving, and the shared wording
+ * already says so without a turn-shaped negation to react to.
+ *
+ * `hairConcealed` drops hair from both clauses — what the shot shows and what
+ * to keep — the same edit {@link faceVisibilitySentence} makes for headwear
+ * that fully hides the hair: a back view of a hooded subject shows the back
+ * of the head, never the hair underneath it.
+ */
+function hiddenFaceSentence(subject: string | null, preserveFrom: "reference" | "nothing", hairConcealed: boolean): string {
+  const name = subject ?? "the subject";
+  const anchor = preserveFrom === "reference" ? " exactly from the reference" : " exactly";
+  if (hairConcealed) {
+    return `${name} faces directly away from the camera, so only the back of ${name}'s head is visible; keep ${name}'s build and skin tone${anchor}`;
+  }
+  return `${name} faces directly away from the camera, so only the back of ${name}'s head and hair is visible; keep ${name}'s hair color and style, build and skin tone${anchor}`;
 }
 
 /**
@@ -615,18 +683,26 @@ function renderClaim(
         // same plain descriptive sentence 2512 compiles unconditionally.
         return say(subject === null ? `${capitalize(value)}.` : `${capitalize(subject)}: ${value}.`);
       }
-      return say(identityLockSentence(subject, slots, slotsFor(input, "body", claim.subjectRef)));
+      return say(
+        identityLockSentence(
+          subject,
+          slots,
+          slotsFor(input, "body", claim.subjectRef),
+          subjectFaceHidden(input.claims, claim.subjectRef),
+        ),
+      );
     }
     case "subject.face_visibility": {
       const visibility = imageSceneObscuredFace(claim.value);
       if (visibility === null) return null;
+      const hairConcealed = hairConcealedForSubject(input, claim.subjectRef);
+      const preserveFrom = faceVisibilityAnchor(input, claim);
+      // `hidden` gets this dialect's own positive sentence (#669); `partial`
+      // keeps the shared family wording unchanged — see {@link hiddenFaceSentence}.
       return say(
-        faceVisibilitySentence(
-          visibility,
-          subject,
-          faceVisibilityAnchor(input, claim),
-          hairConcealedForSubject(input, claim.subjectRef),
-        ),
+        visibility === "hidden"
+          ? hiddenFaceSentence(subject, preserveFrom, hairConcealed)
+          : faceVisibilitySentence(visibility, subject, preserveFrom, hairConcealed),
       );
     }
     case "subject.apparent_age":

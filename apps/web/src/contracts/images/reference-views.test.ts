@@ -179,6 +179,25 @@ describe("the phrasing rules that keep a view from painting a second person", ()
   });
 });
 
+/**
+ * #669: the back views kept generating with the head turned to glance over
+ * the shoulder, because the pre-fix instruction asked for a TURN ("head
+ * turned away from the lens") rather than stating the head's resting
+ * geometry. Pinned here, beside the generic phrasing-rule sweep above,
+ * because that sweep only forbids the NEGATION pattern and a bare
+ * "turn(ed)" is not a negation — a regression back to turn-shaped wording
+ * would pass every test above and still reproduce the bug.
+ */
+describe("back_full states the back of the head positively (#669)", () => {
+  it("never asks for a turn, and states the head facing the same way as the body", () => {
+    const back = referenceViewAngleById("back_full")!;
+    expect(back.instruction).not.toMatch(/\bturn(ed|s|ing)?\b/i);
+    expect(back.instruction).toContain("{name}'s head facing straight ahead in the same direction as {name}'s body");
+    expect(back.instruction).toContain("the back of {name}'s head and hair toward the lens");
+    expect(back.instruction).toContain("{name}'s face fully hidden from the camera");
+  });
+});
+
 const withBand = (band: string): { attributes: AttributeValue[] } => ({
   attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" }],
 });

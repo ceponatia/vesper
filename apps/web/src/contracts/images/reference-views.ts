@@ -152,7 +152,15 @@ export const referenceViewAngles: readonly ReferenceViewAngle[] = [
     camera: { orientation: "away", distance: REFERENCE_VIEW_FRAMING, height: "eye_level" },
     cameraId: "reference_view_back_full",
     sceneBinding: "seen from behind, the same person",
-    instruction: `{name} standing with {name}'s back to the camera, {name}'s head turned away from the lens, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
+    // "head turned away from the lens" (pre-#669) names a TURN, and a model
+    // asked for a turn away from the camera routinely resolves it as a glance
+    // back over the shoulder rather than a head that simply faces the same way
+    // the body does. The replacement states the head's geometry the same
+    // positive way the body's already is — facing the same direction, only the
+    // back of it toward the lens, the face fully hidden — never "not turned" or
+    // "no glance", which would anchor on the very turn this entry exists to
+    // rule out (rule 3, this file's header).
+    instruction: `{name} standing with {name}'s back to the camera, {name}'s head facing straight ahead in the same direction as {name}'s body, the back of {name}'s head and hair toward the lens, {name}'s face fully hidden from the camera, ${REFERENCE_VIEW_FULL_LENGTH_CLAUSE}`,
     label: "Back, full length",
   },
   {
