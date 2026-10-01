@@ -479,6 +479,45 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     expect(settled?.status).toBe("failed");
   });
 
+  // Undoing an approval while a view built from it renders would land that paid
+  // render stale (finalization does not revalidate the upstream), so it waits.
+  // Nothing else waits on it: rejecting a view, and undoing a rejection, change
+  // no body a dependent was built from, and once the render settles the undo
+  // goes through.
+  it("waits to undo an approval while a view built from it renders, and only then", async () => {
+    const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+    const left: ReferenceView = { angle: "side_left", wardrobe: "clothed" };
+    const state = await fixture(back);
+    const front = state.upstreamViewId;
+    if (front === null) throw new Error("fixture front attempt missing");
+
+    // A sibling built from the same front, finished and unreviewed.
+    const leftJob = await state.claimSlot(left);
+    const leftAttempt = await reserveReferenceView({ ...state.reserve, view: left, jobId: leftJob });
+    if (leftAttempt === null) throw new Error("left attempt was not reserved");
+    const leftImage = await asset(state.input.characterId, "reference_view");
+    await finalizeReferenceView({ jobId: leftJob, viewId: leftAttempt, characterId: state.input.characterId, ownerId, imageId: leftImage.id, method: "rendered" });
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, leftJob));
+
+    // `back` is rebuilding from the approved front: a live lease, a pending attempt.
+    const backJob = await state.claimSlot();
+    const rebuilding = await reserveReferenceView({ ...state.reserve, jobId: backJob });
+    if (rebuilding === null) throw new Error("back rebuild was not reserved");
+
+    expect((await reviewReferenceView({ ...state.input, view, attemptId: front, expectedRevision: 1, verdict: "undo" })).status).toBe("busy");
+    expect(await getReferenceViewSummary(state.input.characterId, ownerId, view)).toMatchObject({ state: "approved", downstreamBuilding: true });
+
+    // Unaffected: rejecting the sibling, and undoing that rejection.
+    expect((await reviewReferenceView({ ...state.input, view: left, attemptId: leftAttempt, expectedRevision: 0, verdict: "reject", feedback })).status).toBe("reviewed");
+    expect((await reviewReferenceView({ ...state.input, view: left, attemptId: leftAttempt, expectedRevision: 1, verdict: "undo" })).status).toBe("reviewed");
+
+    // The render settles; the undo goes through.
+    const image = await asset(state.input.characterId, "reference_view");
+    await finalizeReferenceView({ jobId: backJob, viewId: rebuilding, characterId: state.input.characterId, ownerId, imageId: image.id, method: "rendered" });
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, backJob));
+    expect((await reviewReferenceView({ ...state.input, view, attemptId: front, expectedRevision: 1, verdict: "undo" })).status).toBe("reviewed");
+  });
+
   it("refuses foreign, wrong-slot, expired, unreadable, incompatible and busy attempts", async () => {
     const state = await retainedFixture();
     expect((await restoreReferenceView({ ...state.restore, ownerId: otherOwnerId })).status).toBe("not_found");

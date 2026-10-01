@@ -89,8 +89,9 @@ build controls and its selection checkbox.
 Review guidance appears once above the grid; actionable failures remain on their tile. Clicking a
 tile's image opens it in the shared `ImageLightbox` ([conventions.md](conventions.md)
 §Image lightbox), captioned with its angle and wardrobe. The viewer offers comparison with the
-accepted portrait, previous/next, approval, rejection and undo. Opening or closing it alone changes
-no verdict. Rejection can capture optional reasons and a correction retained with that attempt;
+accepted portrait, previous/next, approval, rejection and undo; Undo on an approved view is
+disabled, with a line saying why, while views built from it are still rendering. Opening or
+closing it alone changes no verdict. Rejection can capture optional reasons and a correction retained with that attempt;
 the notes are review history and do not alter generation prompts. Approving is a spending action
 when views are built from the one being approved: the control reads **Approve · builds N views**,
 and the upload dialog's confirm reads **Use this reference view · builds N views**, each counted by

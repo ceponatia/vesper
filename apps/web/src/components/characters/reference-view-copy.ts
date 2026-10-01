@@ -134,6 +134,13 @@ export function referenceViewSelectionWaitingHint(count: number): string {
     : `${String(count)} selected views are built from another selected view, so they are left out. Approving the new view rebuilds them.`;
 }
 
+/**
+ * Why Undo waits on an approved view: views built from it are still rendering,
+ * and taking the approval back now would leave those renders out of date.
+ */
+export const referenceViewUndoBusyHint =
+  "Views built from this one are still rendering. Undo once they finish.";
+
 /** A tile's checkbox while a view it is built from is ticked. */
 export const referenceViewSelectionBlockedHint =
   "Built from another selected view. It rebuilds when that view is approved.";

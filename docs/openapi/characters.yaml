@@ -669,7 +669,8 @@ paths:
           description: >-
             not_ready, changed, incompatible (including a view whose upstream view was replaced, or a
             rendered view whose body images have changed since),
-            ineligible, busy, expired or unavailable.
+            ineligible, busy (an undo of an approval while a view built from this one is
+            rendering), expired or unavailable.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ApiError' }

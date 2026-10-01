@@ -271,7 +271,11 @@ approval and opening the bytes.
   replaced image or newer verdict returns a recoverable conflict, and a view whose upstream was
   replaced, or a rendered view whose body images changed, is `incompatible`. Undo clears the last
   verdict and review stamp only at that same revision; it
-  makes the current attempt unreviewed again.
+  makes the current attempt unreviewed again. Undoing an **approval** is refused as `busy` while a
+  view built from it — at any depth — holds a live lease or a pending attempt, since taking the
+  approval back would land those paid renders stale; the viewer disables Undo with that reason.
+  Approving, rejecting and undoing a rejection never wait on it: none of them changes a body a
+  dependent was built from.
 - Rejection optionally records Wrong outfit, Wrong angle, Identity mismatch, Image defect and a
   correction note of at most 1,000 characters. Feedback is stored on that attempt and shown in the
   viewer, current card and history. An unfinished note lives at the reference-panel session boundary,

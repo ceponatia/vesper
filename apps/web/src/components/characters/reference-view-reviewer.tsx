@@ -13,6 +13,7 @@ import {
   referenceViewDependentsCopy,
   referenceViewFeedbackReasonCopy,
   referenceViewStateCopy,
+  referenceViewUndoBusyHint,
 } from "./reference-view-copy";
 import {
   hasReferenceViewFeedbackDraft,
@@ -70,7 +71,11 @@ export function ReferenceViewReviewer({
   // What approving builds, read off the live set while it still shows the
   // displayed attempt — the count the server will charge — and off the
   // displayed attempt itself otherwise.
-  const approvalBuilds = (latest !== undefined && latest.attemptId === view.attemptId ? latest : view).approvalBuilds.length;
+  const live = latest !== undefined && latest.attemptId === view.attemptId ? latest : view;
+  const approvalBuilds = live.approvalBuilds.length;
+  // The server refuses to undo an approval while views built from it render;
+  // the control says so instead of offering a request that will be refused.
+  const undoWaits = view.state === "approved" && live.downstreamBuilding;
 
   const move = (offset: number) => {
     const target = set.views[index + offset];
@@ -126,7 +131,8 @@ export function ReferenceViewReviewer({
         <ReferenceViewFeedbackNote feedback={view.feedback} />
         <div className="flex flex-wrap items-center gap-2">
           {view.state === "unreviewed" ? <><Button size="sm" variant="primary" busy={busy} disabled={Boolean(changed) || imageStatus !== "loaded"} onClick={() => { if (imageStatus === "loaded") void review("approve"); }}>{referenceViewApproveActionLabel(approvalBuilds)}</Button><Button size="sm" variant="quiet" disabled={busy || Boolean(changed)} onClick={() => setRejecting(true)}>Reject</Button>{imageStatus !== "loaded" ? <p className="text-sm text-paper-400">Load the reference image before approving it.</p> : null}</> : null}
-          {view.state === "approved" || view.state === "rejected" ? <Button size="sm" variant="ghost" busy={busy} disabled={Boolean(changed)} onClick={() => void review("undo")}>Undo review</Button> : null}
+          {view.state === "approved" || view.state === "rejected" ? <Button size="sm" variant="ghost" busy={busy} disabled={Boolean(changed) || undoWaits} title={undoWaits ? referenceViewUndoBusyHint : undefined} onClick={() => void review("undo")}>Undo review</Button> : null}
+          {undoWaits ? <p className="text-sm text-paper-400">{referenceViewUndoBusyHint}</p> : null}
           {view.state !== "approved" && view.state !== "unreviewed" && view.state !== "rejected" ? <p className="text-sm text-paper-400">{view.failureMessage ?? copy.hint}</p> : null}
         </div>
       </>}

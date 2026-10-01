@@ -1403,6 +1403,15 @@ export async function reviewReferenceView(input: ReferenceViewReviewRequest & {
     const undo = input.verdict === "undo";
     if (undo ? row.reviewedAt === null || !["ready", "rejected"].includes(row.status)
       : row.status !== "ready" || row.reviewedAt !== null) return { status: "not_ready" };
+    // Undoing an APPROVAL while views built from this one are rendering would
+    // leave those paid renders stale on arrival — finalization does not
+    // revalidate the upstream — so it waits, like any replacement of the view.
+    // An approval, a rejection, and an undo of a rejection change nothing a
+    // dependent was built from, so they never wait on this.
+    if (undo && row.status === "ready" &&
+        referenceViewDescendantBusy(input.view, await buildingReferenceViewSlots(tx, input.characterId, input.ownerId))) {
+      return { status: "busy" };
+    }
     const source = await readAcceptedPortraitSource(input.characterId, input.ownerId, tx);
     if (!source.ok || row.sourceImageId !== source.imageId || row.sourceContentHash !== source.contentHash ||
         row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION) return { status: "incompatible" };
