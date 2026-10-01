@@ -31,11 +31,11 @@ import {
  * row's would be, and moving it into a table later is a migration that must
  * reproduce the same hash.
  *
- * Owner ruling 2026-09-30/2026-10-01 (`docs/image-models/models/civitai-qwen-image-2-1.md`):
- * the row has no profile and no production surface flag today — it is an admin
- * Image Generator bench target. These bindings exist so the bench can compile
- * through the real prompt-program path; wiring a profile row to this model is
- * #663/#664's own remaining work, not this slice's.
+ * Owner ruling 2026-10-01 (`docs/image-models/models/civitai-qwen-image-2-1.md`):
+ * the row's `variant-standard` and `scene-standard` profiles (drizzle 0152) are
+ * the `variant` and `scene` task defaults, and these bindings are what those
+ * profiles compile through. The variant lane fails a render whose (model,
+ * task, profile key) has no binding, so the keys here and in 0152 move together.
  */
 
 const MODEL_SLUG = "civitai/qwen-image-2.1";
