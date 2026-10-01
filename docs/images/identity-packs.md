@@ -83,9 +83,11 @@ thresholds are `null` — defined, not armed.
 
 The editor's owner-drawn square is held to `IdentityCropPolicy.minimumManualOutputSidePx` (128px at v1), not the
 automatic `minimumOutputSidePx` (256px) — a human may frame a tighter face crop than automatic derivation would ever
-propose, and the whole point of the editor's zoom (`identity-crop-dialog.tsx`: a slider, +/- buttons and drag-to-pan
-once zoomed, on top of the existing drag/resize square, all in source pixels) is to make that framing accurate on a
-source where the face is a small fraction of the frame. A manual square between the two floors is **enlarged** to the
+propose, and the whole point of the editor's zoom (`identity-crop-dialog.tsx`: a slider and +/- buttons, both
+keyboard-accessible; panning once zoomed by dragging the viewport or by arrow keys when it has focus; the selection
+stays in view after every nudge or drag; all on top of the existing drag/resize square, still in source pixels) is to
+make that framing accurate on a source where the face is a small fraction of the frame. A manual square between the
+two floors is **enlarged** to the
 automatic floor on encode (`identityManualCropOutputSide`, a Lanczos resize that allows upscaling — the one path in the
 service permitted to, since every other crop path refuses rather than inventing detail) rather than refused or stored
 at its raw size; the editor discloses this beside the stored-reference preview before save. Below the manual floor a

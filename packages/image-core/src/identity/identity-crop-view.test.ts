@@ -6,6 +6,7 @@ import {
   cropPreviewLayout,
   defaultSelection,
   displayScale,
+  ensureSelectionVisible,
   fitDisplayBox,
   IDENTITY_CROP_MAX_ZOOM,
   IDENTITY_CROP_MIN_ZOOM,
@@ -118,6 +119,54 @@ describe("zoom and pan (#667)", () => {
     const cornered = panCentredOn({ x: 0, y: 0 }, PORTRAIT, display, 2);
     expect(cornered.x).toBeLessThanOrEqual(0);
     expect(cornered.y).toBeLessThanOrEqual(0);
+  });
+
+  describe("ensureSelectionVisible (#667)", () => {
+    // A square source/viewport with round numbers: at zoom 2 the image
+    // renders at 200x200 inside a 100x100 viewport, so pan ranges [-100, 0]
+    // on each axis — easy to check by hand.
+    const square = { width: 400, height: 400 };
+    const box = { width: 100, height: 100 };
+
+    it("leaves pan untouched when the selection is already fully visible", () => {
+      // rect = {left: 0, top: 20, size: 20} — inside [0, 100] on both axes.
+      const pan = { x: -50, y: -30 };
+      expect(ensureSelectionVisible({ left: 100, top: 100, side: 40 }, square, box, 2, pan)).toEqual(pan);
+    });
+
+    it("shifts pan right to bring a square back from past the left/top edge", () => {
+      // rect(no pan) = {left: 50, top: 50, size: 20}; pan -70 pushes it to -20
+      // on both axes — off both edges by 20.
+      const result = ensureSelectionVisible({ left: 100, top: 100, side: 40 }, square, box, 2, { x: -70, y: -70 });
+      expect(result).toEqual({ x: -50, y: -50 });
+    });
+
+    it("shifts pan left to bring a square back from past the right/bottom edge", () => {
+      // rect(pan 0) = {left: 150, top: 150, size: 20} — 70px past the 100px
+      // viewport on both axes.
+      const result = ensureSelectionVisible({ left: 300, top: 300, side: 40 }, square, box, 2, { x: 0, y: 0 });
+      expect(result).toEqual({ x: -70, y: -70 });
+    });
+
+    it("reaches exactly the edge of the legal pan range for a selection touching the source's edge", () => {
+      // The selection touches the source's right edge (380 + 20 = 400): the
+      // shift needed to bring it into view lands exactly on `clampPan`'s own
+      // boundary (-100) — proof the adjustment and the clamp never fight each
+      // other for a selection that is itself always in bounds.
+      const result = ensureSelectionVisible({ left: 380, top: 0, side: 20 }, square, box, 2, { x: 0, y: 0 });
+      expect(result.x).toBe(-100);
+    });
+
+    it("leaves an oversized axis alone while still adjusting the axis that fits", () => {
+      // A non-square viewport so the two axes can disagree: side 250 at scale
+      // 0.5 renders 125px, bigger than the 100px-wide viewport (x is left
+      // exactly as given) but smaller than this 160px-tall one (y still gets
+      // the usual "scroll into view" shift).
+      const tallBox = { width: 100, height: 160 };
+      const result = ensureSelectionVisible({ left: 50, top: 0, side: 250 }, square, tallBox, 2, { x: -30, y: -30 });
+      expect(result.x).toBe(-30);
+      expect(result.y).toBe(0);
+    });
   });
 });
 

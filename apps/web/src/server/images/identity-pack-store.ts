@@ -118,6 +118,52 @@ export function intrinsicPolicy(): IdentityPackIntrinsicPolicy {
   return injectedIntrinsicPolicy ?? INTRINSIC_POLICY_V1;
 }
 
+/**
+ * The intrinsic policy a MANUAL revision is judged against (#667).
+ *
+ * Blur, occlusion and padding thresholds are exactly `intrinsicPolicy()`'s own
+ * (respecting the test seam above) — only the crop-SIZE floor differs, to
+ * `IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx` (128 at v1) rather than
+ * the intrinsic policy's own `minimumCropWidthPx`/`minimumCropHeightPx` (256
+ * at v1 — a defense-in-depth mirror of the AUTOMATIC crop-policy floor).
+ * Without this override, that unrelated, non-overridable `crop_too_small`
+ * check would hard-block every manual crop below 256 — the exact crops this
+ * feature exists to allow.
+ *
+ * Shared by two call sites that must never drift on this: `saveManualIdentityCrop`
+ * (`identity-pack-manual.ts`), judging a crop at SAVE time, and
+ * `projectIdentityPackPolicy` below, re-judging a STORED `ready` revision
+ * whenever its stamped `policyVersion` differs from the current one. Before
+ * this was shared, the projection path always used `intrinsicPolicy()`
+ * unconditionally regardless of method — so the first future policy-version
+ * bump would have projected every already-accepted, enlarged manual crop
+ * (128–255px) as `unusable`/`crop_too_small`, and every reference view,
+ * portrait variant and scene anchor consuming that character would have
+ * refused silently.
+ *
+ * Because the manual floor here is anchored to `IDENTITY_CROP_POLICY_V1`
+ * (a constant independent of `INTRINSIC_POLICY_V1`), it resolves to the same
+ * 128px regardless of how a future intrinsic-policy bump moves the automatic
+ * floor — a manual crop's eligibility does not drift with that bump. The one
+ * remaining asymmetry is cosmetic: the synthetic `+manual_floor` version
+ * suffix below is never persisted to a row's `policyVersion` COLUMN (only the
+ * plain base version is, both at reservation and here), so admin history
+ * always shows the base version even for a manual-floor judgment; the
+ * `policyVersion !== IDENTITY_PACK_POLICY_VERSION` gate in
+ * `projectIdentityPackPolicy` compares against that same plain stamp, so the
+ * suffix changes nothing about when re-judging fires.
+ */
+export function manualIntrinsicPolicy(): IdentityPackIntrinsicPolicy {
+  const base = intrinsicPolicy();
+  const manualFloor = IDENTITY_CROP_POLICY_V1.minimumManualOutputSidePx;
+  const minimumCropWidthPx = Math.min(base.minimumCropWidthPx, manualFloor);
+  const minimumCropHeightPx = Math.min(base.minimumCropHeightPx, manualFloor);
+  if (minimumCropWidthPx === base.minimumCropWidthPx && minimumCropHeightPx === base.minimumCropHeightPx) {
+    return base;
+  }
+  return { ...base, version: `${base.version}+manual_floor`, minimumCropWidthPx, minimumCropHeightPx };
+}
+
 /* ------------------------------------------------------------------------ *
  * Resolved source                                                           *
  * ------------------------------------------------------------------------ */
@@ -318,6 +364,12 @@ export interface IdentityPackPolicyProjection {
  * seam all pass through here, so a policy bump can never leave one of them
  * quoting a verdict the other two have dropped.
  *
+ * A `manual` revision is re-judged against `manualIntrinsicPolicy()` rather
+ * than `intrinsicPolicy()` directly (#667) — the same lower crop-size floor
+ * `saveManualIdentityCrop` applies at save time — so a manual crop enlarged
+ * from below the automatic floor is not wrongly re-blocked by a later policy
+ * bump re-checking it against a floor it was never held to.
+ *
  * Only a `ready` revision is projected. The opposite direction — a loosened
  * policy that would now accept a stored `unusable` one — is deliberately not a
  * projection: a refused revision has no crop bytes to hand anybody, so the only
@@ -359,7 +411,11 @@ export function projectIdentityPackPolicy(
     return { pack, blockedBy: null };
   }
 
-  const policy = intrinsicPolicy();
+  // A manual revision is re-judged against its own, lower crop-size floor
+  // (#667) — the same substitution `saveManualIdentityCrop` applies at save
+  // time, so a future policy bump cannot silently turn an already-accepted,
+  // enlarged manual crop `unusable`.
+  const policy = pack.derivation.method === "manual" ? manualIntrinsicPolicy() : intrinsicPolicy();
   const evaluation = evaluateIdentityPackIntrinsic(
     {
       method: pack.derivation.method,
