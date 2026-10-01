@@ -32,8 +32,11 @@ import { VISUAL_IMAGE_AGE_ATTRIBUTE_ID } from "./visual-digest";
  *   image at all is null — the value every pre-existing view row stores.
  */
 
-const adult = { attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: "eighteen", source: "creation" as const }] };
-const minor = { attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: "teen", source: "creation" as const }] };
+// The return annotation keeps the id its registry literal: in a bare object
+// literal it would widen to `string`, which no attribute id pattern accepts.
+const ageAttribute = (value: string): AttributeValue => ({ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value, source: "creation" });
+const adult = { attributes: [ageAttribute("eighteen")] };
+const minor = { attributes: [ageAttribute("teen")] };
 const unresolved = { attributes: [] as AttributeValue[] };
 
 const UNCLOTHED_1: BodyReferenceImage = { slot: 1, imageId: "img-a", tag: "unclothed" };

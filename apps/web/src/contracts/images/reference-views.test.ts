@@ -370,7 +370,7 @@ describe("the build order", () => {
   });
 
   it("builds every other angle dressed from the root, and the root's own undressed view from it", () => {
-    const expected = [
+    const expected: ReferenceView[] = [
       ...referenceViewAngles
         .filter((angle) => angle.id !== REFERENCE_VIEW_ROOT_ANGLE)
         .map((angle): ReferenceView => ({ angle: angle.id, wardrobe: "clothed" })),

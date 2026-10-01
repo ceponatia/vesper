@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { emptyCharacterProfile, referenceViewBodySetKey, VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type ReferenceView } from "@/contracts";
+import { emptyCharacterProfile, referenceViewBodySetKey, VISUAL_IMAGE_AGE_ATTRIBUTE_ID, type CharacterProfile, type ReferenceView } from "@/contracts";
 import { characterBodyReferences, characters, db, images, jobs } from "@/server/db";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
 import { createImageAsset, saveImageBuffer } from "./asset-storage";
@@ -54,8 +54,8 @@ afterAll(async () => {
   await endTestPool();
 });
 
-function profileWithAge(band: string) {
-  return { ...emptyCharacterProfile(), attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" as const }] };
+function profileWithAge(band: string): CharacterProfile {
+  return { ...emptyCharacterProfile(), attributes: [{ id: VISUAL_IMAGE_AGE_ATTRIBUTE_ID, value: band, source: "creation" }] };
 }
 
 async function asset(characterId: string, kind: "avatar" | "reference_view" | "body_reference") {
