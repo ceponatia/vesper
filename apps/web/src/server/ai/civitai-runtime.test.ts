@@ -447,6 +447,7 @@ describe("Civitai Klein v2 transport", () => {
     expect(statusReads).toBe(3);
     expect(result).toMatchObject({ ok: false, predictionId: "submit-exhausted", error: expect.stringContaining("civitai_http_503; retry=reconcile") });
     if (result.ok) throw new Error("expected the exhausted workflow-status read to fail");
+    if (result.error === undefined) throw new Error("expected the exhausted workflow-status read to carry an error");
     expect(result.error).toContain("paths=steps[0].input.resolution");
     expect(result.error).not.toContain("private");
     expect(result.error).not.toContain("secret");
@@ -878,6 +879,7 @@ describe("Civitai Klein v2 transport", () => {
       expect(paidPosts).toHaveLength(1);
       expect(result).toMatchObject({ ok: false, predictionId: "found-but-broken" });
       if (result.ok) throw new Error("expected the found-but-unparseable workflow to fail");
+      if (result.error === undefined) throw new Error("expected the found-but-unparseable workflow to carry an error");
       expect(result.error).not.toContain("civitai_submit_unconfirmed");
       expect(result.error).toBe("Civitai workflow lookup returned an invalid workflow identity or status");
       expect(classifyImageFailureMessage(result.error)).not.toBe("transient");
