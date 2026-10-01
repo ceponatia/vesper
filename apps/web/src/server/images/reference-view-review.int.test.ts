@@ -441,6 +441,25 @@ describe.skipIf(!ready)("reference review and recovery", () => {
     expect((await currentReferenceViewRow(state.input.characterId, view))?.id).toBe(second);
   });
 
+  // An approved view whose FILE is gone used to keep reading approved off its
+  // row status: every build of the views made from it was charged, found no
+  // bytes to send and rendered nothing, and Build offered them again. An
+  // ordinary sheet read now settles it the way the image sweep does, so the
+  // view reads stale (Build offers the view itself) and its dependents wait.
+  it("stops reading an approved view as approved once its file is gone, so the views built from it wait", async () => {
+    const back: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+    const state = await fixture(back);
+    const front = await currentReferenceViewRow(state.input.characterId, view);
+    const [frontAsset] = await db().select().from(images).where(eq(images.id, front?.imageId ?? ""));
+    if (!frontAsset) throw new Error("fixture front asset missing");
+    await fs.unlink(absoluteImagePath(frontAsset));
+
+    expect(await getReferenceViewSummary(state.input.characterId, ownerId, view)).toMatchObject({ state: "stale", consumable: false });
+    expect(await getReferenceViewSummary(state.input.characterId, ownerId, back)).toMatchObject({ state: "stale", waitingOn: view });
+    const [settled] = await db().select({ status: images.status }).from(images).where(eq(images.id, frontAsset.id));
+    expect(settled?.status).toBe("failed");
+  });
+
   it("refuses foreign, wrong-slot, expired, unreadable, incompatible and busy attempts", async () => {
     const state = await retainedFixture();
     expect((await restoreReferenceView({ ...state.restore, ownerId: otherOwnerId })).status).toBe("not_found");

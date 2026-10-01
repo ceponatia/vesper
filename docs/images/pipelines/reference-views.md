@@ -217,6 +217,13 @@ approval and opening the bytes.
   revives the views built from it without rebuilding them. So does approving a restored copy of
   that attempt: the copy carries the original's lineage, so neither the views built from the
   original nor the Approve control's count asks for them to be rebuilt.
+- **A current view whose file is gone stops reading approved.** The projection reads the asset
+  row's status, so a vanished file is settled the way the image sweep settles any ready row that
+  lost its file — `failImage`, stamping the failure time — by every ordinary sheet read
+  (`reconcileLostReferenceViewFiles`, beside lease reconciliation) and by a consuming read that
+  finds the bytes missing. Only a missing file settles an asset; a transient read error does not.
+  The view then reads stale, so the build action offers it and the views built from it wait,
+  rather than each build of them being charged for an upstream that cannot be sent.
 - **Attempts are rows.** A new attempt marks the previous current row `superseded` and inserts its
   own, in one transaction; a partial unique index holds *one current row per (character, angle,
   wardrobe)* at the storage layer.

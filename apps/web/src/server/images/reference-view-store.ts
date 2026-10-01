@@ -34,7 +34,7 @@ import {
   type ReferenceViewReviewRequest,
 } from "@/contracts";
 import { characterReferenceViews, characters, db, images, jobs, JOB_STALE_MS } from "../db";
-import { createImageAsset, readImageBytes } from "./asset-storage";
+import { createImageAsset, failImage, readImageBytes } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
 import { log } from "@/server/log";
@@ -228,6 +228,79 @@ async function reconcileReferenceViewLeasesInTransaction(
 /** Reconcile expired leases and their abandoned pending attempts under the character lock. */
 export function reconcileExpiredReferenceViewWork(characterId: string, now: Date = new Date()): Promise<number> {
   return withReferenceViewLock(characterId, (tx) => reconcileReferenceViewLeasesInTransaction(tx, characterId, now));
+}
+
+/** The error a lost view file settles its asset with — the image sweep's transition, on read. */
+export const REFERENCE_VIEW_LOST_FILE_ERROR = "ready row lost its file; reclaimed on read";
+
+/**
+ * Whether a stored image's file is GONE — not merely unreadable for a moment.
+ * Only a missing file (`ENOENT`) settles an asset: a transient read error must
+ * never turn an approved view into a failed one, and a path that is not
+ * canonical is left for the sweep to judge.
+ */
+async function imageFileGone(image: { id: string; ownerId: string; path: string }): Promise<boolean> {
+  try {
+    await fs.stat(absoluteImagePath(image));
+    return false;
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ENOENT";
+  }
+}
+
+/**
+ * Settle one view asset whose file is gone exactly as `image_sweep` settles a
+ * ready row that lost its file — `failImage`, which stamps the failure time
+ * retention reads — instead of waiting for the next scheduled pass.
+ *
+ * The sheet reads an asset's row status, so a view whose bytes vanished would
+ * otherwise go on reading `approved`: every build of the views made from it
+ * would be charged, find no bytes to send, and render nothing, and Build would
+ * offer them again. Once the asset is failed the view reads stale and its
+ * dependents wait, as for any upstream that is no longer approved.
+ *
+ * Owner-scoped and kind-scoped; true when it settled the asset. Never throws.
+ */
+export async function failLostReferenceViewAsset(imageId: string, ownerId: string): Promise<boolean> {
+  try {
+    const [asset] = await db()
+      .select({ id: images.id, ownerId: images.ownerId, path: images.path, status: images.status })
+      .from(images)
+      .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")))
+      .limit(1);
+    if (asset?.status !== "ready" || !(await imageFileGone(asset))) return false;
+    await failImage(asset.id, REFERENCE_VIEW_LOST_FILE_ERROR);
+    log.warn("images", "reference view lost its file; marked failed", { imageId: asset.id });
+    return true;
+  } catch (error) {
+    log.warn("images", "a lost reference view file could not be settled", {
+      imageId,
+      error: String(error).slice(0, 300),
+    });
+    return false;
+  }
+}
+
+/**
+ * Settle every CURRENT view of one character whose file is gone — the read-time
+ * repair the sheet runs beside lease reconciliation, so a build never admits
+ * (and charges) work from an upstream whose bytes no longer exist.
+ */
+export async function reconcileLostReferenceViewFiles(characterId: string): Promise<number> {
+  const assets = await db()
+    .select({ imageId: images.id, ownerId: images.ownerId })
+    .from(characterReferenceViews)
+    .innerJoin(images, eq(images.id, characterReferenceViews.imageId))
+    .where(and(
+      eq(characterReferenceViews.characterId, characterId),
+      eq(characterReferenceViews.current, true),
+      eq(images.status, "ready"),
+    ));
+  let settled = 0;
+  for (const asset of assets) {
+    if (await failLostReferenceViewAsset(asset.imageId, asset.ownerId)) settled += 1;
+  }
+  return settled;
 }
 
 /** Sweep every character that still has a pending attempt; live leases are preserved. */
@@ -808,9 +881,14 @@ export async function getReferenceViewSet(
   sink?: DiagnosticSink,
   executor?: ReferenceViewExecutor,
 ): Promise<ReferenceViewSetSummary> {
-  // Ordinary reads repair crash-left pending rows first. Callers already inside
-  // the character lock pass their executor and observe the transaction's snapshot.
-  if (executor === undefined) await reconcileExpiredReferenceViewWork(characterId);
+  // Ordinary reads repair crash-left pending rows first, and settle any current
+  // view whose file is gone (the image sweep's transition, on read) so no build
+  // is admitted from bytes that no longer exist. Callers already inside the
+  // character lock pass their executor and observe the transaction's snapshot.
+  if (executor === undefined) {
+    await reconcileExpiredReferenceViewWork(characterId);
+    await reconcileLostReferenceViewFiles(characterId);
+  }
   const reader = executor ?? db();
   const accepted = await readAcceptedPortrait(characterId, ownerId, reader);
   if (accepted === undefined) return emptyReferenceViewSetSummary();

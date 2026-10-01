@@ -7,7 +7,7 @@ import {
   type ReferenceViewState,
 } from "@/contracts";
 import type { SceneFaceVisibility } from "@vesper/image-core";
-import { withLockedReferenceViewSet } from "./reference-view-store";
+import { failLostReferenceViewAsset, withLockedReferenceViewSet } from "./reference-view-store";
 
 /**
  * **The one way a render gets a reference view's bytes.**
@@ -147,23 +147,31 @@ export async function loadConsumableReferenceView(
     return { ok: false, reason };
   };
 
-  return withLockedReferenceViewSet(characterId, ownerId, sink, async ({ set, readReadyAsset }) => {
+  // The locked read also hands back an approved view's asset whose bytes would
+  // not read. It is settled after the lock is released: if its file is gone,
+  // the asset fails the way the image sweep fails it, so the view stops reading
+  // approved and the views built from it wait instead of being charged again
+  // for an upstream that cannot be sent.
+  const read = await withLockedReferenceViewSet(characterId, ownerId, sink, async ({ set, readReadyAsset }): Promise<{
+    loaded: LoadConsumableReferenceViewResult;
+    unreadImageId: string | null;
+  }> => {
     // The profile plan, accepted portrait, attempt, and asset row are read under
     // the same character lock. An apparent-age save cannot cross this read and
     // let an old approved bare image escape after it became ineligible.
     const summary = set.views.find((entry) => entry.angle === view.angle && entry.wardrobe === view.wardrobe);
     // A slot the registry no longer carries is a slot the set never reports; the
     // selection could only have named it from a registry this build does not have.
-    if (summary === undefined) return refuse("none_built");
+    if (summary === undefined) return { loaded: refuse("none_built"), unreadImageId: null };
     if (!summary.consumable || summary.imageId === null || summary.attemptId === null || set.acceptedImageId === null) {
-      return refuse(reasonOf(summary.state));
+      return { loaded: refuse(reasonOf(summary.state)), unreadImageId: null };
     }
 
     const asset = await readReadyAsset(summary.imageId);
-    if (asset === null) return refuse("missing_bytes");
+    if (asset === null) return { loaded: refuse("missing_bytes"), unreadImageId: summary.imageId };
 
     const angle = referenceViewAngleById(view.angle);
-    return {
+    const loaded: LoadConsumableReferenceViewResult = {
       ok: true,
       attemptId: summary.attemptId,
       lineageId: summary.lineageId ?? summary.attemptId,
@@ -175,5 +183,8 @@ export async function loadConsumableReferenceView(
       // the registry itself gives, rather than a second mapping here.
       faceVisibility: angle === undefined ? "hidden" : referenceViewFaceVisibility(angle),
     };
+    return { loaded, unreadImageId: null };
   });
+  if (read.unreadImageId !== null) await failLostReferenceViewAsset(read.unreadImageId, ownerId);
+  return read.loaded;
 }

@@ -27,9 +27,9 @@ import { expectCleanSink, expectDiagnostic } from "@/test/diagnostics";
  * only proves that this module reads that verdict rather than recomputing it.
  */
 
-vi.mock("./reference-view-store", () => ({ withLockedReferenceViewSet: vi.fn() }));
+vi.mock("./reference-view-store", () => ({ withLockedReferenceViewSet: vi.fn(), failLostReferenceViewAsset: vi.fn() }));
 
-import { withLockedReferenceViewSet } from "./reference-view-store";
+import { failLostReferenceViewAsset, withLockedReferenceViewSet } from "./reference-view-store";
 import { loadConsumableReferenceView, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
 
 const VIEW = { angle: "back_full", wardrobe: "clothed" } as const;
@@ -186,5 +186,17 @@ describe("loadConsumableReferenceView", () => {
 
     expect(loaded).toEqual({ ok: false, reason: "missing_bytes" });
     expectDiagnostic(sink, REFERENCE_VIEW_UNAVAILABLE);
+    // ...and hands the asset to the image sweep's transition, so an approved
+    // view whose file is gone stops reading approved and the views built from
+    // it stop being charged for an upstream that cannot be sent.
+    expect(failLostReferenceViewAsset).toHaveBeenCalledWith(VIEW_ASSET, "user1");
+  });
+
+  it("settles nothing when the view was sent", async () => {
+    project(sheet("approved"));
+
+    await loadConsumableReferenceView({ ownerId: "user1", characterId: CHARACTER, view: VIEW });
+
+    expect(failLostReferenceViewAsset).not.toHaveBeenCalled();
   });
 });
