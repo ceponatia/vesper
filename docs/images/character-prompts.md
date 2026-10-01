@@ -460,10 +460,17 @@ two independent claims rendering two independent sentences, since no
 2.1-specific evidence yet justifies fusing them the way 2511's own trials
 justified fusing its binding. It preserves the same set — face, skin tone and
 apparent age, leaving hair, build, wardrobe and pose to the text — but speaks
-only the single- and grouped-reference forms: its two bound lanes
-(`variant-standard`,
-`scene-standard`) are single-subject, so it carries none of the several-people
-cast binding the Qwen edit dialect's third form exists for. It also declares no reference-authority aspects of its own in
+only the single- and grouped-reference forms: it carries none of the
+several-people FUSED cast binding the Qwen edit dialect's third form exists
+for — `variant-standard` is single-subject, but `scene-standard` is not always
+(an ensemble chat scene carries more than one identity-anchored cast member),
+so each subject's lock is still its own independent sentence rather than one
+clause naming "each person". What keeps an ensemble render legible is naming,
+not binding: a cast member the scene naming policy left unlabelled (bound to a
+reference rather than named) is called "the person in Image N" — their own
+identity slot's number — in the lock and in every later claim about them,
+never the shared `"the subject"` placeholder two such subjects would otherwise
+carry alike. It also declares no reference-authority aspects of its own in
 `CHARACTER_REFERENCE_AUTHORITY_BY_DIALECT` (below), unlike the Qwen edit
 dialect's declared set — no 2.1 trial has evidenced that an optional
 appearance fact is redundant beside its reference yet, so its subjects'

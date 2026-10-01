@@ -354,7 +354,13 @@ checkpoint that both generates (zero references) and edits (one to ten), where
 the delta editor is edit-only and refuses a compile with no reference at all;
 and 2.1's identity-preserve lock is a single/grouped-only shape, carrying no
 2511-style multi-person cast binding or reference-authority declaration —
-neither evidenced by any 2.1 trial yet. **It is also the one dialect that
+neither evidenced by any 2.1 trial yet. It still names a reference-bound cast
+member DISTINCTLY when the scene naming policy withholds their display label:
+"the person in Image N", bound to their own identity slot, rather than the
+projection's shared `"the subject"` placeholder every unlabelled cast member
+would otherwise carry alike — an ensemble scene's two unlabelled subjects stay
+addressable in every claim that names them, not only the binding sentence.
+**It is also the one dialect that
 states nudity in words**: no Qwen 2.1 LoRA is generation-enabled on Civitai
 (owner ruling 2026-09-30/2026-10-01), so a fully bare subject — torso and
 pelvis both reading `bare`, the same threshold `selectReferenceView` uses for
