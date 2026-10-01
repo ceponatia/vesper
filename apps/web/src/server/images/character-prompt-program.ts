@@ -323,6 +323,10 @@ export interface CharacterPromptProgramInput {
    * attributes and coverage readout the cut was selected over. Absent or false
    * projects nothing: a moderated rung, and every lane that does not decide
    * this per render, compiles the cut alone.
+   *
+   * The same decision reaches the dialect as `intimatePermitted`, the one
+   * licence for wording a dialect adds beyond the claims — Qwen Image 2.1's
+   * explicit nudity clause on a fully bare subject.
    */
   readonly intimateReveal?: boolean;
   /**
@@ -1004,6 +1008,12 @@ export function buildCharacterPromptProgram(input: CharacterPromptProgramInput):
     negativePack,
     references: dialectReferences(subjectOf, describe, preservationOf, planned.primary),
     ...(input.register === undefined ? {} : { register: input.register }),
+    // The route's own permission, the same decision that projected the reveal
+    // facts above — never re-derived from the facts. A dialect that must state
+    // nudity in words (Qwen Image 2.1 carries no anatomy LoRA) may do so only
+    // here; bare coverage on a route that permits nothing stays coverage.
+    // Spread only when granted, so every other compile is unchanged.
+    ...(input.intimateReveal === true ? { intimatePermitted: true } : {}),
     budget: imagePromptBudgetFromBinding(profile.model.advancedCapabilities.prompt),
     // The probed negative binding is the only honest source for whether this
     // version has a field at all. An empty `advancedCapabilities` means nobody

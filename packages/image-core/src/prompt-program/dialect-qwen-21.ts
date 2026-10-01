@@ -98,10 +98,14 @@ import { createSceneStagingSurfaceLog, type SceneStagingSurfaceLog } from "./sce
  * 2. `subject.identity` compiles to the identity-preserve lock when the
  *    payload carries a reference of that subject, and to 2512's plain
  *    descriptive sentence when it does not (the zero-reference rung).
- * 3. `subject.exposure` states nudity explicitly when the subject's own
+ * 3. `subject.exposure` states nudity explicitly when the render's route
+ *    permits intimate content (`intimatePermitted`) AND the subject's own
  *    computed coverage is fully bare (see {@link isFullyBareSubject}) —
  *    acceptance #4, the owner's nudity-reinforcement ruling (2026-10-01):
- *    2.1 carries no LoRA to assert nudity, so the prompt has to say it.
+ *    2.1 carries no LoRA to assert nudity, so the prompt has to say it. The
+ *    permission is the application's, behind its age gate (owner ruling
+ *    2026-10-01): bare coverage alone reads the same on a minor's wardrobe, an
+ *    empty saved outfit or an ordinary scene, none of which may say it.
  *
  * **No negative channel at all** (acceptance #3): the probed schema exposes
  * `negativePrompt`, but every bound profile runs at the blank `cfgScale` (1),
@@ -296,10 +300,17 @@ function isLastExposureClaimForSubject(claims: readonly ImagePositiveClaim[], cl
  * dense clause — and ALONGSIDE the body attributes the exposure and
  * intimate-reveal facts already state, never replacing them.
  *
- * Emitted only where {@link isFullyBareSubject} is true. A partial undress
- * states only what the exposure and intimate-anatomy claims already say (the
- * ordinary `subject.exposure`/`subject.intimate_anatomy` renderings below,
- * unmodified); this function is never called for it.
+ * Emitted only on a route that permits intimate content
+ * (`input.intimatePermitted`) and only where {@link isFullyBareSubject} is
+ * true. Both are required. The permission is the application's own decision —
+ * a `bare` reference view, an `nsfw_test` bench or an intimate scene rung,
+ * each behind its age gate — and it does NOT depend on any
+ * `subject.intimate_anatomy` claim being present: a permitted bare view of a
+ * subject with no intimate attributes authored still reinforces. Without the
+ * permission, a fully bare subject — a minor's wardrobe, an empty saved outfit,
+ * an ordinary scene — states only the exposure sentences every dialect states;
+ * so does a partial undress either way. This function is never called for
+ * any of them.
  */
 function nudityReinforcementClause(subject: string | null): string {
   return `${prefixed(subject, "is completely naked, with no clothes left anywhere on the body")} ${prefixed(subject, "is fully nude")}`;
@@ -437,15 +448,16 @@ function renderClaim(
     case "subject.hair_concealment":
       return say(hairConcealmentSentence(subject));
     case "subject.exposure": {
-      // Acceptance #4: 2.1 carries no LoRA to assert nudity, so a fully bare
-      // subject (both torso and pelvis reading bare — the same threshold
-      // `selectReferenceView` uses for its `bare` wardrobe) gets the clause
-      // stated explicitly, alongside this claim's own attribute wording rather
-      // than in place of it. Attached to the LAST exposure claim for this
-      // subject so it fires exactly once whatever regions this shot's framing
-      // carries.
+      // Acceptance #4: 2.1 carries no LoRA to assert nudity, so on a route that
+      // permits intimate content a fully bare subject (both torso and pelvis
+      // reading bare — the same threshold `selectReferenceView` uses for its
+      // `bare` wardrobe) gets the clause stated explicitly, alongside this
+      // claim's own attribute wording rather than in place of it. Attached to
+      // the LAST exposure claim for this subject so it fires exactly once
+      // whatever regions this shot's framing carries.
       const base = prefixed(subject, `is ${value}`);
       const reinforced =
+        input.intimatePermitted === true &&
         claim.subjectRef !== undefined &&
         isLastExposureClaimForSubject(input.claims, claim) &&
         isFullyBareSubject(input.claims, claim.subjectRef)

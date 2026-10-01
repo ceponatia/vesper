@@ -456,3 +456,70 @@ describe("the nsfw_test bench's age gate, on every model", () => {
     expect(mockModels).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Qwen Image 2.1's nudity clause follows the route, not the coverage
+// ---------------------------------------------------------------------------
+
+/**
+ * THE 2.1 DIALECT STATES NUDITY ONLY ON A PERMITTED ROUTE (owner rulings
+ * 2026-10-01). Over the same fully bare cut — an empty wardrobe, so torso and
+ * pelvis both read bare — the production seam compiles the explicit clause
+ * ("naked", "nude", "no clothes") only when the lane's route permits the
+ * intimate reveal. Bare coverage alone, which is what a minor's wardrobe, an
+ * ordinary variant of a character with no saved outfit, or a non-intimate
+ * scene presents, must compile the exposure sentences and nothing more. The
+ * lanes never grant the permission to a minor (their age gates are tested
+ * above and in the scene and reference-view suites); this pins that the
+ * dialect cannot reach the words without it.
+ */
+describe("Qwen Image 2.1 states nudity only where the route permits the intimate reveal", () => {
+  const NUDITY = /naked|nude|no clothes/i;
+
+  /** The bench's successful no-LoRA route on 2.1 — the permission, granted. */
+  const PERMITTED_ROUTE = {
+    ok: true as const,
+    profile: QWEN21_VARIANT,
+    binding: null,
+    provenance: { lora: null, reason: "no_anatomy_lora_curated" as const },
+  };
+
+  function qwen21Program(kind: PortraitVariantKind, permitted: boolean, cut = BARE_TORSO_CUT) {
+    return compiled(
+      activeVariantProgram({
+        character: CHARACTER,
+        resolved: QWEN21_VARIANT,
+        cut,
+        nsfwRoute: permitted ? PERMITTED_ROUTE : null,
+        packSelection: packSelection(),
+        input: {
+          characterId: LANE_PROBE_SUBJECT_ID,
+          userId: "user-probe",
+          kind,
+          instruction: "the studio's fixed bench instruction",
+        },
+        revisions: [],
+      }),
+    );
+  }
+
+  it("states it for an adult's permitted bench over a fully bare cut", () => {
+    expect(qwen21Program(NSFW_TEST_VARIANT_KIND, true).prompt).toMatch(NUDITY);
+  });
+
+  it("never states it for the same bare cut on an ordinary variant — coverage alone grants nothing", () => {
+    const program = qwen21Program("pose", false);
+    expect(program.prompt).not.toMatch(NUDITY);
+  });
+
+  it("never states it for a minor's bare cut on a route nothing permitted", () => {
+    const minorSheet = {
+      ...SURFACE_PROFILE,
+      attributes: SURFACE_PROFILE.attributes.map((entry) =>
+        entry.id === "identity.apparent_age" ? { ...entry, value: "teen" } : entry,
+      ),
+    };
+    const program = qwen21Program("pose", false, laneProbeVariantCut([], minorSheet));
+    expect(program.prompt).not.toMatch(NUDITY);
+  });
+});
