@@ -44,6 +44,7 @@ import {
   type CharacterPromptTransport,
 } from "./character-prompt-program";
 import { characterSceneImageOperation } from "@/contracts/images/character-digest";
+import type { IntimateRouteProvenance } from "@/contracts/images/intimate-scene-lora";
 import type { ReferenceViewAngleId, ReferenceViewWardrobe } from "@/contracts";
 import { REFERENCE_VIEW_DROPPED_FOR_CAPACITY, REFERENCE_VIEW_UNAVAILABLE } from "./reference-view-consume";
 import { monogramSvg } from "./monogram";
@@ -275,6 +276,14 @@ export interface RenderResolvedSceneInput {
    * byte-identical to what it was before this field existed.
    */
   resolvedLora?: ImageLoraRenderBinding;
+  /**
+   * The intimate route's own record (`IntimateRouteProvenance`) — the library
+   * row it sent, by id, or null, and why — present exactly when the caller took
+   * the intimate route. Written at reserve time beside `lora`, the same field
+   * a `bare` reference view and an `nsfw_test` variant record. Absent leaves the
+   * row byte-identical to what it was before this field existed.
+   */
+  intimateRoute?: IntimateRouteProvenance;
   flavor?: string;
   /**
    * Identity-pack provenance for the anchors the caller PLANNED to send,
@@ -957,6 +966,9 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
           // credential on its way to the provider, and an image row is exactly
           // the kind of long-lived record that must never carry one.
           ...(input.resolvedLora ? { lora: input.resolvedLora.id } : {}),
+          // The route's reason beside the weights — so a 2.1 scene that drew its
+          // act without a LoRA says so rather than merely lacking a `lora` key.
+          ...(input.intimateRoute ? { intimateRoute: input.intimateRoute } : {}),
           ...(input.flavor ? { flavor: input.flavor } : {}),
           ...(reservedProvenance.length > 0 ? { identityReferences: reservedProvenance } : {}),
           // Which matching view anchored which person — beside the camera that

@@ -1,5 +1,11 @@
 import { and, eq } from "drizzle-orm";
-import { characterProfileSchema, emptyCharacterProfile, outfitItems, type SceneCameraSpec } from "@/contracts";
+import {
+  characterProfileSchema,
+  emptyCharacterProfile,
+  imageAgeAllowsIntimate,
+  outfitItems,
+  type SceneCameraSpec,
+} from "@/contracts";
 import {
   IMAGE_TARGET_ASPECT,
   type ImageLoraRenderBinding,
@@ -120,6 +126,18 @@ export type VariantCutInput = StandaloneLaneCutInput;
 export function buildVariantCut(input: VariantCutInput): StandaloneSubjectCut {
   return buildStandaloneLaneCut(input, { camera: VARIANT_EDIT_CAMERA, cameraId: VARIANT_EDIT_CAMERA_ID });
 }
+
+/**
+ * The `nsfw_test` bench was asked of a character whose apparent age is not a
+ * resolved adult (owner ruling 2026-10-01). The row is failed BEFORE any route
+ * is resolved, any pack is read or any provider is called — through
+ * `failedPrecondition`, like the lane's other refusals — whichever model was
+ * picked, because the rule is the character's and not the endpoint's.
+ */
+export const VARIANT_NSFW_TEST_AGE_GATED = "images.variant.nsfw_test_age_gated";
+
+/** What the studio tile says for an age-gated bench row. */
+export const NSFW_TEST_AGE_REFUSAL = "the anatomy bench renders only a character whose apparent age resolves to an adult";
 
 /**
  * The cut could not be assembled at all — a thrown build. The row is failed
@@ -325,15 +343,6 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
   // choice to make and silently used it.
   const picked = demo ? null : await resolveImageProfileForTask("variant", input.modelId, input.sink);
   const nsfwTest = input.kind === NSFW_TEST_VARIANT_KIND;
-  // Resolved BEFORE the row is reserved, like every other model decision in this
-  // lane: the row records the model it will run on, so a pairing decided later
-  // would be a row that lies about its own render.
-  const nsfwRoute = nsfwTest && picked ? await resolveNsfwTestRoute(picked, input.sink) : null;
-  // The bench kind's route profile — the picked profile ON the intimate model,
-  // or the picked profile itself on a listed model; the picked profile itself
-  // for every other variant, unchanged.
-  const resolved = nsfwRoute?.ok ? nsfwRoute.profile : picked;
-  const model = resolved?.model ?? null;
   const [character] = await db().select().from(characters).where(eq(characters.id, input.characterId)).limit(1);
   const profile = parseOr(
     characterProfileSchema,
@@ -342,6 +351,28 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
     undefined,
     "characters.profile",
   );
+  // The bench's age gate, on the one read the cut is built from — the same
+  // rule the reference-view plan applies to a `bare` view. Ahead of the route,
+  // so an age-gated bench resolves no intimate model, reads no LoRA and
+  // compiles no reveal on ANY model.
+  const ageGated = nsfwTest && character !== undefined && !imageAgeAllowsIntimate(profile);
+  if (ageGated) {
+    input.sink?.push(
+      diag("warn", VARIANT_NSFW_TEST_AGE_GATED, "the anatomy bench was refused: the character's apparent age is not a resolved adult", {
+        path: "images.variant",
+        context: { characterId: input.characterId, model: picked?.model.slug ?? null },
+      }),
+    );
+  }
+  // Resolved BEFORE the row is reserved, like every other model decision in this
+  // lane: the row records the model it will run on, so a pairing decided later
+  // would be a row that lies about its own render.
+  const nsfwRoute = nsfwTest && picked && !ageGated ? await resolveNsfwTestRoute(picked, input.sink) : null;
+  // The bench kind's route profile — the picked profile ON the intimate model,
+  // or the picked profile itself on a listed model; the picked profile itself
+  // for every other variant, unchanged.
+  const resolved = nsfwRoute?.ok ? nsfwRoute.profile : picked;
+  const model = resolved?.model ?? null;
   const load = character
     ? await loadDefaultWardrobeWithRevisions(input.userId, outfitItems(profile), input.sink)
     : { wardrobe: [], revisions: [] };
@@ -366,8 +397,9 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         input.sink,
       )
     : null;
+  // An age-gated bench reads no pack: the row fails before anything would use it.
   const packIdentity: IdentityPackRenderReferencesResult | null =
-    !demo && character && resolved
+    !demo && character && resolved && !ageGated
       ? await identityPackRenderReferences({
           ownerId: input.userId,
           characterId: input.characterId,
@@ -422,13 +454,16 @@ export async function generateVariant(input: GenerateVariantInput): Promise<stri
         ...(compiled?.meta ?? {}),
       },
     },
-    // The row is on record for a missing character too — failed, unlogged. A
-    // cut that would not assemble is checked FIRST: a program is never built
+    // The row is on record for a missing character too — failed, unlogged. An
+    // age-gated bench is refused first: nothing past the gate was resolved for
+    // it. A cut that would not assemble comes next: a program is never built
     // over a cut that does not exist, so the two answers cannot both arise.
     failedPrecondition: character
-      ? cut === null
-        ? "the variant's visual cut could not be assembled"
-        : programPrecondition
+      ? ageGated
+        ? NSFW_TEST_AGE_REFUSAL
+        : cut === null
+          ? "the variant's visual cut could not be assembled"
+          : programPrecondition
       : `character ${input.characterId} not found`,
     produce: async (asset) => {
       // Only reached once the character loaded, so the name fallback never fires.
