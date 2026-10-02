@@ -41,7 +41,7 @@ export type { SimRenderContext, SimRenderCorrection } from "./prompts/sim-render
  * The live narrator over one committed cut — the first real model call in the
  * successor lane. The flow:
  *
- *   load the persisted cut → render (one model call, Aion 3.0 default via the
+ *   load the persisted cut → render (one model call, the chat default via the
  *   shared picker) → the trust boundary → the structural audit →
  *   a hidden retry from the SAME cut → on ≥1 enacted effect or
  *   proposal, `confirm_narrator_result` (system principal) arms real effects.
@@ -58,7 +58,7 @@ export interface RenderCutInput {
   engagementId: string;
   /** Render this cut; absent = the engagement's newest persisted cut. */
   cutId?: string;
-  /** Curated-list model id; unknown/absent resolves to the chat default (Aion 3.0). */
+  /** Curated-list model id; unknown/absent resolves to the chat default (`DEFAULT_CHARACTER_CHAT_MODEL_ID`). */
   modelId?: string;
   /** Total attempts including the ruling-8 hidden retry. Default 2. */
   maxAttempts?: number;

@@ -85,6 +85,17 @@ describe("narrativeProviderOptions", () => {
     });
   });
 
+  // Owner ruling 2026-10-02 (#699): `high` is one of the three efforts Aion 3.5's
+  // OpenRouter record supports (max/high/low — no medium, which OpenRouter would round).
+  it("sets effort:high for Aion 3.5 (chat default, #699) — AionLabs endpoints mandate reasoning", () => {
+    expect(narrativeProviderOptions("aion-labs/aion-3.5")).toEqual({
+      openrouter: { reasoning: { effort: "high" } },
+    });
+    expect(narrativeProviderOptions("aion-labs/aion-3.5", { sortLatency: true })).toEqual({
+      openrouter: { provider: { sort: "latency" }, reasoning: { effort: "high" } },
+    });
+  });
+
   it("sends NO reasoning knob for Aion 3.0 (reverted 2026-07-09 — un-evaled, hang suspect)", () => {
     // The provisional effort:low was pulled; Aion 3.0 now sends the model default.
     expect(narrativeProviderOptions("aion-labs/aion-3.0")).toBeUndefined();

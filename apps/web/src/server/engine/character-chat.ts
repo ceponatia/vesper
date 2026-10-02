@@ -219,9 +219,9 @@ function narratorAttempt(args: {
   // The whole call, built at the one model gateway (server/ai/model-adapters.ts):
   // this lane's narrator temperature, then the exact model's measured profile,
   // then the retry floor when there is one. The OpenRouter block it is handed —
-  // per-model bad endpoints dropped (DeepInfra on GLM 5.2) and the eval-ruled
-  // reasoning knob (the chat default GLM 5.2 → effort:low) — is merged in rather
-  // than replaced, and is undefined for every non-OpenRouter narrator.
+  // per-model bad endpoints dropped (DeepInfra on GLM 5.2) and the per-model
+  // reasoning knob (`NARRATOR_REASONING` in server/ai/provider.ts) — is merged in
+  // rather than replaced, and is undefined for every non-OpenRouter narrator.
   const openrouterOptions = narrativeProviderOptions(args.modelId);
   const call = textModelCall(args.modelId, {
     laneDefaults: { temperature: NARRATIVE_TEMPERATURE },
