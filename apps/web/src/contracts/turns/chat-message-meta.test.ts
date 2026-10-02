@@ -59,7 +59,7 @@ const INVENTORY: ReadonlyArray<{ role: "user" | "assistant"; key: string; value:
   // Stored as stable CODES, exactly like `compositionFallbacks` — never as
   // `Diagnostic` records, which would put a message and context on a client-read row.
   { role: "assistant", key: "renderDiagnostics", value: ["sim.solo.degraded", "attempt1.presentation.id_leak"] },
-  // The exchange trace (#637) this reply belongs to - a bare id, so both roles may carry it.
+  // The exchange trace (#637) this reply belongs to — a bare id, so both roles may carry it.
   { role: "assistant", key: "traceId", value: "trace_abc123" },
 ];
 
