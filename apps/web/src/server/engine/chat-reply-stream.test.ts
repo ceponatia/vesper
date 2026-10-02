@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NarratorCompletion } from "@/server/ai";
+import type { ExchangeStageResult, ExchangeTrace } from "./chat-exchange-trace";
 import { saveReplyFailure } from "./chat-reply-store";
 import { stopChatReply, streamExchange } from "./chat-reply-stream";
 
@@ -152,5 +153,116 @@ describe("the one-token length stub", () => {
     for await (const token of stream) void token;
     expect(settle).toHaveBeenCalledWith("I", true);
     expect(saveReplyFailure).toHaveBeenCalledWith("stub-stopped", null, ASMODEUS);
+  });
+});
+
+/**
+ * The exchange trace's `narrator.stream` stage + `finish()` (#637). A fake
+ * recorder (not the real `startExchangeTrace`, which would hit the database
+ * through `logEvent` on `flush()`) that just captures what `streamExchange`
+ * calls it with — this is a unit test of the stage/verdict WIRING, not of the
+ * recorder itself (covered by `chat-exchange-trace.test.ts`) or of a live
+ * exchange (covered by the pipeline's own int test).
+ */
+function fakeExchangeTrace(): ExchangeTrace & {
+  stageEnds: { stage: string; phase: string; result?: ExchangeStageResult }[];
+  finishes: { kind: string; failureCode?: string }[];
+  flushCount: number;
+} {
+  const stageEnds: { stage: string; phase: string; result?: ExchangeStageResult }[] = [];
+  const finishes: { kind: string; failureCode?: string }[] = [];
+  const self = {
+    traceId: "trace_test",
+    stageEnds,
+    finishes,
+    flushCount: 0,
+    annotate: () => {},
+    begin: (stage: string, phase: string) => ({
+      end: (result?: ExchangeStageResult) => stageEnds.push({ stage, phase, result }),
+    }),
+    record: () => {},
+    time: async <T>(_stage: string, _phase: string, fn: () => Promise<T>) => fn(),
+    coverage: () => {},
+    diagnostics: () => {},
+    finish: (f: { kind: string; failureCode?: string }) => finishes.push(f),
+    flush: () => {
+      self.flushCount += 1;
+    },
+  };
+  return self;
+}
+
+describe("the exchange trace's narrator.stream stage and finish() verdict", () => {
+  it("records success + finish ok on a clean completion", async () => {
+    const trace = fakeExchangeTrace();
+    const settle = vi.fn(async () => {});
+    async function* source() {
+      yield "a clean reply";
+    }
+    const stream = streamExchange(source(), {
+      chatId: "clean", abortController: new AbortController(), settle, release: vi.fn(),
+      completion: () => null, modelId: "test-model", exchangeTrace: trace,
+    });
+    for await (const token of stream) void token;
+    expect(trace.stageEnds).toHaveLength(1);
+    expect(trace.stageEnds[0]?.stage).toBe("narrator.stream");
+    expect(trace.stageEnds[0]?.result?.status).toBe("success");
+    expect(trace.finishes).toEqual([{ kind: "ok" }]);
+    expect(trace.flushCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("records narrator.stream failed + finish failed with the failure code on a zero-text provider error", async () => {
+    const trace = fakeExchangeTrace();
+    const settle = vi.fn(async () => {});
+    async function* source(): AsyncGenerator<string> {
+      throw new Error("provider down before any token");
+    }
+    const stream = streamExchange(source(), {
+      chatId: "dead-on-arrival", abortController: new AbortController(), settle, release: vi.fn(),
+      completion: () => null, modelId: "test-model", exchangeTrace: trace,
+    });
+    for await (const token of stream) void token;
+    expect(settle).not.toHaveBeenCalled();
+    expect(trace.stageEnds).toHaveLength(1);
+    expect(trace.stageEnds[0]?.stage).toBe("narrator.stream");
+    expect(trace.stageEnds[0]?.result?.status).toBe("failed");
+    expect(trace.stageEnds[0]?.result?.reason).toBe("unknown");
+    expect(trace.finishes).toEqual([{ kind: "failed", failureCode: "unknown" }]);
+    expect(trace.flushCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it("records narrator.stream stopped + finish stopped on a player Stop with no text kept", async () => {
+    const trace = fakeExchangeTrace();
+    const controller = new AbortController();
+    const settle = vi.fn(async () => {});
+    async function* source(): AsyncGenerator<string> {
+      controller.abort();
+      await Promise.resolve();
+      throw new Error("aborted");
+    }
+    const stream = streamExchange(source(), {
+      chatId: "stopped-empty", abortController: controller, settle, release: vi.fn(),
+      completion: () => null, modelId: "test-model", exchangeTrace: trace,
+    });
+    for await (const token of stream) void token;
+    expect(settle).not.toHaveBeenCalled();
+    expect(trace.stageEnds[0]?.result?.status).toBe("stopped");
+    expect(trace.finishes).toEqual([{ kind: "stopped" }]);
+  });
+
+  it("flushes even when the recorder is a no-op (no exchangeTrace supplied)", async () => {
+    // The default-noop path (every pre-#637 call site): nothing above asserts
+    // on it directly, but a throwing default would break every existing test
+    // in this file — so this just pins that omitting it stays legal.
+    const settle = vi.fn(async () => {});
+    async function* source() {
+      yield "fine";
+    }
+    const stream = streamExchange(source(), {
+      chatId: "no-trace", abortController: new AbortController(), settle, release: vi.fn(),
+      completion: () => null, modelId: "test-model",
+    });
+    for await (const token of stream) void token;
+    expect(settle).toHaveBeenCalledWith("fine", false);
   });
 });
