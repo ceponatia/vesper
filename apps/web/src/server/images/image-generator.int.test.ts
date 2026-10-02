@@ -3056,7 +3056,6 @@ function stubCivitaiRecoveryRenderer(passes: readonly ("ok" | "undelivered")[]):
       ok: true,
       image: await testPngBuffer(),
       predictionId,
-      executedVersionId: null,
       attempt: civitaiRecoveryAttempt({ predictionId }),
     };
   });
