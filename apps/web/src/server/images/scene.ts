@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
   classifyImageFailure,
@@ -1001,7 +1001,29 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         // once, and only right before it returns null for that rung, never
         // on a fallback or an exhausted ladder.
         let paidStopRung: SceneAttemptId | null = null;
-        const outcome = await executeSceneChain(runnableChain, (id) => runSceneProvider(id, ctx), sink, (rung) => {
+        // The rung the row describes right now: the primary's reserve-time
+        // provenance until a fallback rung is about to run. Before that rung
+        // spends anything, the row is rewritten to describe it and loses any
+        // paid-output ids an earlier rung recorded before its download
+        // (`correctProviderMeta`'s `beforeRung`), so a process that dies during this
+        // rung leaves a row whose offer and provenance are this rung's.
+        let described: SceneAttemptId | undefined = primary;
+        const runRung = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+          if (id !== described) {
+            await correctProviderMeta(
+              asset.id,
+              transportFor(id).prompt,
+              modelFor(id),
+              provenanceFor(id),
+              referenceViewsFor(id),
+              compiledFor(id)?.meta,
+              { beforeRung: true },
+            );
+            described = id;
+          }
+          return runSceneProvider(id, ctx);
+        };
+        const outcome = await executeSceneChain(runnableChain, runRung, sink, (rung) => {
           paidStopRung = rung;
         });
         if (!outcome) {
@@ -1297,6 +1319,7 @@ async function correctProviderMeta(
   identityReferences: IdentityReferenceProvenance[],
   referenceViews: SceneReferenceViewProvenance[],
   program?: Record<string, unknown>,
+  options: { beforeRung?: boolean } = {},
 ): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(program ?? {}) };
@@ -1305,6 +1328,22 @@ async function correctProviderMeta(
   // Same rule, same reason: a rung that dropped the view claims none.
   if (referenceViews.length > 0) meta.referenceViews = referenceViews;
   else delete meta.referenceViews;
+  if (options.beforeRung === true) {
+    // Before a fallback rung runs, nothing has rendered for it yet, so the row
+    // holds no attempt record — only the paid-output ids a previous rung may
+    // have recorded before its download (`recordPendingRenderOutput`). That
+    // rung did not fail undelivered: an undelivered failure stops the chain
+    // (`declaresSpentProviderWork`), so its download failed for good, and a
+    // death during THIS rung must not leave an offer for an output that is
+    // gone. Written only while the row is still `pending`: a row a sweep or a
+    // settle already left is never rewritten from here.
+    delete meta.render;
+    await db()
+      .update(images)
+      .set({ prompt, meta })
+      .where(and(eq(images.id, assetId), eq(images.status, "pending")));
+    return;
+  }
   await db().update(images).set({ prompt, meta }).where(eq(images.id, assetId));
 }
 

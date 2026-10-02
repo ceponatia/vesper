@@ -237,6 +237,14 @@ The executor walks the chain with a **reason-keyed retry** over `classifyImageFa
 rung, a content rejection never retries and drops to the next rung, and a billing failure never
 retries at all.
 
+**The row describes the rung that is running.** The row is reserved against the primary rung.
+Before a fallback rung runs, the row's prompt, model, identity references, reference views and
+program meta are rewritten to that rung, and any paid-output ids a previous rung recorded before
+its download are dropped: that rung did not fail undelivered, since an undelivered failure stops
+the ladder, so its output is gone. The write lands only while the row is still `pending`. A
+process that dies during a fallback rung's download therefore leaves a row whose recovery offer
+and provenance both name that rung.
+
 **A rung's own failure can end the ladder outright instead of falling to the next rung.** Once a
 rung's final failure (after its own same-rung retry above) already declares that THIS attempt's
 provider work was already paid for — `retry=reconcile`, or `civitai_submit_unconfirmed` — the
