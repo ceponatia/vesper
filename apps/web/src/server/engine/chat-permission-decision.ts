@@ -124,6 +124,8 @@ function describePermissionDecision(value: Record<string, unknown>): AgentRunDes
 function runPermissionClassifier(input: {
   readonly chatId: string;
   readonly assistantMessageId: string;
+  /** The exchange trace (#637) this leg ran under, when the caller has one. */
+  readonly traceId?: string;
   readonly build: RomanticPermissionDigestBuild;
   readonly reply: string;
   readonly sink?: DiagnosticSink;
@@ -135,6 +137,7 @@ function runPermissionClassifier(input: {
     legId: CLASSIFY_LEG_ID,
     chatId: input.chatId,
     messageId: input.assistantMessageId,
+    traceId: input.traceId,
     modelId,
     promptChars: CHAT_ROMANTIC_PERMISSION_DECISION_SYSTEM.length + prompt.length,
     maxOutputTokens: CHAT_ROMANTIC_PERMISSION_DECISION_MAX_OUTPUT_TOKENS,
@@ -184,6 +187,8 @@ export interface ChatRomanticPermissionRosterMember {
 export interface ChatRomanticPermissionDecisionInput {
   readonly chatId: string;
   readonly assistantMessageId: string;
+  /** The exchange trace (#637) this leg ran under, when the caller has one. */
+  readonly traceId?: string;
   /** The persisted reply bytes — settle's `full`, exactly as inserted/updated. */
   readonly reply: string;
   readonly roster: readonly ChatRomanticPermissionRosterMember[];
@@ -270,6 +275,7 @@ async function runLive(input: ChatRomanticPermissionDecisionInput): Promise<void
   const result = await runPermissionClassifier({
     chatId: input.chatId,
     assistantMessageId: input.assistantMessageId,
+    traceId: input.traceId,
     build,
     reply: input.reply,
     ...(sink === undefined ? {} : { sink }),

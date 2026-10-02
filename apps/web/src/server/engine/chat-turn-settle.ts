@@ -30,6 +30,8 @@ const describeError = (error: unknown): string => (error instanceof Error ? erro
 export async function settleChatTurnMembers(args: {
   chatId: string;
   characterName: string;
+  /** The exchange trace (#637) this settle ran under, when the caller has one. */
+  traceId?: string;
   sink: DiagnosticSink;
   driftedState: ChatState;
   scenario: ChatScenario;
@@ -51,6 +53,7 @@ export async function settleChatTurnMembers(args: {
   const {
     chatId,
     characterName,
+    traceId,
     sink,
     driftedState,
     scenario,
@@ -124,7 +127,7 @@ export async function settleChatTurnMembers(args: {
                 playerName: player.name,
                 exchange: { player: agentPlayerContent, assistant: full },
                 activeSocialCards: scenario.activeSocialCards,
-                trace: { chatId, messageId: assistantMessageId },
+                trace: { chatId, messageId: assistantMessageId, traceId },
                 sink,
                 // P1 minor fence (#301 review): each member's OWN age, mirroring
                 // the primary's determination in finalize-agents.ts.
@@ -139,7 +142,7 @@ export async function settleChatTurnMembers(args: {
                 exchange: { player: agentPlayerContent, assistant: full },
                 openLoops: member.state.openLoops,
                 drives: member.state.drives,
-                trace: { chatId, messageId: assistantMessageId },
+                trace: { chatId, messageId: assistantMessageId, traceId },
                 sink,
               })
             : Promise.resolve(null),
