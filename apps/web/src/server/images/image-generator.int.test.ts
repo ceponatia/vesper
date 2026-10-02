@@ -3143,6 +3143,40 @@ describe.skipIf(!ready)("recovering a paid Civitai bench output (#682/#686)", ()
     expect(outputThree?.imageId).not.toBeNull();
   });
 
+  // PROTECTS: a fan-out where every pass failed never ends up with
+  // `resultImageId` naming the recovered pass while `predictionId` still
+  // names the untouched first one — the same "two stories about one render"
+  // split `settleGeneratorRender` itself avoids (`image-generator-settle.ts`).
+  // `attempt`/`result` are deliberately left as pass one's own record; the
+  // appended `meta.recoveries[]` entry is what names which pass was promoted.
+  it("moves predictionId to the recovered pass's own workflow when every pass in a fan-out failed", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered", "undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID, controls: { imageCount: 2 } });
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("failed");
+
+    const before = await storedRow(id);
+    expect(before?.resultImageId).toBeNull();
+    expect(before?.predictionId).toBe("pred_generator_recovery_1");
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 2 });
+
+    expect(result.status).toBe("recovered");
+    if (result.status !== "recovered") return;
+    expect(result.run.status).toBe("succeeded");
+    expect(result.run.resultImageId).not.toBeNull();
+    // The column now names the SAME pass `resultImageId` does — the
+    // recovered second pass — never the still-unrecovered first one it
+    // pointed to before this recovery.
+    expect(result.run.predictionId).toBe("pred_generator_recovery_2");
+    const [, secondOutput] = imageGeneratorRunOutputsOf({ result: result.run.result ?? null });
+    expect(secondOutput?.imageId).toBe(result.run.resultImageId);
+    // `attempt` is untouched: it is still pass one's own account, exactly as
+    // the original settle wrote it, never reassigned to the recovered pass.
+    expect(result.run.attempt?.predictionId).toBe("pred_generator_recovery_1");
+  });
+
   it("withdraws the offer on a permanent fetch failure, after which it answers expired with no further fetch", async () => {
     stubCivitaiRecoveryRenderer(["undelivered"]);
     const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID });
