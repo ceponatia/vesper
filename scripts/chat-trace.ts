@@ -86,7 +86,7 @@ export type ParsedArgs =
   | { readonly help: true }
   | { readonly help: false; readonly chatId: string; readonly selector: TraceSelector; readonly json: boolean };
 
-const BOOLEAN_FLAGS = new Set(["help", "latest", "json"]);
+const BOOLEAN_FLAGS = new Set(["latest", "json"]);
 const VALUE_FLAGS = new Set(["chat", "message", "trace", "limit"]);
 
 /** Parse `--limit`'s value: an integer in [1, 50], per the contract's own `loadChatExchangeTraces` cap. */
@@ -101,13 +101,16 @@ function parseLimit(raw: string): number {
 /**
  * Pure argv parser — no IO, so the exit-code table's usage-error rows
  * (missing `--chat`, conflicting selectors, bad `--limit`, an unknown flag)
- * are unit-testable without touching a database. `--help` short-circuits
- * every other validation, exactly like `report:npc-scene-decisions`.
+ * are unit-testable without touching a database. `--help` is checked FIRST,
+ * before any other token is even looked at, so it short-circuits every other
+ * validation (an unknown flag included) — the conventional CLI contract, and
+ * stronger than relying on a flag found mid-scan.
  */
 export function parseArgs(argv: readonly string[]): ParsedArgs {
+  if (argv.includes("--help")) return { help: true };
+
   let chatId: string | undefined;
   let json = false;
-  let help = false;
   let latest = false;
   let messageId: string | undefined;
   let traceId: string | undefined;
@@ -122,8 +125,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     const key = token.slice(2);
 
     if (BOOLEAN_FLAGS.has(key)) {
-      if (key === "help") help = true;
-      else if (key === "latest") latest = true;
+      if (key === "latest") latest = true;
       else if (key === "json") json = true;
       continue;
     }
@@ -143,8 +145,6 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 
     throw new UsageError(`unknown flag: ${token}`);
   }
-
-  if (help) return { help: true };
 
   if (chatId === undefined || chatId === "") {
     throw new UsageError("--chat <chatId> is required");
