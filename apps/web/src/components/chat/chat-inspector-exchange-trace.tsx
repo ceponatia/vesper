@@ -89,7 +89,7 @@ export function ChatInspectorExchangeTrace({ chatId }: { chatId: string }) {
       ) : traces.length === 0 ? (
         <EmptyState
           title="No traces recorded yet"
-          description="Either tracing wasn't enabled when this conversation started, or nothing has been sent since."
+          description="Every new exchange records a trace. Exchanges from before tracing existed have none, and traces expire after 30 days."
         />
       ) : selected ? (
         <div className="flex flex-col gap-4 rounded-card border border-paper-800 bg-paper-950/40 p-4">
