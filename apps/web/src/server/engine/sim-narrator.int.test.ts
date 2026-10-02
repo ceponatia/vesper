@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { proposedArmedEffectSchema } from "@vesper/simulation-core/contracts/narrative";
 import { deriveEngagementId } from "@vesper/simulation-core/engagements";
+import { DEFAULT_CHARACTER_CHAT_MODEL_ID } from "@/lib/narrative-models";
 import { db, simEvents, simWorlds } from "@/server/db";
 import {
   ADMIT_AT_LOCKED_VERSION,
@@ -125,7 +126,12 @@ describe.runIf(ready)("R2 sim narrator over the committed cut", () => {
       attempts: 2,
       cutId: turn.cut.id,
       confirmStatus: "accepted",
-      modelId: "aion-labs/aion-3.0",
+      // `renderCommittedCut` above was given no modelId, so this is the resolved
+      // chat default (the successor lane always renders on it — see
+      // DEFAULT_CHARACTER_CHAT_MODEL_ID's doc in lib/narrative-models.ts), not an
+      // explicit input: pin the export, not the literal, so moving the default
+      // does not re-break this suite (#699 correction).
+      modelId: DEFAULT_CHARACTER_CHAT_MODEL_ID,
     });
     expect(rendered.audit?.verdict).toBe("accept");
     const speechActs = await db()
