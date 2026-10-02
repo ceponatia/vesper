@@ -58,6 +58,7 @@ export async function runSimRetake(input: {
     exchangeTrace.flush();
     return { ok: false, code: "nothing_to_retake", message: "there is no reply to regenerate yet", status: 409 };
   }
+  exchangeTrace.annotate({ replyMessageId: target.id });
 
   // The pair's standing scene must exist to re-render its cut (read-only — a
   // retake never opens a scene or advances anything).
@@ -166,6 +167,9 @@ export async function runSimRetake(input: {
     exchangeTrace.flush();
     return { ok: false, code: "render_withheld", message: "the narrator could not re-render this turn; try again", status: 503 };
   }
+  // Narrowed here so the closure below (a separate function scope) keeps the
+  // `string` type — `rendered.prose`'s narrowing does not carry into it.
+  const prose = rendered.prose;
   exchangeTrace.annotate({
     sim: {
       cutId: rendered.cutId,
@@ -190,7 +194,7 @@ export async function runSimRetake(input: {
   // Replace the reply row in place: the prior text becomes a browsable take, the
   // fresh render is active (the same transcript semantics legacy gives).
   const priorTakes = parseOr(replyTakesSchema, target.takes, emptyReplyTakes(), undefined, "character_chat_messages.takes");
-  const nextTakes = pushReplyTake(priorTakes, target.content, rendered.prose, new Date().toISOString(), {
+  const nextTakes = pushReplyTake(priorTakes, target.content, prose, new Date().toISOString(), {
     // The displaced take keeps the run that wrote it — that is what makes the two
     // takes comparable afterwards instead of both reading as this exchange's prompt.
     ...(priorMeta.narratorRun === undefined ? {} : { current: priorMeta.narratorRun }),
@@ -200,7 +204,7 @@ export async function runSimRetake(input: {
     db()
       .update(characterChatMessages)
       .set({
-        content: rendered.prose,
+        content: prose,
         takes: nextTakes,
         // Merge, never replace: only the fields this re-render actually produced are
         // overwritten. `narratorRun` and `confirmStatus` are named unconditionally, so a
@@ -235,7 +239,7 @@ export async function runSimRetake(input: {
   return {
     ok: true,
     messageId: target.id,
-    prose: rendered.prose,
+    prose,
     cutId: rendered.cutId,
     modelId: rendered.modelId,
     attempts: rendered.attempts,

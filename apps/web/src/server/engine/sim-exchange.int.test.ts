@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterChatMessages, db } from "@/server/db";
 import { loadChatExchangeTraces } from "@/server/memory";
@@ -68,6 +68,15 @@ async function replyTraceId(messageId: string): Promise<string | undefined> {
   return (row?.meta as { traceId?: string } | null)?.traceId;
 }
 
+/** The lone player line this fresh chat's first "send" wrote. */
+async function soleUserMessageId(chatId: string): Promise<string | undefined> {
+  const [row] = await db()
+    .select({ id: characterChatMessages.id })
+    .from(characterChatMessages)
+    .where(and(eq(characterChatMessages.chatId, chatId), eq(characterChatMessages.role, "user")));
+  return row?.id;
+}
+
 describe.runIf(ready)("R(#637) sim-exchange trace", () => {
   it("records lane, sim header, ordered sim.* stages, a matching reply traceId, and finish ok", async () => {
     const chatId = fixture.chatId;
@@ -129,6 +138,13 @@ describe.runIf(ready)("R(#637) sim-exchange trace", () => {
     expect(narratorStage?.reason?.length ?? 0).toBeGreaterThan(0);
     expect(byStage.get("sim.persist")).toMatchObject({ status: "success" });
 
+    // The header names the prompt + reply ids, so `--message <id>` and the
+    // inspector's linked ids resolve instead of reading "—" (fix for the P2
+    // review finding).
+    const userMessageId = await soleUserMessageId(chatId);
+    expect(assembled?.header.promptMessageId).toBe(userMessageId);
+    expect(assembled?.header.replyMessageId).toBe(result.messageId);
+
     // Coverage: every family this slice records for the co-present path.
     const families = assembled?.coverage.map((c) => c.family).sort();
     expect(families).toEqual(
@@ -158,6 +174,8 @@ describe.runIf(ready)("R(#637) sim-exchange trace", () => {
     const assembled = traces[0];
     expect(assembled?.header.operation).toBe("rerun");
     expect(assembled?.header.sim?.cutId).toBe(retaken.cutId);
+    // A retake rewrites the same row in place, so its own reply id names it.
+    expect(assembled?.header.replyMessageId).toBe(retaken.messageId);
     expect(assembled?.stages.map((s) => s.stage)).toEqual(["sim.cut", "sim.context", "sim.narrator", "sim.persist"]);
     expect(assembled?.finish).toMatchObject({ kind: "ok" });
   });

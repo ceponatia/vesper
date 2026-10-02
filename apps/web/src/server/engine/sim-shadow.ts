@@ -11,7 +11,7 @@ import {
   simShadowDivergences,
 } from "@/server/db";
 import { readChatEngineAuthority } from "./chat-authority";
-import type { ExchangeTrace } from "./chat-exchange-trace";
+import type { ExchangeStageHandle, ExchangeTrace } from "./chat-exchange-trace";
 import { loadChatScenario } from "./chat-state/store";
 import { tryKeyedLock } from "./keyed-lock";
 import { readBranchClock } from "./sim-beats";
@@ -67,6 +67,10 @@ interface ShadowRow {
  */
 export async function runShadowChatExchange(input: ShadowExchangeInput): Promise<ShadowExchangeResult> {
   const trace = input.exchangeTrace;
+  // Begun only once the real comparison work starts (below), so a duration is
+  // captured for it; the authority/lock short-circuits above stay instantaneous
+  // `record()` calls — there is nothing to time for those.
+  let shadowHandle: ExchangeStageHandle | undefined;
   try {
     const authority = await readChatEngineAuthority(input.chatId);
     if (!authority || authority.authority !== "successor_shadow") {
@@ -92,8 +96,9 @@ export async function runShadowChatExchange(input: ShadowExchangeInput): Promise
       trace?.flush();
       return { ran: false, rows: 0 };
     }
+    shadowHandle = trace?.begin("post_turn.shadow", "post_turn");
     const result = await run;
-    trace?.record({ stage: "post_turn.shadow", phase: "post_turn", status: "success", count: result.rows });
+    shadowHandle?.end({ status: "success", count: result.rows });
     trace?.flush();
     return result;
   } catch (error) {
@@ -101,7 +106,11 @@ export async function runShadowChatExchange(input: ShadowExchangeInput): Promise
       chatId: input.chatId,
       error: error instanceof Error ? error.message : String(error),
     });
-    trace?.record({ stage: "post_turn.shadow", phase: "post_turn", status: "failed", reason: "shadow_exchange_exception" });
+    if (shadowHandle) {
+      shadowHandle.end({ status: "failed", reason: "shadow_exchange_exception" });
+    } else {
+      trace?.record({ stage: "post_turn.shadow", phase: "post_turn", status: "failed", reason: "shadow_exchange_exception" });
+    }
     trace?.flush();
     return { ran: false, rows: 0 };
   }
