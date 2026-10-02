@@ -63,6 +63,16 @@ describe("imageUrl", () => {
 });
 
 describe("imageRecordSchema", () => {
+  it("parses scene references and defaults to [] when absent or malformed", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-selfie",
+      references: [{ kind: "character", id: "char-1", name: "Bea" }],
+    });
+    expect(parsed.references).toEqual([{ kind: "character", id: "char-1", name: "Bea" }]);
+    expect(imageRecordSchema.parse({ id: "img-2" }).references).toEqual([]);
+    expect(imageRecordSchema.parse({ id: "img-3", references: "nope" }).references).toEqual([]);
+  });
+
   it("preserves image failure details from row meta", () => {
     const parsed = imageRecordSchema.parse({
       id: "img-failed",
@@ -78,6 +88,19 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.model).toBe("replicate/qwen/qwen-image-2512");
     expect(parsed.meta.error).toBe("The operation was aborted due to timeout");
     expect(parsed.meta.variantKind).toBe("pose");
+  });
+
+  /**
+   * PROTECTS (#686): the server projects `recoverable` on the portraits and
+   * chat scenes lists, and the recover action is offered on it. A schema
+   * without the field strips it (zod drops unknown keys), so no failed tile
+   * would ever offer a recovery; one that requires it fails an older server's
+   * whole list.
+   */
+  it("keeps the server's recoverable flag, and reads an absent or malformed one as false", () => {
+    expect(imageRecordSchema.parse({ id: "img-paid", kind: "scene", status: "failed", recoverable: true }).recoverable).toBe(true);
+    expect(imageRecordSchema.parse({ id: "img-old", kind: "scene", status: "failed" }).recoverable).toBe(false);
+    expect(imageRecordSchema.parse({ id: "img-odd", kind: "avatar", status: "failed", recoverable: "yes" }).recoverable).toBe(false);
   });
 
   it("carries the render provenance through the parse instead of stripping it", () => {

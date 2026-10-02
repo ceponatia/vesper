@@ -73,6 +73,17 @@ const INTERNAL_NAMES = new Set(["saveImageBuffer", "deleteChatUploads", "deleteC
  * and installs it into the owner-scoped character slot under the character
  * lock; the bytes are the owner's, so the provider-generation shell has no
  * place for them.
+ *
+ * Re-reviewed 2026-10-02 (recovering a paid bench output, #686): the Image
+ * Generator's recovery service joins the same "minted the row it writes"
+ * class as the bench kernel it recovers for. A recovered bench output's fate
+ * is also decided AFTER storage — the run row is amended only once the
+ * recovery holds the run locked and re-checks that output still has no
+ * image, and a copy that loses that race, or whose run is gone, is discarded
+ * rather than attached. It mints the hidden `generator_output` row with
+ * `createImageAsset`, writes only that exact id with `saveImageBuffer`, and
+ * every read/write is owner-scoped through the run row, exactly as the
+ * ordinary render loop's own write path is.
  */
 const APPROVED: Readonly<Record<string, readonly string[]>> = {
   saveImageBuffer: [
@@ -80,6 +91,7 @@ const APPROVED: Readonly<Record<string, readonly string[]>> = {
     "apps/web/src/server/images/body-reference-upload.ts",
     "apps/web/src/server/images/index.ts",
     "apps/web/src/server/images/identity-pack-trial-render.ts",
+    "apps/web/src/server/images/image-generator-recovery.ts",
     "apps/web/src/server/images/image-generator-settle.ts",
     "apps/web/src/server/images/image-lab-render.ts",
     "apps/web/src/server/images/identity-pack-derive.ts",

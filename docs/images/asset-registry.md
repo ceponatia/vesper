@@ -35,7 +35,10 @@ under `meta.render`, and — on the character-fact lanes — visual provenance u
 
 **The gate is owner-first:** you always get your own images. A cross-owner read is allowed only
 when the image's `entity_kind` / `entity_id` name a **public** shareable entity **owned by the same
-account as the image** (`isPublicEntityImage(entityKind, entityId, row.ownerId)`).
+account as the image** (`isPublicEntityImage(entityKind, entityId, row.ownerId)`), and only for a
+kind that may ever be shared: the route subtracts `UNSHAREABLE_IMAGE_KINDS` (the
+[hidden kinds](#hidden-kinds) plus the [chat-private kinds](#chat-private-kinds)) through
+`isShareableImageKind` before it asks about the entity.
 
 The ownership half of that predicate is what makes it safe. The entity linkage is polymorphic
 metadata with no FK, so without it the check reads "some public row has this id", and any path that
@@ -46,7 +49,8 @@ public character. `Cache-Control` follows the same split — `public` for public
 Image rows returned **beside a public entity** (the character detail response's portrait strip) are
 projected to `{ id, kind, entityKind, entityId, createdAt }` — never `path` (storage layout) or
 `prompt` (prompts embed authored and chat text, which is why `deleteChat` scrubs them). The
-portrait studio's full rows come from the owner-strict `GET /api/characters/:id/portraits`.
+portrait studio's full rows come from the owner-strict `GET /api/characters/:id/portraits`. A
+foreign viewer's strip also omits the chat-private kinds; the owner's lists them.
 
 ## Hidden kinds
 
@@ -80,6 +84,33 @@ hard-deleted with its character by the same rule, collected by the reference-vie
 after it is replaced or removed, and read by its owner through the owner file route, which is how
 Portrait Studio's body-image area displays it.
 
+## Chat-private kinds
+
+`scene` (chat scenes and selfies), `chat_look`, `chat_place` and `chat_upload` rows are **chat
+content**. Unlike the hidden kinds they are user-visible — their owner sees them in the chat, and
+scenes in the Gallery — but `CHAT_PRIVATE_IMAGE_KINDS` keeps them from ever crossing an owner
+boundary, even when they are filed under an entity the owner has published:
+
+- the file route's public widening (an owner read gets `Cache-Control: private`);
+- a foreign viewer's portrait strip in the character detail response; and
+- a cross-account clone (`cloneEntityImages`). An owner duplicating their own character keeps the
+  chat images on the copy (only hidden kinds are dropped); they keep their kind there, so they stay
+  owner-only even if the copy is published.
+
+A chat scene is filed under the chat's primary character, so without this rule publishing that
+character would publish every picture its author's conversations produced. For the same reason no
+chat image can become the character's avatar: `promoteVariant` accepts only the authored
+`PORTRAIT_IMAGE_KINDS` (avatar, portrait variant), and acceptance only ever accepts the current
+avatar, so a chat image can never become the identity source either.
+
+The rule keys on the **kind**, never on `chat_id`, because it must survive chat deletion: a chat
+delete nulls `images.chat_id` and the scene stays in the Gallery detached, as private as before. The
+kind is durable provenance here: the character-chat scene lane is the only writer of `scene` rows
+filed under an entity (including early chat scenes that never carried a `chat_id`), clone copies are
+the only other source, and the retired session lane filed its scenes with no entity at all.
+`UNSHAREABLE_IMAGE_KINDS` is the union of both lists, and is the one list a cross-owner read or copy
+subtracts.
+
 ## Deletes
 
 Deleting a location or item **hard-deletes** its owned `images` rows and unlinks the files
@@ -98,7 +129,9 @@ while still counting against the owner's storage quota. `identity_face_crop`
 
 **Every** delete path — the owned-image helpers, the chat cascades, the entity reclaim, the look
 anchor's keep-latest purge, `deleteNonGalleryCharacterImages` — runs the same `purgeImagesWhere(where)`
-(`images/asset-deletion.ts`): select → invalidate derived sources → delete → best-effort unlink, once. The **caller** supplies the
+(`images/asset-deletion.ts`): select → invalidate derived sources → delete → best-effort unlink, once. The
+delete re-evaluates the predicate, and only the rows it actually removed lose their files and are
+counted, so a row that stopped matching after the select keeps both. The **caller** supplies the
 predicate and therefore owns every guard (owner id, kind, chat/entity), and the helper adds nothing
 to it, so a purge can never be wider than the call site asked for. Route handlers are barred from
 importing it (ESLint) and use the owner-scoped `deleteOwnedImage(s)` instead.
@@ -146,6 +179,30 @@ row that already left `pending`. Beats are best-effort and independent: a failed
 swallowed, a beat stuck on a dead connection never holds back the next one, and a lease that stops
 beating — a crashed process, a database that stays unreachable — ages until a sweep reclaims the
 row. Only a `pending` row carries a lease; saving and failing remove it.
+
+**A paid output's ids land before its download.** Once a Civitai workflow has succeeded and the lane
+has chosen its output, and before the download starts, the lane records the workflow
+(`predictionId`), the output (`undeliveredOutputId`) and the model (`modelSlug`) under the render's
+`meta.render`. The lane does not know the row: `runImagePipeline` installs a recorder around
+`produce` (`withPaidRenderOutputRecorder`, `server/ai`), carried by the render's own async context,
+so concurrent renders each reach only their own row and a render outside the pipeline records
+nothing. The write merges into `meta.render` in SQL, guarded by `status = 'pending'`, like a lease
+beat. It is best-effort: a failed write is logged and the render carries on, and the lane waits for
+it at most 5 seconds before downloading anyway. Because the write can land after that wait, it is
+fenced to the attempt that started it: a lane that runs several attempts on one row (the scene
+chain's rungs) names the running attempt in `meta.renderAttempt`, records through a recorder that
+names it too, and the write lands only while the row still names that attempt. Every other lane
+names none and its rows carry no such key. A `ready` row never carries it. A settle that records the attempt replaces
+`meta.render` whole, so on a saved row, or one failed with the attempt's own record, the early ids
+are gone. They outlive the render only where nothing replaced them: a produce that threw, or a
+process that died mid-download.
+
+**A reclaimed row keeps its render record.** The pending reclaim merges only the failure stamp and
+retires the lease, so a render that recorded its paid output's ids and then died becomes a
+`failed` row whose `meta.render` still names both ids. That row offers the output for recovery
+exactly as a render that failed its download does (`paidOutputOffer`, `paid-output.ts`), whatever
+its kind: `failed`, both ids, a Civitai model, and no `recoveryUnavailableAt`. The surface that owns
+the row decides what to do with the offer.
 
 **A late landing is a save.** When a render lands on a row that is already `failed` — the sweep
 reclaimed it while the render was still running — the image is real, so the save marks the row
@@ -199,12 +256,59 @@ existed fall back to `created_at` and are past the window by definition.
 
 Retirement runs LAST, so a row this pass just marked failed always survives it. It goes through
 `purgeImagesWhere` like every other delete path (identity-pack derivations invalidated, any stray
-file unlinked) and clears the soft entity pointers the way the Gallery's delete does.
+file unlinked) and clears the soft entity pointers the way the Gallery's delete does. The purge is
+guarded on `status = 'failed'`, so a row an in-place recovery claims after the pass read it
+(§Recovering a paid output in place) survives with its file, and pointers are cleared only for the
+rows actually removed.
 
 **Two rails, both about the unrecoverable case:** at most 200 rows leave per pass, oldest failure
 first; and when *most* of the rows in scope are expired failures, nothing is retired and the
 disagreement is logged — a volume that did not mount marks every `ready` row failed, and that
 reading is an environment fault, not a database full of garbage.
+
+## Recovering a paid output in place
+
+A failed `portrait_variant`, `avatar` or `scene` row (selfies included) whose render was billed but
+never delivered is recovered onto **its own row**, with no new render
+(`recoverImageOutput`, `image-output-recovery.ts`; `POST /api/images/[id]/recover`). Reference
+views keep their own recovery, because their attempt rows are what the sheet reads
+([pipelines/reference-views.md](pipelines/reference-views.md) §Recovering a paid output); this
+service answers `ineligible` for them.
+
+- **The offer** is the shared reading of a failed row (`paidOutputOffer`, `paid-output.ts`):
+  `failed`, `meta.render` names the workflow and the output on a Civitai model, and no
+  `recoveryUnavailableAt`. The portraits and chat scenes lists project it as each row's
+  `recoverable` flag.
+- **The claim is the row.** One guarded `failed → pending` transition takes it: its own WHERE
+  re-checks the owner, a kind recovered in place, `failed`, the same workflow and output ids, and
+  no withdrawal stamp. It stamps a render lease, beaten every 30 seconds while the recovery runs,
+  and the run's claim token (`meta.recoveryClaim`). The row keeps its `error` and `failedAt`.
+  From there it reads as a live render: the sweep leaves it alone while the lease beats, retention
+  never sees a `failed` row, the studio and the chat poll it, and a second recovery answers `busy`.
+- **The bytes** come read-only from the stored ids (`recoverPaidOutput`: the decode rule, then
+  the output shape the lane's live render would have made — the row's recorded `meta.render.shape`,
+  else the lane's own 3:4 request on its task). They are written through the one webp writer at
+  the row's own path.
+- **Every write that ends the claim is guarded on the token**, on a row that is `pending`, or
+  `failed` when the sweep reclaimed it under this run:
+  - **recovered:** `→ ready` with its byte count and file facts, the output's shape recorded where
+    a render records its own, `recoveredFrom` (`workflowId`, `blobId`), and the failure, lease,
+    withdrawal and claim keys retired;
+  - **transient failure:** `→ failed` with the lease and the claim retired; the original `error`
+    and `failedAt` stand, so retention's clock does not move, and the offer stands;
+  - **permanent failure** (the provider shows the output is gone, or its bytes can never be
+    decoded): `→ failed` with `recoveryUnavailableAt`; the offer is withdrawn.
+- **A recovery whose process dies** leaves a leased `pending` row; the sweep reclaims it after
+  `JOB_STALE_MS`, keeping `meta.render`, so the offer stands. **A row its owner deletes
+  mid-recovery** answers `not_found`; a file already written is an orphan the sweep removes.
+  Retention never deletes a claimed row (§Retention).
+- **Nothing else settles** (owner ruling 2026-10-02). No lane's `onReady` runs and no pointer
+  moves: a recovered avatar is a ready candidate the owner promotes with the existing action, and
+  a recovered scene or selfie is drawn under its anchor message like any ready scene. A recovered
+  row carries no render advisories; those are measured only on a live render's output.
+- **It is free:** no admission, budget or job cap, and never a new workflow. Diagnostics:
+  `images.output_recovery.recovered` (info), `.expired` and `.unavailable` (warn), each with
+  `imageId`, `kind` and `workflowId`, always logged.
 
 ## Retry and dedupe
 

@@ -1,7 +1,7 @@
-import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it } from "vitest";
-import { resolveImageLoraArtifactLocator, type RenderAdvisory } from "@vesper/image-core";
+import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { resolveImageLoraArtifactLocator, type RenderAdvisory, type ResolvedImageAttempt } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import {
   type ImageGeneratorControls,
@@ -23,12 +23,23 @@ import {
   withTempDataRoot,
   type TempDataRoot,
 } from "@/server/test-support";
-import { CIVITAI_QWEN_IMAGE_21_VERSION_ID, disableSafetyChecker } from "../ai";
+
+// The recovery suite's own fetch replacement (#682/#686) — every other export
+// of `../ai` stays real, exactly as `reference-view-recovery.int.test.ts`
+// mocks this one function alongside its own module's real behavior.
+vi.mock("../ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ai")>();
+  return { ...actual, recoverCivitaiOutput: vi.fn() };
+});
+
+import { CIVITAI_QWEN_IMAGE_21_VERSION_ID, disableSafetyChecker, recoverCivitaiOutput } from "../ai";
 import { db, imageGeneratorRuns, imageLoras, imageModels, images } from "../db";
 import { createImageAsset, imageMeta, saveImageBuffer, type ImageKind } from "./asset-storage";
+import { recoverImageGeneratorOutput } from "./image-generator-recovery";
 import { setImageGeneratorRendererForTesting, type GeneratorRenderRequest } from "./image-generator-render";
 import { runImageGeneratorRun } from "./image-generator-run";
 import {
+  claimGeneratorRun,
   createImageGeneratorRun,
   deleteImageGeneratorRun,
   deleteImageGeneratorRuns,
@@ -56,6 +67,7 @@ import { importAdminFilesImageReference, uploadImageGeneratorReference } from ".
  */
 
 const ready = await probeIntegrationDb("image generator.int.test", "image_generator_runs");
+const mockRecoverCivitaiOutput = vi.mocked(recoverCivitaiOutput);
 
 const PINNED_MODEL_ID = "imgmdlgenpinnedaaaaaaaaa";
 const UNPINNED_MODEL_ID = "imgmdlgenfloataaaaaaaaaa";
@@ -386,6 +398,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   captured = [];
+  mockRecoverCivitaiOutput.mockReset();
 });
 
 afterEach(async () => {
@@ -2986,6 +2999,270 @@ describe.skipIf(!ready)("image generator over the seeded Civitai Qwen Image 2.1 
     // requested but nothing was sent to reach it: the pick is honored by a
     // postprocess crop toward the ratio instead.
     expect(effectiveRequest?.postprocess).toEqual({ cropTarget: 3 / 4 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recovering a paid bench output (#682/#686)
+// ---------------------------------------------------------------------------
+
+const RECOVERY_BLOB_ID = "civitai-blob-generator-recovery";
+const RECOVERY_UNDELIVERED_ERROR = "Civitai output download failed (civitai_output_undelivered; retry=reconcile)";
+
+/** The attempt record one Civitai pass of the recovery suite's fixture run carries. */
+function civitaiRecoveryAttempt(
+  patch: Pick<ResolvedImageAttempt, "predictionId"> & Pick<Partial<ResolvedImageAttempt>, "undeliveredOutputId">,
+): ResolvedImageAttempt {
+  return {
+    shape: null,
+    modelId: CIVITAI_QWEN21_ID,
+    modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG,
+    profileId: "image-generator/run",
+    task: "item",
+    promptStrategy: "text_to_image_description",
+    requestedVersionId: null,
+    seed: null,
+    appliedControls: {},
+    droppedControls: [],
+    sentReferenceRoles: [],
+    executedVersionId: null,
+    ...patch,
+  };
+}
+
+/**
+ * A renderer whose passes answer in order: `"ok"` stores an image, exactly as
+ * every other Civitai pass in this suite does; `"undelivered"` fails the way
+ * a real render that succeeded and was billed, but never delivered its
+ * output, does (#682) — `attempt.undeliveredOutputId` is what the settle
+ * loop's `!rendered.ok` branch now records onto `meta.outputs`.
+ */
+function stubCivitaiRecoveryRenderer(passes: readonly ("ok" | "undelivered")[]): void {
+  let pass = 0;
+  setImageGeneratorRendererForTesting(async (request) => {
+    captured.push(request);
+    const outcome = passes[pass] ?? "ok";
+    pass += 1;
+    const predictionId = `pred_generator_recovery_${String(pass)}`;
+    if (outcome === "undelivered") {
+      return {
+        ok: false,
+        error: RECOVERY_UNDELIVERED_ERROR,
+        predictionId,
+        attempt: civitaiRecoveryAttempt({ predictionId, undeliveredOutputId: RECOVERY_BLOB_ID }),
+      };
+    }
+    return {
+      ok: true,
+      image: await testPngBuffer(),
+      predictionId,
+      attempt: civitaiRecoveryAttempt({ predictionId }),
+    };
+  });
+}
+
+/** This owner's hidden `generator_output` rows, for counting how many copies a race left behind. */
+async function ownedGeneratorOutputRows(): Promise<{ id: string }[]> {
+  return db()
+    .select({ id: images.id })
+    .from(images)
+    .where(and(eq(images.ownerId, ownerId), eq(images.kind, "generator_output")));
+}
+
+describe.skipIf(!ready)("recovering a paid Civitai bench output (#682/#686)", () => {
+  it("records a failed pass's undelivered output id, and keeps every other pass's null", async () => {
+    stubCivitaiRecoveryRenderer(["ok", "undelivered", "ok"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID, controls: { imageCount: 3 } });
+
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const outputs = imageGeneratorRunOutputsOf({ result: run?.result ?? null });
+    expect(outputs.map((output) => output.undeliveredOutputId)).toEqual([null, RECOVERY_BLOB_ID, null]);
+  });
+
+  it("recovers a failed one-image run's paid output with no new render, keeping the original failure", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("failed");
+
+    const before = await storedRow(id);
+    expect(before?.status).toBe("failed");
+    expect(before?.resultImageId).toBeNull();
+    const originalFailureCode = before?.failureCode ?? null;
+    expect(originalFailureCode).toBe(imageGeneratorDiagnosticCode("render_failed"));
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(900, 1000) });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 });
+
+    // The renderer seam (the provider) was never asked again — only the
+    // original failed pass reached it.
+    expect(captured).toHaveLength(1);
+    expect(mockRecoverCivitaiOutput).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe("recovered");
+    if (result.status !== "recovered") return;
+    expect(result.run.status).toBe("succeeded");
+    expect(result.run.failureCode).toBeNull();
+    expect(result.run.resultImageId).not.toBeNull();
+    const [recoveredOutput] = imageGeneratorRunOutputsOf({ result: result.run.result ?? null });
+    expect(recoveredOutput?.imageId).toBe(result.run.resultImageId);
+    expect(recoveredOutput?.recoverable).toBe(false);
+    expect(recoveredOutput?.recoveredAt).not.toBeNull();
+
+    const after = await storedRow(id);
+    const recoveries = imageMeta(after?.meta).recoveries;
+    expect(Array.isArray(recoveries)).toBe(true);
+    expect(recoveries).toMatchObject([
+      { index: 1, previous: { status: "failed", failureCode: originalFailureCode } },
+    ]);
+  });
+
+  it("recovers one failed pass inside a fan-out, keeping the run's first result image", async () => {
+    stubCivitaiRecoveryRenderer(["ok", "undelivered", "ok"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID, controls: { imageCount: 3 } });
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("succeeded");
+    const settled = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const firstResultImageId = settled?.resultImageId ?? null;
+    expect(firstResultImageId).not.toBeNull();
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 2 });
+
+    expect(result.status).toBe("recovered");
+    if (result.status !== "recovered") return;
+    expect(result.run.status).toBe("succeeded");
+    // Unchanged: the run already had a first stored image through pass one,
+    // so recovering pass two's output never touches the thumbnail pointer.
+    expect(result.run.resultImageId).toBe(firstResultImageId);
+    const [outputOne, outputTwo, outputThree] = imageGeneratorRunOutputsOf({ result: result.run.result ?? null });
+    expect(outputOne?.imageId).toBe(firstResultImageId);
+    expect(outputTwo?.imageId).not.toBeNull();
+    expect(outputTwo?.recoverable).toBe(false);
+    expect(outputThree?.imageId).not.toBeNull();
+  });
+
+  // PROTECTS: a fan-out where every pass failed never ends up with
+  // `resultImageId` naming the recovered pass while `predictionId` still
+  // names the untouched first one — the same "two stories about one render"
+  // split `settleGeneratorRender` itself avoids (`image-generator-settle.ts`).
+  // `attempt`/`result` are deliberately left as pass one's own record; the
+  // appended `meta.recoveries[]` entry is what names which pass was promoted.
+  it("moves predictionId to the recovered pass's own workflow when every pass in a fan-out failed", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered", "undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID, controls: { imageCount: 2 } });
+    const payload = await runImageGeneratorRun(id, ownerId, sink);
+    expect(payload.status).toBe("failed");
+
+    const before = await storedRow(id);
+    expect(before?.resultImageId).toBeNull();
+    expect(before?.predictionId).toBe("pred_generator_recovery_1");
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 2 });
+
+    expect(result.status).toBe("recovered");
+    if (result.status !== "recovered") return;
+    expect(result.run.status).toBe("succeeded");
+    expect(result.run.resultImageId).not.toBeNull();
+    // The column now names the SAME pass `resultImageId` does — the
+    // recovered second pass — never the still-unrecovered first one it
+    // pointed to before this recovery.
+    expect(result.run.predictionId).toBe("pred_generator_recovery_2");
+    const [, secondOutput] = imageGeneratorRunOutputsOf({ result: result.run.result ?? null });
+    expect(secondOutput?.imageId).toBe(result.run.resultImageId);
+    // `attempt` is untouched: it is still pass one's own account, exactly as
+    // the original settle wrote it, never reassigned to the recovered pass.
+    expect(result.run.attempt?.predictionId).toBe("pred_generator_recovery_1");
+  });
+
+  it("withdraws the offer on a permanent fetch failure, after which it answers expired with no further fetch", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: false, permanent: true, error: "the blob is no longer available" });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 });
+    expect(result.status).toBe("expired");
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    expect(run?.status).toBe("failed");
+    const [output] = imageGeneratorRunOutputsOf({ result: run?.result ?? null });
+    expect(output?.recoverable).toBe(false);
+    expect(output?.imageId).toBeNull();
+
+    mockRecoverCivitaiOutput.mockClear();
+    const again = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 });
+    expect(again.status).toBe("expired");
+    expect(mockRecoverCivitaiOutput).not.toHaveBeenCalled();
+  });
+
+  it("answers busy for a run that is pending or running", async () => {
+    const pending = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    expect((await recoverImageGeneratorOutput({ runId: pending.id, ownerId, index: 1 })).status).toBe("busy");
+
+    const running = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    const claimed = await claimGeneratorRun(running.id, ownerId);
+    expect(claimed?.status).toBe("running");
+    expect((await recoverImageGeneratorOutput({ runId: running.id, ownerId, index: 1 })).status).toBe("busy");
+  });
+
+  it("installs once when two recoveries race on the same failed output", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    const [first, second] = await Promise.all([
+      recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 }),
+      recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 }),
+    ]);
+
+    expect(first.status).toBe("recovered");
+    expect(second.status).toBe("recovered");
+
+    const run = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const [output] = imageGeneratorRunOutputsOf({ result: run?.result ?? null });
+    expect(output?.imageId).not.toBeNull();
+    // The race's loser discarded its own unused copy — only the winner's
+    // hidden output survives.
+    expect(await ownedGeneratorOutputRows()).toHaveLength(1);
+  });
+
+  it("deletes the recovered output along with its run", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 });
+    expect(result.status).toBe("recovered");
+    if (result.status !== "recovered") return;
+    const recoveredImageId = result.run.resultImageId;
+    expect(recoveredImageId).not.toBeNull();
+
+    const deleteResult = await deleteImageGeneratorRun(id, ownerId);
+    expect(deleteResult).toEqual({ deleted: true, outputImagesRemoved: 1 });
+    expect(await ownedGeneratorOutputRows()).toHaveLength(0);
+  });
+
+  it("projects recoverable true for a live offer and false once recovered", async () => {
+    stubCivitaiRecoveryRenderer(["undelivered"]);
+    const { id, sink } = await createRun({ modelId: CIVITAI_QWEN21_ID });
+    await runImageGeneratorRun(id, ownerId, sink);
+
+    const before = await getImageGeneratorRunDetail(id, ownerId, sink);
+    const [beforeOutput] = imageGeneratorRunOutputsOf({ result: before?.result ?? null });
+    expect(beforeOutput?.recoverable).toBe(true);
+
+    mockRecoverCivitaiOutput.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    const result = await recoverImageGeneratorOutput({ runId: id, ownerId, index: 1 });
+    expect(result.status).toBe("recovered");
+    if (result.status !== "recovered") return;
+    const [afterOutput] = imageGeneratorRunOutputsOf({ result: result.run.result ?? null });
+    expect(afterOutput?.recoverable).toBe(false);
   });
 });
 

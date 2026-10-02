@@ -2,7 +2,9 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { pinnedImageModelVersion } from "@vesper/image-core";
 import { db, images } from "@/server/db";
 import {
+  PORTRAIT_IMAGE_KINDS,
   avatarReplayCheapEligibility,
+  imageOutputRecoverable,
   resolveImageProfileForTask,
   type AvatarReplayEligibility,
   type AvatarReplaySourceRow,
@@ -24,9 +26,11 @@ import {
  * filed against the character too but belong to the Chat tab, and hidden identity
  * crops (`identity_face_crop`) belong to no user surface at all — a positive
  * allow-list is what keeps both out of every route below, including the mutating
- * ones.
+ * ones. It is the shared `PORTRAIT_IMAGE_KINDS`, the same list `promoteVariant`
+ * enforces, so the promote route (which does not resolve through here) refuses
+ * exactly what the studio cannot show.
  */
-const PORTRAIT_STUDIO_KINDS = ["avatar", "portrait_variant"] as const;
+const PORTRAIT_STUDIO_KINDS = PORTRAIT_IMAGE_KINDS;
 
 /**
  * The single portrait behind `/api/characters/[id]/portraits/[imageId]`: the
@@ -36,8 +40,9 @@ const PORTRAIT_STUDIO_KINDS = ["avatar", "portrait_variant"] as const;
  * the wrong parent is just as much a miss as a nonexistent one.
  *
  * The kind guard matches `listOwnedPortraits` deliberately: the studio's
- * GET/DELETE/promote routes all resolve through here, so anything the list cannot
- * show is also something they cannot read, delete, or promote to canonical.
+ * GET/DELETE routes resolve through here, and the promote route's
+ * `promoteVariant` enforces the same `PORTRAIT_IMAGE_KINDS`, so anything the list
+ * cannot show is also something they cannot read, delete, or promote to canonical.
  */
 export async function findPortrait(ownerId: string, characterId: string, imageId: string) {
   const [row] = await db()
@@ -62,9 +67,12 @@ export async function findPortrait(ownerId: string, characterId: string, imageId
  * (kind="scene") are filed against the character too, but belong to the Chat
  * tab, not the studio. The route pairs this with a `findOwnedCharacter` gate;
  * both halves are owner-scoped, so neither alone leaks a foreign roster.
+ *
+ * Each row carries `recoverable`: a failed render whose paid output can be
+ * recovered onto it with no new render (`POST /api/images/[id]/recover`).
  */
 export async function listOwnedPortraits(ownerId: string, characterId: string) {
-  return db()
+  const rows = await db()
     .select()
     .from(images)
     .where(
@@ -76,6 +84,7 @@ export async function listOwnedPortraits(ownerId: string, characterId: string) {
       ),
     )
     .orderBy(desc(images.createdAt));
+  return rows.map((row) => ({ ...row, recoverable: imageOutputRecoverable(row) }));
 }
 
 /** The wire shape of one row's replay hint — `{ ok: true }` never carries the

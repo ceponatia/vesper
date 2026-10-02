@@ -158,6 +158,10 @@ characters unchanged.
   36-43 s, with one workflow succeeding at 390 s. The Image Generator therefore
   plans this lane at the profile ceiling (`MAX_TRIAL_PREDICTION_MS`, 900 s)
   rather than the five-minute default that suits compute-billed providers.
+  When Vesper's own poll budget runs out first, the failure is
+  `civitai_async_timeout` at `workflow_status` with `retry=reconcile`, because
+  the workflow may still finish and bill; a timeout or expiry Civitai itself
+  reports stays `retry=deliberate` at `workflow_terminal`.
 - A failed workflow is auto-refunded by the provider (a debit followed by a
   matching credit, `cost.total: 0`) and carries no diagnostic detail —
   `errors: []`, no jobs, no reason — so `civitai_async_unknown_terminal` is often
@@ -369,11 +373,12 @@ characters unchanged.
   (review P3-5). The failure is always `retry=reconcile` and classifies as
   `other`, never `transient` and never a billing or content-rejection
   reading, so the SAME rung is never rerun and the character-chat selfie
-  retry's own guard skips it entirely. A scene chain FALLBACK to its next
-  rung — a different, reduced-reference request to a different model — is
-  unaffected and still runs, exactly as for any other non-transient failure,
-  and that fallback DOES render again; only a rerun of the identical rung is
-  ruled out.
+  retry's own guard skips it entirely. The scene chain's own paid-stop rule
+  ends the render here instead of falling back to the next rung: once this
+  rung's provider work is already paid for, no further rung — not even a
+  different, reduced-reference request to a different model — runs, and the
+  failed row's provenance is corrected onto this rung, the one Civitai
+  actually billed (#685).
 - **`recoverCivitaiOutput` recovers that output without rendering again.**
   Read-only end to end: one GET to re-read the workflow, then the same
   retried download above. It never POSTs, never creates a workflow, and
@@ -388,13 +393,27 @@ characters unchanged.
   workflow shape — is `permanent: false`, since a wrong "permanent" withdraws
   the one free recovery for good while a wrong "transient" only costs
   trying again later.
+- **The workflow and output ids reach the render's record before the
+  download starts, and every surface offers the recovery.** Once a workflow
+  has succeeded and its output is chosen, the lane records the workflow id,
+  the output id and the model on the render's own pending `images` row
+  through a seam it calls without knowing the row
+  (`recordPaidRenderOutput`), so a process that restarts mid-download leaves
+  a failed row that still offers the output (#687). Reference views recover
+  onto a new copy ([reference views](../../images/pipelines/reference-views.md)); portrait
+  variants, avatars, scenes and selfies recover in place on their failed row
+  ([asset registry](../../images/asset-registry.md)); the admin Image Generator
+  bench fills the run's empty output record ([runs](../../image-generator/runs.md)). Each recovery is
+  free, never POSTs, and shapes and stores the bytes exactly as the render
+  would have.
 - **An output blob outlives Vesper's own 24 h failed-row retention, with no
   observed expiry.** A 2026-10-02 read-only probe (zero Buzz) found every
   output blob the account still lists serving through the blob endpoint,
   including the oldest, from 2026-09-16 (15.7 days old) — no workflow in the
   sample carried an expiry field. The 24 h failed-row retention
   (`FAILED_ROW_RETENTION_MS`, `apps/web/src/server/images/asset-maintenance.ts`)
-  is therefore the binding recovery window, not the blob's own lifetime. A
+  is therefore the binding recovery window for every surface that keeps a
+  failed `images` row, not the blob's own lifetime. A
   blob the provider has stopped serving is reported `available: false` by
   the workflow read itself, before any download is attempted. See
   eval-images/civitai-qwen-2-1/blob-lifetime-682-2026-10-02.txt.

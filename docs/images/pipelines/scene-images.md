@@ -21,7 +21,7 @@ identity-pack service's canonical-portrait candidate — ordered **people before
 a short reference capacity drops the setting rather than a character.
 
 A selfie stays single-subject whoever else is in the room, and a cast with nobody present falls
-back to the filing subject rather than rendering an empty room. **Two present characters
+back to the scene's subject (the primary on a normal scene) rather than rendering an empty room. **Two present characters
 sharing a name degrade to the first** (a `chat_scene` warn): names are not unique and every
 downstream binding is by name, so the pair collapses into one and the cast clause never fires.
 The Image Lab refuses this outright; a player-facing render draws one person rather than none.
@@ -236,6 +236,43 @@ The executor walks the chain with a **reason-keyed retry** over `classifyImageFa
 ([README.md](README.md) §Failure classification): a transient failure retries once on the same
 rung, a content rejection never retries and drops to the next rung, and a billing failure never
 retries at all.
+
+**The row describes the rung that is running.** The row is reserved against the primary rung and
+names it in `meta.renderAttempt`. Before a fallback rung runs, the row's prompt, model, identity
+references, reference views and program meta are rewritten to that rung, `meta.renderAttempt`
+names it, and any paid-output ids a previous rung recorded before its download are dropped: that
+rung did not fail undelivered, since an undelivered failure stops the ladder, so its output is
+gone. The write lands only while the row is still `pending`. Each rung records its paid output's
+ids through its own recorder, naming the rung, and the record lands only while the row still
+names that rung ([../asset-registry.md](../asset-registry.md) §The sweep), so a slow record from a
+rung the ladder moved past never overwrites the running rung's. A process that dies during a
+fallback rung's download therefore leaves a row whose recovery offer and provenance both name
+that rung.
+
+**A rung's own failure can end the ladder outright instead of falling to the next rung.** When a
+rung's final failure (after its own same-rung retry above) shows that THIS attempt's provider
+work was paid for and may still deliver, the chain stops rather than hands off to a different,
+reduced-reference request on a different model: that fallback would be a second paid render
+racing a workflow that may still be running or may still deliver (#685). The evidence is
+structured (`providerWorkSpent`, `@vesper/image-core`): the failure names the provider's workflow
+(`predictionId`) AND declares `retry=reconcile`, or it names `civitai_submit_unconfirmed`, a paid
+submit whose answer was lost and whose workflow id is unknown by definition. A `retry=reconcile`
+with no workflow id does not stop the ladder: the Civitai transport declares an HTTP 409
+`reconcile` at every stage, and a 409 from the LoRA read, the preflight or a submit Civitai
+rejected outright never created a workflow. Nor does a workflow id alone: any provider's failed
+prediction names one. `images.scene_render.paid_attempt_stop` (warn) names the rung that stopped
+and the provider's own workflow id when one is known, and the failed row's provenance (prompt,
+model, identity references, reference views, program meta) is corrected onto that rung, the same
+way a fallback rung that WINS already replaces the primary rung's reserve-time provenance. Every
+other failure keeps falling through the ladder exactly as before: a content rejection, an
+ordinary transient failure, and any `retry=deliberate` or `retry=never` answer. Neither of those
+dispositions leaves a workflow that may still deliver: the request never became a paid workflow
+(a refused preflight, an automatic preflight repeat already spent), or Civitai itself ended the
+workflow (failed, canceled, expired, no provider available), or the output can never be fetched.
+Vesper's own poll deadline running out on a submitted workflow is not such an answer: abandoning
+the poll neither cancels nor refunds the workflow, so it reports `civitai_async_timeout` at
+`workflow_status` with `retry=reconcile`, and the chain stops on it. Only a failure whose paid
+work may still deliver stops the ladder.
 
 Every downgrade logs `images.scene_render.provider_fallback` (info, `{from,to,reason}`,
 including the upstream error message); a chain where every rung failed transiently logs

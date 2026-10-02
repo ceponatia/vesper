@@ -215,7 +215,18 @@ row or the flag says work is in flight, showing a painting tile through the stre
 pending row exists, the same shape as the conversation page's scene polling.
 
 Failed non-canonical avatar attempts stay in the Portrait history grid with
-`images.meta.error` visible. The studio also shows the **canonical avatar's prompt** in a
+`images.meta.error` visible. A failed render still throws (the lane's failure shape: the shell's
+warn diagnostic and the error-carrying event line), carrying its attempt record
+(`ImageProduceError`), so a failed avatar row records `meta.render` exactly as a failed variant row
+does: the prediction id, and a paid output's ids only when the output was undelivered.
+
+**A paid output is recovered, never rendered again.** A failed avatar whose render was billed but
+whose output never arrived reads `recoverable: true` in `GET /api/characters/:id/portraits`, and
+`POST /api/images/:id/recover` stores that output on the same row, free and with no new render
+([../asset-registry.md](../asset-registry.md) §Recovering a paid output in place). The recovered
+avatar is a ready **candidate**: recovery never moves the character's portrait pointer (owner
+ruling 2026-10-02), even for a single-candidate Generate whose render would have; the owner
+promotes it with the existing action. The studio also shows the **canonical avatar's prompt** in a
 read-only box between the generation controls and the variant form, sourced from
 `images.prompt` and updated when a variant is promoted — null when there is no avatar or it is
 an uploaded image (`meta.source: "upload"`, which carries no generation prompt).

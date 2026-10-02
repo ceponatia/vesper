@@ -1,12 +1,14 @@
-import { describeProviderError } from "../ai";
+import { describeProviderError, withPaidRenderOutputRecorder, type PaidRenderOutput, type PaidRenderOutputRecorder } from "../ai";
 import { JOB_HEARTBEAT_INTERVAL_MS } from "../db";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { log } from "@/server/log";
 import {
   type ImageRow,
   type CreateImageAssetOptions,
   createImageAsset,
   saveImageBuffer,
   failImage,
+  recordPendingRenderOutput,
   refreshRenderLease,
 } from "./asset-storage";
 import { kickImageSweep } from "./asset-maintenance";
@@ -20,6 +22,25 @@ import { kickImageSweep } from "./asset-maintenance";
 export type ImageProduceResult =
   | { ok: true; image: Buffer; meta?: Record<string, unknown> }
   | { ok: false; error: string; meta?: Record<string, unknown> };
+
+/**
+ * A produce failure that THROWS — a lane's ruled throw shape: the shell's warn
+ * diagnostic and the error-carrying `onThrown` event line — and still hands the
+ * pipeline the attempt's meta, which the failed row records exactly as a
+ * returned failure's would (the attempt provenance under `render`). Without it
+ * a thrown render's row keeps no attempt record, and any paid output's ids
+ * recorded before its download outlive a failure that already proved the
+ * output unrecoverable.
+ */
+export class ImageProduceError extends Error {
+  readonly meta: Record<string, unknown> | undefined;
+
+  constructor(message: string, meta?: Record<string, unknown>) {
+    super(message);
+    this.name = "ImageProduceError";
+    this.meta = meta;
+  }
+}
 
 /** `ready` ⇒ the file landed and the row says so; `failed` ⇒ the row carries the reason. */
 export type ImagePipelineStatus = "ready" | "failed";
@@ -91,8 +112,9 @@ export interface ImagePipelineResult {
  *   every rung; a reference edit returning `ok: false`). Whatever it throws is
  *   caught here and `describeProviderError` writes the row's failure text, so no
  *   lane repeats that. Either arm may carry `meta`, merged into the row in the
- *   save or fail update — the render-provenance channel; a THROWN produce has
- *   none to offer.
+ *   save or fail update — the render-provenance channel. A THROWN produce has
+ *   none to offer unless it throws an {@link ImageProduceError}, whose `meta`
+ *   the failed row records the same way.
  * - **`onReady`** — the pointer writes that are only correct once the file
  *   exists: `characters.avatar_image_id`, an entity's `image_id` + reclaim, the
  *   look anchor's keep-latest purge.
@@ -127,6 +149,12 @@ export interface ImagePipelineResult {
  * the sweep tells a render still running — a Civitai queue wait, every rung of a
  * scene chain — from one whose process died (docs/images/asset-registry.md
  * §The sweep).
+ *
+ * **A paid output's ids.** `produce` runs with a paid-output recorder installed
+ * on this row ({@link paidOutputRecorderForRow}): a provider lane that has a
+ * succeeded, billed output records its workflow and output ids here before it
+ * downloads, so a render whose process dies mid-download leaves a row that
+ * offers the output for recovery instead of nothing.
  */
 export async function runImagePipeline(opts: ImagePipelineOptions): Promise<ImagePipelineResult> {
   // Periodic maintenance rides the work it maintains:
@@ -146,7 +174,7 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
   const releaseLease = await holdRenderLease(asset.id);
   const startedMs = Date.now();
   try {
-    const produced = await opts.produce(asset);
+    const produced = await withPaidRenderOutputRecorder(paidOutputRecorderForRow(asset.id), () => opts.produce(asset));
     if (!produced.ok) {
       await failImage(asset.id, produced.error, produced.meta);
       opts.onSettled?.({ imageId: asset.id, status: "failed", startedMs });
@@ -159,7 +187,7 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
     return { imageId: asset.id, status };
   } catch (err) {
     const message = describeProviderError(err);
-    await failImage(asset.id, message);
+    await failImage(asset.id, message, err instanceof ImageProduceError ? err.meta : undefined);
     const failure = opts.failureDiagnostic;
     if (failure) {
       opts.sink?.push(
@@ -179,10 +207,54 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
 }
 
 /**
+ * A paid-output recorder for one render's row (`withPaidRenderOutputRecorder`):
+ * a provider lane that has a succeeded, billed output in hand records its ids on
+ * the row before it downloads ({@link recordPendingRenderOutput}), so a process
+ * that dies mid-download leaves the row offering that output for recovery once
+ * it is failed (docs/images/asset-registry.md §The sweep). The pipeline installs
+ * one with no attempt around every `produce`; a lane that runs several attempts
+ * on one row (the scene chain's rungs) installs one per attempt, naming it, so
+ * a slow record lands only while the row still names that attempt.
+ *
+ * Best-effort like the lease heartbeat: a write that fails, or a row that
+ * already left `pending` or moved to another attempt, is logged and the render
+ * carries on. The lane bounds how long it waits for this, so a database that is
+ * not answering never holds a paid download back.
+ */
+export function paidOutputRecorderForRow(imageId: string, attempt?: string): PaidRenderOutputRecorder {
+  return (output) => recordPaidOutputOnRow(imageId, output, attempt);
+}
+
+async function recordPaidOutputOnRow(imageId: string, output: PaidRenderOutput, attempt: string | undefined): Promise<void> {
+  try {
+    const recorded = await recordPendingRenderOutput(imageId, {
+      predictionId: output.predictionId,
+      undeliveredOutputId: output.outputId,
+      modelSlug: output.modelSlug,
+    }, attempt);
+    if (!recorded) {
+      log.warn("images", "a paid output's ids reached a render row no longer pending on that attempt; not recorded", {
+        imageId,
+        predictionId: output.predictionId,
+        ...(attempt === undefined ? {} : { attempt }),
+      });
+    }
+  } catch (error) {
+    log.warn("images", "a paid output's ids could not be recorded on its render row before the download", {
+      imageId,
+      predictionId: output.predictionId,
+      error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+    });
+  }
+}
+
+/**
  * Hold the render lease on a reserved row for as long as its render runs: one
  * stamp now, then one every {@link JOB_HEARTBEAT_INTERVAL_MS} (30 s), against the
  * sweep's 15-minute silence bound (`JOB_STALE_MS`). Returns the release the pipeline's
- * `finally` calls once the render settles — saved, failed or thrown.
+ * `finally` calls once the render settles — saved, failed or thrown. An in-place
+ * recovery of a paid output holds the same lease on the row it claimed
+ * (`image-output-recovery.ts`), so the sweep treats it as the live render it is.
  *
  * This is the job heartbeat's shape (`launchInsertedJob` in `api/jobs.ts`), not
  * the timer the sweep refuses to be: it is scoped to one render's lifetime,
@@ -196,7 +268,7 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
  * (the client sets no query timeout) never holds back the next, and beats that
  * overlap are harmless because each is the same guarded, idempotent write.
  */
-async function holdRenderLease(imageId: string): Promise<() => void> {
+export async function holdRenderLease(imageId: string): Promise<() => void> {
   const beat = async (): Promise<void> => {
     try {
       await refreshRenderLease(imageId, Date.now());

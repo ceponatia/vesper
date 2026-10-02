@@ -33,6 +33,11 @@ interface TranscriptProps {
   capabilities: Pick<BubbleProps, "canEditHistory" | "canDeleteHistory" | "canRerunFromMessage" | "canRetakeLatest">;
   privacyMode: boolean;
   sceneAnchors: Map<string, ImageRecord[]>;
+  /** Refetches the chat's scenes list after an inline scene moment's recovery
+   * lands or refuses `expired` (issue #686) — threaded straight from
+   * `chat-conversation.tsx`'s `scenes.reload`, the same handle the scene
+   * strip and the poll already share. */
+  onRecoverScene: () => void;
   onEnlargeAvatar: () => void;
   actions: {
     editLine: NonNullable<BubbleProps["onEdit"]>;
@@ -49,7 +54,7 @@ interface TranscriptProps {
 export function ChatTranscriptView({ lines, loading, error, onRetry, ready, hasEarlier,
   loadingEarlier, loadEarlier, scrollRef, contentRef, onScroll, pinned, jumpToLatest, who, name, rosterNames, avatarImageId,
   sending, archived, lastAssistantId, capabilities, privacyMode, sceneAnchors,
-  onEnlargeAvatar, actions }: TranscriptProps) {
+  onRecoverScene, onEnlargeAvatar, actions }: TranscriptProps) {
   return (
     <div className="relative min-h-0 flex-1">
     <div
@@ -105,7 +110,9 @@ export function ChatTranscriptView({ lines, loading, error, onRetry, ready, hasE
                 />
                 {/* Scene moments: hidden under privacy
                     mode, same as the strip — no inline thumbnail, no reachable lightbox. */}
-                {!privacyMode && moments ? <SceneMomentRow images={moments} name={name} /> : null}
+                {!privacyMode && moments ? (
+                  <SceneMomentRow images={moments} name={name} onRecovered={onRecoverScene} />
+                ) : null}
               </div>
             );
           })

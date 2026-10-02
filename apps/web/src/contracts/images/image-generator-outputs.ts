@@ -28,6 +28,32 @@ export const imageGeneratorRunOutputSchema = z.object({
   failureCode: z.string().min(1).nullable().catch(null).default(null),
   /** The provider prediction behind it; null when the request was refused before one existed. */
   predictionId: z.string().min(1).nullable().catch(null).default(null),
+  /**
+   * The Civitai output blob this prediction rendered and billed but never
+   * delivered (`civitai_output_undelivered`, #682/#686) — the id
+   * `recoverImageGeneratorOutput` (`image-generator-recovery.ts`) fetches
+   * again, with no new workflow. Present only on that one Civitai failure;
+   * every other outcome, including a success, keeps it null.
+   */
+  undeliveredOutputId: z.string().min(1).nullable().catch(null).default(null),
+  /**
+   * When a permanent fetch failure withdrew this output's recovery offer —
+   * this record's own counterpart to `PAID_OUTPUT_UNAVAILABLE_KEY`
+   * (`paid-output.ts`), scoped to one prediction rather than a whole images
+   * row, because a failed bench pass never gets one of its own. Null while
+   * the offer stands.
+   */
+  recoveryUnavailableAt: z.string().min(1).nullable().catch(null).default(null),
+  /** When a recovery installed `imageId` here with no new render. Null until recovered. */
+  recoveredAt: z.string().min(1).nullable().catch(null).default(null),
+  /**
+   * Persisted as `false` by the runner and by the recovery's own patch — the
+   * schema's own default, never a real answer the stored row carries — and
+   * RECOMPUTED on every wire read (`toWireImageGeneratorRun` /
+   * `storedRunResult`, `image-generator-store.ts`), which is the only value a
+   * client ever sees. The client never re-derives it itself.
+   */
+  recoverable: z.boolean().catch(false).default(false),
 });
 export type ImageGeneratorRunOutput = z.infer<typeof imageGeneratorRunOutputSchema>;
 

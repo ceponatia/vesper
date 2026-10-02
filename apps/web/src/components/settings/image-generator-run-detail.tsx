@@ -23,7 +23,15 @@ import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tag } from "@/components/ui/tag";
 import { useToast } from "@/components/ui/toast";
-import { imageGeneratorFailureExplanation, imageGeneratorRoleLabel, imageGeneratorStatusChip } from "./image-generator-copy";
+import {
+  imageGeneratorFailureExplanation,
+  imageGeneratorRecoverableHint,
+  imageGeneratorRecoverActionLabel,
+  imageGeneratorRecoverFailedTitle,
+  imageGeneratorRecoveredToast,
+  imageGeneratorRoleLabel,
+  imageGeneratorStatusChip,
+} from "./image-generator-copy";
 import type { ImageGeneratorPrefill } from "./image-generator-form";
 
 /**
@@ -236,6 +244,9 @@ function controlEntries(controls: ImageRenderControls): string[] {
   return entries;
 }
 
+/** No tile is mid-recovery — the component's initial state and `recoverOutput`'s steady state between calls. */
+const EMPTY_INDEX_SET: ReadonlySet<number> = new Set();
+
 /** The dashed placeholder every absent image renders as. */
 const MISSING_IMAGE_TILE =
   "flex aspect-[3/4] w-full items-center justify-center rounded-card border border-dashed border-ink-600 px-2 text-center text-[11px] text-paper-600";
@@ -279,12 +290,32 @@ function RecordedImage({
   );
 }
 
+/**
+ * The tile a failed pass shows when its paid Civitai render can still be
+ * fetched again with no new charge (`output.recoverable`, server-computed).
+ * One shape for both the multi-output grid's failed tile and a one-image
+ * run's own result area, so the offer reads the same wherever it appears.
+ */
+function RecoverableOutputTile({ busy, onRecover }: { busy: boolean; onRecover: () => void }) {
+  return (
+    <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-2 rounded-card border border-dashed border-ink-600 p-3 text-center">
+      <p className="text-[11px] text-paper-500">{imageGeneratorRecoverableHint}</p>
+      <Button size="sm" variant="primary" busy={busy} onClick={onRecover}>
+        {imageGeneratorRecoverActionLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate, onOpenRun }: ImageGeneratorRunDetailProps) {
   const toast = useToast();
   const detail = useAsyncData(() => imageGeneratorApi.runs.detail(runId), [runId]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [enlarged, setEnlarged] = useState<string | null>(null);
+  // Several tiles may recover at once; only the recovering tile itself waits,
+  // tracked by the output's own 1-based `index` rather than a single flag.
+  const [recoveringIndexes, setRecoveringIndexes] = useState<ReadonlySet<number>>(EMPTY_INDEX_SET);
 
   const run: ImageGeneratorRun | null = detail.data?.run ?? null;
   const live = run !== null && (run.status === "pending" || run.status === "running");
@@ -341,7 +372,36 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
   // single-image run, and it keeps exactly the panel it has always had.
   const outputs: ImageGeneratorRunOutput[] = imageGeneratorRunOutputsOf(run);
   const storedOutputIds = imageGeneratorRunOutputImageIds(outputs);
+  // A single-image run's own result area reads this one entry rather than the
+  // grid; absent on every run written before `meta.outputs` existed.
+  const soleOutput = outputs.length === 1 ? outputs[0] : undefined;
   const promptTransformed = run.finalPrompt !== null && run.finalPrompt !== run.prompt;
+
+  /**
+   * Recover one failed pass's paid Civitai render with no new prediction;
+   * free. The server decides eligibility — this only shows its answer. A
+   * refusal's toast carries the server's own message, naming what happened
+   * (busy, expired, unavailable, …) exactly as the reference-view recover
+   * flow's toast does.
+   */
+  const recoverOutput = async (index: number) => {
+    setRecoveringIndexes((prev) => new Set(prev).add(index));
+    const result = await imageGeneratorApi.runs.recoverOutput(run.id, index);
+    setRecoveringIndexes((prev) => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+    if (!result.ok) {
+      toast.push({ title: imageGeneratorRecoverFailedTitle, description: result.error.message, tone: "error" });
+      // The offer is gone for good: refetch so the tile drops the action
+      // rather than offering a recovery that will only refuse again.
+      if (result.error.code === "expired") detail.reload({ silent: true });
+      return;
+    }
+    detail.reload({ silent: true });
+    toast.push(imageGeneratorRecoveredToast);
+  };
 
   const duplicate = () => {
     toast.push({
@@ -423,6 +483,11 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
                       label={`Image ${String(output.index)}`}
                       onEnlarge={setEnlarged}
                     />
+                  ) : output.recoverable ? (
+                    <RecoverableOutputTile
+                      busy={recoveringIndexes.has(output.index)}
+                      onRecover={() => void recoverOutput(output.index)}
+                    />
                   ) : (
                     // The CODE in the tile, the sentence behind it on hover: a
                     // failure explanation is a paragraph, and four of them in a
@@ -458,6 +523,11 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
               <RecordedImage imageId={run.resultImageId} label="Run result" onEnlarge={setEnlarged} />
             ) : live ? (
               <Skeleton className="aspect-[3/4] w-full rounded-card" />
+            ) : soleOutput !== undefined && soleOutput.recoverable ? (
+              <RecoverableOutputTile
+                busy={recoveringIndexes.has(soleOutput.index)}
+                onRecover={() => void recoverOutput(soleOutput.index)}
+              />
             ) : (
               <div className={MISSING_IMAGE_TILE}>
                 {run.status === "failed" ? "the run failed before an image existed" : "no result yet"}

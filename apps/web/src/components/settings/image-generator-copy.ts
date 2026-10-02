@@ -11,6 +11,12 @@ import {
   type ImageGeneratorRunStatus,
 } from "@/contracts/images/image-generator";
 import type { TagTone } from "@/components/ui/tag";
+import {
+  imageRecoverableHint,
+  imageRecoverActionLabel,
+  imageRecoverFailedTitle,
+  imageRecoveredToastTitle,
+} from "@/components/images/recovery-copy";
 
 /**
  * The Image Generator's vocabulary in English, following the lab's precedent:
@@ -140,3 +146,25 @@ export function imageGeneratorFailureExplanation(code: string): string {
   if (code === IMAGE_LORA_INCOMPATIBLE || code === IMAGE_LORA_UNREACHABLE) return LORA_FAILURE_COPY[code];
   return code;
 }
+
+/**
+ * A failed output whose paid Civitai render can still be fetched again, with
+ * no new charge (`output.recoverable`, server-computed) — shown in place of
+ * the tile's ordinary failure code. The wording is the one every recovery
+ * surface shares (`components/images/recovery-copy`): one offer, one
+ * sentence, read the same wherever a paid-for render can be recovered
+ * instead of rendered again.
+ */
+export const imageGeneratorRecoverableHint = imageRecoverableHint;
+
+/** The recoverable tile's primary action — the shared recover label. */
+export const imageGeneratorRecoverActionLabel = imageRecoverActionLabel;
+
+/** The toast once a recovery installs the output with no new prediction. */
+export const imageGeneratorRecoveredToast = {
+  title: imageRecoveredToastTitle,
+  description: "The run now shows the rendered image.",
+} as const;
+
+/** The toast title on a refused recovery; the description is the server's own message. */
+export const imageGeneratorRecoverFailedTitle = imageRecoverFailedTitle;

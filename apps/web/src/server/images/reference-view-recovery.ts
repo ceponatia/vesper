@@ -1,33 +1,26 @@
-import sharp from "sharp";
-import { z } from "zod";
-import { IMAGE_TARGET_ASPECT, imageProfileTaskSchema } from "@vesper/image-core";
+import { IMAGE_TARGET_ASPECT } from "@vesper/image-core";
 import type { ReferenceView } from "@/contracts";
 import { diag, DiagnosticCollector, teeSink, type DiagnosticSink } from "@/contracts/diagnostics";
-import { parseOr, parseOrNull } from "@/lib/parse";
 import { log, logDiagnostics } from "@/server/log";
-import { recoverCivitaiOutput } from "../ai";
 import { JOB_HEARTBEAT_INTERVAL_MS } from "../db";
-import {
-  createImageAsset,
-  READY_RETIRED_META_KEYS,
-  SHARP_DECODE_LIMITS,
-  WEBP_QUALITY,
-  writeWebpAtomic,
-  type ImageRow,
-} from "./asset-storage";
+import { createImageAsset, writeWebpAtomic, type ImageRow } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
+import {
+  recordedShapeRequest,
+  recoveredOutputMeta,
+  recoverPaidOutput,
+  withdrawPaidOutputOffer,
+  type PaidOutput,
+  type PaidOutputLaneShape,
+} from "./paid-output";
 import { absoluteImagePath } from "./paths";
-import { shapeProviderOutput, type ProviderOutputShapeRequest, type ShapedProviderOutput } from "./provider-output-shape";
 import {
   beatReferenceViewRecoveryClaim,
   claimReferenceViewRecovery,
   installRecoveredReferenceView,
   readReferenceViewRecovery,
-  REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY,
   releaseReferenceViewRecoveryClaim,
-  withdrawReferenceViewOutputOffer,
   type RecoverReferenceViewResult,
-  type ReferenceViewPaidOutput,
   type ReferenceViewRecoveryRead,
 } from "./reference-view-store";
 
@@ -57,18 +50,16 @@ import {
  *    run beats the claim until it ends, whatever happens to the client, and a
  *    process that dies leaves a claim that lapses within `JOB_STALE_MS`, with
  *    the offer untouched.
- * 3. **Download**, read-only, from the stored workflow and blob
- *    (`recoverCivitaiOutput`). An answer that the output can never be fetched
- *    withdraws the offer (`expired`); any other failure leaves it standing
- *    (`unavailable`), for the owner to try again.
- * 4. **The decode rule.** Bytes sharp cannot decode, or cannot encode as the
- *    stored webp, are the provider's stored output and fail the same way on
- *    every fetch, so they withdraw the offer too. Anything that fails after
- *    them — the disk, the database — is transient.
- * 5. **Shape** the provider's original exactly as the render would have
- *    (`shapeProviderOutput`), and write it through the one webp writer as a
- *    NEW pending row carrying the failed row's meta and `recoveredFrom`.
- * 6. **Commit** (`installRecoveredReferenceView`), which releases the claim in
+ * 3. **Download, decode, shape** — the shared paid-output step
+ *    (`recoverPaidOutput`, `paid-output.ts`): read-only from the stored
+ *    workflow and blob, then the decode rule, then the render's own output
+ *    shape. An answer that the output can never be fetched, or bytes that can
+ *    never be decoded, withdraw the offer (`expired`); any other failure
+ *    leaves it standing (`unavailable`), for the owner to try again. Anything
+ *    that fails after the bytes decode — the disk, the database — is transient.
+ * 4. **Write** the shaped bytes through the one webp writer as a NEW pending
+ *    row carrying the failed row's meta and `recoveredFrom`.
+ * 5. **Commit** (`installRecoveredReferenceView`), which releases the claim in
  *    the transaction that installs; or delete that copy and release the claim.
  *    The failed original is never deleted; retention collects it on its own
  *    clock.
@@ -88,6 +79,19 @@ export const REFERENCE_VIEW_OUTPUT_EXPIRED = `${SCOPE}.output_expired`;
 
 /** A failed view's paid output could not be recovered this time; its recovery offer stands. */
 export const REFERENCE_VIEW_OUTPUT_UNAVAILABLE = `${SCOPE}.output_unavailable`;
+
+/**
+ * What a view's live render asks for, which a recovery crops toward when the
+ * failed row recorded no shape: the build's 3:4 target on the `variant` task,
+ * with nothing expected back, so the decoded image is cropped toward 3:4 if it
+ * is not already there. A render that settled records its own shape; one whose
+ * process died mid-download recorded only its ids.
+ */
+const REFERENCE_VIEW_LANE_SHAPE: PaidOutputLaneShape = {
+  task: "variant",
+  targetRatio: IMAGE_TARGET_ASPECT,
+  expectedAspect: null,
+};
 
 export interface RecoverReferenceViewInput {
   characterId: string;
@@ -161,19 +165,21 @@ async function recoverUnderClaim(
 
   // Outside every lock: a slow blob can take minutes, and nothing about the
   // download is the sheet's business until its bytes are in hand. The claim
-  // keeps every other writer off the slot meanwhile.
-  const fetched = await fetchPaidOutput(output);
-  if (!fetched.ok) {
-    if (fetched.permanent) return withdraw(output, input.ownerId, sink, context, fetched.error);
-    reportUnavailable(sink, context, "fetch", fetched.error);
+  // keeps every other writer off the slot meanwhile. The fetch, the decode
+  // rule and the render's own shape are the shared paid-output step.
+  const recovered = await recoverPaidOutput({
+    workflowId: output.workflowId,
+    blobId: output.blobId,
+    shape: recordedShapeRequest(asset.meta, REFERENCE_VIEW_LANE_SHAPE),
+    sink,
+  });
+  if (!recovered.ok) {
+    if (recovered.permanent) return withdraw(output, input.ownerId, sink, context, recovered.error);
+    reportUnavailable(sink, context, "fetch", recovered.error);
     return { status: "unavailable" };
   }
-  const undecodable = await undecodableReason(fetched.image);
-  if (undecodable !== null) {
-    return withdraw(output, input.ownerId, sink, context, `the fetched output cannot be decoded and stored: ${undecodable}`);
-  }
 
-  const shaped = await shapeProviderOutput(fetched.image, recordedShapeRequest(asset.meta), sink);
+  const shaped = recovered.shaped;
   const copy = await createImageAsset({
     ownerId: input.ownerId,
     kind: "reference_view",
@@ -181,7 +187,7 @@ async function recoverUnderClaim(
     entityId: input.characterId,
     prompt: asset.prompt,
     ...(asset.sourceImageId === null ? {} : { sourceImageId: asset.sourceImageId }),
-    meta: recoveredMeta(asset.meta, output, shaped),
+    meta: recoveredOutputMeta(asset.meta, output, shaped),
   });
   run.copy = copy;
   // The one webp writer every stored image goes through: the provider's
@@ -218,7 +224,7 @@ async function recoverUnderClaim(
 }
 
 /** The diagnostic context every recovery line carries. */
-function contextOf(input: RecoverReferenceViewInput, output?: ReferenceViewPaidOutput): Record<string, unknown> {
+function contextOf(input: RecoverReferenceViewInput, output?: PaidOutput): Record<string, unknown> {
   return {
     characterId: input.characterId,
     angle: input.view.angle,
@@ -245,7 +251,7 @@ function reportUnavailable(
 
 /** The output is gone for good: withdraw the offer, say so, and answer `expired`. */
 async function withdraw(
-  output: ReferenceViewPaidOutput,
+  output: PaidOutput,
   ownerId: string,
   sink: DiagnosticSink,
   context: Record<string, unknown>,
@@ -259,21 +265,6 @@ async function withdraw(
     }),
   );
   return { status: "expired" };
-}
-
-/**
- * Why sharp cannot decode these bytes and encode them as the stored webp, or
- * null when it can: `writeWebpAtomic`'s own decode limits and encoder, run in
- * memory before anything is written. The bytes are the provider's stored
- * output, so a refusal here repeats on every fetch.
- */
-async function undecodableReason(bytes: Buffer): Promise<string | null> {
-  try {
-    await sharp(bytes, SHARP_DECODE_LIMITS).webp({ quality: WEBP_QUALITY }).toBuffer();
-    return null;
-  } catch (error) {
-    return errorText(error);
-  }
 }
 
 /** Keep a claim live for exactly as long as this run holds it — the job heartbeat's shape. */
@@ -312,89 +303,14 @@ async function releaseClaim(claimJobId: string, answer: RecoverReferenceViewResu
   }
 }
 
-type FetchedOutput = Awaited<ReturnType<typeof recoverCivitaiOutput>>;
-
-/**
- * The transport answers with a value. A throw is a defect, and a defect is
- * never evidence the output is gone, so it reads as a transient failure: the
- * offer stands.
- */
-async function fetchPaidOutput(output: ReferenceViewPaidOutput): Promise<FetchedOutput> {
-  try {
-    return await recoverCivitaiOutput({ workflowId: output.workflowId, blobId: output.blobId });
-  } catch (error) {
-    return { ok: false, permanent: false, error: errorText(error) };
-  }
-}
-
 /** Stamp the withdrawal; a failed stamp is logged, and the next attempt is refused the same way. */
-async function withdrawOffer(output: ReferenceViewPaidOutput, ownerId: string): Promise<boolean> {
+async function withdrawOffer(output: PaidOutput, ownerId: string): Promise<boolean> {
   try {
-    return await withdrawReferenceViewOutputOffer(output.imageId, ownerId);
+    return await withdrawPaidOutputOffer({ imageId: output.imageId, ownerId, kind: "reference_view" });
   } catch (error) {
     log.warn("images", "a reference view recovery offer could not be withdrawn", { imageId: output.imageId, error: errorText(error) });
     return false;
   }
-}
-
-const metaRecordSchema = z.record(z.string(), z.unknown());
-
-/** The shape facts a failed render records even though nothing came back (`meta.render.shape`). */
-const recordedShapeSchema = z.object({
-  mode: z.enum(["provider_default", "target_ratio"]),
-  requestedAspect: z.number().positive().nullable(),
-  expectedAspect: z.number().positive().nullable(),
-});
-
-/**
- * What the failed render recorded about the shape it wanted, read at the trust
- * boundary, as the shaping request a live render of it would have made.
- *
- * Without a readable record the lane's own request stands — the view's 3:4
- * on its `variant` task, with nothing expected back, so the decoded image is
- * cropped toward 3:4 if it is not already there.
- */
-function recordedShapeRequest(meta: unknown): ProviderOutputShapeRequest {
-  const render = parseOr(metaRecordSchema, parseOr(metaRecordSchema, meta, {}).render, {});
-  const task = parseOrNull(imageProfileTaskSchema, render.task) ?? "variant";
-  const modelSlug = typeof render.modelSlug === "string" ? render.modelSlug : undefined;
-  const shape = parseOrNull(recordedShapeSchema, render.shape);
-  const base = { task, ...(modelSlug === undefined ? {} : { modelSlug }) };
-  if (shape === null) return { ...base, targetRatio: IMAGE_TARGET_ASPECT, expectedAspect: null };
-  if (shape.mode === "provider_default") return { ...base, targetRatio: null, expectedAspect: shape.expectedAspect };
-  return { ...base, targetRatio: shape.requestedAspect ?? IMAGE_TARGET_ASPECT, expectedAspect: shape.expectedAspect };
-}
-
-/** The keys a recovered copy never carries: a failure it no longer has, a lease, and a withdrawn offer. */
-const RECOVERY_RETIRED_META_KEYS: ReadonlySet<string> = new Set([...READY_RETIRED_META_KEYS, REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]);
-
-/**
- * The copy's meta: the failed row's, minus the failure state, plus
- * `recoveredFrom` — the failed row, the workflow and the blob the bytes came
- * from.
- *
- * The crop the recovery performed is recorded where a render records its own:
- * `meta.render.shape`, whose returned size, crop and pre-crop size become the
- * copy's, so the copy reads as the render that should have landed. A failed
- * row that recorded no shape has nowhere honest to put it, and keeps it under
- * `recoveredFrom` instead.
- */
-function recoveredMeta(meta: unknown, output: ReferenceViewPaidOutput, shaped: ShapedProviderOutput): Record<string, unknown> {
-  const failed = parseOr(metaRecordSchema, meta, {});
-  const kept = Object.fromEntries(Object.entries(failed).filter(([key]) => !RECOVERY_RETIRED_META_KEYS.has(key)));
-  const render = parseOrNull(metaRecordSchema, failed.render);
-  const shape = render === null ? null : parseOrNull(metaRecordSchema, render.shape);
-  const shapeFacts = { returned: shaped.returned, crop: shaped.crop, providerSize: shaped.providerSize };
-  return {
-    ...kept,
-    ...(render !== null && shape !== null ? { render: { ...render, shape: { ...shape, ...shapeFacts } } } : {}),
-    recoveredFrom: {
-      imageId: output.imageId,
-      workflowId: output.workflowId,
-      blobId: output.blobId,
-      ...(shape === null ? { crop: shaped.crop, providerSize: shaped.providerSize } : {}),
-    },
-  };
 }
 
 function errorText(error: unknown): string {

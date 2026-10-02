@@ -82,14 +82,19 @@ The character can send photos back (owner rulings 2026-07-11):
   to — a "neutral" proposal must not clear a standing bruise). An opener send
   records an `offer` ring entry (same cooldown).
 - **Render**: `flavor: "selfie"` through `queueChatScene` →
-  `renderCharacterSceneImage`. The framing, reference routing and the retry-once
+  `renderCharacterSceneImage`. Scenes and selfies are both filed under the chat's
+  primary participant at render time, so the Gallery finds them there; the scene
+  strip lists by `chat_id`, so a later primary change never hides them; a selfie
+  still depicts only its sender. The framing, reference routing and the retry-once
   failure policy are [images/pipelines/chat-images.md](../images/pipelines/chat-images.md);
   the lane's own rules
   are that the render shares the one-live-render-per-chat dedupe with scenes,
   `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged, and a
   twice-failed render stays a `failed` row rendered in the transcript as a **"Failed"
   placeholder** ("the photo never arrived") whose sent prompt opens in the admin
-  lightbox panel.
+  lightbox panel — or, while the render's paid Civitai output is still recoverable, the
+  same tile with a **Recover image** action in place of that line
+  ([ui/transcript.md](../ui/transcript.md)).
 - **Display**: an anchored image message with the SMS-adjacent treatment (rounded,
   accent-bordered) in the inline moments row; also in the scene strip and Gallery.
 

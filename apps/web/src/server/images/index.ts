@@ -35,7 +35,11 @@ export {
   imageMeta,
   saveImageBuffer,
   GALLERY_IMAGE_KINDS,
+  PORTRAIT_IMAGE_KINDS,
   HIDDEN_IMAGE_KINDS,
+  CHAT_PRIVATE_IMAGE_KINDS,
+  UNSHAREABLE_IMAGE_KINDS,
+  isShareableImageKind,
   failImage,
 } from "./asset-storage";
 export {
@@ -180,6 +184,17 @@ export {
   REFERENCE_VIEW_OUTPUT_UNAVAILABLE,
 } from "./reference-view-recovery";
 export {
+  IMAGE_OUTPUT_EXPIRED,
+  IMAGE_OUTPUT_RECOVERED,
+  IMAGE_OUTPUT_UNAVAILABLE,
+  imageOutputRecoverable,
+  RECOVERABLE_IMAGE_KINDS,
+  recoverImageOutput,
+  type ImageOutputRecoveryRefusal,
+  type RecoverImageOutputInput,
+  type RecoverImageOutputResult,
+} from "./image-output-recovery";
+export {
   loadConsumableReferenceView,
   REFERENCE_VIEW_DROPPED_FOR_CAPACITY,
   REFERENCE_VIEW_UNAVAILABLE,
@@ -300,14 +315,25 @@ export {
   deleteImageGeneratorUploads,
   type DeleteImageGeneratorUploadsResult,
   getImageGeneratorRunDetail,
+  imageGeneratorOutputOffer,
+  imageGeneratorOutputRecoverable,
   type ImageGeneratorProviderOutcome,
   type ImageGeneratorRunPayload,
   type ImageGeneratorRunRow,
+  imageGeneratorRunSettled,
   listImageGeneratorRuns,
   listImageGeneratorUploads,
   toWireImageGeneratorRun,
 } from "./image-generator-store";
 export { runImageGeneratorRun } from "./image-generator-run";
+export {
+  type ImageGeneratorRecoveryResult,
+  IMAGE_GENERATOR_OUTPUT_EXPIRED,
+  IMAGE_GENERATOR_OUTPUT_RECOVERED,
+  IMAGE_GENERATOR_OUTPUT_UNAVAILABLE,
+  recoverImageGeneratorOutput,
+  type RecoverImageGeneratorOutputInput,
+} from "./image-generator-recovery";
 export {
   type GeneratorRenderer,
   type GeneratorRenderRequest,
@@ -419,6 +445,7 @@ export * from "./upload";
 export * from "./entity";
 export * from "./scene";
 export * from "./character-scene";
+export * from "./scene-references";
 export {
   mergeRenderAdvisoryReview,
   type RenderAdvisoryReviewOutcome,

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { civitaiAsyncFailure } from "./civitai-errors";
-import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageModelSchema, type ImageModel } from "@vesper/image-core";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageModelSchema, providerWorkSpent, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 
 vi.mock("../images/lora-credentials", () => ({
@@ -21,6 +21,7 @@ import {
   validateCivitaiKleinRequest,
   validateCivitaiPreflightEcho,
 } from "./civitai-runtime";
+import { withPaidRenderOutputRecorder, type PaidRenderOutput } from "./paid-render-output";
 
 const MODEL: ImageModel = imageModelSchema.parse({
   id: "civitai-klein",
@@ -594,9 +595,105 @@ describe("Civitai Klein v2 transport", () => {
     expect(statusReads).toBe(14);
     expect(workflowPosts).toBe(2);
     expect(Date.now() - startedAt).toBe(30_000);
-    expect(result).toMatchObject({ ok: false, predictionId: "submit-deadline", error: expect.stringContaining("civitai_async_timeout; retry=deliberate") });
+    // Vesper's own deadline cut the retry short, not a provider verdict: the
+    // billed workflow may still finish, so it reconciles (see below).
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-deadline", error: expect.stringContaining("civitai_async_timeout; retry=reconcile") });
     if (result.ok) throw new Error("expected the expired status retry to time out");
     expect(result.error).not.toContain("secret");
+  });
+
+  /**
+   * PROTECTS: Vesper's OWN poll deadline running out on a submitted, billed
+   * workflow declares `retry=reconcile` at `workflow_status` — Vesper only
+   * stopped watching, and the workflow may still finish and bill (one
+   * measured run succeeded 90 s after a 300 s local deadline). The bad
+   * implementation reports it as the provider's own `retry=deliberate`
+   * expiry, whose disposition suppresses the post-submit reconcile sentence,
+   * so the scene chain's paid stop (`providerWorkSpent`) never fires
+   * and the next rung pays for a second render while the first may still
+   * deliver.
+   */
+  it("reports its own poll deadline on a submitted workflow as reconcile, never as the provider's deliberate expiry", async () => {
+    vi.useFakeTimers();
+    let workflowPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowPosts += 1;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-slow" : "submit-slow", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-slow")) {
+        return Response.json({ id: "submit-slow", status: "processing", steps: [{ $type: "imageGen", input: {}, output: {} }] });
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, { ...request, timeoutMs: 1 });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(workflowPosts).toBe(2);
+    if (result.ok) throw new Error("expected the local poll deadline to end the render");
+    expect(result.predictionId).toBe("submit-slow");
+    expect(result.error).toContain("Civitai workflow status failed (civitai_async_timeout; retry=reconcile)");
+    expect(providerWorkSpent({ message: result.error ?? "", predictionId: result.predictionId ?? null })).toBe(true);
+  });
+
+  it("keeps a timeout Civitai itself reports as the deliberate terminal expiry", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-expired" : "submit-expired", whatif === "true" ? "unassigned" : "expired"));
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    if (result.ok) throw new Error("expected the provider's expiry to fail the render");
+    expect(result.predictionId).toBe("submit-expired");
+    expect(result.error).toContain("Civitai workflow terminal failed (civitai_async_timeout; retry=deliberate)");
+    expect(providerWorkSpent({ message: result.error ?? "", predictionId: result.predictionId ?? null })).toBe(false);
+  });
+
+  /**
+   * PROTECTS (PR #692 review): the scene chain's paid stop treats a
+   * `retry=reconcile` as spent provider work only beside a workflow id, so it
+   * relies on this transport naming one on every post-submit failure and on
+   * NO failure before a workflow exists. Civitai's HTTP 409 declares
+   * `reconcile` at every stage; at the preflight, or at a submit Civitai
+   * rejected outright, no workflow was ever created, and the failure must
+   * carry no `predictionId` so the ladder falls through to its next rung.
+   */
+  it.each([
+    ["the zero-cost preflight", "true"],
+    ["a submit Civitai rejected outright", "false"],
+  ] as const)("names no workflow on a 409 from %s, so the paid stop does not fire", async (_label, rejectedWhatif) => {
+    let workflowPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowPosts += 1;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === rejectedWhatif) return Response.json({ detail: "conflict" }, { status: 409 });
+        return Response.json(workflowFrom(body, "estimate-409", "unassigned"));
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    if (result.ok) throw new Error("expected the 409 to fail the render");
+    expect(result.error).toContain("civitai_http_409; retry=reconcile");
+    expect(result.predictionId).toBeUndefined();
+    expect(providerWorkSpent({ message: result.error ?? "", predictionId: result.predictionId ?? null })).toBe(false);
+    // Neither 409 is ever reposted: the preflight's one automatic repeat is for 429/5xx only.
+    expect(workflowPosts).toBe(rejectedWhatif === "true" ? 1 : 2);
   });
 
   it("retries a transient preflight exactly once, then still posts the paid submission only once", async () => {
@@ -1892,6 +1989,82 @@ describe("Civitai Klein v2 transport", () => {
 
     expect(result.ok).toBe(false);
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
+  });
+});
+
+/**
+ * PROTECTS (#687): a workflow that succeeded and was billed has its ids
+ * recorded BEFORE its output download starts, so a process that dies during
+ * the download (up to four 120 s attempts) leaves the render's row offering
+ * the paid output for recovery instead of nothing. The bad implementations
+ * this kills: recording after the download (a restart mid-download loses the
+ * ids exactly as before), recording the wrong ids (the preflight's estimate
+ * id, or no output id), and recording for a workflow that produced nothing
+ * fetchable — a failed or blocked workflow, or a hidden output — which would
+ * offer a recovery that can never succeed.
+ */
+describe("Civitai Klein v2 paid output recorded before its download (#687)", () => {
+  /** A full render whose submit answers `status` with `images`; every blob fetch is logged into `events`. */
+  function stubWorkflow(status: string, images: unknown[], events: string[]): void {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(
+          body,
+          whatif === "true" ? "estimate-paid" : "submit-paid",
+          whatif === "true" ? "unassigned" : status,
+          images,
+        ));
+      }
+      events.push(`fetch ${href}`);
+      return new Response("image-bytes", { status: 200 });
+    });
+  }
+
+  it("records the workflow, the chosen output and the model before the download's first fetch", async () => {
+    const events: string[] = [];
+    const recorded: PaidRenderOutput[] = [];
+    stubWorkflow("succeeded", [{ id: "pending.jpg", available: false }, { id: "output.jpg", available: true }], events);
+
+    const result = await withPaidRenderOutputRecorder(async (output) => {
+      recorded.push(output);
+      events.push("record");
+    }, () => runCivitaiKleinImageModel(MODEL, request));
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-paid" });
+    expect(recorded).toEqual([{ predictionId: "submit-paid", outputId: "output.jpg", modelSlug: CIVITAI_FLUX2_KLEIN4B_SLUG }]);
+    expect(events).toEqual(["record", `fetch ${blobUrl("output.jpg")}`]);
+  });
+
+  it.each([
+    ["a failed workflow", "failed", [{ id: "output.jpg", available: true }]],
+    ["a workflow whose only output is blocked", "succeeded", [{ id: "blocked.jpg", available: true, blockedReason: "blocked" }]],
+    ["a workflow whose only output is hidden", "succeeded", [{ id: "hidden.jpg", available: true, hidden: true }]],
+  ] as const)("records nothing for %s", async (_description, status, images) => {
+    const events: string[] = [];
+    const recorder = vi.fn(async () => undefined);
+    stubWorkflow(status, [...images], events);
+
+    const result = await withPaidRenderOutputRecorder(recorder, () => runCivitaiKleinImageModel(MODEL, request));
+
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-paid" });
+    expect(recorder).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it("downloads the output all the same when the record fails", async () => {
+    const events: string[] = [];
+    stubWorkflow("succeeded", [{ id: "output.jpg", available: true }], events);
+
+    const result = await withPaidRenderOutputRecorder(async () => {
+      throw new Error("the database is not answering");
+    }, () => runCivitaiKleinImageModel(MODEL, request));
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-paid" });
+    expect(result.image?.toString()).toBe("image-bytes");
+    expect(events).toEqual([`fetch ${blobUrl("output.jpg")}`]);
   });
 });
 

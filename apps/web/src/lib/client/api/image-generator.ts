@@ -72,6 +72,17 @@ export const imageGeneratorApi = {
         z.object({ run: imageGeneratorRunSchema }),
         `${IMAGE_GENERATOR_API_ROOT}/runs/${runId}`,
       ),
+    /**
+     * Recover one failed pass's paid-for render with no new prediction; free.
+     * The server answers the updated run on success, or a refusal whose
+     * `error.code` names what happened (`busy`, `expired`, `unavailable`,
+     * `ineligible`, `not_found`) for the caller's own toast.
+     */
+    recoverOutput: (runId: string, index: number) =>
+      apiPost(
+        z.object({ run: imageGeneratorRunSchema }),
+        `${IMAGE_GENERATOR_API_ROOT}/runs/${runId}/outputs/${index}/recover`,
+      ),
     /** Hard-deletes the run and its hidden output. */
     remove: (runId: string) =>
       apiDelete(`${IMAGE_GENERATOR_API_ROOT}/runs/${runId}`),

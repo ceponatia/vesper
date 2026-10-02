@@ -60,9 +60,9 @@ Every consequence follows from that one split:
 `kind: "identity_face_crop"` is written through the normal row-before-file WebP path
 and is a member of `HIDDEN_IMAGE_KINDS`, whose membership and reach are owned by
 [asset-registry.md](asset-registry.md) §Hidden kinds. Two further gates are this lane's own: the portrait studio's
-routes use a positive allow-list (`PORTRAIT_STUDIO_KINDS` = avatar + variant), so list/read/delete/promote cannot
-address a crop, and `promoteVariant` refuses a hidden kind outright (`images.promote.hidden_kind`) — a render *input*
-is never a portrait.
+routes use a positive allow-list (`PORTRAIT_IMAGE_KINDS` = avatar + variant), so list/read/delete cannot address a
+crop, and `promoteVariant` enforces the same list, refusing any other kind (`images.promote.not_portrait_kind`) — a
+render *input* is never a portrait, and neither is chat content filed under the character.
 
 ## Derivation v1 is heuristic-only, deliberately
 

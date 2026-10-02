@@ -15,6 +15,11 @@ preview path (`isPublicEntityImage`) — and only when the image and the public 
 **share an owner**, since the entity linkage is polymorphic metadata with no FK. Cache policy
 follows that split: `public` for public-entity images, `private` for owner-only.
 
+Neither the copy nor the widening covers every kind: internal assets and chat content (a chat's
+scenes and selfies are filed under its primary character) never cross an owner boundary — see
+[hidden kinds](../images/asset-registry.md#hidden-kinds) and
+[chat-private kinds](../images/asset-registry.md#chat-private-kinds).
+
 ## What a copy carries
 
 A clone copies the **stored row, not the public preview**. For a character that means the whole

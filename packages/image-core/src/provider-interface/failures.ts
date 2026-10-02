@@ -18,6 +18,15 @@ export type ImageFailureReason = "transient" | "content_rejection" | "other";
 export interface ImageProviderFailure {
   reason: ImageFailureReason;
   message: string;
+  /**
+   * The provider's own prediction/workflow id for THIS attempt, when the
+   * failure happened after one was created — carried so a caller that stops
+   * on a paid failure (#685) can name which provider record was paid for,
+   * the same id `ResolvedImageAttempt.predictionId` records on success.
+   * Absent on a failure that never reached the provider (a pre-spend
+   * refusal); `null` is an explicit "the provider named none".
+   */
+  predictionId?: string | null;
 }
 
 export interface ProviderRenderResult {
@@ -57,6 +66,15 @@ const BILLING = /insufficient credit|payment required|\b402\b|billing/;
  * existed.
  */
 const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
+/**
+ * The disposition {@link providerWorkSpent} reads beside a workflow id: a
+ * workflow that exists and may still finish. Its own regex, not
+ * `NON_TRANSIENT_DISPOSITION`, because it tests a smaller set of strings and
+ * must not drift when that larger set grows.
+ */
+const RECONCILE_DISPOSITION = /retry=reconcile/;
+/** A paid submit whose own answer was lost and whose workflow id is unknown by definition. */
+const SUBMIT_UNCONFIRMED = /submit_unconfirmed/;
 
 /**
  * Whether a failure message already declares a non-automatic retry
@@ -72,6 +90,41 @@ const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
  */
 export function declaresNonAutomaticRetry(message: string): boolean {
   return NON_TRANSIENT_DISPOSITION.test(message.toLowerCase());
+}
+
+/**
+ * Whether provider work was already SPENT on this attempt in a way that may
+ * still deliver — the scene chain's paid stop (#685): a fallback rung would
+ * be a second paid render racing a workflow that may still be running or
+ * may still deliver. True on structured evidence only:
+ *
+ * - the failure carries the provider's own workflow id (`predictionId`) AND
+ *   its message declares `retry=reconcile` — a workflow that exists and may
+ *   still finish: an output that could not be downloaded
+ *   (`civitai_output_undelivered`), Vesper's own poll deadline running out,
+ *   an exhausted workflow-status read, or the post-submit catch-all the
+ *   Civitai transport appends once a workflow id exists; or
+ * - the message names `submit_unconfirmed` — a paid submit whose own answer
+ *   was lost and that a lookup could not resolve, so Civitai may still
+ *   accept, or may already have accepted, a workflow whose id is unknown by
+ *   definition.
+ *
+ * A `retry=reconcile` with NO workflow id is not evidence: the Civitai
+ * transport declares an HTTP 409 `reconcile` at every stage, including the
+ * LoRA metadata read, the zero-cost preflight and a submit it rejected
+ * outright, none of which ever created a workflow — so such a failure falls
+ * through the ladder like any other. A workflow id with no `reconcile`
+ * either is not evidence (any provider's failed prediction carries its id):
+ * it says a record exists, not that it may still deliver. Narrower than
+ * {@link declaresNonAutomaticRetry} by design: that answers "should a caller
+ * repeat this automatically", this answers "was money spent on THIS
+ * attempt that may still come back".
+ */
+export function providerWorkSpent(failure: Pick<ImageProviderFailure, "message" | "predictionId">): boolean {
+  const text = failure.message.toLowerCase();
+  if (SUBMIT_UNCONFIRMED.test(text)) return true;
+  const workflowExists = typeof failure.predictionId === "string" && failure.predictionId.length > 0;
+  return workflowExists && RECONCILE_DISPOSITION.test(text);
 }
 
 /** Classify an already-described provider failure message. */

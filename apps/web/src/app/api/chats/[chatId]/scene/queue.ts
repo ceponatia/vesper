@@ -48,13 +48,20 @@ export interface QueueChatSceneMember {
 export interface QueueChatSceneArgs {
   userId: string;
   chatId: string;
-  /** The character the scene row is FILED against — the strip reads by this id. */
+  /**
+   * The rendered SUBJECT: the selfie's sender, or the scene's focal character and
+   * fallback when everyone is away. It decides who is drawn, never where the row is
+   * filed — the roster's first member is the filing owner.
+   */
   character: QueueChatSceneMember;
   /**
-   * The full sort-ordered roster. Absent (or empty) ⇒ the primary alone, which is
-   * what a classic 1-on-1 chat is and what every pre-roster call site sent.
+   * The full sort-ordered roster. The first member is the chat's primary
+   * participant (`sort = 0`), the Gallery owner: every scene row and the job
+   * payload are FILED against that id — the chat's scene strip and the Gallery
+   * read by it — even when the subject is another participant (a selfie). An
+   * empty roster falls back to the subject alone.
    */
-  roster?: readonly QueueChatSceneMember[];
+  roster: readonly QueueChatSceneMember[];
   anchorMessageId?: string;
   flavor?: "selfie";
 }
@@ -73,6 +80,34 @@ export async function hasLiveChatSceneJob(chatId: string): Promise<boolean> {
  */
 export function memberSceneState(stored: ChatState | null, profile: CharacterProfile): ChatState {
   return stored ?? seedChatState(profile);
+}
+
+/** One roster member beside their stored chat state (`null` = no row yet). */
+export interface SceneCastEntry {
+  member: QueueChatSceneMember;
+  stored: ChatState | null;
+}
+
+/**
+ * Who is drawn and where the row is filed. Pure: the filing id is the FIRST
+ * roster entry (the primary participant, the Gallery owner), never the subject,
+ * so a selfie by a non-primary participant is still filed under the primary
+ * while depicting only its sender. An empty roster files under the subject. A selfie is the
+ * sender's own phone camera, so it stays single-subject whoever else is present.
+ * A normal scene draws every present member in roster order; everyone away falls
+ * back to the subject, so the cast is never empty.
+ */
+export function selectSceneCast(input: {
+  subject: QueueChatSceneMember;
+  flavor?: "selfie";
+  /** Roster-ordered states; the first entry is the primary participant. */
+  entries: readonly SceneCastEntry[];
+}): { filedCharacterId: string; castStates: readonly SceneCastEntry[] } {
+  const found = input.entries.find((entry) => entry.member.id === input.subject.id);
+  const onlySubject: SceneCastEntry[] = [found ?? { member: input.subject, stored: null }];
+  const present = input.entries.filter((entry) => (entry.stored?.presence ?? "present") === "present");
+  const castStates = input.flavor === "selfie" ? onlySubject : present.length > 0 ? present : onlySubject;
+  return { filedCharacterId: input.entries[0]?.member.id ?? input.subject.id, castStates };
 }
 
 /**
@@ -144,17 +179,17 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
     // are the same claim. An away member is offstage living their own life and is
     // not drawn into the picture. A selfie is the sender's own phone camera, so it
     // stays single-subject whoever else is in the room.
-    const roster = args.roster?.length ? args.roster : [args.character];
+    const roster = args.roster.length > 0 ? args.roster : [args.character];
     const states = await Promise.all(
       roster.map(async (member) => ({ member, stored: await loadChatState(args.chatId, member.id, collected) })),
     );
-    const subject = states.find((entry) => entry.member.id === args.character.id);
-    const onlySubject = subject ? [subject] : [{ member: args.character, stored: null }];
-    const present = states.filter((entry) => (entry.stored?.presence ?? "present") === "present");
-    // Everyone away is not a reason to render an empty room here: fall back to the
-    // filing subject, which is exactly what a pre-roster queue always sent. The
-    // cast is never empty — a subject with no state row still renders.
-    const castStates = args.flavor === "selfie" ? onlySubject : present.length > 0 ? present : onlySubject;
+    // Everyone away is not a reason to render an empty room: the pure selection falls
+    // back to the subject, so the cast is never empty.
+    const { filedCharacterId, castStates } = selectSceneCast({
+      subject: args.character,
+      flavor: args.flavor,
+      entries: states,
+    });
     // Character names are NOT unique, and every downstream binding is by name —
     // the plan's roster map, the composer's dedupe, the prompt's reference set.
     // Two same-named people collapse into one there, so the model cannot tie each
@@ -377,7 +412,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       chatId: args.chatId,
       payload: {
         chatId: args.chatId,
-        characterId: args.character.id,
+        characterId: filedCharacterId,
         sceneModel: scenario?.sceneModel ?? "reference",
         // Only when overridden: on the default this key is absent, so a job row can be
         // read as "whatever the app default was" rather than pinning a value nobody chose.
@@ -386,7 +421,7 @@ export async function queueChatScene(args: QueueChatSceneArgs): Promise<string |
       },
       run: async () => ({
         imageId: await renderCharacterSceneImage({
-          characterId: args.character.id,
+          characterId: filedCharacterId,
           userId: args.userId,
           cast,
           room,

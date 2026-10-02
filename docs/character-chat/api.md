@@ -244,7 +244,7 @@ persisted rows.
 
 Each POST `kind` resolves to one of these. Every accepted kind answers with the
 heartbeat-while-resolving/auditing, then paced-approved-prose-chunks response described
-above:
+above. A refusal returns before the exchange lock is taken and touches nothing:
 
 - **`send`** — `runSimChatExchange`: land the player line, run input admission, advance the
   span, render a fresh cut, persist a new reply.
@@ -252,19 +252,28 @@ above:
   still advances (time moves), render omits the player-turn block.
 - **`open`** — as `continue`, plus `simOpening` on the reply's `meta`, the opening-directive
   flag the prompt reads.
-- **`regenerate` / `rerun`** — **re-render the SAME committed cut**: resolve the cut id from
-  the last reply's `meta.cutId` (fallback `latestCutIdForEngagement`), re-render fresh
-  prose, replace the reply row in place (content + browsable `takes` + meta). NO time
-  advance, NO admission, NO new rows.
+- **any kind with `attachmentIds`** — **refused** with 409 `sim_unsupported_operation`;
+  vision reads are not wired to the sim lane. Checked first, so it wins over every rule below.
 - **`action_beat`, or any kind with `action` set** — **refused** with 409
   `sim_unsupported_operation`; legacy action chips have no successor semantics.
-- **any kind with `attachmentIds`** — **refused** with 409 `sim_unsupported_operation`;
-  vision reads are not wired to the sim lane.
+- **`regenerate` / `rerun`** — **refused** with 409 `sim_unsupported_operation`. A successor
+  retake re-renders the reply's committed cut, so it needs a committed `meta.cutId` on the
+  target reply, and the chat envelope cannot prove that per reply; accepting either kind would
+  leave a visible operation that 409s on legitimate solo replies. `runSimChatExchange` keeps
+  a `retake` mode (`sim-exchange/retake.ts`: same cut, fresh prose, the reply replaced in
+  place, no time advance), and no route passes it.
 
-The UI hides the attachment control and action chips for a sim-routed chat (a hidden control
-beats a dead one that 409s); Continue / Regenerate / Go on / Prompt stay visible and run the
-successor semantics above. The kind→mode decision is the pure `decideSimOperation`
-(`app/api/chats/[chatId]/sim-routing.ts`).
+The kind→mode decision is the pure `decideSimOperation`
+(`app/api/chats/[chatId]/sim-routing.ts`), and the refusal code is
+`CHAT_CAPABILITY_UNAVAILABLE_CODE` (`contracts/turns/chat-capabilities.ts`).
+
+The UI renders chat controls from the **capability manifest** on the GET envelope
+(`chat.capabilities`, built by `chatCapabilitiesForLane`), never by inferring them from
+`chat.simRouted` (a hidden control beats a dead one that 409s). For a sim-routed chat the
+manifest turns off Stop, photo attachments, editing and deleting transcript lines, rerun from
+a message, the latest-reply retake ("another take"), and the legacy action chips, and turns on
+the world actions. **Prompt** (an `open` on an empty transcript) and **Go on** (a `continue`
+after a settled reply) stay available and run the successor semantics above.
 
 ## Diagnostics
 
@@ -308,7 +317,8 @@ repairing the conversation's derivatives — the message names which), `chat_arc
 `scene_conflict` (409; the permission override lost a scene CAS — retry),
 `invalid_rerun_target` (400), `rerun_requires_branch` (400; an older line cannot be safely
 rewritten through a one-exchange state snapshot), `sim_unsupported_operation` (409; an
-attachment or legacy action chip on a sim-routed chat — see §Sim-routed dispatch),
+attachment, a legacy action chip, or a `regenerate` / `rerun` on a sim-routed chat — see
+§Sim-routed dispatch),
 `scene_busy` (409), `rate_limited` (429), `not_found` (404). A failed `queueChatScene` (auto
 or manual) log-warns (`chat_scene` scope) and returns null — never a failed exchange.
 Degradation tests assert the fallback **and** the code ([testing.md](../testing.md)).

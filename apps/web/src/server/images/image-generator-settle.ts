@@ -17,6 +17,33 @@ import {
 } from "./image-generator-store";
 import type { RenderImageIntentResult } from "./render-intent";
 
+/**
+ * One pass's output record, with every field that is not this pass's own
+ * reason to exist defaulted to its ordinary "nothing happened here yet"
+ * value — `undeliveredOutputId` aside, which is the one field a provider
+ * failure can fill. A later recovery (`image-generator-recovery.ts`) is the
+ * only writer of `recoveryUnavailableAt`/`recoveredAt`/`recoverable`; the
+ * settle path that first records a pass never has anything to say about them.
+ */
+function freshOutput(
+  index: number,
+  imageId: string | null,
+  failureCode: string | null,
+  predictionId: string | null,
+  undeliveredOutputId: string | null = null,
+): ImageGeneratorRunOutput {
+  return {
+    index,
+    imageId,
+    failureCode,
+    predictionId,
+    undeliveredOutputId,
+    recoveryUnavailableAt: null,
+    recoveredAt: null,
+    recoverable: false,
+  };
+}
+
 /** Everything the render step needs that the row cannot say for itself. */
 export interface GeneratorFanOut {
   intent: ImageRenderIntent;
@@ -125,19 +152,20 @@ export async function settleGeneratorRender(
             meta: { result: refusal.result },
           });
         }
-        outputs.push({ index, imageId: null, failureCode: imageGeneratorDiagnosticCode(refusal.code), predictionId: null });
+        outputs.push(freshOutput(index, null, imageGeneratorDiagnosticCode(refusal.code), null));
         break;
       }
 
       if (!rendered.ok || !rendered.image) {
         const message = rendered.error ?? `${row.modelSlug} returned no image`;
         firstProviderError ??= message;
-        outputs.push({
+        outputs.push(freshOutput(
           index,
-          imageId: null,
-          failureCode: imageGeneratorDiagnosticCode("render_failed"),
-          predictionId: rendered.predictionId ?? null,
-        });
+          null,
+          imageGeneratorDiagnosticCode("render_failed"),
+          rendered.predictionId ?? null,
+          rendered.attempt?.undeliveredOutputId ?? null,
+        ));
         continue;
       }
       renderedAnything = true;
@@ -161,17 +189,12 @@ export async function settleGeneratorRender(
       );
       if (saved?.status !== "ready") {
         await deleteOwnedImage(asset.id, row.ownerId, { kind: "generator_output" });
-        outputs.push({
-          index,
-          imageId: null,
-          failureCode: imageGeneratorDiagnosticCode("output_store_failed"),
-          predictionId: rendered.predictionId ?? null,
-        });
+        outputs.push(freshOutput(index, null, imageGeneratorDiagnosticCode("output_store_failed"), rendered.predictionId ?? null));
         continue;
       }
       stored.push(saved.id);
       storedRender ??= rendered;
-      outputs.push({ index, imageId: saved.id, failureCode: null, predictionId: rendered.predictionId ?? null });
+      outputs.push(freshOutput(index, saved.id, null, rendered.predictionId ?? null));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Nothing stored yet: rethrow, so the runner settles `run_threw` with
@@ -188,7 +211,7 @@ export async function settleGeneratorRender(
           context: { runId: row.id, index, message },
         }),
       );
-      outputs.push({ index, imageId: null, failureCode: IMAGE_GENERATOR_RUN_THREW, predictionId: null });
+      outputs.push(freshOutput(index, null, IMAGE_GENERATOR_RUN_THREW, null));
       break;
     }
   }
