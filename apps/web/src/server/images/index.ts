@@ -300,14 +300,25 @@ export {
   deleteImageGeneratorUploads,
   type DeleteImageGeneratorUploadsResult,
   getImageGeneratorRunDetail,
+  imageGeneratorOutputOffer,
+  imageGeneratorOutputRecoverable,
   type ImageGeneratorProviderOutcome,
   type ImageGeneratorRunPayload,
   type ImageGeneratorRunRow,
+  imageGeneratorRunSettled,
   listImageGeneratorRuns,
   listImageGeneratorUploads,
   toWireImageGeneratorRun,
 } from "./image-generator-store";
 export { runImageGeneratorRun } from "./image-generator-run";
+export {
+  type ImageGeneratorRecoveryResult,
+  IMAGE_GENERATOR_OUTPUT_EXPIRED,
+  IMAGE_GENERATOR_OUTPUT_RECOVERED,
+  IMAGE_GENERATOR_OUTPUT_UNAVAILABLE,
+  recoverImageGeneratorOutput,
+  type RecoverImageGeneratorOutputInput,
+} from "./image-generator-recovery";
 export {
   type GeneratorRenderer,
   type GeneratorRenderRequest,
