@@ -219,7 +219,10 @@ existed fall back to `created_at` and are past the window by definition.
 
 Retirement runs LAST, so a row this pass just marked failed always survives it. It goes through
 `purgeImagesWhere` like every other delete path (identity-pack derivations invalidated, any stray
-file unlinked) and clears the soft entity pointers the way the Gallery's delete does.
+file unlinked) and clears the soft entity pointers the way the Gallery's delete does. The purge is
+guarded on `status = 'failed'`, so a row an in-place recovery claims after the pass read it
+(§Recovering a paid output in place) survives with its file, and pointers are cleared only for the
+rows actually removed.
 
 **Two rails, both about the unrecoverable case:** at most 200 rows leave per pass, oldest failure
 first; and when *most* of the rows in scope are expired failures, nothing is retired and the
@@ -259,9 +262,9 @@ service answers `ineligible` for them.
   - **permanent failure** (the provider shows the output is gone, or its bytes can never be
     decoded): `→ failed` with `recoveryUnavailableAt`; the offer is withdrawn.
 - **A recovery whose process dies** leaves a leased `pending` row; the sweep reclaims it after
-  `JOB_STALE_MS`, keeping `meta.render`, so the offer stands. **A row deleted mid-recovery**, by
-  its owner or by retention racing the claim, answers `not_found`; a file already written is an
-  orphan the sweep removes.
+  `JOB_STALE_MS`, keeping `meta.render`, so the offer stands. **A row its owner deletes
+  mid-recovery** answers `not_found`; a file already written is an orphan the sweep removes.
+  Retention never deletes a claimed row (§Retention).
 - **Nothing else settles** (owner ruling 2026-10-02). No lane's `onReady` runs and no pointer
   moves: a recovered avatar is a ready candidate the owner promotes with the existing action, and
   a recovered scene or selfie is drawn under its anchor message like any ready scene. A recovered

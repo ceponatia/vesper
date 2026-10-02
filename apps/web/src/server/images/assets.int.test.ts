@@ -29,10 +29,11 @@ import {
   refreshRenderLease,
   RENDER_LEASE_META_KEY,
   saveImageBuffer,
+  writeWebpAtomic,
   type ImageRow,
 } from "./asset-storage";
 import { deleteOwnedImage, deleteOwnedImages } from "./asset-deletion";
-import { reclaimStalePendingRows, sweepOrphans } from "./asset-maintenance";
+import { planFailedImageRetirement, purgeRetiredFailedRows, reclaimStalePendingRows, sweepOrphans } from "./asset-maintenance";
 import { ImageProduceError, runImagePipeline } from "./assets";
 import { paidOutputOffer } from "./paid-output";
 import { monogramSvg } from "./monogram";
@@ -205,6 +206,44 @@ describe.skipIf(!ready)("asset registry protocol", () => {
     const again = await sweepOrphans({ ownerId: userId });
     expect(again.orphanFilesRemoved).toBe(0);
     expect(again.rowsMarkedFailed).toBe(0);
+  });
+
+  /**
+   * PROTECTS (#686): retention plans its retirements from a read, then purges
+   * by id. A failed row an in-place recovery claims in between
+   * (`failed → pending`, `image-output-recovery.ts`) is a live render again:
+   * the unguarded purge deleted it mid-recovery and unlinked the file the
+   * recovery was writing, so a paid output was lost a second time. The claim
+   * here lands after the plan and before the purge, which is that window.
+   */
+  it("an expired failed row claimed as pending before the purge survives with its file", async () => {
+    const ownerId = await sweepOwner("images-int-retire-claimed");
+    const now = new Date();
+    const expiredFailure = (failedAt: Date) => ({ error: "provider exploded", failedAt: failedAt.toISOString() });
+    const claimed = await createImageAsset({ ownerId, kind: "entity", entityKind: "world" });
+    const expired = await createImageAsset({ ownerId, kind: "entity", entityKind: "world" });
+    await db()
+      .update(images)
+      .set({ status: "failed", meta: expiredFailure(new Date(now.getTime() - 25 * 60 * MINUTE)) })
+      .where(inArray(images.id, [claimed.id, expired.id]));
+
+    // Retention reads both as expired failures...
+    const failed = await db()
+      .select({ id: images.id, meta: images.meta, createdAt: images.createdAt })
+      .from(images)
+      .where(and(eq(images.ownerId, ownerId), eq(images.status, "failed")));
+    const plan = planFailedImageRetirement(failed, failed.length, now);
+    expect([...plan.ids].sort()).toEqual([claimed.id, expired.id].sort());
+
+    // ...then a recovery claims one and writes its bytes before the purge runs.
+    await db().update(images).set({ status: "pending" }).where(eq(images.id, claimed.id));
+    await writeWebpAtomic(absoluteImagePath(claimed), await testPngBuffer());
+
+    expect(await purgeRetiredFailedRows(plan.ids, ownerId)).toEqual([expired.id]);
+
+    expect((await imageRow(claimed.id))?.status).toBe("pending");
+    await expect(fs.access(absoluteImagePath(claimed))).resolves.toBeUndefined();
+    expect(await imageRow(expired.id)).toBeUndefined();
   });
 
   // #674: a render can legitimately run far past ten minutes (a Civitai queue

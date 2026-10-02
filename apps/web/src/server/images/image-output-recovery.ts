@@ -63,9 +63,10 @@ import { absoluteImagePath } from "./paths";
  *   is withdrawn.
  * - **The process dies:** the lease goes quiet and the sweep reclaims the row
  *   after `JOB_STALE_MS`, keeping `meta.render`, so the offer stands.
- * - **The row is deleted mid-recovery** (the owner, or retention racing the
- *   claim): the answer is `not_found`, and a file already written is an orphan
- *   the sweep removes.
+ * - **The owner deletes the row mid-recovery:** the answer is `not_found`, and
+ *   a file already written is an orphan the sweep removes. Retention never
+ *   deletes a claimed row: its purge is guarded on `failed`
+ *   (`purgeRetiredFailedRows`).
  *
  * Nothing moves a pointer on recovery (owner ruling 2026-10-02): a recovered
  * avatar is a ready candidate the owner promotes with the existing action, a
