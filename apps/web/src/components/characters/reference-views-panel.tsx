@@ -24,6 +24,10 @@ import {
   referenceViewBuildQueuedTitle,
   referenceViewDependentsCopy,
   referenceViewRebuildQueuedTitle,
+  referenceViewRecoverableHint,
+  referenceViewRecoverActionLabel,
+  referenceViewRecoverFailedTitle,
+  referenceViewRecoveredToast,
   referenceViewRefusalCopy,
   referenceViewSelectionActionLabel,
   referenceViewSelectionBlockedHint,
@@ -370,6 +374,29 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
     return { ok: true };
   };
 
+  /**
+   * Recover a failed attempt's already-paid-for render. Free — no admission,
+   * no charge — so unlike upload or regenerate this never needs to ask
+   * whether the slot can afford to start one. A refusal means the offer is
+   * gone (Civitai lost the bytes, or the render no longer matches what it
+   * would be built from), so the server's own message explains it and a
+   * refetch drops the tile's recover action along with it.
+   */
+  const recoverView = async (view: ReferenceViewSummary) => {
+    if (view.attemptId === null) return;
+    const slot = slotKey(view);
+    setBusySlot(slot);
+    const result = await referenceViewsApi.recover(characterId, view.angle, view.wardrobe, view.attemptId);
+    setBusySlot(null);
+    if (!result.ok) {
+      toast.push({ title: referenceViewRecoverFailedTitle, description: result.error.message, tone: "error" });
+      refetch();
+      return;
+    }
+    toast.push(referenceViewRecoveredToast);
+    refetch();
+  };
+
   return (
     <div className="flex flex-col gap-5">
       {views.error ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-paper-400"><span>Reference views could not be refreshed.</span><Button size="sm" onClick={() => views.reload({ silent: true })}>Retry</Button></div> : null}
@@ -511,7 +538,11 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                     <p className="text-xs leading-relaxed text-paper-400">{referenceViewWaitingCopy.hint(waitingFor)}</p>
                   ) : view.state === "failed" || view.state === "rejected" || view.state === "stale" || view.state === "ineligible" ? (
                     <p className="text-xs leading-relaxed text-paper-400">
-                      {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
+                      {view.state === "failed" && view.recoverable
+                        ? referenceViewRecoverableHint
+                        : view.state === "failed" && view.failureMessage
+                          ? view.failureMessage
+                          : copy.hint}
                     </p>
                   ) : null}
                   <ReferenceViewFeedbackNote feedback={view.feedback} />
@@ -522,6 +553,18 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                           Review image
                         </Button>
                       </>
+                    ) : null}
+                    {view.state === "failed" && view.recoverable ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        busy={busy}
+                        disabled={replacementBlocked || submitting || busySlot !== null}
+                        title={replacementBlocked ? referenceViewRefusalCopy.busy : undefined}
+                        onClick={() => void recoverView(view)}
+                      >
+                        {referenceViewRecoverActionLabel}
+                      </Button>
                     ) : null}
                     {rebuildable ? (
                       <Button

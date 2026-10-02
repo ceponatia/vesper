@@ -198,6 +198,18 @@ export const referenceViewsApi = {
   ) => apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/restore`,
     { attemptId, expectedCurrentAttemptId, expectedCurrentRevision }),
   /**
+   * Recover a failed attempt's already-paid-for render — no new render, no new
+   * charge. Answers with the same `{ view }` shape as `restore`, so a
+   * server-added `recoverable` field on the summary survives parsing unchanged.
+   */
+  recover: (
+    characterId: string,
+    angle: ReferenceViewAngleId,
+    wardrobe: ReferenceViewWardrobe,
+    attemptId: string,
+  ) => apiPost(referenceViewResponseSchema, `${referenceViewPath(characterId, angle, wardrobe)}/recover`,
+    { attemptId }),
+  /**
    * The character's full-body images, the reference views' inputs. Every write
    * is synchronous and free, marks the views out of date and builds nothing;
    * each names the image the owner saw, so a write that crossed another tab's

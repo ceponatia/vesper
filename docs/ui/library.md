@@ -82,6 +82,9 @@ chip from the exhaustive state map in
 `reference-view-copy.ts` — *not built*, *building…*, *needs your eye*, *approved*, *rejected*,
 *failed*, *out of date* — plus the actions that state allows: **Review** opens the full-size viewer, **Regenerate** appears on
 anything already attempted whose upstream view is approved, and **Upload** sits in its **More** menu.
+A **failed** tile whose render was paid for but could not be downloaded is also **recoverable**: it
+reads "Rendered and paid for, but the download failed. Recover it without paying again," with
+**Recover image** as the primary action and **Regenerate** beside it as the secondary.
 **The sheet builds in order** ([../images/pipelines/reference-views.md](../images/pipelines/reference-views.md)
 §Build order): a tile whose upstream view is not approved shows a *waiting* chip on an empty slot (an
 attempted slot keeps its own state chip) and a hint naming the view it builds from, in place of its

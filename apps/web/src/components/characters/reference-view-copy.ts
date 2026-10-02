@@ -220,3 +220,23 @@ export const referenceViewRestoreUnavailableCopy = {
   busy: "Wait for the current build to finish, then refresh.",
   unavailable: "This image is no longer available to restore.",
 } as const;
+
+/**
+ * A failed tile whose render was paid for and can be recovered without a new
+ * charge — shown in place of the ordinary failure message
+ * ({@link referenceViewStateCopy}'s `failed` hint) when `recoverable` is true.
+ */
+export const referenceViewRecoverableHint =
+  "Rendered and paid for, but the download failed. Recover it without paying again.";
+
+/** The recoverable failed tile's primary action. */
+export const referenceViewRecoverActionLabel = "Recover image";
+
+/** The toast once a recover request installs the image as a new candidate. */
+export const referenceViewRecoveredToast = {
+  title: "Image recovered",
+  description: "Review it to use it.",
+} as const;
+
+/** The toast title on a refused recovery; the description is the server's own message. */
+export const referenceViewRecoverFailedTitle = "Could not recover that image";
