@@ -240,3 +240,47 @@ export const referenceViewRecoveredToast = {
 
 /** The toast title on a refused recovery; the description is the server's own message. */
 export const referenceViewRecoverFailedTitle = "Could not recover that image";
+
+/**
+ * A failed tile whose recovery offer has lapsed: the paid render still cannot
+ * be recovered — Civitai never delivered the output, or no longer has it —
+ * and Build now counts the slot like any other failure. Shown instead of the
+ * stored failure message, which was written while the offer was still live and
+ * stays stored verbatim after it ends.
+ */
+export const referenceViewRecoveryLapsedHint =
+  "Rendered and paid for, but it can no longer be recovered. Regenerate renders it again, and that is charged.";
+
+/** The failure code a lapsed recovery offer's stored message still carries. */
+const RECOVERY_LAPSED_FAILURE_CODE = "civitai_output_undelivered";
+
+/** The minimal shape {@link referenceViewFailedTileHint} needs from a view. */
+export interface ReferenceViewFailedTileSummary {
+  state: ReferenceViewState;
+  recoverable: boolean;
+  failureMessage: string | null;
+}
+
+/**
+ * A failed (or rejected, stale, ineligible) tile's own line, in priority
+ * order: a live recovery offer, a lapsed one, the server's own failure
+ * message, or the state map's generic hint. Only `failed` ever reaches the
+ * first three; every other state this is called for falls straight through to
+ * its own state hint, exactly as it did before this helper existed.
+ *
+ * The lapsed case exists because the ordinary failure message was written
+ * while the offer was still live — "can be recovered … without rendering
+ * again" — and is stored verbatim; it does not update itself once retention
+ * collects the bytes a day later, the slot goes stale, or a recovery attempt
+ * itself answers `expired`. The same failure code that made `recoverable` true
+ * once is read back out of the stored message to show fixed, present-tense
+ * copy instead of a sentence that is no longer true.
+ */
+export function referenceViewFailedTileHint(view: ReferenceViewFailedTileSummary): string {
+  if (view.state === "failed") {
+    if (view.recoverable) return referenceViewRecoverableHint;
+    if (view.failureMessage?.includes(RECOVERY_LAPSED_FAILURE_CODE)) return referenceViewRecoveryLapsedHint;
+    if (view.failureMessage) return view.failureMessage;
+  }
+  return referenceViewStateCopy[view.state].hint;
+}

@@ -23,8 +23,8 @@ import {
   referenceViewBuildActionLabel,
   referenceViewBuildQueuedTitle,
   referenceViewDependentsCopy,
+  referenceViewFailedTileHint,
   referenceViewRebuildQueuedTitle,
-  referenceViewRecoverableHint,
   referenceViewRecoverActionLabel,
   referenceViewRecoverFailedTitle,
   referenceViewRecoveredToast,
@@ -538,13 +538,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                   {waitingFor !== null ? (
                     <p className="text-xs leading-relaxed text-paper-400">{referenceViewWaitingCopy.hint(waitingFor)}</p>
                   ) : view.state === "failed" || view.state === "rejected" || view.state === "stale" || view.state === "ineligible" ? (
-                    <p className="text-xs leading-relaxed text-paper-400">
-                      {view.state === "failed" && view.recoverable
-                        ? referenceViewRecoverableHint
-                        : view.state === "failed" && view.failureMessage
-                          ? view.failureMessage
-                          : copy.hint}
-                    </p>
+                    <p className="text-xs leading-relaxed text-paper-400">{referenceViewFailedTileHint(view)}</p>
                   ) : null}
                   <ReferenceViewFeedbackNote feedback={view.feedback} />
                   <div className="mt-auto flex flex-wrap items-center gap-2">
