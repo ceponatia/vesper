@@ -2,16 +2,16 @@
 
 ## Routes
 
-| Route                                                | Wrapper                  | Methods              |
-| ---------------------------------------------------- | ------------------------ | -------------------- |
-| `/api/admin/self/image-generator/uploads`            | `withOwnerAdmin`         | GET list, POST (201) |
-| `/api/admin/self/image-generator/uploads/delete`     | `withOwnerAdmin`         | POST bulk delete     |
-| `/api/admin/self/image-generator/uploads/[imageId]`  | `withOwnerAdmin`         | DELETE               |
-| `/api/admin/self/image-generator/runs`               | `withOwnerAdmin`         | GET list, POST (201) |
-| `/api/admin/self/image-generator/runs/delete`        | `withOwnerAdmin`         | POST bulk delete     |
-| `/api/admin/self/image-generator/runs/[runId]`       | `withOwnerAdminResource` | GET detail, DELETE   |
-| `/api/admin/self/image-generator/runs/[runId]/outputs/[index]/recover` | `withOwnerAdminResource` | POST            |
-| `/api/admin/self/owned-images`                       | `withOwnerAdmin`         | GET                  |
+| Route                                                                  | Wrapper                  | Methods              |
+| ---------------------------------------------------------------------- | ------------------------ | -------------------- |
+| `/api/admin/self/image-generator/uploads`                              | `withOwnerAdmin`         | GET list, POST (201) |
+| `/api/admin/self/image-generator/uploads/delete`                       | `withOwnerAdmin`         | POST bulk delete     |
+| `/api/admin/self/image-generator/uploads/[imageId]`                    | `withOwnerAdmin`         | DELETE               |
+| `/api/admin/self/image-generator/runs`                                 | `withOwnerAdmin`         | GET list, POST (201) |
+| `/api/admin/self/image-generator/runs/delete`                          | `withOwnerAdmin`         | POST bulk delete     |
+| `/api/admin/self/image-generator/runs/[runId]`                         | `withOwnerAdminResource` | GET detail, DELETE   |
+| `/api/admin/self/image-generator/runs/[runId]/outputs/[index]/recover` | `withOwnerAdminResource` | POST                 |
+| `/api/admin/self/owned-images`                                         | `withOwnerAdmin`         | GET                  |
 
 Everything is self-scoped: models, images, and runs resolve against the requesting admin's own id,
 and another owner's run answers the same 404 a nonexistent one does.
