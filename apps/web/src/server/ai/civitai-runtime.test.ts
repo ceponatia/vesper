@@ -1468,6 +1468,12 @@ describe("Civitai Klein v2 transport", () => {
   });
 
   it("gives each output-download attempt its own 120 s budget, independent of the scaled POST budget (#682)", async () => {
+    // Date is frozen, not full fake timers: the mocked fetches resolve
+    // immediately and need no timer advancement. Freezing it keeps
+    // `deadline - Date.now()` inside fetchOutput exactly 120_000 rather than
+    // occasionally 119_999 under real wall-clock time, since the deadline is
+    // computed a few async frames before it is read back (review P3-2).
+    vi.useFakeTimers({ toFake: ["Date"] });
     const timeoutCalls: number[] = [];
     const realTimeout = AbortSignal.timeout.bind(AbortSignal);
     vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
