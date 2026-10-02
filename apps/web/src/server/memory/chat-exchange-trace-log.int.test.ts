@@ -139,6 +139,7 @@ describe.skipIf(!ready)("chat exchange trace log (integration)", () => {
 
   it("returns [] for a chat with no trace rows, never throwing", async () => {
     const [emptyChat] = await db().insert(characterChats).values({ ownerId }).returning({ id: characterChats.id });
-    expect(await loadChatExchangeTraces({ chatId: emptyChat!.id })).toEqual([]);
+    if (!emptyChat) throw new Error("failed to create test chat");
+    expect(await loadChatExchangeTraces({ chatId: emptyChat.id })).toEqual([]);
   });
 });
