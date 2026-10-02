@@ -543,4 +543,48 @@ describe("Civitai Qwen Image 2.1 transport", () => {
     expect(result.error).not.toContain("support@civitai.com");
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
   });
+
+  /**
+   * PROTECTS (#680): civitai-runtime.test.ts's own budget tests can only
+   * exercise ZERO references end to end, because Klein's own cap is 2 —
+   * this lane allows up to 10, so a 4-reference edit is what actually proves
+   * the per-attempt POST budget SCALES rather than just resolving to the
+   * 120 s base rate every time.
+   */
+  it("scales the preflight and submit budget to the body's own reference count (#680)", async () => {
+    const timeoutCalls: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      timeoutCalls.push(ms);
+      return realTimeout(ms);
+    });
+    const fourReferences = [
+      { bytes: Buffer.from("one"), mediaType: "image/jpeg", extension: "jpg" },
+      { bytes: Buffer.from("two"), mediaType: "image/jpeg", extension: "jpg" },
+      { bytes: Buffer.from("three"), mediaType: "image/jpeg", extension: "jpg" },
+      { bytes: Buffer.from("four"), mediaType: "image/jpeg", extension: "jpg" },
+    ];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif") === "true";
+      const echo = echoOf(body, whatif ? "estimate-budget" : "submit-budget", whatif ? "unassigned" : "succeeded");
+      // Insufficient-Buzz trick, as civitai-runtime.test.ts's own budget
+      // tests use: the lane throws right after the submit's own POST,
+      // without a status poll or output download, each of which would add
+      // its own 30 s AbortSignal.timeout call unrelated to what this test
+      // is proving.
+      if (!whatif) (echo.transactions as Record<string, unknown>).insufficientBuzz = true;
+      return Response.json(echo);
+    });
+
+    const result = await runCivitaiQwen21ImageModel(MODEL, { ...request, references: fourReferences });
+
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_insufficient_buzz") });
+    // 120 s base + 4 references * 40 s/reference = 280 s
+    // (civitaiWorkflowPostTimeoutMs(4), civitai-runtime.ts), for both the
+    // preflight and the paid submit.
+    expect(timeoutCalls).toEqual([280_000, 280_000]);
+  });
 });

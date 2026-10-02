@@ -92,6 +92,11 @@ export const referenceViewRegenerateBodySchema = z.object({
   targets: z.array(referenceViewSchema).min(1).max(32),
 });
 
+/** `{ attemptId }` — the failed attempt whose already-paid-for render should be recovered. */
+export const referenceViewRecoverBodySchema = z.object({
+  attemptId: z.string().min(1).max(128),
+});
+
 /** How many views this character's next full build would render. */
 export function plannedCount(characterId: string, ownerId: string): Promise<number> {
   return plannedReferenceViewsForCharacter(characterId, ownerId).then((views) => views.length);
@@ -374,4 +379,29 @@ export const referenceViewWriteMessages = {
   busy: "Reference views are still being built. Wait for them to finish, then refresh.",
   expired: "This image is outside the history retention window. Choose a more recent image or regenerate.",
   unavailable: "This image could not be read. Refresh, choose another image, or regenerate.",
+} as const;
+
+/**
+ * Recovery's own refusals. `not_found`, `ineligible`, `changed` and `busy` are
+ * the same condition {@link referenceViewWriteMessages} already names, so they
+ * reuse its wording; `incompatible`, `unavailable` and `expired` get owner copy
+ * written for recovery specifically — a paid render that cannot be recovered is
+ * a different thing to explain than a kept copy that cannot be restored or
+ * reviewed. `not_ready` is unreachable here (recovery never asks whether the
+ * attempt has been reviewed) but is included for the shared refusal type.
+ *
+ * `unavailable` and `expired` name no provider: each also answers failures
+ * that happen after the provider delivered the bytes — a disk or database
+ * error is `unavailable`, and bytes that cannot be decoded are `expired` — so
+ * blaming the provider would misdirect the owner (Codex review on PR #688).
+ */
+export const referenceViewRecoverMessages = {
+  not_found: referenceViewWriteMessages.not_found,
+  not_ready: referenceViewWriteMessages.not_ready,
+  changed: referenceViewWriteMessages.changed,
+  ineligible: referenceViewWriteMessages.ineligible,
+  busy: referenceViewWriteMessages.busy,
+  incompatible: "This render no longer matches the accepted portrait, the approved view it was built from, or the current body images; regenerate it instead.",
+  unavailable: "The image could not be recovered this time. Try Recover again in a moment.",
+  expired: "This image can no longer be recovered. Regenerate renders it again, and that is charged.",
 } as const;

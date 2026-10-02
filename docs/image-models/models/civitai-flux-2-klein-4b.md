@@ -178,11 +178,16 @@ characters unchanged.
   workflow id already exists and the failure does not already declare a
   disposition of its own; a failure that already declares one is left
   exactly as it is.
-- The what-if preflight and the paid submission share a 120 s per-attempt
-  timeout; every other stage keeps a 30 s budget. The submission carries the
-  same data-URL references the preflight already validated, in the same
-  body shape, so whatever makes a preflight run long can equally make the
-  submission run long.
+- The what-if preflight and the paid submission share a per-attempt timeout
+  that SCALES with how many reference images are in the body being sent: 120 s
+  base, plus 40 s per reference, capped at 290 s (`civitaiWorkflowPostTimeoutMs`
+  in `civitai-runtime.ts`). The 290 s ceiling sits 10 s under Node's built-in
+  `fetch` (undici): its `headersTimeout`/`bodyTimeout` default to 300 s and
+  Vesper sets no dispatcher, so a longer budget could never actually apply —
+  Vesper's own ceiling has to bind first (owner ruling 2026-10-02). Every
+  other stage keeps a 30 s budget. The submission carries the same references
+  the preflight already validated, in the same body shape, so whatever makes
+  a preflight run long can equally make the submission run long.
 
   The automatic retry described next belongs to the PREFLIGHT alone; the
   submission still gets none, on this timeout or any other failure — an
@@ -191,17 +196,17 @@ characters unchanged.
   network error, an unreadable response body) or an HTTP 429/5xx on the
   preflight is POSTed again automatically exactly once, with the identical
   preflight body and its `externalId`, after the same jittered backoff as a
-  read retry. Any other 4xx — including the 400 `resource_not_enabled` — a
-  200 OK whose body is not JSON, and a failure surfaced only after a 200 OK
-  (insufficient Buzz, a failed or blocked workflow status, an echo refusal)
-  are never retried; a non-2xx with an unparseable body (an HTML gateway page
-  from a 502/503, say) is judged by status like any other response and is
-  retried if that status is 429/5xx too. When the repeat fails the same
-  transient way — another transport failure, or another 429/5xx — the
-  render fails with its stable code, `retry=deliberate`, and a message
-  saying the automatic retry already ran; a repeat that fails a different
-  way (a plain 4xx, or a 409) reports that failure's own disposition
-  instead.
+  read retry, and under the SAME scaled budget as the attempt it repeats. Any
+  other 4xx — including the 400 `resource_not_enabled` — a 200 OK whose body
+  is not JSON, and a failure surfaced only after a 200 OK (insufficient Buzz,
+  a failed or blocked workflow status, an echo refusal) are never retried; a
+  non-2xx with an unparseable body (an HTML gateway page from a 502/503, say)
+  is judged by status like any other response and is retried if that status
+  is 429/5xx too. When the repeat fails the same transient way — another
+  transport failure, or another 429/5xx — the render fails with its stable
+  code, `retry=deliberate`, and a message saying the automatic retry already
+  ran; a repeat that fails a different way (a plain 4xx, or a 409) reports
+  that failure's own disposition instead.
 
   Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (checkpoint
   version `3352534`, `model: "2.1"`, `editImage`, one synthetic 768x1024 jpeg
@@ -218,9 +223,27 @@ characters unchanged.
 
   On Fly v284 (`a544edbe`) the same day, all 8 preflights of one
   reference-view batch failed at 30.4-30.9 s under a uniform 30 s budget,
-  before any paid submit. The probes do not reproduce the production
-  latency, so the 120 s ceiling is headroom over the measured range, not a
+  before any paid submit. The probes above do not reproduce the production
+  latency, so the 120 s BASE is headroom over the measured range, not a
   tuned minimum.
+
+  A separate 2026-10-01 probe measured latency against REFERENCE COUNT
+  instead of prompt length or concurrency: zero-Buzz what-ifs sent the Qwen
+  Image 2.1 lane's exact `editImage` body with 1 reference answered in
+  18.8 s, and three references answered in 62.0 s, 67.0 s and 62.4 s — about
+  20 s per reference, independent of bytes (a 275 KB body with downscaled
+  320x427 references measured the same as a 929 KB one at the same reference
+  count). Production has measured slower than local probes (the Fly v284
+  failure above), so the per-reference allowance is twice that measured
+  cost. The 290 s ceiling binds from 5 references, not 10: the linear
+  formula alone would reach 320 s there, above Node fetch's own limit.
+  Qwen 2.1's own reference-heavy edits (its `MAX_REFERENCES` is 10; Klein's
+  own cap is 2 and never reaches it) are capped rather than given the
+  latency headroom the formula would otherwise grant them — #681 (uploading
+  each reference once as a Civitai blob and sending its URL, instead of a
+  fresh data URL per request) is the path for those requests, not a larger
+  timeout undici would just cut anyway. See
+  eval-images/civitai-qwen-2-1/whatif-669-reference-count-2026-10-01.txt.
 - **A submission whose own answer is unreadable is looked up, never
   reposted.** Civitai may still have accepted and billed the workflow even
   though this process could not read the submission's own answer — a
@@ -317,6 +340,64 @@ characters unchanged.
   never requested. A different provider storage host requires explicit review;
   the OpenAPI's generic URI field is not an unrestricted network-download
   permission.
+- **Each output-download ATTEMPT gets its own 120 s budget**, separate from
+  the scaled preflight/submit budget above and from the 30 s every other GET
+  uses, covering every redirect hop and the whole body stream. A transport
+  failure or a retryable HTTP status (429/5xx) retries up to 4 attempts in
+  total, with a short fixed backoff (2 s, 4 s, 8 s) between them; every
+  retried attempt restarts at the authenticated blob endpoint from hop 0 —
+  never from a prior attempt's redirect target, because the signed content
+  path a redirect names expires (see above) and a stale one would just fail
+  again. Every other output failure — an off-host or credentialed redirect, a
+  chain past the bound, an oversized or empty body, or a non-retryable HTTP
+  status (401/403/404/410 included) — keeps throwing on its first occurrence,
+  unchanged. Measured 2026-10-01 at 22:48:59Z: a production `side_right/clothed`
+  download failed `civitai_output_transport_failure` under the previous 30 s
+  shared budget while Civitai showed the workflow had succeeded with its
+  output available; three read-only downloads of other outputs right after
+  took 1.9 s, 6.8 s and 11.2 s, almost all of it body streaming (164 KB in
+  about 9 s) — well inside the new 120 s attempt budget.
+- **Exhausting every download attempt reports the output as RECOVERABLE
+  (`civitai_output_undelivered`) rather than losing it.** The workflow
+  already succeeded and was already paid for, so the render fails with a
+  message naming the attempt count, stating that the output can be
+  recovered without rendering again. The blob id itself travels only as
+  structured provenance on the lane result, never embedded in that message:
+  it is provider-supplied and therefore untrusted, and an id that happened
+  to spell a billing or moderation word would otherwise make the shared
+  keyword classifier misread an ordinary download failure as one of those
+  (review P3-5). The failure is always `retry=reconcile` and classifies as
+  `other`, never `transient` and never a billing or content-rejection
+  reading, so the SAME rung is never rerun and the character-chat selfie
+  retry's own guard skips it entirely. A scene chain FALLBACK to its next
+  rung — a different, reduced-reference request to a different model — is
+  unaffected and still runs, exactly as for any other non-transient failure,
+  and that fallback DOES render again; only a rerun of the identical rung is
+  ruled out.
+- **`recoverCivitaiOutput` recovers that output without rendering again.**
+  Read-only end to end: one GET to re-read the workflow, then the same
+  retried download above. It never POSTs, never creates a workflow, and
+  never charges. It reports `permanent: true` ONLY on positive evidence the
+  output can never be fetched this way — the workflow read answers 404; the
+  workflow's status is not `succeeded`, or its id differs from the one
+  asked for; the workflow does not list the blob, or lists it as
+  unavailable, hidden, or blocked; or the download's own final failure is
+  `civitai_output_invalid`, oversized, a 404, or a 410. Everything else —
+  a transport failure, 429/5xx, 401/403, another `civitai_output_undelivered`,
+  an empty body, or a workflow read that parsed as JSON but not into a usable
+  workflow shape — is `permanent: false`, since a wrong "permanent" withdraws
+  the one free recovery for good while a wrong "transient" only costs
+  trying again later.
+- **An output blob outlives Vesper's own 24 h failed-row retention, with no
+  observed expiry.** A 2026-10-02 read-only probe (zero Buzz) found every
+  output blob the account still lists serving through the blob endpoint,
+  including the oldest, from 2026-09-16 (15.7 days old) — no workflow in the
+  sample carried an expiry field. The 24 h failed-row retention
+  (`FAILED_ROW_RETENTION_MS`, `apps/web/src/server/images/asset-maintenance.ts`)
+  is therefore the binding recovery window, not the blob's own lifetime. A
+  blob the provider has stopped serving is reported `available: false` by
+  the workflow read itself, before any download is attempted. See
+  eval-images/civitai-qwen-2-1/blob-lifetime-682-2026-10-02.txt.
 
 ## Evidence boundary
 

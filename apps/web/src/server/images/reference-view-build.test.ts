@@ -687,6 +687,41 @@ describe("a dependent view's upstream reference", () => {
     expect(reservedMeta().referenceView).not.toHaveProperty("upstream");
     expect(sink.items.some((item) => item.code === REFERENCE_VIEW_DROPPED_FOR_CAPACITY)).toBe(true);
   });
+
+  /*
+   * A render can be billed and still fail its download (#682). The failed row
+   * keeps its failed render's own images row and the upstream that render
+   * actually sent — what a ready row would have recorded — because that is
+   * what recovery installs the paid output against. The implementation this
+   * kills nulls the link (the paid output becomes unrecoverable) or records the
+   * reserved upstream rather than the sent one.
+   */
+  it("keeps the failed render's row and the upstream it sent when the render fails", async () => {
+    mockIntent.mockResolvedValue({ ok: false, error: "Civitai output download failed (civitai_output_undelivered; retry=reconcile)" });
+    const upstream = referenceViewUpstream(BACK_CLOTHED);
+    if (upstream === null) throw new Error("fixture view has no upstream");
+
+    const report = await build([BACK_CLOTHED]);
+
+    expect(report).toMatchObject({ built: 0, failed: 1 });
+    expect(vi.mocked(failReferenceView).mock.calls[0]?.[0]).toMatchObject({
+      imageId: "img-view",
+      upstreamViewId: upstreamFor(upstream).lineageId,
+    });
+    expect(finalizeReferenceView).not.toHaveBeenCalled();
+  });
+
+  it("records no upstream on a failed render the upstream never reached", async () => {
+    mockIntent.mockResolvedValue({ ok: false, error: "the provider refused this render" });
+    mockProgram.mockImplementation((input) => ({
+      ...compiledFrom(input),
+      sentReferences: input.references.slice(0, 1).map((entry) => entry.reference),
+    }));
+
+    await build([BACK_CLOTHED]);
+
+    expect(vi.mocked(failReferenceView).mock.calls[0]?.[0]).toMatchObject({ imageId: "img-view", upstreamViewId: null });
+  });
 });
 
 /**

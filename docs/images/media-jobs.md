@@ -47,8 +47,12 @@ The player-facing lifecycle is `queued`, `running`, `succeeded`, `partial`, `fai
 - Avatar and variant jobs expose their resulting image id when the job payload records one.
 - Identity preparation exposes the identity-pack id and optional crop image id only when the pack
   row was created during that job's execution window.
-- Reference builds expose attempt ids and optional image ids for attempts created during the job's
-  execution window.
+- Reference builds expose attempt ids for attempts created during the job's execution window, each
+  with its image id only while that image is a ready `reference_view` asset of the owner's. A
+  failed attempt keeps a link to its failed render's row so a paid output can be recovered, and
+  keeps it once superseded; that row has no file, so its id is never a result. A recovery of
+  that paid output is reference-view work too: its claim on the slot reads as a job for that one
+  slot while it runs, and reports the attempt, with its image once the recovery installs it.
 - A retry target is navigation state: operation plus reference slots where applicable. Invoking it
   opens the controls that can make a new request; it never replays a saved payload or spends by
   itself.

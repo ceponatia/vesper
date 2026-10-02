@@ -23,7 +23,11 @@ import {
   referenceViewBuildActionLabel,
   referenceViewBuildQueuedTitle,
   referenceViewDependentsCopy,
+  referenceViewFailedTileHint,
   referenceViewRebuildQueuedTitle,
+  referenceViewRecoverActionLabel,
+  referenceViewRecoverFailedTitle,
+  referenceViewRecoveredToast,
   referenceViewRefusalCopy,
   referenceViewSelectionActionLabel,
   referenceViewSelectionBlockedHint,
@@ -123,6 +127,15 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
   );
   const toast = useToast();
   const [busySlot, setBusySlot] = useState<string | null>(null);
+  /**
+   * Slots with a recovery request in flight — a Set of their own, not
+   * `busySlot`: a recovery can take minutes when Civitai is slow, and
+   * `busySlot` is a single sheet-wide value, so sharing it froze every other
+   * tile's Regenerate, Upload and Recover, and the batch action, for as long
+   * as one recovery ran. Several tiles may recover at once; only the
+   * recovering tile itself, and a batch submission that includes it, waits.
+   */
+  const [recovering, setRecovering] = useState<ReadonlySet<string>>(NO_SLOTS);
   const [building, setBuilding] = useState(false);
   /** The slots the owner has ticked, waiting to be submitted together. */
   const [selection, setSelection] = useState<{ planKey: string; slots: ReadonlySet<string> }>(() => ({ planKey, slots: NO_SLOTS }));
@@ -370,6 +383,35 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
     return { ok: true };
   };
 
+  /**
+   * Recover a failed attempt's already-paid-for render. Free — no admission,
+   * no charge — so unlike upload or regenerate this never needs to ask
+   * whether the slot can afford to start one. Tracked in `recovering`, not
+   * `busySlot`: Civitai can take minutes to answer, and only this slot (and a
+   * batch submission that includes it) should wait on it. A refusal means the
+   * offer is gone (Civitai lost the bytes, or the render no longer matches
+   * what it would be built from), so the server's own message explains it and
+   * a refetch drops the tile's recover action along with it.
+   */
+  const recoverView = async (view: ReferenceViewSummary) => {
+    if (view.attemptId === null) return;
+    const slot = slotKey(view);
+    setRecovering((prev) => new Set(prev).add(slot));
+    const result = await referenceViewsApi.recover(characterId, view.angle, view.wardrobe, view.attemptId);
+    setRecovering((prev) => {
+      const next = new Set(prev);
+      next.delete(slot);
+      return next;
+    });
+    if (!result.ok) {
+      toast.push({ title: referenceViewRecoverFailedTitle, description: result.error.message, tone: "error" });
+      refetch();
+      return;
+    }
+    toast.push(referenceViewRecoveredToast);
+    refetch();
+  };
+
   return (
     <div className="flex flex-col gap-5">
       {views.error ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-paper-400"><span>Reference views could not be refreshed.</span><Button size="sm" onClick={() => views.reload({ silent: true })}>Retry</Button></div> : null}
@@ -415,6 +457,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
               size="sm"
               variant="primary"
               busy={submitting}
+              disabled={busySlot !== null || selectedViews.some((view) => recovering.has(slotKey(view)))}
               onClick={() => void regenerate(regenerableViews)}
             >
               {referenceViewSelectionActionLabel(regenerableViews.length)}
@@ -474,7 +517,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                           // Unticked and disabled while a view it is built from is
                           // ticked: one request may not rebuild both.
                           checked={selected.has(slot) && !ancestorSelected(view)}
-                          disabled={ancestorSelected(view)}
+                          disabled={ancestorSelected(view) || recovering.has(slot)}
                           aria-label={`Select ${label} for regeneration`}
                           onChange={() =>
                             setSelected((prev) => {
@@ -510,9 +553,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                   {waitingFor !== null ? (
                     <p className="text-xs leading-relaxed text-paper-400">{referenceViewWaitingCopy.hint(waitingFor)}</p>
                   ) : view.state === "failed" || view.state === "rejected" || view.state === "stale" || view.state === "ineligible" ? (
-                    <p className="text-xs leading-relaxed text-paper-400">
-                      {view.state === "failed" && view.failureMessage ? view.failureMessage : copy.hint}
-                    </p>
+                    <p className="text-xs leading-relaxed text-paper-400">{referenceViewFailedTileHint(view)}</p>
                   ) : null}
                   <ReferenceViewFeedbackNote feedback={view.feedback} />
                   <div className="mt-auto flex flex-wrap items-center gap-2">
@@ -523,12 +564,24 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                         </Button>
                       </>
                     ) : null}
+                    {view.state === "failed" && view.recoverable ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        busy={recovering.has(slot)}
+                        disabled={replacementBlocked || submitting || busySlot !== null}
+                        title={replacementBlocked ? referenceViewRefusalCopy.busy : undefined}
+                        onClick={() => void recoverView(view)}
+                      >
+                        {referenceViewRecoverActionLabel}
+                      </Button>
+                    ) : null}
                     {rebuildable ? (
                       <Button
                         size="sm"
                         variant="ghost"
                         busy={slotBuilding}
-                        disabled={replacementBlocked}
+                        disabled={replacementBlocked || busySlot !== null || recovering.has(slot)}
                         title={replacementBlocked ? referenceViewRefusalCopy.busy : undefined}
                         onClick={() => void regenerate([view])}
                       >
@@ -539,7 +592,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                       label="More"
                       ariaLabel={`${label} actions`}
                       items={[
-                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || replacementBlocked || submitting || busySlot !== null },
+                        { label: "Upload image", onSelect: () => pickUpload(view), busy, disabled: !eligible || replacementBlocked || submitting || busySlot !== null || recovering.has(slot) },
                         ...(attempted ? [{
                           label: "History",
                           // Read-only: a busy upload or review must not disable history.

@@ -35,6 +35,17 @@ export interface ReplicateImageResult {
    */
   predictionId?: string;
   /**
+   * The Civitai output blob id whose download could not complete after
+   * every retried attempt, on a workflow that otherwise succeeded and was
+   * already paid for (`civitai_output_undelivered`, #682). Present ONLY on
+   * that one failure, from the Civitai lane alone — every other provider
+   * and every other failure leaves it absent. The workflow already ran and
+   * cost Buzz, so this is what `recoverCivitaiOutput`
+   * (`apps/web/src/server/ai/civitai-runtime.ts`) needs to fetch the same
+   * output again without rendering a second time.
+   */
+  undeliveredOutputId?: string;
+  /**
    * The version Replicate says it ACTUALLY ran, echoed off the prediction body.
    *
    * A pinned request states what should run; only this states what did. The two

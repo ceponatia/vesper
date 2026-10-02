@@ -2073,7 +2073,12 @@ export const characterReferenceViews = pgTable(
      * did not read.
      */
     sourceContentHash: text("source_content_hash").notNull(),
-    /** The produced asset. Null while pending, and after a failure. */
+    /**
+     * The produced asset. Null while pending. A failed render keeps its own
+     * failed `images` row here, so a paid output whose download failed can be
+     * recovered; the sheet never draws or consumes a failed row's link, and the
+     * failed-row retention ends it by deleting that row (`set null`).
+     */
     imageId: text("image_id").references(() => images.id, { onDelete: "set null" }),
     status: text("status", { enum: referenceViewStatuses }).notNull().default("pending"),
     /** Null until a row has actually produced a view (a `pending` or failed row). */

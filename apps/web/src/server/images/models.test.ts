@@ -342,6 +342,33 @@ describe("renderWithModel reference roles and sent count", () => {
 });
 
 /**
+ * PROTECTS (#682): the one line that makes `recoverCivitaiOutput` reachable at
+ * all — a transport result naming an undelivered output's blob id must reach
+ * this wrapper's own result, exactly as `predictionId` already does beside it.
+ * Nothing below this wrapper (`render-intent.test.ts`,
+ * `reference-view-build.test.ts`) exercises this merge: each mocks
+ * `renderWithModel` itself, so a dropped spread here would leave every failed
+ * render's attempt without the blob id and make its paid output unrecoverable,
+ * with nothing in CI to say so.
+ */
+describe("renderWithModel and a Civitai output that could not be downloaded (#682)", () => {
+  it("passes the undelivered output id through on a failed render, absence included", async () => {
+    runModel.mockResolvedValue({
+      ok: false,
+      error: "Civitai output download failed (civitai_output_undelivered; retry=reconcile)",
+      predictionId: "pred-undelivered",
+      undeliveredOutputId: "blob-undelivered",
+    });
+    const undelivered = await renderWithModel({ model: wan(), prompt: "a portrait" });
+    expect(undelivered).toMatchObject({ ok: false, predictionId: "pred-undelivered", undeliveredOutputId: "blob-undelivered" });
+
+    runModel.mockResolvedValue({ ok: false, error: "the provider refused this render", predictionId: "pred-ordinary" });
+    const ordinary = await renderWithModel({ model: wan(), prompt: "a portrait" });
+    expect("undeliveredOutputId" in ordinary).toBe(false);
+  });
+});
+
+/**
  * PROTECTS: the wiring between this wrapper and `referencePreparationTarget`
  * (#626) — not the target-selection logic itself, which
  * `reference-preparation.test.ts` owns in isolation. Before the fix, every

@@ -1,4 +1,4 @@
-export type CivitaiStage = "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status" | "workflow_terminal" | "output_download";
+export type CivitaiStage = "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status" | "workflow_terminal" | "output_download" | "output_recovery";
 export type CivitaiRetryDisposition = "automatic" | "deliberate" | "never" | "reconcile";
 
 export type CivitaiCode = `civitai_http_${number}`
@@ -16,6 +16,20 @@ export type CivitaiCode = `civitai_http_${number}`
   | "civitai_output_too_large"
   | "civitai_output_empty"
   | "civitai_output_transport_failure"
+  /**
+   * A workflow that succeeded and was already paid for, whose output could
+   * not be downloaded after every retried attempt (#682) — distinct from
+   * `civitai_output_invalid`/`_too_large`/an unretryable HTTP status, each of
+   * which proves the output can never be fetched and throws on its first
+   * occurrence instead. This is the OPPOSITE claim: the output is still
+   * there, just not fetched yet, so it is recoverable from the same blob
+   * (`recoverCivitaiOutput`) without rendering again. `messageFor` names only
+   * the attempt count ({@link CivitaiFailure.downloadAttempts}) in its free
+   * text; the blob id ({@link CivitaiFailure.outputId}) travels as structured
+   * data only, since it is provider-supplied and a keyword classifier reads
+   * free text, not fields (review P3-5).
+   */
+  | "civitai_output_undelivered"
   /**
    * The paid submit's own answer was lost (transport failure, an HTTP 5xx,
    * or a 2xx body that was not JSON or not a usable workflow) and a bounded
@@ -88,6 +102,19 @@ export interface CivitaiFailure {
   roundsAttempted?: number;
   /** `civitai_submit_unconfirmed` only: true when some round that did read hit its page cap without a match, so the search may not have covered the whole list. */
   pageCapHit?: boolean;
+  /**
+   * `civitai_output_undelivered` only: the Civitai blob id whose download
+   * could not complete, so an operator (or the read-only recovery primitive,
+   * `recoverCivitaiOutput`) can recover the already-paid-for output directly
+   * instead of rendering again. Carried as structured data ONLY — never
+   * interpolated into `messageFor`'s free text, because this id is
+   * provider-supplied and `classifyImageFailureMessage` reads that text by
+   * keyword; an unlucky id could otherwise misclassify the failure as
+   * billing or content rejection (review P3-5).
+   */
+  outputId?: string;
+  /** `civitai_output_undelivered` only: how many download attempts were made before giving up. */
+  downloadAttempts?: number;
 }
 
 const VALIDATION_REASON_TEXT: Record<CivitaiValidationReason, string> = {
@@ -123,6 +150,18 @@ function messageFor(failure: CivitaiFailure): string {
         + (failure.pageCapHit ? " (the list was only searched up to its page cap)" : "");
     return `Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as ${original}, and ${outcome}. Civitai may still accept, or may already have accepted, this workflow under externalId=${externalId} — check the workflow list for it before starting one deliberate replacement.`;
   }
+  if (failure.code === "civitai_output_undelivered") {
+    // The blob id is PROVIDER-SUPPLIED and therefore untrusted text: an id
+    // that happened to contain a word like "flagged" or a bare "402" would
+    // make `classifyImageFailureMessage` misread this as content rejection
+    // or billing, and a sanitized retry would then pay for a second render
+    // over an output that is still sitting there (review P3-5). The id
+    // travels only as the structured `outputId` field (and the lane
+    // result's `undeliveredOutputId`); it is never interpolated here.
+    const attempts = failure.downloadAttempts ?? 0;
+    const plural = attempts === 1 ? "" : "s";
+    return `Civitai output download failed (civitai_output_undelivered; retry=reconcile). The workflow succeeded and was already paid for, but its output could not be downloaded after ${String(attempts)} attempt${plural}. It can be recovered from that output without rendering again.`;
+  }
   const reason = failure.reason ? ` reason=${failure.reason}: ${VALIDATION_REASON_TEXT[failure.reason]}` : "";
   const paths = failure.validationPaths?.length ? ` paths=${failure.validationPaths.join(",")}.` : "";
   const retry = failure.retry === "automatic"
@@ -152,6 +191,8 @@ export class CivitaiError extends Error implements CivitaiFailure {
   readonly roundsSearched: number | undefined;
   readonly roundsAttempted: number | undefined;
   readonly pageCapHit: boolean | undefined;
+  readonly outputId: string | undefined;
+  readonly downloadAttempts: number | undefined;
 
   constructor(failure: CivitaiFailure) {
     super(messageFor(failure));
@@ -169,6 +210,8 @@ export class CivitaiError extends Error implements CivitaiFailure {
     this.roundsSearched = failure.roundsSearched;
     this.roundsAttempted = failure.roundsAttempted;
     this.pageCapHit = failure.pageCapHit;
+    this.outputId = failure.outputId;
+    this.downloadAttempts = failure.downloadAttempts;
   }
 }
 
@@ -264,8 +307,29 @@ export function civitaiSubmitUnconfirmedFailure(
 export function civitaiOutputFailure(
   code: Extract<CivitaiCode, `civitai_output_${string}`>,
   retry: CivitaiRetryDisposition,
+  httpStatus?: number,
 ): CivitaiError {
-  return new CivitaiError({ code, retry, stage: "output_download" });
+  return new CivitaiError({ code, retry, stage: "output_download", ...(httpStatus === undefined ? {} : { httpStatus }) });
+}
+
+/**
+ * A paid, succeeded workflow whose output could not be downloaded after
+ * every retried attempt (#682) — never thrown for a download failure that
+ * already proves the output is gone for good (`civitai_output_invalid`,
+ * `_too_large`, a 404, or a 410), each of which keeps throwing its own code
+ * on first occurrence instead; see the retry gate beside the download loop in
+ * civitai-runtime.ts. `retry` is always `reconcile`: the render already
+ * succeeded and was billed, so the right next step is recovering the SAME
+ * output (`recoverCivitaiOutput`), never a fresh paid render.
+ */
+export function civitaiOutputUndeliveredFailure(outputId: string, downloadAttempts: number): CivitaiError {
+  return new CivitaiError({
+    code: "civitai_output_undelivered",
+    retry: "reconcile",
+    stage: "output_download",
+    outputId,
+    downloadAttempts,
+  });
 }
 
 /** Accept only documented async reason tokens; provider prose is never surfaced. */

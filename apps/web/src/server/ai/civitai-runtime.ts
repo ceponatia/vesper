@@ -4,7 +4,7 @@ import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { log } from "@/server/log";
 import { civitaiApiToken } from "../images/lora-credentials";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -31,27 +31,71 @@ const BLOBS_URL = "https://orchestration.civitai.com/v2/consumer/blobs";
 const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
 /**
- * The per-attempt timeout shared by both workflow POSTs: the what-if
- * preflight and the paid submit.
+ * The per-attempt budget shared by both workflow POSTs — the what-if
+ * preflight (including its one automatic retry, #672) and the paid submit
+ * (#673) — SCALED to how many reference images are actually in the body
+ * being sent: {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS} plus
+ * {@link CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS} per reference,
+ * capped at {@link CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS}
+ * ({@link civitaiWorkflowPostTimeoutMs}). Every other stage keeps the 30 s
+ * {@link REQUEST_TIMEOUT_MS} budget.
  *
- * Every other stage keeps the 30 s {@link REQUEST_TIMEOUT_MS} budget. On
- * 2026-10-01 all 8 reference-view preflights in one production batch failed
- * together after 30.4-30.9 s against that shared budget, before any paid
- * submit. Zero-Buzz what-if probes against the Qwen Image 2.1 `editImage`
- * body measured the same day ranged 2.1-13.0 s, including concurrent
- * batches of 8 and prompts as long as 2,567 characters — see
- * docs/image-models/models/civitai-flux-2-klein-4b.md §Execution and
- * diagnostics for the full table and build/version provenance. Those probes
- * do not reproduce the production latency, so this ceiling is headroom over
- * the measured range, not a tuned minimum (#672).
+ * #672 fixed this at a flat 120 s after all 8 reference-view preflights in
+ * one production batch failed together at 30.4-30.9 s against the previous
+ * 30 s budget, before any paid submit. That flat rule then failed on its own
+ * reference-heavy requests: a 2026-10-01 zero-Buzz what-if probe sent the
+ * Qwen Image 2.1 lane's exact `editImage` body and measured latency scaling
+ * with reference count, independent of bytes — 1 reference 18.8 s, 3
+ * references 62.0, 67.0 and 62.4 s, about 20 s per reference — see
+ * eval-images/civitai-qwen-2-1/whatif-669-reference-count-2026-10-01.txt
+ * (#680). Production has measured slower than local probes (#672), so the
+ * per-reference allowance below is twice that measured cost, and the base
+ * keeps #672's 120 s for a request with no references.
  *
- * The paid submit (#673) gets the identical budget rather than its own,
- * smaller one: it carries the same data-URL references the preflight just
- * ingested, in the same body shape, so whatever makes a preflight run long can
- * equally make the submit run long. A submit that times out at this budget is
- * handled by the lost-answer lookup below, never by repeating the POST.
+ * The 290 s ceiling (owner ruling 2026-10-02, #680) sits 10 s under Node's
+ * built-in `fetch` (undici): its `headersTimeout`/`bodyTimeout` default to
+ * 300 s and Vesper sets no dispatcher, so any budget at or above that limit
+ * would never actually apply — Vesper's own ceiling has to bind first. That
+ * puts the ceiling below the linear formula's natural value starting at 5
+ * references (120 + 5*40 = 320 s), not 10: Qwen 2.1's reference-heavy edits
+ * (its own `MAX_REFERENCES` in civitai-qwen21-runtime.ts is 10; Klein's own
+ * cap is 2 and never reaches it) are capped rather than given the latency
+ * headroom the formula would otherwise grant them. #681 (uploading each
+ * reference once as a Civitai blob and sending its URL, instead of a fresh
+ * data URL per request) is the path for those heavy-reference requests,
+ * not a larger timeout undici would just cut anyway.
+ *
+ * The paid submit shares the identical budget rather than its own, smaller
+ * one: it carries the same references the preflight just ingested, in the
+ * same body shape, so whatever makes a preflight run long can equally make
+ * the submit run long. A submit that times out at this budget is handled by
+ * the lost-answer lookup below, never by repeating the POST.
  */
-const CIVITAI_WORKFLOW_POST_TIMEOUT_MS = 120_000;
+const CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS = 120_000;
+/** Twice the ~20 s/reference measured cost — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS} — since production has measured slower than the local probe that found it. */
+const CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS = 40_000;
+/**
+ * 10 s under Node fetch's (undici) 300 s default header/body timeout, so
+ * Vesper's own ceiling always binds first — see
+ * {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS}. Binds from 5 references,
+ * not 10: the linear formula alone would reach 320 s there.
+ */
+const CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS = 290_000;
+
+/**
+ * The per-attempt POST budget for a workflow body carrying `referenceCount`
+ * reference images (#680) — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS}
+ * for the rule and its measurement. A negative or non-integer count is
+ * floored and clamped to zero rather than refused: a caller's own bug in
+ * counting references should not ALSO crash the timeout computation.
+ */
+export function civitaiWorkflowPostTimeoutMs(referenceCount: number): number {
+  const count = Number.isFinite(referenceCount) ? Math.max(0, Math.floor(referenceCount)) : 0;
+  return Math.min(
+    CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS + count * CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS,
+    CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS,
+  );
+}
 
 /**
  * The lost-submit-answer lookup (#673): how many read-only rounds Vesper
@@ -459,7 +503,19 @@ async function waitForCivitaiRetry(attempt: number, deadline?: number): Promise<
   return deadline === undefined || Date.now() < deadline;
 }
 
-async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status", deadline?: number): Promise<unknown> {
+async function requestJson(
+  url: string,
+  init: RequestInit,
+  token: string,
+  stage: "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status" | "output_recovery",
+  deadline?: number,
+  // #680: only a preflight/submit POST ever reads this — every GET stage
+  // falls through to REQUEST_TIMEOUT_MS below regardless of what is passed
+  // here. `sendWorkflow` is the only caller that passes a real value,
+  // computed from the reference count in the body it is actually sending;
+  // the default is the zero-reference base rate for any other caller.
+  postTimeoutMs: number = CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS,
+): Promise<unknown> {
   const method = init.method ?? "GET";
   // GET reads (lora metadata, the lost-submit-answer lookup, workflow-status
   // polls) get the shared bounded retry; the what-if preflight gets its own
@@ -467,9 +523,12 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
   // none — #673 keeps that rule: the submit's own transport/HTTP failures are
   // never reposted here, only looked up read-only, in `runCivitaiLane`.
   const maxRetries = method === "GET" ? MAX_GET_RETRIES : stage === "preflight" ? MAX_PREFLIGHT_RETRIES : 0;
-  // #673: the paid submit shares the preflight's 120 s budget, not the
-  // default 30 s one — see CIVITAI_WORKFLOW_POST_TIMEOUT_MS.
-  const timeoutMs = stage === "preflight" || stage === "submit" ? CIVITAI_WORKFLOW_POST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  // #680: the preflight and the paid submit share one budget, scaled to the
+  // body's own reference count by the caller (`sendWorkflow`) — see
+  // CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS. The preflight's automatic retry
+  // below reuses this SAME `timeoutMs` on every attempt, so a retry can never
+  // silently fall back to a smaller budget than the attempt it repeats.
+  const timeoutMs = stage === "preflight" || stage === "submit" ? postTimeoutMs : REQUEST_TIMEOUT_MS;
   for (let attempt = 0; ; attempt += 1) {
     if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
     const headers = new Headers(init.headers);
@@ -684,10 +743,14 @@ async function resolveLoras(
 }
 
 async function sendWorkflow(body: CivitaiWorkflow, token: string, whatif: boolean): Promise<unknown> {
+  // #680: scaled to how many references are ACTUALLY in this body, never a
+  // caller's claim — a lane that trimmed or never attached references cannot
+  // be charged a budget for a count it did not send.
+  const referenceCount = asArray(body.steps[0].input.images).length;
   return requestJson(`${WORKFLOWS_URL}?whatif=${String(whatif)}&wait=0`, {
     method: "POST",
     body: JSON.stringify(body),
-  }, token, whatif ? "preflight" : "submit");
+  }, token, whatif ? "preflight" : "submit", undefined, civitaiWorkflowPostTimeoutMs(referenceCount));
 }
 
 /**
@@ -878,6 +941,38 @@ function civitaiOutputLocation(value: string, base?: URL): URL {
 const MAX_OUTPUT_REDIRECTS = 3;
 
 /**
+ * How long ONE output-download ATTEMPT is given — covering every redirect
+ * hop and the whole body stream, the same one-deadline-for-everything rule
+ * {@link fetchOutput} already applied, now scoped per attempt
+ * ({@link downloadOutput}) rather than to the whole download.
+ *
+ * #682: a prod `side_right/clothed` download failed
+ * `civitai_output_transport_failure` on 2026-10-01 at 22:48:59Z while
+ * Civitai showed the workflow had succeeded with its output available.
+ * Three read-only downloads of other outputs right after took 1.9, 6.8 and
+ * 11.2 s, almost all of it body streaming (164 KB in about 9 s) — well
+ * inside this budget but over the 30 s {@link REQUEST_TIMEOUT_MS} the
+ * download used to share with every other GET. From Fly the failing
+ * download exceeded 30 s.
+ */
+const CIVITAI_OUTPUT_ATTEMPT_TIMEOUT_MS = 120_000;
+
+/**
+ * How many output-download ATTEMPTS {@link downloadOutput} makes in total
+ * before giving up and reporting the output as RECOVERABLE
+ * (`civitai_output_undelivered`, #682) rather than losing it — the first
+ * attempt plus three retries.
+ */
+const CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS = 4;
+
+/**
+ * Backoff before each output-download retry (indexed by `attempt - 1`): a
+ * short, bounded, fixed schedule rather than exponential, since
+ * {@link CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS} is already a small, known total.
+ */
+const CIVITAI_OUTPUT_DOWNLOAD_BACKOFF_MS = [2_000, 4_000, 8_000] as const;
+
+/**
  * The response carrying the output bytes, after requesting the provider's
  * authenticated blob endpoint and following its own redirect by hand.
  *
@@ -903,12 +998,14 @@ const MAX_OUTPUT_REDIRECTS = 3;
  * function did (#628) — refuses the provider's own signed content path and
  * failed every download of a workflow the account had already paid for. Each
  * hop is revalidated against the same policy, so the stance is enforced by
- * checking the destination rather than by refusing to move. One budget is
- * shared across hops: a chain must not multiply the timeout.
+ * checking the destination rather than by refusing to move. One deadline is
+ * shared across every hop and the eventual body stream alike — a chain must
+ * not multiply the timeout — and {@link downloadOutput} now hands this a
+ * FRESH deadline on each retried attempt (#682) rather than one budget for
+ * the whole download.
  */
-async function fetchOutput(blobId: string, token: string): Promise<Response> {
+async function fetchOutput(blobId: string, token: string, deadline: number): Promise<Response> {
   let target = civitaiOutputLocation(`${BLOBS_URL}/${encodeURIComponent(blobId)}`);
-  const deadline = Date.now() + REQUEST_TIMEOUT_MS;
   for (let hop = 0; ; hop += 1) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
@@ -951,20 +1048,35 @@ async function fetchOutput(blobId: string, token: string): Promise<Response> {
 }
 
 /**
- * Downloads the blob `blobId` names, authenticating only the first request
- * `fetchOutput` makes for it.
+ * ONE output-download attempt: authenticating only the first request
+ * `fetchOutput` makes for it, under its own fresh `deadline`.
  *
  * A hop that answers `403` — what the signed `url`'s `blocked` path does
  * (measured 2026-09-17, #630) — surfaces here as an ordinary non-2xx status
  * and is reported as `civitai_output_http_403` like any other refused status,
  * with no separate "blocked output" code: the failure is the transport answer
- * the provider actually gave.
+ * the provider actually gave. The HTTP failure carries the status as
+ * `httpStatus` too, so {@link isRetryableOutputFailure} can judge it by the
+ * SAME {@link civitaiRetryableStatus} gate the preflight's own retry uses,
+ * without re-parsing it back out of the code string.
  */
-async function downloadOutput(blobId: string, token: string): Promise<Buffer> {
-  const response = await fetchOutput(blobId, token);
+async function downloadOutputAttempt(blobId: string, token: string, deadline: number): Promise<Buffer> {
+  const response = await fetchOutput(blobId, token, deadline);
   if (!response.ok) {
+    // A refused attempt's body is never read. Releasing it frees the socket
+    // before the next attempt starts, instead of leaving it open for the
+    // timeout or garbage collection to reap — during a provider outage every
+    // concurrent render retries up to CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS times
+    // (Codex review on PR #688). Best effort and silent, as for a redirect's
+    // body in `fetchOutput`: a body that cannot be released is not this
+    // render's failure.
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Deliberately silent; see above.
+    }
     const code = `civitai_output_http_${String(response.status)}` as `civitai_output_http_${number}`;
-    throw civitaiOutputFailure(code, "deliberate");
+    throw civitaiOutputFailure(code, "deliberate", response.status);
   }
   try {
     const declaredLength = Number(response.headers.get("content-length"));
@@ -992,6 +1104,56 @@ async function downloadOutput(blobId: string, token: string): Promise<Buffer> {
     if (error instanceof CivitaiError) throw error;
     throw civitaiOutputFailure("civitai_output_transport_failure", "deliberate");
   }
+}
+
+/**
+ * Whether a failed download attempt is worth repeating from hop 0 (#682):
+ * ONLY a transport failure or an HTTP status {@link civitaiRetryableStatus}
+ * already calls retryable (429 or 5xx) — the same gate the preflight's own
+ * automatic retry uses, applied here to the output codes. Every other output
+ * failure — `civitai_output_invalid` (an off-host or credentialed redirect,
+ * or a chain past {@link MAX_OUTPUT_REDIRECTS}), `_too_large`, `_empty`, or
+ * any other non-retryable HTTP status (401/403/404/410 included) — already
+ * proves something about THIS output rather than a passing transport hiccup,
+ * so it keeps throwing on first occurrence, exactly as before this retry
+ * existed.
+ */
+function isRetryableOutputFailure(error: unknown): boolean {
+  if (!(error instanceof CivitaiError)) return false;
+  if (error.code === "civitai_output_transport_failure") return true;
+  return error.httpStatus !== undefined && civitaiRetryableStatus(error.httpStatus);
+}
+
+/**
+ * Downloads the blob `blobId` names, retrying a transport failure or a
+ * retryable HTTP status up to {@link CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS} times
+ * in total (#682), each a FRESH attempt restarted at the authenticated blob
+ * endpoint — never continued from a prior attempt's redirect target, because
+ * the signed content path a redirect names expires (#630) and a stale one
+ * would just fail again. Each attempt gets its own
+ * {@link CIVITAI_OUTPUT_ATTEMPT_TIMEOUT_MS} budget, with a short backoff
+ * ({@link CIVITAI_OUTPUT_DOWNLOAD_BACKOFF_MS}) between attempts.
+ *
+ * Exhausting every attempt reports the output as RECOVERABLE
+ * (`civitai_output_undelivered`) rather than losing it: the workflow already
+ * succeeded and was paid for, so `recoverCivitaiOutput` can fetch the same
+ * blob again later without a new render. Every other output failure
+ * ({@link isRetryableOutputFailure} false) throws on its first occurrence,
+ * unchanged from before this retry existed.
+ */
+async function downloadOutput(blobId: string, token: string): Promise<Buffer> {
+  for (let attempt = 0; attempt < CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) {
+      const backoff = CIVITAI_OUTPUT_DOWNLOAD_BACKOFF_MS[attempt - 1];
+      if (backoff !== undefined) await delay(backoff);
+    }
+    try {
+      return await downloadOutputAttempt(blobId, token, Date.now() + CIVITAI_OUTPUT_ATTEMPT_TIMEOUT_MS);
+    } catch (error) {
+      if (!isRetryableOutputFailure(error)) throw error;
+    }
+  }
+  throw civitaiOutputUndeliveredFailure(blobId, CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS);
 }
 
 export async function runCivitaiKleinImageModel(model: ImageModel, request: RegistryModelRequest): Promise<ReplicateImageResult> {
@@ -1129,6 +1291,104 @@ export async function runCivitaiLane(
     const final = predictionId && !declaresNonAutomaticRetry(message)
       ? `${message} Civitai workflow ${predictionId} was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.`
       : message;
-    return { ok: false, ...(predictionId ? { predictionId } : {}), error: final };
+    // #682: a workflow that succeeded and was paid for, but whose output
+    // could not be downloaded after every retried attempt, carries the blob
+    // id beside the workflow id — `civitai_output_undelivered` already
+    // declares `retry=reconcile` on its own, so `final` above never
+    // double-appends the generic "was already submitted" sentence onto it.
+    const undeliveredOutputId = error instanceof CivitaiError && error.code === "civitai_output_undelivered"
+      ? error.outputId
+      : undefined;
+    return {
+      ok: false,
+      ...(predictionId ? { predictionId } : {}),
+      ...(undeliveredOutputId ? { undeliveredOutputId } : {}),
+      error: final,
+    };
+  }
+}
+
+/**
+ * What a read-only recovery of one Civitai output attempted: the bytes, or a
+ * refusal distinguishing PERMANENT ("never recoverable this way, do not try
+ * again") from everything else ("try again later").
+ */
+export type CivitaiOutputRecovery =
+  | { ok: true; image: Buffer }
+  | { ok: false; permanent: boolean; error: string };
+
+/**
+ * Recovers the output of a Civitai workflow that already succeeded and was
+ * already paid for, but whose download could not complete
+ * (`civitai_output_undelivered`, #682) — WITHOUT rendering again. Read-only
+ * end to end: one GET to re-read the workflow, then the same retried
+ * download `runCivitaiLane` uses. It never POSTs anything, never creates a
+ * workflow, and never charges.
+ *
+ * `permanent: true` is returned ONLY on positive evidence that the output
+ * can never be fetched this way — the workflow read answers 404; the
+ * workflow's status is not `succeeded`, or its id differs from the one
+ * asked for; the workflow does not list `blobId`, or lists it as
+ * unavailable, hidden, or blocked; or the download's own final failure is
+ * `civitai_output_invalid`, `_too_large`, a 404, or a 410, each of which
+ * already proves the same thing for the ordinary render path. Every other
+ * outcome — a transport failure, 429/5xx, 401/403, another
+ * `civitai_output_undelivered`, `civitai_output_empty`, or a workflow body
+ * that parsed as JSON but not into a usable workflow shape — is
+ * `permanent: false`: a wrong "permanent" withdraws the owner's one free
+ * recovery for good, while a wrong "transient" only costs them trying again.
+ *
+ * The error text is always the redacted `CivitaiError` message (or, for a
+ * malformed workflow shape, `parseCivitaiWorkflow`'s own plain message) —
+ * never raw provider prose.
+ */
+export async function recoverCivitaiOutput(input: { workflowId: string; blobId: string }): Promise<CivitaiOutputRecovery> {
+  const token = civitaiApiToken();
+  if (!token) return { ok: false, permanent: false, error: "CIVITAI_API_TOKEN not configured" };
+  try {
+    const value = await requestJson(`${WORKFLOWS_URL}/${encodeURIComponent(input.workflowId)}`, { method: "GET" }, token, "output_recovery");
+    const workflow = parseCivitaiWorkflow(value, "Civitai workflow recovery read");
+    if (workflow.id !== input.workflowId) {
+      return {
+        ok: false, permanent: true,
+        error: `Civitai workflow recovery returned a different workflow id than ${input.workflowId}; its output cannot be recovered under that id`,
+      };
+    }
+    if (workflow.status !== "succeeded") {
+      return {
+        ok: false, permanent: true,
+        error: `Civitai workflow ${input.workflowId} is ${workflow.status}, not succeeded; its output cannot be recovered`,
+      };
+    }
+    const image = workflow.images.find((candidate) => candidate.id === input.blobId);
+    if (!image || !image.available || image.hidden || image.blocked) {
+      return {
+        ok: false, permanent: true,
+        error: `Civitai workflow ${input.workflowId} does not list blob ${input.blobId} as an available, unblocked output`,
+      };
+    }
+    return { ok: true, image: await downloadOutput(input.blobId, token) };
+  } catch (error) {
+    if (error instanceof CivitaiError) {
+      // Positive evidence the output can never be fetched: a 404 on the
+      // workflow read itself, or a download failure that already proves the
+      // SAME thing for the ordinary render path (never a transport hiccup,
+      // a retryable status, an auth hiccup, or the lane's own undelivered
+      // code — all of those stay recoverable).
+      const permanent =
+        (error.stage === "output_recovery" && error.httpStatus === 404) ||
+        (error.stage === "output_download" && (
+          error.code === "civitai_output_invalid" ||
+          error.code === "civitai_output_too_large" ||
+          error.code === "civitai_output_http_404" ||
+          error.code === "civitai_output_http_410"
+        ));
+      return { ok: false, permanent, error: error.message };
+    }
+    // A workflow body that parsed as JSON but not into a usable workflow
+    // shape (`parseCivitaiWorkflow`'s own plain Error) is not positive
+    // evidence the output is gone — it could be a transient read-side
+    // hiccup, so this stays recoverable rather than withdrawn for good.
+    return { ok: false, permanent: false, error: error instanceof Error ? error.message : "Civitai workflow recovery failed" };
   }
 }

@@ -312,6 +312,77 @@ describe.skipIf(!ready)("owner-scoped character media jobs", () => {
       .not.toContain(attempts[2]!.id);
   });
 
+  // A failed reference-view attempt keeps a link to its failed render's row so
+  // a paid output can be recovered (#682), and keeps it once superseded. That
+  // row has no file: the status read must never hand it out as an image to
+  // open, while a ready attempt's image still links.
+  it("links a reference attempt's image only while it is a ready asset", async () => {
+    const [character] = await db()
+      .insert(characters)
+      .values({ ownerId, name: "Failed attempt results" })
+      .returning({ id: characters.id });
+    if (!character) throw new Error("failed to seed failed-attempt character");
+
+    const assets = await db()
+      .insert(images)
+      .values([
+        canonicalImageRow({ ownerId, kind: "reference_view" as const, entityKind: "character" as const, entityId: character.id, status: "ready" as const }),
+        canonicalImageRow({ ownerId, kind: "reference_view" as const, entityKind: "character" as const, entityId: character.id, status: "failed" as const }),
+        canonicalImageRow({ ownerId, kind: "reference_view" as const, entityKind: "character" as const, entityId: character.id, status: "failed" as const }),
+      ])
+      .returning({ id: images.id });
+    const [readyImage, failedImage, supersededFailedImage] = assets;
+    if (!readyImage || !failedImage || !supersededFailedImage) throw new Error("failed to seed attempt images");
+
+    const characterId = character.id;
+    const attemptRow = (angleId: string, patch: Partial<typeof characterReferenceViews.$inferInsert>) => ({
+      ...patch,
+      characterId,
+      angleId,
+      wardrobe: "clothed",
+      sourceContentHash: "b".repeat(64),
+      generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+    });
+    const attempts = await db()
+      .insert(characterReferenceViews)
+      .values([
+        attemptRow("front_full", { current: true, status: "ready", method: "rendered", imageId: readyImage.id }),
+        attemptRow("back_full", { current: true, status: "failed", failureCode: "other", imageId: failedImage.id }),
+        attemptRow("side_left", { current: false, status: "superseded", failureCode: "other", imageId: supersededFailedImage.id }),
+      ])
+      .returning({ id: characterReferenceViews.id });
+    const [readyAttempt, failedAttempt, supersededAttempt] = attempts;
+    if (!readyAttempt || !failedAttempt || !supersededAttempt) throw new Error("failed to seed attempts");
+
+    const now = new Date();
+    const [job] = await db()
+      .insert(jobs)
+      .values({
+        ownerId,
+        type: "reference_views",
+        status: "done",
+        payload: {
+          characterId: character.id,
+          targets: ["front_full:clothed", "back_full:clothed", "side_left:clothed"],
+          referenceViewAttemptIds: [readyAttempt.id, failedAttempt.id, supersededAttempt.id],
+          built: 1,
+          failed: 2,
+        },
+        startedAt: now,
+        finishedAt: now,
+      })
+      .returning({ id: jobs.id });
+    if (!job) throw new Error("failed to seed reference job");
+
+    const projected = await listCharacterMediaJobs(character.id, ownerId);
+    const results = projected.find((entry) => entry.id === job.id)?.results ?? [];
+    const imageOf = (id: string) => results.find((result) => result.id === id)?.imageId;
+    expect(results).toHaveLength(3);
+    expect(imageOf(readyAttempt.id)).toBe(readyImage.id);
+    expect(imageOf(failedAttempt.id)).toBeNull();
+    expect(imageOf(supersededAttempt.id)).toBeNull();
+  });
+
   it("attributes overlapping identity packs by exact ids and bounds legacy fallback", async () => {
     const [character] = await db()
       .insert(characters)

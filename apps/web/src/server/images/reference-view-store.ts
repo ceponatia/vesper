@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { z } from "zod";
+import { imageModelProvider } from "@vesper/image-models";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -36,7 +38,15 @@ import {
   type ReferenceViewReviewRequest,
 } from "@/contracts";
 import { characterReferenceViews, characters, db, images, jobs, JOB_STALE_MS } from "../db";
-import { createImageAsset, failImage, readImageBytes } from "./asset-storage";
+import {
+  createImageAsset,
+  failImage,
+  mergeMetaSql,
+  READY_RETIRED_META_KEYS,
+  readImageBytes,
+  type ImageRow,
+  type WrittenImageInfo,
+} from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
 import { log } from "@/server/log";
@@ -219,6 +229,9 @@ async function reconcileReferenceViewLeasesInTransaction(
     .update(characterReferenceViews)
     .set({
       status: "failed",
+      // An abandoned attempt never settled a render, so unlike a failed one
+      // (`failReferenceView`) it keeps no link to an asset and offers nothing
+      // to recover.
       imageId: null,
       failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
       failureMessage: "The previous build was interrupted. This slot is ready to retry.",
@@ -385,15 +398,20 @@ export function claimReferenceViewLeases(input: {
   });
 }
 
-/** Whether one slot currently belongs to a heartbeat-live build. */
+/**
+ * Whether one slot currently belongs to a heartbeat-live lease — a build's, or
+ * a recovery's claim (`claimReferenceViewRecovery`). `excludeJobId` leaves out
+ * the caller's own lease, so a recovery's commit does not find itself busy.
+ */
 export async function referenceViewSlotBusy(
   characterId: string,
   ownerId: string,
   view: ReferenceView,
   executor: ReferenceViewExecutor = db(),
   now: Date = new Date(),
+  excludeJobId?: string,
 ): Promise<boolean> {
-  const live = await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId);
+  const live = await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId, excludeJobId);
   return live.some((job) => payloadLeases(job.payload).some((lease) => slotKey(lease) === slotKey(view)));
 }
 
@@ -412,8 +430,9 @@ async function buildingReferenceViewSlots(
   characterId: string,
   ownerId: string,
   now: Date = new Date(),
+  excludeJobId?: string,
 ): Promise<ReferenceView[]> {
-  const leased = leasedSlots(await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId));
+  const leased = leasedSlots(await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId, excludeJobId));
   return [...leased, ...(await pendingReferenceViewSlots(executor, characterId))];
 }
 
@@ -457,6 +476,7 @@ export async function referenceViewBuildLive(
  * building (`referenceViewDescendantBusy`). Replacing the upstream mid-render
  * would let those renders land stale, paid for and offered by Build again, so
  * an upload, a restoration and a regeneration of the slot all answer `busy`.
+ * `excludeJobId` leaves out the caller's own lease (`referenceViewSlotBusy`).
  */
 export async function referenceViewReplacementBusy(
   characterId: string,
@@ -464,9 +484,10 @@ export async function referenceViewReplacementBusy(
   view: ReferenceView,
   executor: ReferenceViewExecutor = db(),
   now: Date = new Date(),
+  excludeJobId?: string,
 ): Promise<boolean> {
-  if (await referenceViewSlotBusy(characterId, ownerId, view, executor, now)) return true;
-  return referenceViewDescendantBusy(view, await buildingReferenceViewSlots(executor, characterId, ownerId, now));
+  if (await referenceViewSlotBusy(characterId, ownerId, view, executor, now, excludeJobId)) return true;
+  return referenceViewDescendantBusy(view, await buildingReferenceViewSlots(executor, characterId, ownerId, now, excludeJobId));
 }
 
 /** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
@@ -710,6 +731,90 @@ async function readViewImageStatuses(
   return new Map(assets.map((asset) => [asset.id, asset.status]));
 }
 
+// ---------------------------------------------------------------------------
+// A failed render's paid output
+// ---------------------------------------------------------------------------
+
+/**
+ * The meta key that withdraws a recovery offer: an ISO timestamp stamped on the
+ * failed render's row once the provider has shown its output can never be
+ * fetched. Retention's own clock (`failedAt`) is left alone.
+ */
+export const REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY = "recoveryUnavailableAt";
+
+/**
+ * What a failed render's row records when the provider rendered and billed an
+ * output Vesper could not download: the workflow, the output blob, and the
+ * model (`meta.render`, written with the failure). Parsed at the trust
+ * boundary; anything less is a failure with nothing to recover.
+ */
+const undeliveredRenderSchema = z.object({
+  predictionId: z.string().min(1),
+  undeliveredOutputId: z.string().min(1),
+  modelSlug: z.string().min(1),
+});
+
+const assetMetaSchema = z.record(z.string(), z.unknown());
+
+/** A paid output a failed render could not deliver, as a recovery fetches it again. */
+export interface ReferenceViewPaidOutput {
+  /** The failed render's own images row — the offer, and what the view row links. */
+  readonly imageId: string;
+  /** The provider workflow that rendered and billed it. */
+  readonly workflowId: string;
+  /** The output that workflow produced. */
+  readonly blobId: string;
+}
+
+/**
+ * What a failed view's linked asset offers: a paid output still to be fetched,
+ * an output the provider has shown is gone for good (`withdrawn`), or nothing —
+ * a failure that never had a paid output, such as a moderated render, or a
+ * render on a model whose outputs cannot be fetched again.
+ */
+export type ReferenceViewOutputOffer =
+  | { readonly state: "on_offer"; readonly output: ReferenceViewPaidOutput }
+  | { readonly state: "withdrawn" }
+  | { readonly state: "none" };
+
+/**
+ * The one reading of a failed render's row as a recovery offer. Only a `failed`
+ * row offers anything, only a Civitai render can be fetched again from its
+ * workflow, and a stamped row has been withdrawn. Never throws.
+ */
+export function referenceViewOutputOffer(asset: Pick<ImageRow, "id" | "status" | "meta">): ReferenceViewOutputOffer {
+  if (asset.status !== "failed") return { state: "none" };
+  const meta = parseOr(assetMetaSchema, asset.meta, {});
+  const stamp = meta[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY];
+  if (stamp !== undefined && stamp !== null) return { state: "withdrawn" };
+  const render = parseOrNull(undeliveredRenderSchema, meta.render);
+  if (render === null || imageModelProvider(render.modelSlug) !== "civitai") return { state: "none" };
+  return {
+    state: "on_offer",
+    output: { imageId: asset.id, workflowId: render.predictionId, blobId: render.undeliveredOutputId },
+  };
+}
+
+/**
+ * The image ids, among a sheet's failed rows' linked assets, that still offer a
+ * paid output. A failed row's link is its failed render's own row
+ * (`failReferenceView`), and nothing else carries an offer, so no other row is
+ * read. Owner- and kind-scoped like every asset read here.
+ */
+async function readOfferedOutputs(
+  rows: readonly ReferenceViewRow[],
+  ownerId: string,
+  executor: ReferenceViewExecutor,
+): Promise<Set<string>> {
+  const ids = [...new Set(rows.flatMap((row) => (row.status === "failed" && row.imageId !== null ? [row.imageId] : [])))];
+  if (ids.length === 0) return new Set();
+  const assets = await executor
+    .select({ id: images.id, status: images.status, meta: images.meta })
+    .from(images)
+    .where(and(inArray(images.id, ids), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
+  return new Set(assets.flatMap((asset) => (referenceViewOutputOffer(asset).state === "on_offer" ? [asset.id] : [])));
+}
+
 /**
  * One slot's attempts as the studio's history list reads them, newest first —
  * every image the slot has produced, rendered and uploaded alike, each with the
@@ -722,10 +827,11 @@ async function readViewImageStatuses(
  * accepted portrait still has a history — the sheet's rows outlive the pointer.
  *
  * Two filters, and both mean "there is nothing to look at": a row with no
- * `image_id` never produced bytes (a failed render) or had them collected by the
- * retention sweep, and a row whose asset is not `ready` points at a file that
- * was reserved and never written. The list is evidence for a wording comparison;
- * a row with no picture is not evidence.
+ * `image_id` never produced bytes or had them collected by the retention sweep,
+ * and a row whose asset is not `ready` points at a file that was reserved and
+ * never written — which is what a failed render's link is: its failed row,
+ * kept so a paid output can be recovered (`failReferenceView`). The list is
+ * evidence for a wording comparison; a row with no picture is not evidence.
  *
  * The first filter is the query's, and there is no row cap on top of it: the
  * retention sweep is the list's ONLY bound, and the studio states that bound in
@@ -788,6 +894,7 @@ function slotRowFacts(
   acceptedImageId: string | null,
   imageStatus: string | null,
   currentBodyReferenceSet: string | null,
+  outputRecoverable: boolean,
 ): ReferenceViewSlotRow {
   return {
     attemptId: row.id,
@@ -804,6 +911,7 @@ function slotRowFacts(
     bodyReferenceSet: row.bodyReferenceSet,
     currentBodyReferenceSet,
     originAttemptId: row.originAttemptId,
+    outputRecoverable,
   };
 }
 
@@ -828,6 +936,7 @@ function unbuiltSummary(view: ReferenceView, eligible: boolean): ReferenceViewSu
     uploadBuilds: [],
     lineageId: null,
     downstreamBuilding: false,
+    recoverable: false,
   };
 }
 
@@ -843,6 +952,8 @@ function unbuiltSummary(view: ReferenceView, eligible: boolean): ReferenceViewSu
 function projectSheet(input: {
   bySlot: ReadonlyMap<string, ReferenceViewRow>;
   statuses: ReadonlyMap<string, string>;
+  /** The failed rows' linked assets that still offer a paid output (`readOfferedOutputs`). */
+  offered: ReadonlySet<string>;
   acceptedImageId: string | null;
   eligible: ReadonlySet<string>;
   /** Each view's body-image set now — what its rendered row is compared against. */
@@ -853,10 +964,11 @@ function projectSheet(input: {
   const facts: ReferenceViewSlotFacts[] = allReferenceViews().map((view) => {
     const row = input.bySlot.get(slotKey(view));
     const imageStatus = row === undefined || row.imageId === null ? null : (input.statuses.get(row.imageId) ?? null);
+    const outputRecoverable = row !== undefined && row.status === "failed" && row.imageId !== null && input.offered.has(row.imageId);
     return {
       view,
       eligible: input.eligible.has(slotKey(view)),
-      row: row === undefined ? null : slotRowFacts(row, input.acceptedImageId, imageStatus, input.bodySetFor(view)),
+      row: row === undefined ? null : slotRowFacts(row, input.acceptedImageId, imageStatus, input.bodySetFor(view), outputRecoverable),
     };
   });
   const projected = projectReferenceViewSlots(facts);
@@ -873,8 +985,11 @@ function projectSheet(input: {
       feedback: row === undefined ? null : parseOrNull(referenceViewFeedbackSchema, row.feedback),
       // The asset id rides even on a stale or rejected row: the studio shows the
       // owner what it is calling stale, which is the difference between a state
-      // they can act on and one they have to take on faith.
-      imageId: row?.imageId ?? null,
+      // they can act on and one they have to take on faith. Never on a FAILED
+      // row, whatever it projects: its link is its failed render's own row,
+      // kept only so a paid output can be recovered, and nothing may draw or
+      // consume it.
+      imageId: row === undefined || row.status === "failed" ? null : row.imageId,
       method: row?.method ?? null,
       reviewedAt: row?.reviewedAt ? row.reviewedAt.toISOString() : null,
       failureCode: row?.failureCode ?? null,
@@ -894,6 +1009,7 @@ function projectSheet(input: {
       uploadBuilds: slot.eligible ? referenceViewBuildsOnApproval(facts, { view: slot.view, attemptId: null }) : [],
       lineageId: slot.row === null ? null : referenceViewLineageId(slot.row),
       downstreamBuilding: referenceViewDescendantBusy(slot.view, input.building),
+      recoverable: projection.recoverable,
     };
   });
 }
@@ -929,6 +1045,7 @@ export async function getReferenceViewSet(
 
   const rows = await currentReferenceViewRows(characterId, reader);
   const statuses = await readViewImageStatuses(rows, reader);
+  const offered = await readOfferedOutputs(rows, ownerId, reader);
 
   const bySlot = new Map<string, ReferenceViewRow>();
   for (const row of rows) {
@@ -963,6 +1080,7 @@ export async function getReferenceViewSet(
     views: projectSheet({
       bySlot,
       statuses,
+      offered,
       acceptedImageId: accepted,
       eligible: eligibleSlots,
       bodySetFor: character.bodySetFor,
@@ -1347,6 +1465,14 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
  * is a `bare` view a provider's moderation refused, and the row records the
  * refusal so the studio can offer an upload instead. The row stays current —
  * there is nothing better to be current — and a regenerate makes a new one.
+ *
+ * The row keeps its failed render's own images row as its `image_id`, with the
+ * upstream lineage that render actually sent — exactly what
+ * `finalizeReferenceView` would have recorded — because a render can succeed
+ * and be billed and still fail its download, and that failed row is what
+ * offers the paid output for recovery (`recoverable`). The sheet never draws or
+ * consumes a failed row; the offer ends when retention deletes that images row
+ * and the foreign key nulls the link.
  */
 export async function failReferenceView(input: {
   jobId: string;
@@ -1355,6 +1481,10 @@ export async function failReferenceView(input: {
   ownerId: string;
   failureCode: string;
   failureMessage: string;
+  /** The failed render's own images row (`runImagePipeline`'s `imageId`). */
+  imageId: string;
+  /** The upstream lineage the render actually SENT, or null when it sent none. */
+  upstreamViewId: string | null;
 }): Promise<"failed" | "fenced"> {
   return withReferenceViewLock(input.characterId, async (tx) => {
     const ownedLease = await liveLeaseForAttempt(tx, input);
@@ -1363,7 +1493,8 @@ export async function failReferenceView(input: {
       .update(characterReferenceViews)
       .set({
         status: "failed",
-        imageId: null,
+        imageId: input.imageId,
+        upstreamViewId: input.upstreamViewId,
         failureCode: input.failureCode,
         failureMessage: input.failureMessage.slice(0, 500),
       })
@@ -1548,6 +1679,340 @@ export async function restoreReferenceView(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Recovering a failed render's paid output
+// ---------------------------------------------------------------------------
+
+/**
+ * What a recovery answers (`recoverReferenceView`). `unavailable` is transient —
+ * the offer stands and the owner may try again; `expired` means the paid
+ * output is gone for good and the offer is withdrawn.
+ */
+export type RecoverReferenceViewResult =
+  | { status: "recovered"; view: ReferenceViewSummary }
+  | { status: ReferenceViewWriteRefusal };
+
+/** A recovery the pre-read admits: the failed attempt, its failed render's row, and the output to fetch. */
+export type ReferenceViewRecoveryRead =
+  | { readonly ok: true; readonly attempt: ReferenceViewRow; readonly asset: ImageRow; readonly output: ReferenceViewPaidOutput }
+  | { readonly ok: false; readonly refusal: ReferenceViewWriteRefusal };
+
+/**
+ * Every check a recovery makes before it spends a download, outside any lock —
+ * restoration's pre-read, for a failed attempt. In order: the owned character
+ * has an accepted portrait, the slot is in its plan, the slot's current row is
+ * this attempt and still `failed`, nothing is building on the slot or below
+ * it, the failed render's row still offers its paid output and the attempt
+ * still projects `recoverable`, and the accepted portrait's bytes are still the
+ * ones the attempt was rendered from.
+ *
+ * An offer that exists but no longer fits the sheet is `incompatible`; an offer
+ * the provider has shown is gone is `expired`, and so is a link retention has
+ * already nulled — the commit's answer for the same condition, and only a stale
+ * tab can ask, since recovery is offered only on a linked row. A link this
+ * owner-, kind- and entity-scoped read cannot resolve, or a failure with no
+ * paid output, is `unavailable`. The commit re-checks all of it under the
+ * character lock.
+ */
+export async function readReferenceViewRecovery(input: {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+}): Promise<ReferenceViewRecoveryRead> {
+  const { characterId, ownerId, view } = input;
+  const refuse = (refusal: ReferenceViewWriteRefusal): ReferenceViewRecoveryRead => ({ ok: false, refusal });
+  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  if (accepted === undefined || accepted === null) return refuse("not_found");
+  const character = await readReferenceViewCharacter(characterId, ownerId, db());
+  if (character === undefined) return refuse("not_found");
+  if (!planIncludes(character.plan, view)) return refuse("ineligible");
+  // The sheet as an ordinary read projects it: expired leases and lost files
+  // are reconciled first, so the offer is judged against what the studio shows.
+  const set = await getReferenceViewSet(characterId, ownerId);
+  const summary = set.views.find((entry) => sameReferenceView(entry, view));
+  const attempt = await currentReferenceViewRow(characterId, view);
+  if (summary === undefined || attempt === undefined || attempt.id !== input.attemptId ||
+      summary.attemptId !== attempt.id || attempt.status !== "failed") {
+    return refuse("changed");
+  }
+  if (await referenceViewReplacementBusy(characterId, ownerId, view)) return refuse("busy");
+  // Retention deleted the failed render's row and the foreign key nulled the
+  // link: the window has closed, exactly as the commit finds it.
+  if (attempt.imageId === null) return refuse("expired");
+  const [asset] = await db().select().from(images).where(and(
+    eq(images.id, attempt.imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
+    eq(images.entityKind, "character"), eq(images.entityId, characterId),
+  )).limit(1);
+  if (asset === undefined) return refuse("unavailable");
+  const offer = referenceViewOutputOffer(asset);
+  if (offer.state === "withdrawn") return refuse("expired");
+  if (offer.state === "none") return refuse("unavailable");
+  if (!summary.recoverable) return refuse("incompatible");
+  const source = await readAcceptedPortraitSource(characterId, ownerId);
+  if (!source.ok) return refuse(source.reason === "not_found" ? "not_found" : "incompatible");
+  if (source.imageId !== attempt.sourceImageId || source.contentHash !== attempt.sourceContentHash) return refuse("incompatible");
+  return { ok: true, attempt, asset, output: offer.output };
+}
+
+/**
+ * Withdraw a failed render's recovery offer: stamp
+ * {@link REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY} into its meta once the
+ * provider has shown the output can never be fetched, so the sheet stops
+ * offering it. A SQL-side merge scoped to the owner and to a row that is still
+ * `failed`, so it writes that one key and nothing else, and leaves retention's
+ * `failedAt` clock where it was. True when the row took the stamp.
+ */
+export async function withdrawReferenceViewOutputOffer(imageId: string, ownerId: string, at: Date = new Date()): Promise<boolean> {
+  const stamped = await db()
+    .update(images)
+    .set({ meta: mergeMetaSql({ [REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]: at.toISOString() }) })
+    .where(and(
+      eq(images.id, imageId),
+      eq(images.ownerId, ownerId),
+      eq(images.kind, "reference_view"),
+      eq(images.status, "failed"),
+    ))
+    .returning({ id: images.id });
+  return stamped.length > 0;
+}
+
+/**
+ * A recovery's claim on its slot, or why it could not take one.
+ *
+ * A recovery downloads for as long as the provider is slow — minutes, at the
+ * worst moment — and the browser tab that asked is no guard on what another
+ * tab, a reload or another process does meanwhile. So for its whole run a
+ * recovery holds the slot exactly as a build does: a heartbeat-live
+ * `reference_views` job whose payload leases the slot, with the lease's
+ * attempt set to the failed attempt being recovered. Every lease reader sees
+ * it — `claimReferenceViewLeases` (single and batch regenerate),
+ * `referenceViewSlotBusy`, `referenceViewReplacementBusy` (upload,
+ * restoration, another recovery) and the sheet's `building` — and answers
+ * `busy`. It lives as long as its process beats it (`JOB_HEARTBEAT_INTERVAL_MS`)
+ * whatever happens to the client, and it lapses within `JOB_STALE_MS` of the
+ * process dying, which leaves the failed attempt and its offer exactly as they
+ * were. The leased row is `failed`, never `pending`, so lease reconciliation
+ * and the build's own finalize and fail fencing never act on it.
+ */
+export type ReferenceViewRecoveryClaim =
+  | { readonly ok: true; readonly jobId: string }
+  | { readonly ok: false; readonly refusal: "changed" | "busy" | "unavailable" };
+
+/**
+ * Take the slot for one recovery, under the character lock: the slot's current
+ * row must still be this failed attempt (`changed` otherwise), and nothing may
+ * be building on the slot or below it (`busy`) — the pre-read's checks, made
+ * again where they cannot race. The claim is free: no admission and no budget,
+ * and it is not counted in through the per-user job cap, though while it is
+ * live it is in-flight work for the cap's own count.
+ */
+export async function claimReferenceViewRecovery(input: {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+}): Promise<ReferenceViewRecoveryClaim> {
+  const { characterId, ownerId, view } = input;
+  return withReferenceViewLock<ReferenceViewRecoveryClaim>(characterId, async (tx) => {
+    const current = await currentReferenceViewRow(characterId, view, tx);
+    if (current === undefined || current.id !== input.attemptId || current.status !== "failed") {
+      return { ok: false, refusal: "changed" };
+    }
+    if (await referenceViewReplacementBusy(characterId, ownerId, view, tx)) return { ok: false, refusal: "busy" };
+    const now = new Date();
+    const [job] = await tx
+      .insert(jobs)
+      .values({
+        ownerId,
+        type: "reference_views",
+        status: "running",
+        attempts: 1,
+        startedAt: now,
+        heartbeatAt: now,
+        payload: {
+          characterId,
+          targets: [slotKey(view)],
+          leases: [{ angle: view.angle, wardrobe: view.wardrobe, attemptId: input.attemptId }],
+          // The character media-jobs read lists this attempt, with its image
+          // once the recovery has installed one.
+          referenceViewAttemptIds: [input.attemptId],
+          recovery: true,
+        },
+      })
+      .returning({ id: jobs.id });
+    return job === undefined ? { ok: false, refusal: "unavailable" } : { ok: true, jobId: job.id };
+  });
+}
+
+/** One heartbeat on a recovery's claim, while and only while it is still running. Never throws. */
+export async function beatReferenceViewRecoveryClaim(jobId: string, at: Date = new Date()): Promise<boolean> {
+  try {
+    const beat = await db()
+      .update(jobs)
+      .set({ heartbeatAt: at })
+      .where(and(eq(jobs.id, jobId), eq(jobs.type, "reference_views"), eq(jobs.status, "running")))
+      .returning({ id: jobs.id });
+    return beat.length > 0;
+  } catch {
+    // Heartbeats are best-effort: a claim the database stops taking lapses
+    // within JOB_STALE_MS, as it would had the process died.
+    return false;
+  }
+}
+
+/**
+ * How a recovery's claim settles. A recovery that ended in a refusal settles
+ * `done` with nothing built and the refusal's diagnostic code, the way a build
+ * that rendered nothing settles; one that threw settles `failed` with its text.
+ */
+export type ReferenceViewRecoveryClaimSettlement =
+  | { readonly recovered: true }
+  | { readonly recovered: false; readonly code: string | null; readonly error: string | null };
+
+/** Settle a claim on the caller's connection: its lease goes, and the job reads as finished. */
+async function settleRecoveryClaim(
+  executor: ReferenceViewExecutor,
+  jobId: string,
+  settlement: ReferenceViewRecoveryClaimSettlement,
+): Promise<void> {
+  const outcome = settlement.recovered
+    ? { leases: [], planned: 1, built: 1, failed: 0 }
+    : { leases: [], planned: 1, built: 0, failed: 1, ...(settlement.code === null ? {} : { code: settlement.code }) };
+  const error = settlement.recovered ? null : settlement.error;
+  await executor
+    .update(jobs)
+    .set({
+      status: error === null ? "done" : "failed",
+      finishedAt: new Date(),
+      payload: sql`${jobs.payload} || ${JSON.stringify(outcome)}::jsonb`,
+      ...(error === null ? {} : { error: error.slice(0, 500) }),
+    })
+    .where(and(eq(jobs.id, jobId), eq(jobs.type, "reference_views"), eq(jobs.status, "running")));
+}
+
+/**
+ * Release a recovery's claim after any end but an installed one — the install
+ * releases its own claim in the transaction that installs. Guarded on a claim
+ * still running, so releasing twice changes nothing.
+ */
+export async function releaseReferenceViewRecoveryClaim(
+  jobId: string,
+  settlement: ReferenceViewRecoveryClaimSettlement,
+): Promise<void> {
+  await settleRecoveryClaim(db(), jobId, settlement);
+}
+
+export interface InstallRecoveredReferenceViewInput {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+  /** The recovery's own claim on the slot (`claimReferenceViewRecovery`), which must still be live. */
+  claimJobId: string;
+  /** The failed render's row the output was fetched for — the offer the attempt must still link. */
+  failedImageId: string;
+  /** The pending copy holding the recovered bytes. */
+  copyId: string;
+  /** What writing those bytes recorded — `saveImageBuffer`'s file facts. */
+  written: WrittenImageInfo;
+}
+
+/**
+ * Install a recovered output as the SAME attempt, under the character lock:
+ * the failed row goes `ready`, unreviewed, rendered, its failure cleared and
+ * its recorded upstream and body-image set untouched, pointing at the copy —
+ * which goes `ready` in the same transaction. Restoration's commit, for a
+ * failed attempt.
+ *
+ * Every pre-read check is made again here: the owner, the accepted portrait's
+ * id and bytes, the plan, the current attempt still this one and still failed,
+ * the recovery's own claim still live, nothing else building on the slot or
+ * below it, the generation version, the upstream slot's approved lineage, the
+ * body-image set, and the failed render's row still linked. A link that is
+ * gone means retention deleted that row and the foreign key nulled it: the
+ * window closed while the bytes were in flight, so the answer is `expired`. A
+ * claim that lapsed means other writers may already have been admitted to the
+ * slot, so nothing is installed and the offer stands (`unavailable`).
+ *
+ * The claim is released in the same transaction that installs, so the slot
+ * never reads free with the failed attempt still current. A refusal leaves the
+ * claim to the caller, which releases it after every other end.
+ *
+ * The review revision moves on, because the attempt now shows an image a
+ * viewer of the failed tile never saw; a verdict sent against the failure is
+ * refused as `changed`. Nothing here deletes anything — the caller compensates
+ * a copy this refuses.
+ */
+export async function installRecoveredReferenceView(input: InstallRecoveredReferenceViewInput): Promise<RecoverReferenceViewResult> {
+  const { characterId, ownerId, view } = input;
+  return withReferenceViewLock<RecoverReferenceViewResult>(characterId, async (tx) => {
+    const source = await readAcceptedPortraitSource(characterId, ownerId, tx);
+    if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "incompatible" };
+    const character = await readReferenceViewCharacter(characterId, ownerId, tx);
+    if (character === undefined) return { status: "not_found" };
+    if (!planIncludes(character.plan, view)) return { status: "ineligible" };
+    const current = await currentReferenceViewRow(characterId, view, tx);
+    if (current === undefined || current.id !== input.attemptId || current.status !== "failed") return { status: "changed" };
+    const now = new Date();
+    const claim = await lockLiveReferenceViewLeaseJob(tx, { characterId, ownerId, jobId: input.claimJobId }, now);
+    const claimed = claim !== null && payloadLeases(claim.payload).some((lease) =>
+      slotKey(lease) === slotKey(view) && lease.attemptId === input.attemptId);
+    if (!claimed) return { status: "unavailable" };
+    if (await referenceViewReplacementBusy(characterId, ownerId, view, tx, now, input.claimJobId)) return { status: "busy" };
+    if (current.sourceImageId !== source.imageId || current.sourceContentHash !== source.contentHash ||
+        current.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
+        referenceViewBodySetMoved({
+          method: "rendered", bodyReferenceSet: current.bodyReferenceSet, currentBodyReferenceSet: character.bodySetFor(view),
+        })) {
+      return { status: "incompatible" };
+    }
+    if (current.upstreamViewId !== null &&
+        approvedUpstreamLineageId(await getReferenceViewSet(characterId, ownerId, undefined, tx), view) !== current.upstreamViewId) {
+      return { status: "incompatible" };
+    }
+    if (current.imageId === null) return { status: "expired" };
+    if (current.imageId !== input.failedImageId) return { status: "changed" };
+
+    const [updated] = await tx
+      .update(characterReferenceViews)
+      .set({
+        status: "ready",
+        imageId: input.copyId,
+        method: "rendered",
+        failureCode: null,
+        failureMessage: null,
+        verdict: null,
+        reviewedByUserId: null,
+        reviewedAt: null,
+        reviewRevision: current.reviewRevision + 1,
+      })
+      .where(and(
+        eq(characterReferenceViews.id, current.id),
+        eq(characterReferenceViews.current, true),
+        eq(characterReferenceViews.status, "failed"),
+      ))
+      .returning({ id: characterReferenceViews.id });
+    if (!updated) return { status: "changed" };
+    // The copy becomes `ready` exactly as `saveImageBuffer` makes a render
+    // ready: its byte count, the file facts the write recorded, and none of the
+    // failure or lease keys a ready row never carries.
+    await tx
+      .update(images)
+      .set({
+        status: "ready",
+        bytes: input.written.bytes,
+        meta: mergeMetaSql(
+          { width: input.written.width, height: input.written.height, bytes: input.written.bytes },
+          READY_RETIRED_META_KEYS,
+        ),
+      })
+      .where(and(eq(images.id, input.copyId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
+    await settleRecoveryClaim(tx, input.claimJobId, { recovered: true });
+    return { status: "recovered", view: await slotSummaryInTransaction(tx, characterId, ownerId, view) };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Which slots want building
 // ---------------------------------------------------------------------------
 
@@ -1559,7 +2024,8 @@ export async function restoreReferenceView(input: {
  *
  * Deliberately NOT `rejected` — the owner said no to that view, and a bulk build
  * must not quietly re-render something they turned down. A rejected slot is
- * rebuilt one at a time, through its own regenerate.
+ * rebuilt one at a time, through its own regenerate. Nor a `recoverable` failed
+ * slot: its render was paid for, and recovery brings its image back for free.
  */
 export function referenceViewsToRebuild(
   set: ReferenceViewSetSummary,
