@@ -139,6 +139,8 @@ export async function prepareChatTurnGuidance(args: {
   // it — and the stop transitions above are a fold over durable rows the retake
   // prunes, so they reproduce with everything else.
   let physicalGuidanceLines: readonly string[] = [];
+  /** Did the build throw (#637 `physical_guidance` coverage: nothing reached the narrator)? */
+  let physicalGuidanceFailed = false;
   if ((physicalConstraintsEnabled && affordanceRead !== null) || permissionStopTransitions.length > 0) {
     try {
       // General constraints take the full affordance path only under their
@@ -192,6 +194,7 @@ export async function prepareChatTurnGuidance(args: {
       });
     } catch (error) {
       log.error("engine.chat", "chat physical guidance failed", { error: describeError(error) });
+      physicalGuidanceFailed = true;
       if (permissionStopTransitions.length > 0) throw error;
     }
   }
@@ -205,14 +208,18 @@ export async function prepareChatTurnGuidance(args: {
   exchangeTrace.coverage(
     !physicalConstraintsEnabled && permissionStopTransitions.length === 0
       ? { family: "physical_guidance", status: "suppressed", reason: "flag_off:CHAT_PHYSICAL_CONSTRAINTS" }
-      : physicalGuidanceLines.length > 0
-        ? {
-            family: "physical_guidance",
-            status: "present",
-            count: physicalGuidanceLines.length,
-            chars: physicalGuidanceLines.join("\n").length,
-          }
-        : { family: "physical_guidance", status: "empty", count: 0 },
+      : physicalGuidanceFailed
+        // Nothing reached the narrator — the build threw and nothing
+        // substituted a fallback value (`physicalGuidanceLines` stayed []).
+        ? { family: "physical_guidance", status: "missing", reason: "exception" }
+        : physicalGuidanceLines.length > 0
+          ? {
+              family: "physical_guidance",
+              status: "present",
+              count: physicalGuidanceLines.length,
+              chars: physicalGuidanceLines.join("\n").length,
+            }
+          : { family: "physical_guidance", status: "empty", count: 0 },
   );
   exchangeTrace.coverage(
     !chatContactActionsEnabled()
@@ -256,6 +263,9 @@ export async function prepareChatTurnGuidance(args: {
   let visualStateBuild: VisualStateShadowBuild | null = null;
   /** The rendered pair the prompt carries. Null unless this chat's switch is on and the selection spoke. */
   let visualStateLines: ChatVisualStateLines | null = null;
+  /** Did the build/render come back empty because something FAILED, not because it legitimately found nothing (#637 `visual_state` coverage)? Only meaningful when `visualStateNarrationOn` — the deferred (shadow-only) arm never reaches coverage through this flag. */
+  let visualStateFailed = false;
+  let visualStateFailureReason: string | undefined;
   // PER CHAT, not per deploy (owner ruling 2026-08-17). Fenced: a failed read
   // answers "off", which leaves the prompt byte-identical to today.
   const visualStateNarrationOn = await chatVisualStateNarrationOn(chatId).catch((error: unknown) => {
@@ -354,10 +364,16 @@ export async function prepareChatTurnGuidance(args: {
             chatId,
             codes: shadowSink.items.map((entry) => entry.code),
           });
+          // #637: nothing reached the narrator — distinct from a legitimate
+          // empty result, which this branch is not (the build itself gave up).
+          visualStateFailed = true;
+          visualStateFailureReason = "degraded_to_nothing";
         }
         return shadow;
       } catch (error) {
         log.error("engine.chat", "visual-state shadow failed", { error: describeError(error) });
+        visualStateFailed = true;
+        visualStateFailureReason = "exception";
         return null;
       }
     };
@@ -384,6 +400,8 @@ export async function prepareChatTurnGuidance(args: {
           // A rendering failure costs the block, never the turn — the same
           // fence the shadow build carries (docs/resilience.md).
           log.error("engine.chat", "visual-state cue render failed", { error: describeError(error) });
+          visualStateFailed = true;
+          visualStateFailureReason = "exception";
         }
       }
     } else {
@@ -405,13 +423,18 @@ export async function prepareChatTurnGuidance(args: {
       ? { family: "visual_state", status: "suppressed", reason: "flag_off:CHAT_VISUAL_STATE_SHADOW" }
       : !visualStateNarrationOn
         ? { family: "visual_state", status: "suppressed", reason: "policy:narration_off" }
-        : visualStateLines && (visualStateLines.constraints.length > 0 || visualStateLines.cues.length > 0)
-          ? {
-              family: "visual_state",
-              status: "present",
-              count: visualStateLines.constraints.length + visualStateLines.cues.length,
-            }
-          : { family: "visual_state", status: "empty", count: 0 },
+        : visualStateFailed
+          // Nothing reached the narrator — a thrown build/render, or the
+          // build legitimately giving up ("degraded to nothing"); neither is
+          // the same as a clean read that found nothing to say.
+          ? { family: "visual_state", status: "missing", reason: visualStateFailureReason ?? "exception" }
+          : visualStateLines && (visualStateLines.constraints.length > 0 || visualStateLines.cues.length > 0)
+            ? {
+                family: "visual_state",
+                status: "present",
+                count: visualStateLines.constraints.length + visualStateLines.cues.length,
+              }
+            : { family: "visual_state", status: "empty", count: 0 },
   );
 
   return { physicalGuidanceLines, visualStateBuild, visualStateLines, visualStateNarrationOn };

@@ -197,6 +197,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
   // deliberately never flush it — flush() is the only place a part is ever
   // written, so an un-flushed trace is, in every observable sense, no trace.
   let exchangeTrace: ExchangeTrace = noopExchangeTrace();
+  // Reassigned inside `prepareExchange` once `collected` exists (its very
+  // first statement), so by the time anything in that function can throw,
+  // this already attaches the delta. The no-op default is only reachable if
+  // the function is never entered at all.
+  let attachDiagnostics: () => void = () => {};
 
   let releaseChatLock!: () => void;
   const chatLockGate = new Promise<void>((resolve) => {
@@ -252,11 +257,14 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     return await prepareExchange();
   } catch (err) {
     // A crash anywhere in preparation (before the stream is even handed back)
-    // still gets exactly one finish() — "failed" with the generic code, since
-    // nothing more specific applies before the narrator even ran — and its
-    // partial trace flushed: the stages recorded so far read back as a real
-    // record of how far the exchange got, and any stage still open when this
-    // flush runs is written provisionally per slice A's design.
+    // still gets its diagnostics attached (#637 — an operator investigating a
+    // crash needs these first), exactly one finish() — "failed" with the
+    // generic code, since nothing more specific applies before the narrator
+    // even ran — and its partial trace flushed: the stages recorded so far
+    // read back as a real record of how far the exchange got, and any stage
+    // still open when this flush runs is written provisionally per slice A's
+    // design.
+    attachDiagnostics();
     exchangeTrace.finish({ kind: "failed", failureCode: "unknown" });
     exchangeTrace.flush();
     releaseChatLock();
@@ -269,6 +277,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // and tees to the caller's observer when one was passed — so threading a sink
     // in adds a reader without changing what the turn records.
     const collected = new DiagnosticCollector();
+    // How many of `collected.items` have already reached the trace (#637) —
+    // a watermark so a path that already attached (settle) and a path that
+    // attaches because settle never ran (streamExchange's `attachDiagnostics`,
+    // or `submitChatMessage`'s own crash catch above) can both call this
+    // freely without ever duplicating an entry.
+    let diagnosticsAttached = 0;
+    attachDiagnostics = () => {
+      if (collected.items.length > diagnosticsAttached) {
+        exchangeTrace.diagnostics(collected.items.slice(diagnosticsAttached));
+        diagnosticsAttached = collected.items.length;
+      }
+    };
     const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
 
     // --- Resolve the exchange's rows per kind -------------------------------
@@ -1164,10 +1184,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // mid-stream makes this a no-op.
         const takes = await currentReplyTakes(chatId, regenerateTarget.id);
         if (takes === null) {
-          // row deleted mid-stream: close out the trace honestly rather than
-          // leaving `reply.persist` open for the catch-all flush to guess at.
-          replyPersistStage.end({ status: "skipped", reason: "policy:row_deleted_mid_stream" });
-          exchangeTrace.diagnostics(collected.items);
+          // row deleted mid-stream: the reply never actually persisted, so
+          // this is a genuine failure, not a deliberate skip — the derived
+          // outcome must not read back "ok" over an unpersisted reply.
+          replyPersistStage.end({ status: "failed", reason: "row_deleted_mid_stream" });
+          attachDiagnostics();
           exchangeTrace.flush();
           return;
         }
@@ -1190,6 +1211,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 actionBeat: replyMeta.actionBeat,
                 narratorRun: replyMeta.narratorRun,
                 stopped: replyMeta.stopped,
+                // #637: a regenerate re-derives the trace key too — omitting
+                // it would leave the REPLACED take's traceId on the row,
+                // naming an exchange that no longer wrote what's displayed.
+                traceId: replyMeta.traceId,
                 // Row-TYPE markers this render contradicts: the legacy lane wrote the
                 // prose now on the row, so it is neither a successor turn nor a world
                 // beat, and leaving either marker would render a normal reply as a
@@ -1260,11 +1285,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             ...(player.profile === undefined ? {} : { playerPersona: player.profile }),
             scene: scenario.scene,
             sink,
-            // Settle-phase interface for slice B2 (#637): will not type-check
-            // until B2 adds the field to its input type — expected.
+            // #637: correlates this leg's own telemetry with the exchange trace.
             traceId: exchangeTrace.traceId,
           });
-          npcBeginStage.end({ status: npcSceneDecision !== null ? "success" : "skipped" });
+          // `beginChatNpcSceneDecision` always returns a handle (it reuses an
+          // existing envelope or launches the classifier); a throw is the only
+          // failure, handled below.
+          npcBeginStage.end({ status: "success" });
         } catch (error) {
           log.error("engine.chat", "npc scene decision launch failed", { error: describeError(error) });
           npcBeginStage.end({ status: "degraded", reason: "exception", detail: describeError(error) });
@@ -1337,12 +1364,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               })),
             ],
             sink,
-            // Settle-phase interface for slice B2 (#637): will not type-check
-            // until B2 adds the field to its input type — expected.
+            // #637: correlates this leg's own telemetry with the exchange trace.
             traceId: exchangeTrace.traceId,
           }),
         );
-        exchangeTrace.diagnostics(collected.items);
+        attachDiagnostics();
         exchangeTrace.flush();
         return;
       }
@@ -1478,8 +1504,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 .map((o) => ({ groupId: o.memoryGroupId, characterId: o.characterId }))
             : undefined,
           sink,
-          // Settle-phase interface for slice B2 (#637): will not type-check
-          // until B2 adds the field to its input type — expected.
+          // #637: correlates this leg's own telemetry with the exchange trace.
           traceId: exchangeTrace.traceId,
         }));
         // The exchange has committed (`finalizeChatState` writes the rollback
@@ -1508,8 +1533,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           selfieTargetOther,
           referencedOthers,
           finalized,
-          // Settle-phase interface for slice B2 (#637): will not type-check
-          // until B2 adds the field to its input type — expected.
+          // #637: correlates this leg's own telemetry with the exchange trace.
           traceId: exchangeTrace.traceId,
         }));
 
@@ -1681,8 +1705,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                     : { currentAttemptContactId: currentContactAttempt.contactId }),
                 }),
             sink,
-            // Settle-phase interface for slice B2 (#637): will not type-check
-            // until B2 adds the field to its input type — expected.
+            // #637: correlates this leg's own telemetry with the exchange trace.
             traceId: exchangeTrace.traceId,
           }),
         );
@@ -1708,7 +1731,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // The coordinator's own diagnostic record, handed to the trace (#637) —
       // on BOTH the success and failure path above, since this runs after
       // either outcome. The existing `log.info` stays untouched.
-      exchangeTrace.diagnostics(collected.items);
+      attachDiagnostics();
       // "End of settle" flush (#637) — the common path's end; the opening
       // beat's own early return above flushes itself the same way.
       exchangeTrace.flush();
@@ -1731,6 +1754,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // The coordinator owns the lock; the stream releases it on every terminal path.
         release: releaseChatLock,
         exchangeTrace,
+        // #637: attach the diagnostics collected so far before `finish()`
+        // when settle never runs (no-text, length-stub, zero-text provider
+        // error) — the watermark above means this is also safe to call when
+        // settle already attached them.
+        attachDiagnostics,
       }),
     };
   }

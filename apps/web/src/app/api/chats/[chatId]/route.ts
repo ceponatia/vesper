@@ -462,10 +462,9 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
             phase: "post_turn",
             status: jobId ? "success" : "skipped",
             // `null` conflates three causes this call site cannot tell apart:
-            // a dedupe against a live job (scene/queue.ts:109), the
-            // concurrency cap (:415), or a caught queue failure (:423) —
-            // "not_enqueued" is the honest, non-specific code rather than
-            // guessing which one actually happened.
+            // a dedupe against a live job, the concurrency cap, or a caught
+            // queue failure — "not_enqueued" is the honest, non-specific code
+            // rather than guessing which one actually happened.
             ...(jobId === null ? { reason: "not_enqueued" } : { refs: { jobId } }),
           });
           exchangeTrace.flush();
@@ -489,10 +488,9 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
             phase: "post_turn",
             status: jobId ? "success" : "skipped",
             // `null` conflates three causes this call site cannot tell apart:
-            // a dedupe against a live job (scene/queue.ts:109), the
-            // concurrency cap (:415), or a caught queue failure (:423) —
-            // "not_enqueued" is the honest, non-specific code rather than
-            // guessing which one actually happened.
+            // a dedupe against a live job, the concurrency cap, or a caught
+            // queue failure — "not_enqueued" is the honest, non-specific code
+            // rather than guessing which one actually happened.
             ...(jobId === null ? { reason: "not_enqueued" } : { refs: { jobId } }),
           });
           exchangeTrace.flush();
