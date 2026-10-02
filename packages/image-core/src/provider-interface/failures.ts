@@ -67,7 +67,7 @@ const BILLING = /insufficient credit|payment required|\b402\b|billing/;
  */
 const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
 /**
- * The narrower disposition set {@link declaresSpentProviderWork} tests --
+ * The narrower disposition set {@link declaresSpentProviderWork} tests —
  * see that function's doc comment for why it differs from the predicate
  * built on {@link NON_TRANSIENT_DISPOSITION} above.
  */
