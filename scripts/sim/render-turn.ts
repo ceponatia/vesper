@@ -12,7 +12,7 @@ import {
 /**
  * R2: one full narrated turn against the internal
  * test world — prepare the turn (deterministic), render the committed cut
- * with the LIVE narrator (Aion 3.0 default; pass --model <id> to override),
+ * with the LIVE narrator (the chat default; pass --model <id> to override),
  * print prose + metrics. Runs locally or on Fly over SSH. With no API key
  * (demo mode) the render degrades to the deterministic fallback and says so.
  */

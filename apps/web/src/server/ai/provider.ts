@@ -125,9 +125,15 @@ export type OpenRouterRouting = Record<string, JSONValue>;
  *   default — it suppresses the residual "hi"-beat doting/errand-invention at no quality
  *   cost. (`enabled:false` stays **off the table** — the AionLabs endpoint rejects it,
  *   "Reasoning is mandatory for this endpoint"; all 12 `off` eval cells died.)
- * - **GLM 5.2** (chat default) → `effort:"low"`: Run 2's sharper read put `low` first
- *   (Borda 61%), default a close second, `off` worst. (`off` is the deterministic *latency*
- *   win — sub-500ms TTFT — if chat first-token latency ever outranks the marginal quality.)
+ * - **GLM 5.2** (former chat default) → `effort:"low"`: Run 2's sharper read put `low`
+ *   first (Borda 61%), default a close second, `off` worst. (`off` is the deterministic
+ *   *latency* win — sub-500ms TTFT — if chat first-token latency ever outranks the
+ *   marginal quality.)
+ * - **Aion 3.5** (chat default) → `effort:"medium"`: owner ruling 2026-10-02 (#699).
+ *   Reasoning is mandatory on the AionLabs endpoints, so the knob sets its depth rather
+ *   than turning it off. Unlike Aion 3.0, Aion 3.5's OpenRouter record documents
+ *   `reasoning` AND `reasoning_effort` on its one endpoint (`aion-labs/aion-3.5-20260923`),
+ *   so this is a documented parameter rather than one carried over by family resemblance.
  *
  * Applies to BOTH lanes (session + chat) since both build options here, so a model gets
  * its knob wherever it narrates. Models not listed send no reasoning option (model default).
@@ -140,6 +146,7 @@ const NARRATOR_REASONING: Readonly<Record<string, JSONValue>> = {
   // Do NOT re-add a reasoning knob for Aion 3.0 without first verifying the model actually
   // accepts the reasoning param (a rejected/ignored knob can stall the stream) and running
   // its own behavioral eval — until then it sends the model default (no reasoning option).
+  "aion-labs/aion-3.5": { effort: "medium" },
   "z-ai/glm-5.2": { effort: "low" },
 };
 
@@ -179,8 +186,8 @@ export function providerRouting(
  * `openrouter` envelope. Returns undefined when nothing applies, so callers can omit
  * `providerOptions` entirely rather than send an empty object.
  *
- * The reasoning knob is per-model and eval-ruled (NARRATOR_REASONING above — Aion
- * `effort:low`, GLM `effort:low`). Note `effort:"minimal"` was a
+ * The reasoning knob is per-model and ruled per model (NARRATOR_REASONING above — Aion 2.0
+ * `effort:low`, Aion 3.5 `effort:medium`, GLM `effort:low`). Note `effort:"minimal"` was a
  * no-op on Aion in a 2026-06-21 probe; the 2026-06-28 behavioral eval (Run 2) measured
  * *output* rather than reasoning-token usage and found `effort:"low"` a positive signal.
  */

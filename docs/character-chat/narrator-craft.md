@@ -130,8 +130,9 @@ wording (no extra LLM call): the **shape profiles** and **proportionate-reaction
     per-lane default**. A **dev-only toggle** (`POST /api/dev/narration-shape`, 404 in
     production) force-overrides without a restart.
   - **Per-model reasoning knob** (`NARRATOR_REASONING`, applied by
-    `narrativeProviderOptions`): Aion `effort:low`, unlisted narrators send no reasoning
-    option (Aion rejects `enabled:false`).
+    `narrativeProviderOptions`): Aion 2.0 and GLM 5.2 `effort:low`, Aion 3.5 (the chat
+    default) `effort:medium`; unlisted narrators, Aion 3.0 included, send no reasoning
+    option. Aion endpoints mandate reasoning and reject `enabled:false`.
 - **Per-shape chat length story** (`chatLengthStory`): the length sentence is keyed to the
   active shape — `concise_immersive` keeps the three-paragraph baseline;
   `aggressive_concise` gets "length follows the beat — one line of dialogue plus an action

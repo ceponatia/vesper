@@ -49,6 +49,12 @@ export const NARRATIVE_MODELS: readonly NarrativeModelOption[] = [
   // ## The proven rows — the two lane defaults and the frontier/general models
   // that have carried narration to date. Order matters only here: the defaults
   // sit first so the dropdown opens on familiar ground.
+  // Aion 3.5 is the chat default (owner ruling 2026-10-02, #699). Same OpenRouter
+  // lane and lab as Aion 3.0 — a GLM-based multi-model RP system on one AionLabs
+  // endpoint, 262K context, $3/$6 per M — and the first Aion whose OpenRouter record
+  // documents `reasoning_effort`. Its reasoning knob lives with the other narrators'
+  // in `NARRATOR_REASONING` (server/ai/provider.ts).
+  { id: "aion-labs/aion-3.5", label: "Aion 3.5" },
   { id: "aion-labs/aion-2.0", label: "Aion 2.0" },
   // Aion 3.0 additionally advertises OpenRouter `tools`/`tool_choice` +
   // `response_format` — a candidate tool/agent model to test later (see
@@ -231,11 +237,15 @@ export const DEFAULT_NARRATIVE_MODEL_ID = "aion-labs/aion-2.0";
 /**
  * The narrator the **character-chat** tab defaults to (the Chat-tab model
  * dropdown's initial value). Kept separate from the session narrator default
- * above so the two surfaces can diverge: chat runs Aion 3.0 (owner ruling
- * 2026-07-10, replacing GLM 5.2), while sessions stay on Aion 2.0. Must be an
- * id in {@link NARRATIVE_MODELS} so the dropdown shows it selected.
+ * above so the two surfaces can diverge: chat runs Aion 3.5 (owner ruling
+ * 2026-10-02, #699, replacing Aion 3.0), while the session default stays on
+ * Aion 2.0. Must be an id in {@link NARRATIVE_MODELS} so the dropdown shows it
+ * selected.
+ *
+ * A stored pick outranks this: a character or chat that saved another curated id
+ * keeps narrating on it, so moving the default changes new and unset picks only.
  */
-export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "aion-labs/aion-3.0";
+export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "aion-labs/aion-3.5";
 
 /**
  * Resolve a persisted/over-the-wire character-chat model id to a curated one: a
