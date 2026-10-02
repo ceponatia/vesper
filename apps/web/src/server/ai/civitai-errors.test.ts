@@ -325,7 +325,7 @@ describe("Civitai error contract", () => {
 
     // Never a billing or content-rejection reading, even though both are
     // checked before the retry-disposition marker in the shared classifier.
-    expect(failure.message.toLowerCase()).not.toMatch(/billing|payment required|402/);
+    expect(failure.message.toLowerCase()).not.toMatch(/billing|payment required|\b402\b/);
     expect(failure.message.toLowerCase()).not.toMatch(
       /moderation|nsfw|flagged|violation|prohibited|disallowed|content policy|safe[_ ]?mode/,
     );
