@@ -1568,10 +1568,10 @@ describe("Civitai Klein v2 transport", () => {
         const whatif = new URL(href).searchParams.get("whatif");
         if (whatif === "false") paidPosts += 1;
         return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output" : "submit-output", whatif === "true" ? "unassigned" : "succeeded", [{
-          id: "output-secret.jpg", available: true,
+          id: "output-undelivered.jpg", available: true,
         }]));
       }
-      if (href === blobUrl("output-secret.jpg")) {
+      if (href === blobUrl("output-undelivered.jpg")) {
         outputReads += 1;
         authorizations.push(new Headers(init?.headers).get("authorization"));
         throw new Error("provider token=secret signed-url=private");
@@ -1589,13 +1589,13 @@ describe("Civitai Klein v2 transport", () => {
       "Bearer civitai-test-token", "Bearer civitai-test-token", "Bearer civitai-test-token", "Bearer civitai-test-token",
     ]);
     expect(result).toMatchObject({
-      ok: false, predictionId: "submit-output", undeliveredOutputId: "output-secret.jpg",
+      ok: false, predictionId: "submit-output", undeliveredOutputId: "output-undelivered.jpg",
       error: expect.stringContaining("civitai_output_undelivered; retry=reconcile"),
     });
     if (result.ok) throw new Error("expected the output download to end as undelivered");
     expect(result.error).not.toContain("secret");
     expect(result.error).not.toContain("private");
-    expect(result.error).toContain("output-secret.jpg");
+    expect(result.error).toContain("output-undelivered.jpg");
   });
 
   it.each([
