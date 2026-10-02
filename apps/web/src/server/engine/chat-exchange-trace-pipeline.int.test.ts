@@ -66,9 +66,8 @@ async function drive(chat: ChatSeat, content: string): Promise<void> {
     content,
   });
   if (!result.ok) throw new Error(`exchange rejected: ${result.code}`);
-  for await (const _chunk of result.stream) {
-    // drain only — the persisted reply and its trace are read back separately.
-  }
+  // Drain only — the persisted reply and its trace are read back separately.
+  for await (const chunk of result.stream) void chunk;
 }
 
 /** The newest assistant row's parsed meta, for this chat. */

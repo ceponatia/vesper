@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startExchangeTrace } from "@/server/engine/chat-exchange-trace";
-import { recordAgentFailure, recordAgentRun } from "@/server/ai/agent-failures";
+import { startExchangeTrace } from "@/server/engine";
+import { recordAgentFailure, recordAgentRun } from "@/server/ai";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 import { characterChats, db, events } from "../db";
 import { loadChatExchangeTraces } from "./chat-exchange-trace-log";
