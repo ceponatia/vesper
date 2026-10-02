@@ -334,13 +334,14 @@ describe.skipIf(!ready)("owner-scoped character media jobs", () => {
     const [readyImage, failedImage, supersededFailedImage] = assets;
     if (!readyImage || !failedImage || !supersededFailedImage) throw new Error("failed to seed attempt images");
 
+    const characterId = character.id;
     const attemptRow = (angleId: string, patch: Partial<typeof characterReferenceViews.$inferInsert>) => ({
-      characterId: character.id,
+      ...patch,
+      characterId,
       angleId,
       wardrobe: "clothed",
       sourceContentHash: "b".repeat(64),
       generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
-      ...patch,
     });
     const attempts = await db()
       .insert(characterReferenceViews)
