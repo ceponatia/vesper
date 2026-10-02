@@ -982,7 +982,8 @@ export function ChatConversation({ chatId }: { chatId: string }) {
           scrollRef={scrollRef} contentRef={contentRef} onScroll={onScroll} pinned={pinned} jumpToLatest={jumpToLatest}
           who={who} name={name} rosterNames={rosterNames} avatarImageId={character?.avatarImageId ?? null}
           sending={sending} archived={archived} lastAssistantId={lastAssistantId} capabilities={capabilities}
-          privacyMode={privacyMode} sceneAnchors={sceneAnchors} onEnlargeAvatar={() => setPortraitOpen(true)}
+          privacyMode={privacyMode} sceneAnchors={sceneAnchors} onRecoverScene={() => scenes.reload({ silent: true })}
+          onEnlargeAvatar={() => setPortraitOpen(true)}
           actions={{ editLine, deleteLine, rerun, anotherTake, switchTake, openRemember, markMoment }}
         />
         {/* Right aside: the transcript is a centered
