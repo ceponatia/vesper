@@ -158,6 +158,10 @@ characters unchanged.
   36-43 s, with one workflow succeeding at 390 s. The Image Generator therefore
   plans this lane at the profile ceiling (`MAX_TRIAL_PREDICTION_MS`, 900 s)
   rather than the five-minute default that suits compute-billed providers.
+  When Vesper's own poll budget runs out first, the failure is
+  `civitai_async_timeout` at `workflow_status` with `retry=reconcile`, because
+  the workflow may still finish and bill; a timeout or expiry Civitai itself
+  reports stays `retry=deliberate` at `workflow_terminal`.
 - A failed workflow is auto-refunded by the provider (a debit followed by a
   matching credit, `cost.total: 0`) and carries no diagnostic detail —
   `errors: []`, no jobs, no reason — so `civitai_async_unknown_terminal` is often

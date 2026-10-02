@@ -5,7 +5,7 @@ import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-r
 import { log } from "@/server/log";
 import { civitaiApiToken } from "../images/lora-credentials";
 import { recordPaidRenderOutput } from "./paid-render-output";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiPollDeadlineFailure, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -531,7 +531,10 @@ async function requestJson(
   // silently fall back to a smaller budget than the attempt it repeats.
   const timeoutMs = stage === "preflight" || stage === "submit" ? postTimeoutMs : REQUEST_TIMEOUT_MS;
   for (let attempt = 0; ; attempt += 1) {
-    if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
+    // Only the post-submit workflow-status poll passes a deadline, so running
+    // out of it is Vesper's own poll budget expiring on a workflow that may
+    // still finish — reconcile, never a provider-reported expiry.
+    if (deadline !== undefined && Date.now() >= deadline) throw civitaiPollDeadlineFailure();
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${token}`);
     headers.set("Content-Type", "application/json");
@@ -550,7 +553,7 @@ async function requestJson(
       const failure = civitaiTransportFailure(stage, method === "GET", !retriesLeft, stage === "preflight" && attempt > 0);
       if (retriesLeft) {
         if (await waitForCivitaiRetry(attempt, deadline)) continue;
-        throw civitaiAsyncFailure("expired", ["timeout"]);
+        throw civitaiPollDeadlineFailure();
       }
       throw failure;
     }
@@ -570,7 +573,7 @@ async function requestJson(
       );
       if (retriesLeft) {
         if (await waitForCivitaiRetry(attempt, deadline)) continue;
-        throw civitaiAsyncFailure("expired", ["timeout"]);
+        throw civitaiPollDeadlineFailure();
       }
       throw failure;
     }
@@ -1244,7 +1247,10 @@ export async function runCivitaiLane(
     while (PENDING_STATUSES.has(result.status)) {
       if (result.insufficient === true) throw civitaiInsufficientBuzzFailure();
       if (result.errors.length > 0) throw civitaiAsyncFailure(result.status, result.errors, result.blocked);
-      if (Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
+      // Vesper's own budget, not the provider's verdict: the workflow may
+      // still finish and bill, so this reconciles rather than invites a
+      // replacement (`civitaiPollDeadlineFailure`).
+      if (Date.now() >= deadline) throw civitaiPollDeadlineFailure();
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2000, Math.max(1, deadline - Date.now()))));
       result = parseCivitaiWorkflow(await requestJson(`${WORKFLOWS_URL}/${encodeURIComponent(predictionId)}`,
         { method: "GET" }, token, "workflow_status", deadline));

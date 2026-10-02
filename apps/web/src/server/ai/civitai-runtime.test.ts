@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { civitaiAsyncFailure } from "./civitai-errors";
-import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageModelSchema, type ImageModel } from "@vesper/image-core";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, declaresSpentProviderWork, imageModelSchema, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 
 vi.mock("../images/lora-credentials", () => ({
@@ -595,9 +595,69 @@ describe("Civitai Klein v2 transport", () => {
     expect(statusReads).toBe(14);
     expect(workflowPosts).toBe(2);
     expect(Date.now() - startedAt).toBe(30_000);
-    expect(result).toMatchObject({ ok: false, predictionId: "submit-deadline", error: expect.stringContaining("civitai_async_timeout; retry=deliberate") });
+    // Vesper's own deadline cut the retry short, not a provider verdict: the
+    // billed workflow may still finish, so it reconciles (see below).
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-deadline", error: expect.stringContaining("civitai_async_timeout; retry=reconcile") });
     if (result.ok) throw new Error("expected the expired status retry to time out");
     expect(result.error).not.toContain("secret");
+  });
+
+  /**
+   * PROTECTS: Vesper's OWN poll deadline running out on a submitted, billed
+   * workflow declares `retry=reconcile` at `workflow_status` — Vesper only
+   * stopped watching, and the workflow may still finish and bill (one
+   * measured run succeeded 90 s after a 300 s local deadline). The bad
+   * implementation reports it as the provider's own `retry=deliberate`
+   * expiry, whose disposition suppresses the post-submit reconcile sentence,
+   * so the scene chain's paid stop (`declaresSpentProviderWork`) never fires
+   * and the next rung pays for a second render while the first may still
+   * deliver.
+   */
+  it("reports its own poll deadline on a submitted workflow as reconcile, never as the provider's deliberate expiry", async () => {
+    vi.useFakeTimers();
+    let workflowPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowPosts += 1;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-slow" : "submit-slow", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-slow")) {
+        return Response.json({ id: "submit-slow", status: "processing", steps: [{ $type: "imageGen", input: {}, output: {} }] });
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, { ...request, timeoutMs: 1 });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(workflowPosts).toBe(2);
+    if (result.ok) throw new Error("expected the local poll deadline to end the render");
+    expect(result.predictionId).toBe("submit-slow");
+    expect(result.error).toContain("Civitai workflow status failed (civitai_async_timeout; retry=reconcile)");
+    expect(declaresSpentProviderWork(result.error)).toBe(true);
+  });
+
+  it("keeps a timeout Civitai itself reports as the deliberate terminal expiry", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-expired" : "submit-expired", whatif === "true" ? "unassigned" : "expired"));
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    if (result.ok) throw new Error("expected the provider's expiry to fail the render");
+    expect(result.predictionId).toBe("submit-expired");
+    expect(result.error).toContain("Civitai workflow terminal failed (civitai_async_timeout; retry=deliberate)");
+    expect(declaresSpentProviderWork(result.error)).toBe(false);
   });
 
   it("retries a transient preflight exactly once, then still posts the paid submission only once", async () => {

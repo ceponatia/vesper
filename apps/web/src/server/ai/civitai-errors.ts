@@ -359,6 +359,22 @@ export function civitaiAsyncFailure(
   return new CivitaiError({ code: "civitai_async_unknown_terminal", retry: "deliberate", stage: "workflow_terminal" });
 }
 
+/**
+ * Vesper's OWN poll deadline ran out on a workflow it had already submitted —
+ * distinct from a timeout or expiry Civitai itself reports
+ * ({@link civitaiAsyncFailure}, `retry=deliberate`, stage
+ * `workflow_terminal`). Vesper only stopped watching: abandoning the poll
+ * neither cancels nor refunds the workflow, which may still finish and bill
+ * (one measured run succeeded 90 s after a 300 s local deadline). So the
+ * disposition is `reconcile`, at stage `workflow_status`: refresh the
+ * workflow before deciding whether to replace it, and never start a second
+ * paid render on the assumption that the first is gone — a scene chain stops
+ * here rather than paying for its next rung.
+ */
+export function civitaiPollDeadlineFailure(): CivitaiError {
+  return new CivitaiError({ code: "civitai_async_timeout", retry: "reconcile", stage: "workflow_status" });
+}
+
 /** Keeps only the documented async reason vocabulary used by the retry contract. */
 export function civitaiReasonCodes(value: unknown): string[] {
   if (typeof value === "string") {

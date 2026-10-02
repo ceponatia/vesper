@@ -246,10 +246,15 @@ still deliver (#685). `images.scene_render.paid_attempt_stop` (warn) names the r
 and the provider's own workflow id when one is known, and the failed row's provenance (prompt,
 model, identity references, reference views, program meta) is corrected onto that rung, the same
 way a fallback rung that WINS already replaces the primary rung's reserve-time provenance. Every
-other failure — a preflight refusal, an automatic retry already spent (`retry=deliberate` on a
-failure that never reached the provider), a content rejection, an ordinary transient failure —
-keeps falling through the ladder exactly as before; only a failure that already proves money was
-spent on this specific attempt stops it.
+other failure keeps falling through the ladder exactly as before: a content rejection, an
+ordinary transient failure, and any `retry=deliberate` or `retry=never` answer. Neither of those
+dispositions leaves a workflow that may still deliver: the request never became a paid workflow
+(a refused preflight, an automatic preflight repeat already spent), or Civitai itself ended the
+workflow (failed, canceled, expired, no provider available), or the output can never be fetched.
+Vesper's own poll deadline running out on a submitted workflow is not such an answer: abandoning
+the poll neither cancels nor refunds the workflow, so it reports `civitai_async_timeout` at
+`workflow_status` with `retry=reconcile`, and the chain stops on it. Only a failure whose paid
+work may still deliver stops the ladder.
 
 Every downgrade logs `images.scene_render.provider_fallback` (info, `{from,to,reason}`,
 including the upstream error message); a chain where every rung failed transiently logs

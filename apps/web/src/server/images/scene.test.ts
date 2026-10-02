@@ -222,6 +222,26 @@ describe("executeSceneChain (degradation ladder + reason-keyed retry)", () => {
     expect(paidStop?.context).toMatchObject({ rung: "edit", workflowId: "wf-999" });
   });
 
+  it("Vesper's own poll deadline on a submitted workflow (civitai_async_timeout; retry=reconcile) stops the chain", async () => {
+    // The workflow was billed and may still finish (#687 review): a fallback
+    // here would pay for a second render racing the first.
+    const sink = new DiagnosticCollector();
+    const calls: SceneAttemptId[] = [];
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+      calls.push(id);
+      return failResult(
+        "other",
+        "Civitai workflow status failed (civitai_async_timeout; retry=reconcile). Refresh workflow status before deciding whether to replace it.",
+        "wf-slow",
+      );
+    };
+    const outcome = await executeSceneChain(["multi_edit", "edit"], run, sink);
+    expect(outcome).toBeNull();
+    expect(calls).toEqual(["multi_edit"]);
+    const paidStop = sink.items.find((d) => d.code === "images.scene_render.paid_attempt_stop");
+    expect(paidStop?.context).toMatchObject({ rung: "multi_edit", workflowId: "wf-slow" });
+  });
+
   it("a preflight retry=never refusal is not a paid stop — falls through to the next rung, unchanged", async () => {
     const sink = new DiagnosticCollector();
     const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> =>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyImageFailureMessage, declaresNonAutomaticRetry, isBillingFailureMessage } from "@vesper/image-core";
-import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, declaresSpentProviderWork, isBillingFailureMessage } from "@vesper/image-core";
+import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiPollDeadlineFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 describe("Civitai error contract", () => {
   it("classifies HTTP failures without provider response text", () => {
@@ -265,6 +265,7 @@ describe("Civitai error contract", () => {
       civitaiHttpFailure(503, "workflow_status", true, [], true).message,
       civitaiTransportFailure("workflow_status", true, true).message,
       civitaiAsyncFailure("expired", ["timeout"]).message, // civitai_async_timeout
+      civitaiPollDeadlineFailure().message, // Vesper's own poll deadline
       civitaiAsyncFailure("failed", ["no_provider_available"]).message,
       civitaiAsyncFailure("failed", []).message, // civitai_async_unknown_terminal
       civitaiOutputFailure("civitai_output_http_503", "deliberate").message,
@@ -281,6 +282,21 @@ describe("Civitai error contract", () => {
     for (const message of postSubmitFailures) {
       expect(classifyImageFailureMessage(message), message).not.toBe("transient");
     }
+  });
+
+  /**
+   * PROTECTS: Vesper's own poll deadline expiring on a submitted workflow is
+   * paid-for work that may still deliver (`retry=reconcile`), while a timeout
+   * the provider itself reports is a terminal answer (`retry=deliberate`) — so
+   * only the first stops a scene chain before it pays for its next rung.
+   */
+  it("tells Vesper's own poll deadline (reconcile) from a provider-reported expiry (deliberate)", () => {
+    const local = civitaiPollDeadlineFailure();
+    expect(local).toMatchObject({ code: "civitai_async_timeout", retry: "reconcile", stage: "workflow_status" });
+    expect(declaresSpentProviderWork(local.message)).toBe(true);
+    const provider = civitaiAsyncFailure("expired", ["timeout"]);
+    expect(provider).toMatchObject({ code: "civitai_async_timeout", retry: "deliberate", stage: "workflow_terminal" });
+    expect(declaresSpentProviderWork(provider.message)).toBe(false);
   });
 
   /**
