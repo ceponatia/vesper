@@ -148,9 +148,25 @@ describe.runIf(ready)("the #637 exchange trace, end to end through submitChatMes
     // `meta.traceId` on the persisted reply names exactly this trace.
     expect(trace.traceId).toBe(traceId);
 
-    // The exchange settled cleanly.
+    // The exchange settled cleanly. The outcome is asserted together with every
+    // signal `deriveExchangeOutcome` counts as degradation, so a failure names
+    // the exact stage, coverage family, diagnostic code or correlated row that
+    // degraded this vanilla demo-mode send instead of a bare "degraded".
     expect(trace.finish?.kind).toBe("ok");
-    expect(trace.outcome).toBe("ok");
+    expect({
+      outcome: trace.outcome,
+      stages: trace.stages
+        .filter((s) => s.status === "degraded" || s.status === "failed" || s.status === "retried")
+        .map((s) => `${s.stage}:${s.status}:${s.reason ?? ""}`),
+      coverage: trace.coverage
+        .filter((c) => c.status === "degraded" || c.status === "missing")
+        .map((c) => `${c.family}:${c.status}:${c.reason ?? ""}`),
+      diagnostics: trace.diagnostics
+        .filter((d) => d.severity === "warn" || d.severity === "error")
+        .map((d) => `${d.severity}:${d.code}`),
+      agentFailures: trace.agentFailures.map((f) => `${f.legId}:${f.kind}`),
+      compositionFallbacks: trace.compositionFallbacks.map((f) => `${f.site}:${f.code}`),
+    }).toEqual({ outcome: "ok", stages: [], coverage: [], diagnostics: [], agentFailures: [], compositionFallbacks: [] });
 
     // Coverage for a vanilla send with every optional flag off.
     const coverage = (family: string) => trace.coverage.find((c) => c.family === family);
