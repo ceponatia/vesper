@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   charactersApi,
   imageProfilesApi,
+  ownedImagesApi,
   portraitVariantKindLabel,
   portraitVariantKinds,
   type CharacterPortraitAcceptance,
@@ -12,6 +13,12 @@ import {
 } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
 import { usePollWhile } from "@/components/hooks/use-poll-while";
+import {
+  imageRecoverableHint,
+  imageRecoverActionLabel,
+  imageRecoverFailedTitle,
+  imageRecoveredToastTitle,
+} from "@/components/images/recovery-copy";
 import { AvatarUploadDialog } from "./avatar-upload-dialog";
 import { IdentityReferencePanel } from "./identity-reference-panel";
 import { ReferenceViewsPanel } from "./reference-views-panel";
@@ -192,6 +199,10 @@ export function PortraitStudio({
   // up and the poll armed until the refetch shows the job or its row.
   const [variantQueued, setVariantQueued] = useState(false);
   const [busyImageId, setBusyImageId] = useState<string | null>(null);
+  // Recovery is tracked separately from `busyImageId`: the download retry can
+  // take minutes (the server contract), and only the recovering row's own
+  // controls should wait on it — Promote/Delete on every OTHER row stay live.
+  const [recovering, setRecovering] = useState<ReadonlySet<string>>(new Set());
   const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [acceptingPortrait, setAcceptingPortrait] = useState(false);
@@ -418,6 +429,39 @@ export function PortraitStudio({
     if (!result.ok) {
       toast.push({ title: "Delete failed", description: result.error.message, tone: "error" });
     }
+    portraits.reload({ silent: true });
+  };
+
+  /**
+   * Recover a failed row's already-paid-for render onto its own row — no new
+   * render, no new charge (issue #686). Free of the best-of-two completion
+   * machinery above on purpose: that machinery only ever runs while
+   * `avatarPhase === "generating"`, i.e. for THIS browser tab's own in-flight
+   * request, and a recovery always happens after that request has already
+   * settled (the row has to be `failed` first). The recovered row simply
+   * flips to `ready` in place, carrying the same `meta.request.id` it always
+   * had, so `isAvatarGenerationComplete` and the all-failed toast read it
+   * exactly as they would any other ready row — there is nothing here for
+   * either to re-evaluate. A recovered avatar is never auto-promoted: the
+   * server returns a ready candidate, same as any other variant, and the
+   * owner promotes it with the existing action.
+   */
+  const recoverVariant = async (imageId: string) => {
+    setRecovering((prev) => new Set(prev).add(imageId));
+    const result = await ownedImagesApi.recover(imageId);
+    setRecovering((prev) => {
+      const next = new Set(prev);
+      next.delete(imageId);
+      return next;
+    });
+    if (!result.ok) {
+      toast.push({ title: imageRecoverFailedTitle, description: result.error.message, tone: "error" });
+      // The offer is gone for good — refresh so the tile drops the action
+      // rather than offering a recovery that will only refuse again.
+      if (result.error.code === "expired") portraits.reload({ silent: true });
+      return;
+    }
+    toast.push({ title: imageRecoveredToastTitle, description: "Review it to use it." });
     portraits.reload({ silent: true });
   };
 
@@ -737,9 +781,24 @@ export function PortraitStudio({
                           failed
                         </Tag>
                         <p className="text-xs font-medium text-paper-200">{label} generation failed</p>
-                        <p className="max-h-24 overflow-y-auto text-xs break-words text-paper-400" title={error ?? undefined}>
-                          {error ?? "The image provider returned an error."}
-                        </p>
+                        {img.recoverable ? (
+                          <>
+                            <p className="text-xs leading-relaxed text-paper-400">{imageRecoverableHint}</p>
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              className="self-start"
+                              busy={recovering.has(img.id)}
+                              onClick={() => void recoverVariant(img.id)}
+                            >
+                              {imageRecoverActionLabel}
+                            </Button>
+                          </>
+                        ) : (
+                          <p className="max-h-24 overflow-y-auto text-xs break-words text-paper-400" title={error ?? undefined}>
+                            {error ?? "The image provider returned an error."}
+                          </p>
+                        )}
                         {img.meta?.model ? <p className="text-[11px] break-words text-paper-500">{img.meta.model}</p> : null}
                       </div>
                     ) : (
@@ -780,6 +839,7 @@ export function PortraitStudio({
                           variant="danger"
                           className="touch-target"
                           busy={busyImageId === img.id}
+                          disabled={recovering.has(img.id)}
                           onClick={() => removeVariant(img.id)}
                         >
                           ✕

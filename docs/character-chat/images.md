@@ -89,7 +89,9 @@ The character can send photos back (owner rulings 2026-07-11):
   `meta.flavor: "selfie"` rides the asset so lifecycle is unchanged, and a
   twice-failed render stays a `failed` row rendered in the transcript as a **"Failed"
   placeholder** ("the photo never arrived") whose sent prompt opens in the admin
-  lightbox panel.
+  lightbox panel — or, while the render's paid Civitai output is still recoverable, the
+  same tile with a **Recover image** action in place of that line
+  ([ui/transcript.md](../ui/transcript.md)).
 - **Display**: an anchored image message with the SMS-adjacent treatment (rounded,
   accent-bordered) in the inline moments row; also in the scene strip and Gallery.
 

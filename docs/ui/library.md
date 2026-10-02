@@ -163,7 +163,14 @@ owner can pan, zoom out to preserve the full frame with a chosen backdrop, and c
 **Create a variant** folds the optional pose, outfit, expression, and setting controls.
 The **Portrait history** grid keeps non-canonical avatar attempts and variants visible; failed
 rows render as error cards using `images.meta.error` so provider failures do not vanish after
-polling.
+polling. A failed row whose render was paid for but could not be downloaded is **recoverable**:
+the card reads "Rendered and paid for, but the download failed. Recover it without paying again,"
+with **Recover image** as its primary action in place of the error text, and **Delete** disabled
+while that row's recovery is in flight. A recovered row lands **ready** in place — never
+promoted automatically — so it joins Portrait history exactly like any other candidate, and the
+owner promotes it with the existing action. The same recovery offer and copy
+(`components/images/recovery-copy.ts`) back the reference-view tile above and the chat inline
+scene moments ([transcript.md](transcript.md)).
 
 **Upload image** opens the crop dialog (`avatar-upload-dialog.tsx`): a modal whose helper text
 states the 768×1024 (3:4) target, then lets the user drag to reposition and a slider or scroll to

@@ -30,6 +30,18 @@ Ready scenes anchored to a message render as **inline scene moments** — a thum
 (`SceneMomentRow`, sharing the page's lightbox) under the line they illustrate. Un-anchored scenes
 and those whose anchor dangles stay strip-only.
 
+A **failed** scene joins that row too, but only while its paid Civitai output is still
+**recoverable**: the tile reads "Rendered and paid for, but the download failed. Recover it
+without paying again," with **Recover image** as its own control beside (not nested inside) the
+enlarge-for-details button, and a busy state while that tile's recovery is in flight. A failed
+**selfie** always joins the row, recoverable or not — the "Failed" placeholder
+([../character-chat/images.md](../character-chat/images.md) §Selfies) — and gains the same Recover
+action once it is recoverable. Recovering, or a refusal that reports the offer has lapsed
+(`expired`), refetches the chat's scenes list; the row never starts a second data path to do it.
+The same recovery offer and copy (`components/images/recovery-copy.ts`) also back the portrait
+studio's failed tiles and the reference-view panel's ([library.md](library.md) §The portrait
+studio).
+
 ## World beats
 
 On successor-engine chats, a `MessageBubble` branch renders **world beats**: a muted, centered,
