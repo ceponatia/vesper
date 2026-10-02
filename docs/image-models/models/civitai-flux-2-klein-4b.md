@@ -168,13 +168,16 @@ characters unchanged.
   reads and, up to one retry, the what-if preflight; a paid submission is
   never repeated automatically — not by this transport, and not by the scene
   chain's own retry. Every failure that can surface once a workflow id
-  exists classifies non-transient to that chain: the ones Civitai's own
-  error vocabulary describes carry a non-automatic disposition (`deliberate`,
-  `never`, or `reconcile`, never `automatic`), and a small set of plain
-  identity/shape failures — a workflow answering with a different id while
-  polling, a shape a submitted or adopted record fails to parse, the
-  mature/yellow retention check — carry no disposition at all but are
-  equally non-transient by their own wording.
+  exists declares a non-automatic disposition (`deliberate`, `never`, or
+  `reconcile`, never `automatic`). The ones Civitai's own error vocabulary
+  describes carry one on their own; a small set of plain identity/shape
+  failures carry none natively — a workflow answering with a different id
+  while polling, a shape a submitted or adopted record fails to parse, the
+  mature/yellow retention check — so the transport appends one fixed
+  sentence naming the workflow id and declaring `retry=reconcile` whenever a
+  workflow id already exists and the failure does not already declare a
+  disposition of its own; a failure that already declares one is left
+  exactly as it is.
 - The what-if preflight and the paid submission share a 120 s per-attempt
   timeout; every other stage keeps a 30 s budget. The submission carries the
   same data-URL references the preflight already validated, in the same
@@ -240,22 +243,37 @@ characters unchanged.
   naming the original failure's code and the submission's own externalId —
   distinguishing "no workflow under this key was found" from "the lookup
   itself could not be read."
+- **A list response this process cannot interpret counts as unreadable,
+  never as a clean page with no match.** A body that is not an object, or
+  whose `items` is not an array, makes the round that read it unreadable
+  rather than an empty search. `next` absent, `null`, or `""` means the
+  natural end of the list; a non-empty string means another page follows;
+  any other type is unreadable too. Measured 2026-10-01, zero Buzz: the
+  provider's own OpenAPI marks `next` required, but the LAST page omits the
+  key entirely — an absent `next` is the ordinary, expected end of the
+  list, never a malformed response.
 - **No lookup can fence off a workflow that lands later.** A workflow absent
   from every lookup round can still be created under the same key
   afterward, so the unconfirmed failure always names the externalId: an
   operator checks the workflow list for that key before starting one
   deliberate replacement.
 - **Every failure that can surface once a workflow id exists — from the
-  submission's own answer, or from the lookup's adoption — classifies
-  non-transient, so it is never retried automatically by this transport or
-  by the scene chain's own same-rung retry.** A scene-chain rerun of that
-  rung would be a second paid submission while the first, already billed,
-  may still finish untracked. The ones Civitai's own error vocabulary
-  describes carry a non-automatic disposition (`deliberate`, `never`, or
+  submission's own answer, or from the lookup's adoption — declares a
+  non-automatic disposition, so it is never retried automatically by this
+  transport or by the scene chain's own same-rung retry.** A scene-chain
+  rerun of that rung would be a second paid submission while the first,
+  already billed, may still finish untracked. The ones Civitai's own error
+  vocabulary describes carry one on their own (`deliberate`, `never`, or
   `reconcile`, never `automatic`); a handful of plain identity/shape
-  failures carry none at all but are equally non-transient by wording. This
-  is why an exhausted workflow-status read reports `reconcile` rather than
-  `automatic`, and why `civitai_submit_unconfirmed` is always `deliberate`.
+  failures — a workflow answering with a different id while polling, a
+  shape a submitted or adopted record fails to parse, the mature/yellow
+  retention check — carry none natively, so the transport appends one
+  fixed sentence naming the workflow id and declaring `retry=reconcile`
+  whenever a workflow id already exists and the failure does not already
+  declare its own disposition; a failure that already declares one is left
+  unchanged, never double-suffixed. This is why an exhausted
+  workflow-status read reports `reconcile` rather than `automatic`, and why
+  `civitai_submit_unconfirmed` is always `deliberate`.
   The character-chat selfie lane's own retry — which runs outside the scene
   chain's same-rung guard — honors this same rule and skips its retry on a
   non-automatic disposition, a content rejection excepted, since that is
