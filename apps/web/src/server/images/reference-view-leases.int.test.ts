@@ -360,6 +360,9 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
         status: "failed",
         imageId: abandoned.renderId,
         failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+        // The code the studio reads to say a lapsed offer has lapsed, rather
+        // than showing this text, once the offer is withdrawn or goes stale.
+        failureMessage: expect.stringContaining("civitai_output_undelivered"),
       });
       const [render] = await db().select().from(images).where(eq(images.id, abandoned.renderId));
       expect(render?.status).toBe("failed");
@@ -388,6 +391,7 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
       status: "failed",
       imageId: null,
       failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+      failureMessage: expect.not.stringContaining("civitai_output_undelivered"),
     });
     const [render] = await db().select().from(images).where(eq(images.id, abandoned.renderId));
     expect(render?.status).toBe("failed");

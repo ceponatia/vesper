@@ -226,8 +226,10 @@ approval and opening the bytes.
   - a render row that offers a paid output — it recorded both ids before downloading, or failed
     undelivered before its build could fail the view — fails the attempt linked to that row, with
     the upstream lineage the row records as sent, exactly as an ordinary undelivered failure; the
-    slot projects `recoverable` (§Recovering a paid output). A row the image sweep reclaimed first
-    offers its output the same way;
+    slot projects `recoverable` (§Recovering a paid output). Its stored message names
+    `civitai_output_undelivered` like an ordinary undelivered failure's, which is what the studio
+    reads to say the offer has lapsed once it is withdrawn or stale. A row the image sweep
+    reclaimed first offers its output the same way;
   - anything else fails the attempt with no link, retryable.
 - A late worker must still own the live lease and the current pending attempt to finalize or fail
   it; otherwise its write is fenced out.

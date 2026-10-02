@@ -292,9 +292,15 @@ async function reconcileReferenceViewLeasesInTransaction(
  * The stored failure message of an attempt whose build died after its render
  * was paid for, while the output was still downloading. True whether or not the
  * output can still be recovered: while it can, the slot projects `recoverable`.
+ *
+ * It names `civitai_output_undelivered` exactly as an ordinary undelivered
+ * failure's message does, because that is what the output is, and because the
+ * studio reads the code in the stored message to tell an offer that has since
+ * lapsed — withdrawn, gone with the failed row, or stale — from an ordinary
+ * failure, and says so instead of this text.
  */
 const REFERENCE_VIEW_INTERRUPTED_PAID_MESSAGE =
-  "The previous build was interrupted while its paid image was downloading.";
+  "The previous build was interrupted while its paid image was downloading (civitai_output_undelivered).";
 
 /** The failure an abandoned view render's own row records when reconciliation reclaims it. */
 const REFERENCE_VIEW_RENDER_ABANDONED_ERROR = "render abandoned with its reference view build; reclaimed on read";
