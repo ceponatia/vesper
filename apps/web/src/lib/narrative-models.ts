@@ -242,8 +242,10 @@ export const DEFAULT_NARRATIVE_MODEL_ID = "aion-labs/aion-2.0";
  * Aion 2.0. Must be an id in {@link NARRATIVE_MODELS} so the dropdown shows it
  * selected.
  *
- * A stored pick outranks this: a character or chat that saved another curated id
- * keeps narrating on it, so moving the default changes new and unset picks only.
+ * On the regular chat lane a stored pick outranks this: a character or chat that
+ * saved another curated id keeps narrating on it, so moving the default changes new
+ * and unset picks only. The successor (sim-routed) lane passes no pick at all, so
+ * every sim render, shadow render and deliberator call runs on this default.
  */
 export const DEFAULT_CHARACTER_CHAT_MODEL_ID = "aion-labs/aion-3.5";
 

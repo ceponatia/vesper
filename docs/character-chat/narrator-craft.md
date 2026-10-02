@@ -131,7 +131,7 @@ wording (no extra LLM call): the **shape profiles** and **proportionate-reaction
     production) force-overrides without a restart.
   - **Per-model reasoning knob** (`NARRATOR_REASONING`, applied by
     `narrativeProviderOptions`): Aion 2.0 and GLM 5.2 `effort:low`, Aion 3.5 (the chat
-    default) `effort:medium`; unlisted narrators, Aion 3.0 included, send no reasoning
+    default) `effort:high`; unlisted narrators, Aion 3.0 included, send no reasoning
     option. Aion endpoints mandate reasoning and reject `enabled:false`.
 - **Per-shape chat length story** (`chatLengthStory`): the length sentence is keyed to the
   active shape — `concise_immersive` keeps the three-paragraph baseline;

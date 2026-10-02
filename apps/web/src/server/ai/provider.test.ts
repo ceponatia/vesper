@@ -85,12 +85,14 @@ describe("narrativeProviderOptions", () => {
     });
   });
 
-  it("sets effort:medium for Aion 3.5 (chat default, #699) — AionLabs endpoints mandate reasoning", () => {
+  // Owner ruling 2026-10-02 (#699): `high` is one of the three efforts Aion 3.5's
+  // OpenRouter record supports (max/high/low — no medium, which OpenRouter would round).
+  it("sets effort:high for Aion 3.5 (chat default, #699) — AionLabs endpoints mandate reasoning", () => {
     expect(narrativeProviderOptions("aion-labs/aion-3.5")).toEqual({
-      openrouter: { reasoning: { effort: "medium" } },
+      openrouter: { reasoning: { effort: "high" } },
     });
     expect(narrativeProviderOptions("aion-labs/aion-3.5", { sortLatency: true })).toEqual({
-      openrouter: { provider: { sort: "latency" }, reasoning: { effort: "medium" } },
+      openrouter: { provider: { sort: "latency" }, reasoning: { effort: "high" } },
     });
   });
 
