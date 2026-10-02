@@ -135,18 +135,25 @@ describe("parseArgs", () => {
     expect(() => parseArgs([])).toThrow(UsageError);
   });
 
-  it("rejects conflicting selectors", () => {
+  it("rejects --latest/--message/--trace combined with each other", () => {
     expect(() => parseArgs(["--chat", "chat_1", "--latest", "--trace", "t1"])).toThrow(UsageError);
-    expect(() => parseArgs(["--chat", "chat_1", "--message", "m1", "--limit", "5"])).toThrow(UsageError);
     expect(() => parseArgs(["--chat", "chat_1", "--trace", "t1", "--message", "m1"])).toThrow(UsageError);
+    expect(() => parseArgs(["--chat", "chat_1", "--latest", "--message", "m1"])).toThrow(UsageError);
   });
 
-  it("rejects a bad --limit", () => {
+  it("rejects --limit combined with --latest or --trace", () => {
+    expect(() => parseArgs(["--chat", "chat_1", "--latest", "--limit", "5"])).toThrow(UsageError);
+    expect(() => parseArgs(["--chat", "chat_1", "--trace", "t1", "--limit", "5"])).toThrow(UsageError);
+  });
+
+  it("rejects a bad --limit, whether alone or capping --message", () => {
     expect(() => parseArgs(["--chat", "chat_1", "--limit", "0"])).toThrow(UsageError);
     expect(() => parseArgs(["--chat", "chat_1", "--limit", "51"])).toThrow(UsageError);
     expect(() => parseArgs(["--chat", "chat_1", "--limit", "-1"])).toThrow(UsageError);
     expect(() => parseArgs(["--chat", "chat_1", "--limit", "2.5"])).toThrow(UsageError);
     expect(() => parseArgs(["--chat", "chat_1", "--limit", "abc"])).toThrow(UsageError);
+    expect(() => parseArgs(["--chat", "chat_1", "--message", "m1", "--limit", "0"])).toThrow(UsageError);
+    expect(() => parseArgs(["--chat", "chat_1", "--message", "m1", "--limit", "51"])).toThrow(UsageError);
   });
 
   it("rejects an unknown flag", () => {
@@ -181,18 +188,12 @@ describe("parseArgs", () => {
     });
   });
 
-  it("parses --json, --message, --trace, and --limit", () => {
+  it("parses --json, --trace, and a bare --limit", () => {
     expect(parseArgs(["--chat", "chat_1", "--json"])).toEqual({
       help: false,
       chatId: "chat_1",
       selector: { kind: "latest" },
       json: true,
-    });
-    expect(parseArgs(["--chat", "chat_1", "--message", "msg_1"])).toEqual({
-      help: false,
-      chatId: "chat_1",
-      selector: { kind: "message", messageId: "msg_1" },
-      json: false,
     });
     expect(parseArgs(["--chat", "chat_1", "--trace", "trace_1"])).toEqual({
       help: false,
@@ -204,6 +205,31 @@ describe("parseArgs", () => {
       help: false,
       chatId: "chat_1",
       selector: { kind: "limit", limit: 10 },
+      json: false,
+    });
+  });
+
+  it("--message alone returns up to the default cap of 10", () => {
+    expect(parseArgs(["--chat", "chat_1", "--message", "msg_1"])).toEqual({
+      help: false,
+      chatId: "chat_1",
+      selector: { kind: "message", messageId: "msg_1", limit: 10 },
+      json: false,
+    });
+  });
+
+  it("--message combined with --limit changes its cap (no longer a conflict)", () => {
+    expect(parseArgs(["--chat", "chat_1", "--message", "msg_1", "--limit", "5"])).toEqual({
+      help: false,
+      chatId: "chat_1",
+      selector: { kind: "message", messageId: "msg_1", limit: 5 },
+      json: false,
+    });
+    // Order of the two flags must not matter.
+    expect(parseArgs(["--chat", "chat_1", "--limit", "50", "--message", "msg_1"])).toEqual({
+      help: false,
+      chatId: "chat_1",
+      selector: { kind: "message", messageId: "msg_1", limit: 50 },
       json: false,
     });
   });
@@ -221,9 +247,16 @@ describe("parseArgs", () => {
 describe("selectorQuery", () => {
   it("maps each selector to the read model's query shape", () => {
     expect(selectorQuery("chat_1", { kind: "latest" })).toEqual({ chatId: "chat_1" });
-    expect(selectorQuery("chat_1", { kind: "message", messageId: "m1" })).toEqual({
+    expect(selectorQuery("chat_1", { kind: "message", messageId: "m1", limit: 10 })).toEqual({
       chatId: "chat_1",
       messageId: "m1",
+      limit: 10,
+    });
+    // --message's own limit threads through even when it differs from the default.
+    expect(selectorQuery("chat_1", { kind: "message", messageId: "m1", limit: 50 })).toEqual({
+      chatId: "chat_1",
+      messageId: "m1",
+      limit: 50,
     });
     expect(selectorQuery("chat_1", { kind: "trace", traceId: "t1" })).toEqual({ chatId: "chat_1", traceId: "t1" });
     expect(selectorQuery("chat_1", { kind: "limit", limit: 5 })).toEqual({ chatId: "chat_1", limit: 5 });
@@ -234,7 +267,7 @@ describe("noTraceFoundMessage", () => {
   it("names the chat and the selector that found nothing", () => {
     expect(noTraceFoundMessage("chat_1", { kind: "latest" })).toContain("chat_1");
     expect(noTraceFoundMessage("chat_1", { kind: "trace", traceId: "t1" })).toContain("t1");
-    expect(noTraceFoundMessage("chat_1", { kind: "message", messageId: "m1" })).toContain("m1");
+    expect(noTraceFoundMessage("chat_1", { kind: "message", messageId: "m1", limit: 10 })).toContain("m1");
     expect(noTraceFoundMessage("chat_1", { kind: "limit", limit: 5 })).toContain("chat_1");
   });
 });
