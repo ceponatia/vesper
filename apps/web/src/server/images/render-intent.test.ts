@@ -250,6 +250,30 @@ describe("attempt provenance", () => {
     expect(result.attempt?.seed).toBe(5);
   });
 
+  /**
+   * PROTECTS (#682): a Civitai render that succeeded and was paid for, but
+   * whose output could not be downloaded, carries the recoverable blob id
+   * beside the workflow id in the stored attempt — the two keys another
+   * agent's recovery service reads from `meta.render`.
+   */
+  it("carries the undelivered output id when the transport reports one beside the prediction id", async () => {
+    mockRender.mockResolvedValue({
+      ok: false,
+      error: "Civitai output download failed (civitai_output_undelivered; retry=reconcile).",
+      predictionId: "pred-undelivered",
+      undeliveredOutputId: "blob-undelivered",
+    });
+    const result = await renderImageIntent(intent({ controls: { seed: 5 } }));
+    expect(result.ok).toBe(false);
+    expect(result.attempt?.predictionId).toBe("pred-undelivered");
+    expect(result.attempt?.undeliveredOutputId).toBe("blob-undelivered");
+  });
+
+  it("omits the undelivered output id on an ordinary failure or success", async () => {
+    const result = await renderImageIntent(intent({ controls: { seed: 5 } }));
+    expect(result.attempt).not.toHaveProperty("undeliveredOutputId");
+  });
+
   it("carries a controlled caller's version pin as the requested version", async () => {
     const result = await renderImageIntent(intent({ versionId: "v-pinned" }));
     expect(result.attempt?.requestedVersionId).toBe("v-pinned");

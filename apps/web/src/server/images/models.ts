@@ -216,6 +216,14 @@ export interface RenderWithModelResult {
    */
   predictionId?: string;
   /**
+   * The Civitai output blob id whose download could not complete after
+   * every retried attempt, on a workflow that otherwise succeeded and was
+   * already paid for — passed through untouched from `ReplicateImageResult`
+   * (`civitai_output_undelivered`, #682). Present only on that one Civitai
+   * failure; every other provider and every other failure leaves it absent.
+   */
+  undeliveredOutputId?: string;
+  /**
    * The version the provider says it ACTUALLY ran, when it echoes one. Passed
    * through untouched from `ReplicateImageResult`, where the reason it exists is
    * recorded: a pin states intent, and only this states outcome.
@@ -450,6 +458,7 @@ export async function renderWithModel(
   });
   const provenance = {
     ...(result.predictionId ? { predictionId: result.predictionId } : {}),
+    ...(result.undeliveredOutputId ? { undeliveredOutputId: result.undeliveredOutputId } : {}),
     ...(result.executedVersionId ? { executedVersionId: result.executedVersionId } : {}),
     ...(result.sentReferenceCount !== undefined ? { sentReferenceCount: result.sentReferenceCount } : {}),
     ...(result.unsentReferences ? { unsentReferences: result.unsentReferences } : {}),

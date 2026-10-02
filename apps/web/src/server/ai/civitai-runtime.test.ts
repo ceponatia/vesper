@@ -16,6 +16,7 @@ import {
   civitaiWorkflowPostTimeoutMs,
   parseCivitaiWorkflow,
   previewCivitaiKleinRequest,
+  recoverCivitaiOutput,
   runCivitaiKleinImageModel,
   validateCivitaiKleinRequest,
   validateCivitaiPreflightEcho,
@@ -1466,36 +1467,145 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowPosts).toBe(2);
   });
 
-  it("redacts output-download transport sentinels without retrying the download", async () => {
-    let outputReads = 0;
+  it("gives each output-download attempt its own 120 s budget, independent of the scaled POST budget (#682)", async () => {
+    const timeoutCalls: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      timeoutCalls.push(ms);
+      return realTimeout(ms);
+    });
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
       if (href.includes("/consumer/workflows?")) {
         const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-download-budget" : "submit-download-budget", whatif === "true" ? "unassigned" : "succeeded", [{
+          id: "output.jpg", available: true,
+        }]));
+      }
+      if (href === blobUrl("output.jpg")) return new Response("image-bytes", { status: 200 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, {
+      ...request,
+      references: [{ bytes: Buffer.from("one"), mediaType: "image/png", extension: "png" }],
+    });
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-download-budget" });
+    // One reference scales the preflight and submit to 160 s each
+    // (civitaiWorkflowPostTimeoutMs(1), #680); the output download that
+    // follows still gets its OWN, independent 120 s attempt budget (#682) —
+    // not the 30 s REQUEST_TIMEOUT_MS every other GET uses, and not the
+    // 160 s the POSTs just used.
+    expect(timeoutCalls).toEqual([160_000, 160_000, 120_000]);
+  });
+
+  it.each(["a transport failure", "a 503"] as const)(
+    "retries %s output-download attempt from hop 0, with the bearer on each attempt's own first hop and none on a redirect hop (#682)",
+    async (sentinel) => {
+      vi.useFakeTimers();
+      let attempts = 0;
+      const hops: string[] = [];
+      const authorizations: (string | null)[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (href.includes("/consumer/workflows?")) {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          const whatif = new URL(href).searchParams.get("whatif");
+          return Response.json(workflowFrom(body, whatif === "true" ? "estimate-retry-output" : "submit-retry-output", whatif === "true" ? "unassigned" : "succeeded", [{
+            id: "output.jpg", available: true,
+          }]));
+        }
+        if (href === blobUrl("output.jpg")) {
+          hops.push(href);
+          authorizations.push(new Headers(init?.headers).get("authorization"));
+          attempts += 1;
+          if (attempts === 1) {
+            if (sentinel === "a transport failure") throw new Error("provider token=secret signed-url=private");
+            return new Response("token=secret", { status: 503 });
+          }
+          // The retry's own redirect hop: no bearer belongs here either,
+          // same as a first attempt's own redirect would get.
+          return new Response(null, { status: 301, headers: { location: "/v2/consumer/blobs/content/retried.jpg" } });
+        }
+        if (href === "https://orchestration.civitai.com/v2/consumer/blobs/content/retried.jpg") {
+          hops.push(href);
+          authorizations.push(new Headers(init?.headers).get("authorization"));
+          return new Response("image-bytes", { status: 200 });
+        }
+        throw new Error(`Unexpected fetch ${href}`);
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(attempts).toBe(2);
+      expect(result).toMatchObject({ ok: true, predictionId: "submit-retry-output" });
+      if (!result.ok) throw new Error("expected the retried download to succeed");
+      expect(result.image?.toString()).toBe("image-bytes");
+      // Every attempt restarts at the blob endpoint with the bearer on ITS
+      // OWN first hop; the redirect hop that follows the successful retry
+      // carries none — the retry never continues from wherever the failed
+      // attempt left off.
+      expect(hops).toEqual([
+        blobUrl("output.jpg"), blobUrl("output.jpg"), "https://orchestration.civitai.com/v2/consumer/blobs/content/retried.jpg",
+      ]);
+      expect(authorizations).toEqual(["Bearer civitai-test-token", "Bearer civitai-test-token", null]);
+    },
+  );
+
+  it("redacts output-download transport sentinels, retrying from hop 0 up to the attempt cap, then reports the output as undelivered rather than lost, after exactly one paid POST (#682)", async () => {
+    vi.useFakeTimers();
+    let outputReads = 0;
+    let paidPosts = 0;
+    const authorizations: (string | null)[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "false") paidPosts += 1;
         return Response.json(workflowFrom(body, whatif === "true" ? "estimate-output" : "submit-output", whatif === "true" ? "unassigned" : "succeeded", [{
           id: "output-secret.jpg", available: true,
         }]));
       }
       if (href === blobUrl("output-secret.jpg")) {
         outputReads += 1;
+        authorizations.push(new Headers(init?.headers).get("authorization"));
         throw new Error("provider token=secret signed-url=private");
       }
       throw new Error(`Unexpected fetch ${href}`);
     });
 
-    const result = await runCivitaiKleinImageModel(MODEL, request);
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
 
-    expect(outputReads).toBe(1);
-    expect(result).toMatchObject({ ok: false, predictionId: "submit-output", error: expect.stringContaining("civitai_output_transport_failure; retry=deliberate") });
-    if (result.ok) throw new Error("expected the output download to fail");
+    expect(paidPosts).toBe(1);
+    expect(outputReads).toBe(4);
+    expect(authorizations).toEqual([
+      "Bearer civitai-test-token", "Bearer civitai-test-token", "Bearer civitai-test-token", "Bearer civitai-test-token",
+    ]);
+    expect(result).toMatchObject({
+      ok: false, predictionId: "submit-output", undeliveredOutputId: "output-secret.jpg",
+      error: expect.stringContaining("civitai_output_undelivered; retry=reconcile"),
+    });
+    if (result.ok) throw new Error("expected the output download to end as undelivered");
     expect(result.error).not.toContain("secret");
     expect(result.error).not.toContain("private");
+    expect(result.error).toContain("output-secret.jpg");
   });
 
   it.each([
     ["a missing output id", null, "civitai_output_unavailable; retry=deliberate", 0, undefined],
-    ["an output HTTP failure", "output.jpg", "civitai_output_http_503; retry=deliberate", 1, () => new Response("token=secret", { status: 503 })],
+    // A retryable HTTP status now exhausts all 4 attempts before reporting
+    // the output as undelivered, rather than failing on first occurrence
+    // (#682) — the retry-then-succeed case above already proves a 503
+    // retries; this proves exhaustion converts it.
+    ["an output HTTP failure that exhausts every retry", "output.jpg", "civitai_output_undelivered; retry=reconcile", 4, () => new Response("token=secret", { status: 503 })],
+    ["a 404 output", "output.jpg", "civitai_output_http_404; retry=deliberate", 1, () => new Response("not found", { status: 404 })],
     ["an oversized declared output", "output.jpg", "civitai_output_too_large; retry=never", 1, () => new Response("unused", { headers: { "content-length": "33554433" } })],
     ["an oversized output stream", "output.jpg", "civitai_output_too_large; retry=never", 1, () => ({
       ok: true,
@@ -1509,7 +1619,10 @@ describe("Civitai Klein v2 transport", () => {
     }) as unknown as Response],
     ["an absent output body", "output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response(null)],
     ["an empty output stream", "output.jpg", "civitai_output_empty; retry=deliberate", 1, () => new Response("")],
-    ["a thrown output stream read", "output.jpg", "civitai_output_transport_failure; retry=deliberate", 1, () => ({
+    // A thrown body-stream read becomes civitai_output_transport_failure
+    // (downloadOutputAttempt's own catch-all), which is retryable — so this
+    // also now exhausts every attempt rather than failing on the first.
+    ["a thrown output stream read that exhausts every retry", "output.jpg", "civitai_output_undelivered; retry=reconcile", 4, () => ({
       ok: true,
       headers: new Headers(),
       body: {
@@ -1520,6 +1633,7 @@ describe("Civitai Klein v2 transport", () => {
       },
     }) as unknown as Response],
   ] as const)("redacts %s", async (_description, blobId, expectedError, expectedOutputReads, outputResponse) => {
+    vi.useFakeTimers();
     let outputReads = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
       const href = String(url);
@@ -1538,7 +1652,9 @@ describe("Civitai Klein v2 transport", () => {
       throw new Error(`Unexpected fetch ${href}`);
     });
 
-    const result = await runCivitaiKleinImageModel(MODEL, request);
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
 
     expect(outputReads).toBe(expectedOutputReads);
     expect(result).toMatchObject({ ok: false, predictionId: "submit-output-boundary", error: expect.stringContaining(expectedError) });
@@ -1837,5 +1953,144 @@ describe("Civitai Klein v2 blob download", () => {
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_output_invalid") });
     // The original request plus MAX_OUTPUT_REDIRECTS hops, and no more.
     expect(fetched).toHaveLength(4);
+  });
+});
+
+/**
+ * PROTECTS (#682): `recoverCivitaiOutput` recovers the output of a workflow
+ * that already succeeded and was already paid for, WITHOUT POSTing anything
+ * — never a fresh workflow, never a charge. It distinguishes `permanent:
+ * true` (positive evidence the output can never be fetched this way) from
+ * `permanent: false` (try again later) exactly per the rule on the function
+ * itself: a withdrawn "permanent" costs the owner their one free recovery
+ * for good, while a wrong "transient" only costs them retrying.
+ */
+describe("Civitai Klein v2 output recovery (recoverCivitaiOutput, #682)", () => {
+  const WORKFLOW_ID = "recover-workflow-1";
+  const BLOB_ID = "recover-blob-1";
+
+  function workflowReadUrl(id: string): string {
+    return `https://orchestration.civitai.com/v2/consumer/workflows/${encodeURIComponent(id)}`;
+  }
+
+  function succeededWorkflow(images: unknown[]): Record<string, unknown> {
+    return {
+      id: WORKFLOW_ID, status: "succeeded", allowMatureContent: true, currencies: ["yellow"],
+      upgradeMode: "manual", transactions: { insufficientBuzz: false },
+      steps: [{ $type: "imageGen", input: {}, output: { images } }],
+    };
+  }
+
+  it("recovers the output with no POST at all", async () => {
+    const methods: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      methods.push(init?.method ?? "GET");
+      if (href === workflowReadUrl(WORKFLOW_ID)) {
+        return Response.json(succeededWorkflow([{ id: BLOB_ID, available: true }]));
+      }
+      if (href === blobUrl(BLOB_ID)) return new Response("image-bytes", { status: 200 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error("expected recovery to succeed");
+    expect(result.image.toString()).toBe("image-bytes");
+    expect(methods.every((method) => method === "GET")).toBe(true);
+  });
+
+  it("reports permanent for a workflow the provider answers 404 for", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("not found", { status: 404 }));
+
+    const result = await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(result).toMatchObject({ ok: false, permanent: true });
+    if (result.ok) throw new Error("expected a 404 workflow read to fail");
+    expect(result.error).toContain("civitai_http_404");
+  });
+
+  it("reports permanent for a workflow that did not succeed", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({
+      id: WORKFLOW_ID, status: "processing", allowMatureContent: true, currencies: ["yellow"],
+      upgradeMode: "manual", transactions: { insufficientBuzz: false },
+      steps: [{ $type: "imageGen", input: {}, output: {} }],
+    }));
+
+    const result = await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(result).toMatchObject({ ok: false, permanent: true });
+    if (result.ok) throw new Error("expected a non-succeeded workflow to fail");
+    expect(result.error).toContain("processing");
+  });
+
+  it("reports permanent for a workflow that answers with a different id", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({
+      id: "a-different-workflow", status: "succeeded", allowMatureContent: true, currencies: ["yellow"],
+      upgradeMode: "manual", transactions: { insufficientBuzz: false },
+      steps: [{ $type: "imageGen", input: {}, output: { images: [{ id: BLOB_ID, available: true }] } }],
+    }));
+
+    const result = await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(result).toMatchObject({ ok: false, permanent: true });
+  });
+
+  it.each([
+    ["an unavailable blob", { id: BLOB_ID, available: false }],
+    ["a hidden blob", { id: BLOB_ID, available: true, hidden: true }],
+    ["a blocked blob", { id: BLOB_ID, available: true, blockedReason: "blocked" }],
+    ["a workflow that does not list the blob at all", { id: "some-other-blob", available: true }],
+  ] as const)("reports permanent for %s", async (_description, image) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json(succeededWorkflow([image])));
+
+    const result = await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(result).toMatchObject({ ok: false, permanent: true });
+  });
+
+  it("reports NOT permanent for a transport failure on the workflow read, without leaking its text", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => { throw new Error("provider token=secret prompt=private"); });
+
+    const result = await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(result).toMatchObject({ ok: false, permanent: false });
+    if (result.ok) throw new Error("expected the transport failure to fail");
+    expect(result.error).not.toContain("secret");
+    expect(result.error).not.toContain("private");
+  });
+
+  it("reports NOT permanent after the download itself exhausts every retry (503)", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const href = String(url);
+      if (href === workflowReadUrl(WORKFLOW_ID)) {
+        return Response.json(succeededWorkflow([{ id: BLOB_ID, available: true }]));
+      }
+      if (href === blobUrl(BLOB_ID)) return new Response("token=secret", { status: 503 });
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(result).toMatchObject({ ok: false, permanent: false });
+    if (result.ok) throw new Error("expected the exhausted download retry to fail");
+    expect(result.error).toContain("civitai_output_undelivered");
+    expect(result.error).not.toContain("secret");
+  });
+
+  it("never POSTs, even on its own GET failures", async () => {
+    const methods = new Set<string>();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      methods.add(init?.method ?? "GET");
+      return new Response("not found", { status: 404 });
+    });
+
+    await recoverCivitaiOutput({ workflowId: WORKFLOW_ID, blobId: BLOB_ID });
+
+    expect(methods.has("POST")).toBe(false);
   });
 });

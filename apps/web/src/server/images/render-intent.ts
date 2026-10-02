@@ -265,6 +265,7 @@ function resolvedAttempt(
     sentReferenceRoles:
       result.sentReferenceCount !== undefined ? plannedRoles.slice(0, result.sentReferenceCount) : plannedRoles,
     predictionId: result.predictionId ?? null,
+    ...(result.undeliveredOutputId ? { undeliveredOutputId: result.undeliveredOutputId } : {}),
     executedVersionId: result.executedVersionId ?? null,
     shape: resolvedAttemptShape(plan, result),
   };

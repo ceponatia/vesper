@@ -331,6 +331,56 @@ characters unchanged.
   never requested. A different provider storage host requires explicit review;
   the OpenAPI's generic URI field is not an unrestricted network-download
   permission.
+- **Each output-download ATTEMPT gets its own 120 s budget**, separate from
+  the scaled preflight/submit budget above and from the 30 s every other GET
+  uses, covering every redirect hop and the whole body stream. A transport
+  failure or a retryable HTTP status (429/5xx) retries up to 4 attempts in
+  total, with a short fixed backoff (2 s, 4 s, 8 s) between them; every
+  retried attempt restarts at the authenticated blob endpoint from hop 0 —
+  never from a prior attempt's redirect target, because the signed content
+  path a redirect names expires (see above) and a stale one would just fail
+  again. Every other output failure — an off-host or credentialed redirect, a
+  chain past the bound, an oversized or empty body, or a non-retryable HTTP
+  status (401/403/404/410 included) — keeps throwing on its first occurrence,
+  unchanged. Measured 2026-10-01 at 22:48:59Z: a production `side_right/clothed`
+  download failed `civitai_output_transport_failure` under the previous 30 s
+  shared budget while Civitai showed the workflow had succeeded with its
+  output available; three read-only downloads of other outputs right after
+  took 1.9 s, 6.8 s and 11.2 s, almost all of it body streaming (164 KB in
+  about 9 s) — well inside the new 120 s attempt budget.
+- **Exhausting every download attempt reports the output as RECOVERABLE
+  (`civitai_output_undelivered`) rather than losing it.** The workflow
+  already succeeded and was already paid for, so the render fails with a
+  message naming the blob id and the attempt count, stating that the output
+  can be recovered without rendering again. It is always `retry=reconcile`
+  and classifies as `other`, never `transient` and never a billing or
+  content-rejection reading, so neither a scene rerun nor the selfie retry's
+  own guard ever reposts a second paid render over an output that is still
+  sitting there.
+- **`recoverCivitaiOutput` recovers that output without rendering again.**
+  Read-only end to end: one GET to re-read the workflow, then the same
+  retried download above. It never POSTs, never creates a workflow, and
+  never charges. It reports `permanent: true` ONLY on positive evidence the
+  output can never be fetched this way — the workflow read answers 404; the
+  workflow's status is not `succeeded`, or its id differs from the one
+  asked for; the workflow does not list the blob, or lists it as
+  unavailable, hidden, or blocked; or the download's own final failure is
+  `civitai_output_invalid`, oversized, a 404, or a 410. Everything else —
+  a transport failure, 429/5xx, 401/403, another `civitai_output_undelivered`,
+  an empty body, or a workflow read that parsed as JSON but not into a usable
+  workflow shape — is `permanent: false`, since a wrong "permanent" withdraws
+  the one free recovery for good while a wrong "transient" only costs
+  trying again later.
+- **An output blob outlives Vesper's own 24 h failed-row retention, with no
+  observed expiry.** A 2026-10-02 read-only probe (zero Buzz) found every
+  output blob the account still lists serving through the blob endpoint,
+  including the oldest, from 2026-09-16 (15.7 days old) — no workflow in the
+  sample carried an expiry field. The 24 h failed-row retention
+  (`FAILED_ROW_RETENTION_MS`, `apps/web/src/server/images/asset-maintenance.ts`)
+  is therefore the binding recovery window, not the blob's own lifetime. A
+  blob the provider has stopped serving is reported `available: false` by
+  the workflow read itself, before any download is attempted. See
+  eval-images/civitai-qwen-2-1/blob-lifetime-682-2026-10-02.txt.
 
 ## Evidence boundary
 

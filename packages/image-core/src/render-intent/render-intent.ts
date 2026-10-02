@@ -251,6 +251,14 @@ export interface ResolvedImageAttempt {
   sentReferenceRoles: ImageReferenceRole[];
   /** The provider's own id for the prediction, when one was created — failures included. */
   predictionId: string | null;
+  /**
+   * The Civitai output blob id whose download could not complete after
+   * every retried attempt, on a workflow that otherwise succeeded and was
+   * already paid for (`civitai_output_undelivered`, #682). Optional, unlike
+   * `predictionId` above: present only on that one Civitai failure, so every
+   * other construction of this type is unaffected.
+   */
+  undeliveredOutputId?: string;
   /** The version the provider says it executed, when it echoes one. */
   executedVersionId: string | null;
   /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyImageFailureMessage } from "@vesper/image-core";
-import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, isBillingFailureMessage } from "@vesper/image-core";
+import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 describe("Civitai error contract", () => {
   it("classifies HTTP failures without provider response text", () => {
@@ -295,5 +295,49 @@ describe("Civitai error contract", () => {
   it("keeps the pre-spend lora-metadata transient failure transient", () => {
     expect(classifyImageFailureMessage(civitaiHttpFailure(503, "lora_metadata", true, [], true).message)).toBe("transient");
     expect(classifyImageFailureMessage(civitaiTransportFailure("lora_metadata", true, true).message)).toBe("transient");
+  });
+
+  /**
+   * PROTECTS (#682): a workflow that succeeded and was already paid for, but
+   * whose output could not be downloaded, must read as recoverable — never
+   * as a reason to render again. The message names the blob id and the
+   * attempt count, says the workflow succeeded and was paid for, and says
+   * the output can be recovered without rendering again; it must never read
+   * as billing or content rejection, both of which
+   * `classifyImageFailureMessage`/`isBillingFailureMessage` check BEFORE the
+   * retry-disposition marker this failure relies on
+   * (`packages/image-core/src/provider-interface/failures.ts`).
+   */
+  it("names the blob id and attempt count on civitai_output_undelivered, classifying it other/reconcile/non-billing", () => {
+    const failure = civitaiOutputUndeliveredFailure("abc123.jpg", 4);
+
+    expect(failure).toMatchObject({
+      code: "civitai_output_undelivered", retry: "reconcile", stage: "output_download",
+      outputId: "abc123.jpg", downloadAttempts: 4,
+    });
+    expect(failure.message).toContain("(civitai_output_undelivered; retry=reconcile)");
+    expect(failure.message).toMatch(/succeeded/i);
+    expect(failure.message).toMatch(/paid for/i);
+    expect(failure.message).toContain("4 attempts");
+    expect(failure.message).toContain("abc123.jpg");
+    expect(failure.message).toMatch(/recovered/i);
+    expect(failure.message).toMatch(/without rendering again/i);
+
+    // Never a billing or content-rejection reading, even though both are
+    // checked before the retry-disposition marker in the shared classifier.
+    expect(failure.message.toLowerCase()).not.toMatch(/billing|payment required|402/);
+    expect(failure.message.toLowerCase()).not.toMatch(
+      /moderation|nsfw|flagged|violation|prohibited|disallowed|content policy|safe[_ ]?mode/,
+    );
+
+    expect(classifyImageFailureMessage(failure.message)).toBe("other");
+    expect(declaresNonAutomaticRetry(failure.message)).toBe(true);
+    expect(isBillingFailureMessage(failure.message)).toBe(false);
+  });
+
+  it("singularizes the attempt count at exactly one attempt", () => {
+    const failure = civitaiOutputUndeliveredFailure("abc123.jpg", 1);
+    expect(failure.message).toContain("1 attempt.");
+    expect(failure.message).not.toContain("1 attempts");
   });
 });
