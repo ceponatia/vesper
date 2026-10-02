@@ -394,6 +394,9 @@ export function ImageGeneratorRunDetail({ runId, onBack, onDeleted, onDuplicate,
     });
     if (!result.ok) {
       toast.push({ title: imageGeneratorRecoverFailedTitle, description: result.error.message, tone: "error" });
+      // The offer is gone for good: refetch so the tile drops the action
+      // rather than offering a recovery that will only refuse again.
+      if (result.error.code === "expired") detail.reload({ silent: true });
       return;
     }
     detail.reload({ silent: true });
