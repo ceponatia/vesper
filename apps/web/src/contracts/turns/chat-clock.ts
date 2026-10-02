@@ -1,11 +1,14 @@
 import {
   MONTHS,
+  calendarStartSchema,
   minuteOfDay,
   resolveGameTime,
   to12Hour,
   type CalendarStart,
   type GameTime,
 } from "@/lib/clock";
+import { parseOr } from "@/lib/parse";
+import type { DiagnosticSink } from "../diagnostics";
 import { SCHEDULE_DAY_PARTS, type ScheduleDayPartId } from "../world/profile";
 
 /**
@@ -26,6 +29,28 @@ import { SCHEDULE_DAY_PARTS, type ScheduleDayPartId } from "../world/profile";
  * leap-year Februaries); the display simply omits it.
  */
 export const CHAT_DEFAULT_CALENDAR_START: CalendarStart = { year: 2024, month: 1, day: 1, hour: 8, minute: 0 };
+
+/**
+ * The stored anchor's trust boundary (`character_chats.calendar_start`).
+ *
+ * `{}` is that column's default: "no anchor authored yet", the value a chat row
+ * holds until its first scenario write. It is not a corrupt anchor, so it reads
+ * as {@link CHAT_DEFAULT_CALENDAR_START} — the anchor `seedChatScenario` writes —
+ * without a diagnostic, the way the store reads the unset `environment`,
+ * `affordance_cues` and `scene` columns. Filing `parse.boundary_failed` for it
+ * would mark the exchange that reads it degraded when nothing was.
+ * Anything else crosses `parseOr`, so a malformed anchor still heals to the
+ * default with that diagnostic.
+ */
+export function parseChatCalendarStart(raw: unknown, sink?: DiagnosticSink, path?: string): CalendarStart {
+  if (isUnsetCalendarAnchor(raw)) return CHAT_DEFAULT_CALENDAR_START;
+  return parseOr(calendarStartSchema, raw, CHAT_DEFAULT_CALENDAR_START, sink, path);
+}
+
+/** The column default: an empty JSON object, and nothing else. */
+function isUnsetCalendarAnchor(raw: unknown): boolean {
+  return typeof raw === "object" && raw !== null && !Array.isArray(raw) && Object.keys(raw).length === 0;
+}
 
 /** Resolve a chat clock reading against the scenario anchor. Thin, but names the lane. */
 export function chatGameTime(clockMinutes: number, start: CalendarStart): GameTime {

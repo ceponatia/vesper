@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DiagnosticCollector } from "../diagnostics";
 import {
   CHAT_DEFAULT_CALENDAR_START,
   chatGameTime,
@@ -10,6 +11,7 @@ import {
   formatChatTime,
   formatStoryMoment,
   ordinalDay,
+  parseChatCalendarStart,
   timeOfDayFor,
 } from "./chat-clock";
 
@@ -32,6 +34,40 @@ describe("the default anchor (owner ruling: stories begin January 1, 8:00am)", (
     // 2024 is a leap year: day-index 59 from Jan 1 is Feb 29.
     const leap = chatGameTime(59 * DAY, START);
     expect([leap.month, leap.day]).toEqual([2, 29]);
+  });
+});
+
+describe("parseChatCalendarStart (the stored anchor's boundary)", () => {
+  const PATH = "character_chats.calendar_start";
+  /** Each diagnostic as `severity:code:path`, so a failure names the boundary. */
+  const filed = (sink: DiagnosticCollector) => sink.items.map((d) => `${d.severity}:${d.code}:${d.path ?? ""}`);
+
+  it("reads the column default `{}` (no anchor authored yet) as the default anchor, filing nothing", () => {
+    const sink = new DiagnosticCollector();
+    expect(parseChatCalendarStart({}, sink, PATH)).toEqual(CHAT_DEFAULT_CALENDAR_START);
+    expect(filed(sink)).toEqual([]);
+  });
+
+  it("passes an authored anchor through, defaulting its hour and minute, filing nothing", () => {
+    const sink = new DiagnosticCollector();
+    expect(parseChatCalendarStart({ year: 2027, month: 3, day: 15 }, sink, PATH)).toEqual({
+      year: 2027,
+      month: 3,
+      day: 15,
+      hour: 8,
+      minute: 0,
+    });
+    expect(filed(sink)).toEqual([]);
+  });
+
+  it("heals anything malformed to the default anchor WITH parse.boundary_failed on the column", () => {
+    // A partial anchor, an out-of-range month, and non-object values: only the
+    // EMPTY object is the column's unset default.
+    for (const raw of [{ year: 2027 }, { year: 2027, month: 13, day: 1 }, "not an anchor", [], null]) {
+      const sink = new DiagnosticCollector();
+      expect(parseChatCalendarStart(raw, sink, PATH)).toEqual(CHAT_DEFAULT_CALENDAR_START);
+      expect(filed(sink)).toEqual([`warn:parse.boundary_failed:${PATH}`]);
+    }
   });
 });
 

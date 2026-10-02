@@ -150,8 +150,11 @@ describe.runIf(ready)("the #637 exchange trace, end to end through submitChatMes
 
     // The exchange settled cleanly. The outcome is asserted together with every
     // signal `deriveExchangeOutcome` counts as degradation, so a failure names
-    // the exact stage, coverage family, diagnostic code or correlated row that
-    // degraded this vanilla demo-mode send instead of a bare "degraded".
+    // the exact stage, coverage family, diagnostic code and path, or correlated
+    // row that degraded this vanilla demo-mode send instead of a bare
+    // "degraded". `newChat` leaves every scenario column at its default, so
+    // this also pins that a never-written chat row (`calendar_start` = `{}`)
+    // loads without a boundary diagnostic.
     expect(trace.finish?.kind).toBe("ok");
     expect({
       outcome: trace.outcome,
@@ -163,7 +166,7 @@ describe.runIf(ready)("the #637 exchange trace, end to end through submitChatMes
         .map((c) => `${c.family}:${c.status}:${c.reason ?? ""}`),
       diagnostics: trace.diagnostics
         .filter((d) => d.severity === "warn" || d.severity === "error")
-        .map((d) => `${d.severity}:${d.code}`),
+        .map((d) => `${d.severity}:${d.code}:${d.path ?? ""}`),
       agentFailures: trace.agentFailures.map((f) => `${f.legId}:${f.kind}`),
       compositionFallbacks: trace.compositionFallbacks.map((f) => `${f.site}:${f.code}`),
     }).toEqual({ outcome: "ok", stages: [], coverage: [], diagnostics: [], agentFailures: [], compositionFallbacks: [] });
