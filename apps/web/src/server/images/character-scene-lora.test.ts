@@ -554,6 +554,36 @@ describe("the selfie retry's disposition guard", () => {
     expect(loggedCodes()).not.toContain("images.selfie.retry");
   });
 
+  /**
+   * PROTECTS (#687 review): a first selfie whose row still offers a paid
+   * output — its produce threw after the transport recorded the output's ids,
+   * so the error carries no disposition at all — is neither retried nor
+   * deleted. The bad implementation reads only the error text: it renders a
+   * second paid selfie and then deletes the first, recoverable row.
+   */
+  it("does not retry, or delete the first row, while that row still offers a paid output", async () => {
+    const message = "could not correct the scene row's provenance: connection reset";
+    vi.mocked(imageMeta).mockReturnValue({ error: message });
+    vi.mocked(classifyImageFailure).mockReturnValue("transient");
+    stubDb([{
+      id: "img-first",
+      status: "failed",
+      meta: {
+        error: message,
+        render: { predictionId: "wf-1", undeliveredOutputId: "blob-1", modelSlug: "civitai/qwen-image-2.1" },
+      },
+    }]);
+    mockRender.mockResolvedValueOnce("img-first");
+
+    const imageId = await render({ flavor: "selfie" });
+
+    expect(imageId).toBe("img-first");
+    expect(mockRender).toHaveBeenCalledTimes(1);
+    expect(deleteOwnedImage).not.toHaveBeenCalled();
+    expect(loggedCodes()).toContain("images.selfie.retry_skipped");
+    expect(loggedCodes()).not.toContain("images.selfie.retry");
+  });
+
   it("still retries sanitized on a content rejection, even when its own message also carries a disposition word", async () => {
     // Content rejection is classified FIRST, ahead of any disposition the
     // same message might also carry — proven here by giving the message
