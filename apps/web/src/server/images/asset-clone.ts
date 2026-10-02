@@ -5,7 +5,7 @@ import { db, images } from "../db";
 import { newId } from "@/lib/ids";
 import { log } from "@/server/log";
 import { absoluteImagePath, containedAbsoluteImagePath, imageRelativePath } from "./paths";
-import { type ImageEntityKind, HIDDEN_IMAGE_KINDS } from "./asset-storage";
+import { type ImageEntityKind, HIDDEN_IMAGE_KINDS, UNSHAREABLE_IMAGE_KINDS } from "./asset-storage";
 
 /**
  * Duplicate a shareable entity's ready images into a new owner's storage for a
@@ -20,6 +20,17 @@ import { type ImageEntityKind, HIDDEN_IMAGE_KINDS } from "./asset-storage";
  * the destination character derives its OWN pack from its own copied portrait
  * once that row is ready. Cloning one would hand the destination a crop whose pack row — the
  * only authority for whether it may be used at all — did not come with it.
+ *
+ * Chat content (`CHAT_PRIVATE_IMAGE_KINDS`) never travels ACROSS accounts
+ * (#436): a chat scene or selfie is filed under the chat's primary character,
+ * but it is the author's conversation, not part of the character they
+ * published. The kind decides, so a scene whose chat was deleted (`chat_id`
+ * already NULL) stays behind too; a cross-account clone subtracts
+ * `UNSHAREABLE_IMAGE_KINDS`. An owner duplicating their OWN character
+ * (`srcOwnerId === dstOwnerId`) shares nothing with anyone, so it keeps the
+ * self-duplicate behavior and subtracts only `HIDDEN_IMAGE_KINDS`. A copied
+ * scene keeps kind `scene`, so it stays owner-only even if the copy is later
+ * published.
  */
 export async function cloneEntityImages(
   entityKind: ImageEntityKind,
@@ -28,6 +39,7 @@ export async function cloneEntityImages(
   dstEntityId: string,
   dstOwnerId: string,
 ): Promise<Map<string, string>> {
+  const excludedKinds = srcOwnerId === dstOwnerId ? HIDDEN_IMAGE_KINDS : UNSHAREABLE_IMAGE_KINDS;
   const rows = await db()
     .select()
     .from(images)
@@ -37,7 +49,7 @@ export async function cloneEntityImages(
         eq(images.entityKind, entityKind),
         eq(images.entityId, srcEntityId),
         eq(images.status, "ready"),
-        notInArray(images.kind, [...HIDDEN_IMAGE_KINDS]),
+        notInArray(images.kind, [...excludedKinds]),
       ),
     );
   const idMap = new Map<string, string>();

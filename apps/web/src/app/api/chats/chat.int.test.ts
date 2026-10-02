@@ -16,6 +16,7 @@ import {
   db,
   episodes,
   facts,
+  imageReferences,
   images,
 } from "@/server/db";
 
@@ -494,13 +495,21 @@ describe.runIf(ready)("GET + DELETE /api/chats/:chatId", () => {
       seed(null), // gallery-only; must not surface in any chat
     ]);
 
+    // A selfie's sender is named from its own cast (#436): a non-primary sender
+    // ("Bea") is filed under the primary character but recorded in image_references.
+    await db()
+      .insert(imageReferences)
+      .values({ sceneImageId: sceneA!.id, kind: "character", entityId: "char-bea", name: "Bea", source: "generated" });
+
     const res = await sceneList(getReq(chatA.id), ctx(chatA.id));
-    const { scenes } = await expectJson<{ scenes: { id: string }[] }>(res, 200);
+    const { scenes } = await expectJson<{ scenes: { id: string; references: unknown[] }[] }>(res, 200);
     expect(scenes.map((s) => s.id)).toEqual([sceneA!.id]); // A's own scene only — no sibling, no legacy
+    expect(scenes[0]?.references).toEqual([{ kind: "character", id: "char-bea", name: "Bea" }]);
 
     const resB = await sceneList(getReq(chatB.id), ctx(chatB.id));
-    const { scenes: scenesB } = await expectJson<{ scenes: { id: string }[] }>(resB, 200);
+    const { scenes: scenesB } = await expectJson<{ scenes: { id: string; references: unknown[] }[] }>(resB, 200);
     expect(scenesB.map((s) => s.id)).toEqual([sceneB!.id]);
+    expect(scenesB[0]?.references).toEqual([]); // a scene with no recorded cast carries none
 
     await chatDelete(delReq(chatA.id), ctx(chatA.id));
     await chatDelete(delReq(chatB.id), ctx(chatB.id));

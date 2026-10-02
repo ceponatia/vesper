@@ -1,7 +1,8 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { characters, db, images, items, jobs, locations } from "@/server/db";
+import { characterChats, characters, db, images, items, jobs, locations } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
+import { saveImageBuffer, type ImageRow } from "@/server/images";
 
 // Demo-mode route-handler integration suite (docs/testing.md §api): handlers
 // invoked directly with mocked auth against DATABASE_URL. Self-skips when the
@@ -24,6 +25,7 @@ import {
   purgeOwnerRows,
   routeCtx,
   seedTestUser,
+  testPngBuffer,
   withAuthUser,
   withTempDataRoot,
   type TempDataRoot,
@@ -419,6 +421,132 @@ describe.skipIf(!ready)("entity visibility", () => {
       }
       await purgeOwnerRows([other.id]);
     }
+  });
+
+  it("chat images filed under a public character stay their owner's, with or without their chat (#436)", async () => {
+    const owner = authState.user;
+    const charId = (
+      await expectJson<{ character: { id: string } }>(
+        await createCharacterRoute(apiRequest("/api/characters", { body: { name: "Published Lead" } }), noParams),
+      )
+    ).character.id;
+    await patchCharacterRoute(
+      apiRequest(`/api/characters/${charId}`, { method: "PATCH", body: { visibility: "public" } }),
+      routeCtx({ id: charId }),
+    );
+    const [liveChat] = await db().insert(characterChats).values({ ownerId: owner.id }).returning({ id: characterChats.id });
+    const [goneChat] = await db().insert(characterChats).values({ ownerId: owner.id }).returning({ id: characterChats.id });
+    if (!liveChat || !goneChat) throw new Error("failed to insert chats");
+
+    /** A ready row with real bytes, filed against the public character. */
+    const seedReady = async (values: Pick<ImageRow, "kind"> & Partial<Pick<ImageRow, "chatId" | "meta">>) => {
+      const [row] = await db()
+        .insert(images)
+        .values(canonicalImageRow({ ownerId: owner.id, entityKind: "character" as const, entityId: charId, ...values }))
+        .returning({ id: images.id });
+      if (!row) throw new Error("failed to insert image");
+      const saved = await saveImageBuffer(row.id, await testPngBuffer());
+      if (saved?.status !== "ready") throw new Error("failed to store image bytes");
+      return row.id;
+    };
+    // Authored art — the public widening exists for these.
+    const portrait = await seedReady({ kind: "avatar" });
+    const variant = await seedReady({ kind: "portrait_variant" });
+    // Chat content, filed under the primary exactly as the scene queue files it.
+    const liveScene = await seedReady({ kind: "scene", chatId: liveChat.id });
+    const selfie = await seedReady({ kind: "scene", chatId: liveChat.id, meta: { flavor: "selfie" } });
+    const chatLook = await seedReady({ kind: "chat_look", chatId: liveChat.id });
+    const detachedScene = await seedReady({ kind: "scene", chatId: goneChat.id });
+    // An internal render input: dropped by every clone, the owner's own included.
+    const hiddenCrop = await seedReady({ kind: "identity_face_crop" });
+    // Deleting the chat SET NULLs `chat_id` and the scene survives detached: the
+    // privacy rule cannot depend on the link it just lost.
+    await db().delete(characterChats).where(eq(characterChats.id, goneChat.id));
+    const [detached] = await db().select({ chatId: images.chatId }).from(images).where(eq(images.id, detachedScene)).limit(1);
+    expect(detached?.chatId).toBeNull();
+
+    const authored = [portrait, variant];
+    const chatOwned = [liveScene, selfie, chatLook, detachedScene];
+    const readFile = (id: string) => imageFileRoute(apiRequest(`/api/images/${id}/file`), routeCtx({ id }));
+    const stripIds = async () =>
+      (
+        await expectJson<{ portraits: { id: string }[] }>(
+          await getCharacterRoute(apiRequest(`/api/characters/${charId}`), routeCtx({ id: charId })),
+        )
+      ).portraits.map((image) => image.id);
+
+    // The owner keeps every one of them — strip and file — and the chat images
+    // never get a shared-cacheable policy, even for their owner.
+    expect(await stripIds()).toEqual(expect.arrayContaining([...authored, ...chatOwned]));
+    for (const id of chatOwned) {
+      const file = await readFile(id);
+      expect(file.status).toBe(200);
+      expect(file.headers.get("cache-control")).toMatch(/^private,/);
+    }
+    for (const id of authored) {
+      const file = await readFile(id);
+      expect(file.status).toBe(200);
+      expect(file.headers.get("cache-control")).toMatch(/^public,/);
+    }
+
+    const other = await seedTestUser("routes-int-chat-private");
+    const asOther = { id: other.id, email: other.email };
+    let cloneId = "";
+    try {
+      await withAuthUser(authState, asOther, async () => {
+        // Preview: the authored art is listed, the chat images are not.
+        const foreignStrip = await stripIds();
+        expect(foreignStrip).toEqual(expect.arrayContaining(authored));
+        for (const id of chatOwned) expect(foreignStrip).not.toContain(id);
+        // File: authored art still serves publicly; chat images are not-found.
+        for (const id of authored) {
+          const file = await readFile(id);
+          expect(file.status).toBe(200);
+          expect(file.headers.get("cache-control")).toMatch(/^public,/);
+        }
+        for (const id of chatOwned) expect((await readFile(id)).status).toBe(404);
+        // Clone: the authored art travels, the chat images stay behind.
+        cloneId = (
+          await expectJson<{ id: string }>(
+            await cloneCharacterRoute(apiRequest(`/api/characters/${charId}/clone`, { body: {} }), routeCtx({ id: charId })),
+            201,
+          )
+        ).id;
+      });
+      const copied = await db()
+        .select({ sourceImageId: images.sourceImageId })
+        .from(images)
+        .where(and(eq(images.ownerId, other.id), eq(images.entityId, cloneId)));
+      expect(copied.map((row) => row.sourceImageId).sort()).toEqual([...authored].sort());
+    } finally {
+      await purgeOwnerRows([other.id]);
+    }
+
+    // The owner's OWN clone, through the same route, shares nothing with anyone:
+    // it keeps their chat images (live, selfie, look, detached) beside the
+    // authored art, drops only the hidden kind, and every copy keeps its source's
+    // kind — so a copied scene stays owner-only if the copy is published. The
+    // suite's owner purge takes the copy.
+    const selfCloneId = (
+      await expectJson<{ id: string }>(
+        await cloneCharacterRoute(apiRequest(`/api/characters/${charId}/clone`, { body: {} }), routeCtx({ id: charId })),
+        201,
+      )
+    ).id;
+    const selfCopied = await db()
+      .select({ sourceImageId: images.sourceImageId, kind: images.kind })
+      .from(images)
+      .where(and(eq(images.ownerId, owner.id), eq(images.entityId, selfCloneId)));
+    expect(selfCopied.map((row) => row.sourceImageId).sort()).toEqual([...authored, ...chatOwned].sort());
+    expect(selfCopied.map((row) => row.sourceImageId)).not.toContain(hiddenCrop);
+    const sourceKinds = await db()
+      .select({ id: images.id, kind: images.kind })
+      .from(images)
+      .where(inArray(images.id, [...authored, ...chatOwned]));
+    const kindOf = new Map(sourceKinds.map((row) => [row.id, row.kind]));
+    for (const copy of selfCopied) expect(copy.kind).toBe(kindOf.get(copy.sourceImageId ?? ""));
+
+    await deleteCharacterRoute(apiRequest(`/api/characters/${charId}`), routeCtx({ id: charId }));
   });
 });
 

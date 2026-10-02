@@ -4,6 +4,7 @@ import { z } from "zod";
 import { imageRenderRejection, jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import { db, images } from "@/server/db";
 import { isSimRoutedAuthority, readChatEngineAuthority } from "@/server/engine";
+import { loadSceneReferences } from "@/server/images";
 import { loadOwnedChat, type OwnedChat } from "../../owned";
 import { hasLiveChatSceneJob, queueChatScene } from "./queue";
 
@@ -59,7 +60,13 @@ export const GET = withOwnedChat<Params, OwnedChat>(
         .orderBy(desc(images.createdAt)),
       hasLiveChatSceneJob(chatId),
     ]);
-    return jsonOk({ scenes, rendering });
+    // Each scene's cast (`image_references`), so the client names a selfie's
+    // sender from the row itself, never from where it is filed.
+    const referencesByScene = await loadSceneReferences(scenes.map((row) => row.id));
+    return jsonOk({
+      scenes: scenes.map((row) => ({ ...row, references: referencesByScene.get(row.id) ?? [] })),
+      rendering,
+    });
   },
 );
 

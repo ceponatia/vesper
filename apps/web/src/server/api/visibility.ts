@@ -69,7 +69,7 @@ export async function findViewable(kind: ShareableKind, id: string, userId: stri
 /**
  * Whether an image belongs to a **public** shareable entity **owned by the same
  * account as the image** — the cross-owner read gate for `images/[id]/file` on
- * the preview path. World images and scene images (entityKind null) are never
+ * the preview path. World images and anything filed with no entity are never
  * shareable, so they stay owner-only.
  *
  * The ownership predicate is load-bearing:
@@ -82,9 +82,12 @@ export async function findViewable(kind: ShareableKind, id: string, userId: stri
  *
  * This helper is deliberately KIND-BLIND — it answers a question about the
  * entity, not about the asset. Kinds that may never widen are named by
- * `HIDDEN_IMAGE_KINDS` (internal operational assets that hang off a character
- * like any other entity image) and are subtracted by the caller that holds the
- * row, `images/[id]/file`, before this is consulted.
+ * `UNSHAREABLE_IMAGE_KINDS` — the internal `HIDDEN_IMAGE_KINDS` plus the chat
+ * content in `CHAT_PRIVATE_IMAGE_KINDS` (#436: chat scenes and selfies ARE filed
+ * under the chat's primary character, yet publishing it must not publish them,
+ * whether or not their chat still exists) — and are subtracted by the caller
+ * that holds the row, `images/[id]/file`, through `isShareableImageKind` before
+ * this is consulted.
  */
 export async function isPublicEntityImage(
   entityKind: string | null,

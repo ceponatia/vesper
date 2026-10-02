@@ -23,7 +23,7 @@ import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import type { IntimateRouteProvenance } from "@/contracts/images/intimate-scene-lora";
 import type { PortraitVariantKind } from "@/contracts/images/portrait-variant";
 import { standaloneCharacterReadToken } from "@/contracts/images/subject-digest";
-import { HIDDEN_IMAGE_KINDS, type ImageKind } from "./asset-storage";
+import { PORTRAIT_IMAGE_KINDS, type ImageKind } from "./asset-storage";
 import { runImagePipeline } from "./assets";
 import { loadDefaultWardrobeWithRevisions } from "./avatar";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
@@ -542,7 +542,7 @@ export interface PromoteVariantResult {
 }
 
 /** Widened once so the membership test reads a plain `ImageKind`, not the literal tuple. */
-const hiddenKinds: readonly ImageKind[] = HIDDEN_IMAGE_KINDS;
+const portraitKinds: readonly ImageKind[] = PORTRAIT_IMAGE_KINDS;
 
 /**
  * Promotes a ready variant (or avatar) to the character's canonical avatar.
@@ -570,13 +570,16 @@ export async function promoteVariant(characterId: string, imageId: string, owner
     .where(and(eq(images.id, imageId), eq(images.ownerId, ownerId)))
     .limit(1);
   if (!image) return denyPromotion("images.promote.image_denied", "image not found", characterId, imageId, ownerId);
-  // A hidden derived asset is an internal render INPUT, never a portrait. An
-  // identity face crop passes every other check here — it is owned, ready, and
-  // pointed at this character — so without this guard the owner's own crop could
-  // be promoted to their canonical avatar, which would then derive the next pack
-  // from a crop of a crop.
-  if (hiddenKinds.includes(image.kind)) {
-    return denyPromotion("images.promote.hidden_kind", "image is not a promotable portrait", characterId, imageId, ownerId);
+  // Only an authored portrait (`PORTRAIT_IMAGE_KINDS`, the studio's own kinds)
+  // may become the candidate. Everything else filed under the character passes
+  // every other check here — owned, ready, pointed at this character — yet is
+  // not a portrait: a hidden face crop (which would derive the next pack from a
+  // crop of a crop), or chat content (#436), which is owner-only, so a promoted
+  // scene would advertise an avatar no public viewer can load, travel with no
+  // clone, and could be accepted as the identity source. An allow-list, so a kind
+  // added later is refused until someone decides otherwise.
+  if (!portraitKinds.includes(image.kind)) {
+    return denyPromotion("images.promote.not_portrait_kind", "image is not a promotable portrait", characterId, imageId, ownerId);
   }
   // Not an authorization miss — an owned image that simply isn't paintable yet.
   if (image.status !== "ready") return { ok: false, error: `image status is ${image.status}` };

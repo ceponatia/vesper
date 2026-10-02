@@ -21,7 +21,7 @@ identity-pack service's canonical-portrait candidate — ordered **people before
 a short reference capacity drops the setting rather than a character.
 
 A selfie stays single-subject whoever else is in the room, and a cast with nobody present falls
-back to the filing subject rather than rendering an empty room. **Two present characters
+back to the scene's subject (the primary on a normal scene) rather than rendering an empty room. **Two present characters
 sharing a name degrade to the first** (a `chat_scene` warn): names are not unique and every
 downstream binding is by name, so the pair collapses into one and the cast clause never fires.
 The Image Lab refuses this outright; a player-facing render draws one person rather than none.

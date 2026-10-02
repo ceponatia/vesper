@@ -185,6 +185,8 @@ export const imageRecordSchema = z.object({
   /** Slice 9 (inline scene moments): the conversation + assistant message a chat scene anchors to. */
   chatId: optionalId,
   anchorMessageId: optionalId,
+  /** Present on chat scene rows (the scene's cast); absent elsewhere parses to `[]`. */
+  references: arrayOf(sceneReferenceSchema),
   /** Row meta — `source: "upload"` marks uploads; failed rows carry `error`. */
   meta: imageRowMetaSchema,
 });

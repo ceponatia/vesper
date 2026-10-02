@@ -82,7 +82,9 @@ The character can send photos back (owner rulings 2026-07-11):
   to — a "neutral" proposal must not clear a standing bruise). An opener send
   records an `offer` ring entry (same cooldown).
 - **Render**: `flavor: "selfie"` through `queueChatScene` →
-  `renderCharacterSceneImage`. The framing, reference routing and the retry-once
+  `renderCharacterSceneImage`. Scenes and selfies are both filed under the chat's
+  primary participant, so the scene strip and Gallery find them there; a selfie
+  still depicts only its sender. The framing, reference routing and the retry-once
   failure policy are [images/pipelines/chat-images.md](../images/pipelines/chat-images.md);
   the lane's own rules
   are that the render shares the one-live-render-per-chat dedupe with scenes,

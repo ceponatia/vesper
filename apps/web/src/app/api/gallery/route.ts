@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { jsonOk, withUser } from "@/server/api";
-import { characters, db, imageReferences, images, items, locations } from "@/server/db";
+import { characters, db, images, items, locations } from "@/server/db";
+import { loadSceneReferences } from "@/server/images";
 import type { SceneReference } from "@vesper/image-core";
 
 /** Default page size; `limit` is clamped to [1, 500] (the old single-payload cap). */
@@ -155,32 +156,3 @@ export const GET = withUser(async (user, req: NextRequest) => {
     nextCursor: rows.length > limit ? cursorFor(page[page.length - 1] ?? { createdAt: null, id: "" }) : null,
   });
 });
-
-/**
- * The Gallery-relevant references — character/location refs with a library
- * entity id — for a batch of scenes, from the `image_references` join table,
- * grouped by scene. Non-entity reference roles (style/pose/layout) are not
- * surfaced to the Gallery.
- */
-async function loadSceneReferences(sceneIds: string[]): Promise<Map<string, SceneReference[]>> {
-  const byScene = new Map<string, SceneReference[]>();
-  if (sceneIds.length === 0) return byScene;
-  const rows = await db()
-    .select({
-      sceneImageId: imageReferences.sceneImageId,
-      kind: imageReferences.kind,
-      entityId: imageReferences.entityId,
-      name: imageReferences.name,
-    })
-    .from(imageReferences)
-    .where(inArray(imageReferences.sceneImageId, sceneIds))
-    .orderBy(imageReferences.createdAt);
-  for (const row of rows) {
-    if (!row.entityId) continue;
-    if (row.kind !== "character" && row.kind !== "location") continue;
-    const list = byScene.get(row.sceneImageId) ?? [];
-    list.push({ kind: row.kind, id: row.entityId, name: row.name });
-    byScene.set(row.sceneImageId, list);
-  }
-  return byScene;
-}

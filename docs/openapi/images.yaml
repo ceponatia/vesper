@@ -133,8 +133,10 @@ paths:
       tags: [Image Files]
       summary: Serve an immutable ready image
       description: >-
-        Returns WebP bytes. Owner assets are private-cacheable; a non-hidden image attached to a
-        public entity may be shared-cacheable after ownership/publication checks.
+        Returns WebP bytes. Owner assets are private-cacheable. Only a shareable kind (an avatar,
+        portrait variant or entity art; never a hidden asset or chat content such as a scene or
+        selfie) attached to a public entity with the same owner is readable cross-owner and
+        shared-cacheable; every other image answers 404 to a non-owner.
       x-vesper-source: apps/web/src/app/api/images/[id]/file/route.ts
       responses:
         '200':
