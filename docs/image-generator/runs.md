@@ -91,14 +91,22 @@ the shared paid-output rules; this bench owns how a run applies them.
 Recovery fills that output's own record (`imageId`, `recoveredAt`) and appends a run-level
 `meta.recoveries[]` entry that keeps the original failure — status, failure code, error, finish
 time — rather than erasing it. A run that had stored nothing at all becomes `succeeded` and takes
-the recovered image as its `result_image_id`, per the rule above that a run which stored at least
-one image succeeded; a fan-out that already succeeded through another pass stays exactly as it
-was. No new run row, no new workflow, and no admission or budget charge — recovery only re-fetches
-a render Vesper already paid for.
+the recovered image as its `result_image_id` and the recovered pass's own workflow as its
+`prediction_id` — the column that, like `result_image_id`, names the ONE pass the row's
+single-output facts describe, so a fan-out where every pass failed never ends up pointing its
+image at pass N while its prediction id still names pass one. A fan-out that already succeeded
+through another pass stays exactly as it was. No new run row, no new workflow, and no admission or
+budget charge — recovery only re-fetches a render Vesper already paid for.
 
-- **`recoverable`** is server-computed on every read (`toWireImageGeneratorRun`), never stored and
-  never re-derived by the client: a settled run (`succeeded` or `failed`) whose output still has no
-  image, still names both ids on a Civitai model, and carries no withdrawal stamp.
+The row's `attempt` and `result` records are left alone — they stay the ORIGINAL representative
+pass's own account of what was asked for and what came back, never reassigned to the recovered
+pass; the appended `meta.recoveries[]` entry is what names which pass a recovery actually promoted.
+
+- **`recoverable`** is persisted as `false` by the runner and by the recovery's own patch — the
+  schema's own default, never a real answer the stored row carries — and recomputed on every wire
+  read (`toWireImageGeneratorRun`), which is the only value a client ever sees: a settled run
+  (`succeeded` or `failed`) whose output still has no image, still names both ids on a Civitai
+  model, and carries no withdrawal stamp.
 - **The window is the blob's own lifetime on Civitai's side**, not a retention clock Vesper runs:
   bench runs are not swept the way failed images rows are, so Vesper enforces no separate expiry of
   its own — the offer stands until the provider itself can no longer serve the output.

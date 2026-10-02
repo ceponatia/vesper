@@ -224,9 +224,19 @@ async function install(
     // Only a run that had stored nothing at all changes status — a fan-out
     // that already succeeded through another pass stays exactly as it was,
     // per the ruling's immutability carve-out: a settled run is only ever
-    // amended by recovering an output it already paid for.
+    // amended by recovering an output it already paid for. `predictionId`
+    // moves to the recovered pass's own workflow id in the same write: that
+    // column, like `resultImageId`, names the pass the row's single-output
+    // facts describe, and leaving it pointing at pass one's prediction while
+    // `resultImageId` now shows pass N's image is exactly the "two stories
+    // about one render" split the ordinary settle avoids
+    // (`image-generator-settle.ts`). `executedVersionId` is unchanged: every
+    // pass of one fan-out runs the same compiled plan and the same version.
+    // `attempt`/`result` stay the ORIGINAL representative pass's record —
+    // the recovery entry just appended above is what names which pass this
+    // recovery actually promoted.
     const columns: Partial<typeof imageGeneratorRuns.$inferInsert> = locked.resultImageId === null
-      ? { resultImageId: copyId, status: "succeeded", failureCode: null, error: null }
+      ? { resultImageId: copyId, status: "succeeded", failureCode: null, error: null, predictionId: offer.workflowId }
       : {};
 
     await tx

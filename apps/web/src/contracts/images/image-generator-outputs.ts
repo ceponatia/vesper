@@ -47,10 +47,11 @@ export const imageGeneratorRunOutputSchema = z.object({
   /** When a recovery installed `imageId` here with no new render. Null until recovered. */
   recoveredAt: z.string().min(1).nullable().catch(null).default(null),
   /**
-   * Server-computed, never stored by the runner: whether this output still
-   * offers a paid Civitai render to recover, as the run is built for the wire
-   * (`toWireImageGeneratorRun` / `storedRunResult`, `image-generator-store.ts`).
-   * The client never re-derives it.
+   * Persisted as `false` by the runner and by the recovery's own patch — the
+   * schema's own default, never a real answer the stored row carries — and
+   * RECOMPUTED on every wire read (`toWireImageGeneratorRun` /
+   * `storedRunResult`, `image-generator-store.ts`), which is the only value a
+   * client ever sees. The client never re-derives it itself.
    */
   recoverable: z.boolean().catch(false).default(false),
 });
