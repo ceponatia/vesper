@@ -237,6 +237,20 @@ The executor walks the chain with a **reason-keyed retry** over `classifyImageFa
 rung, a content rejection never retries and drops to the next rung, and a billing failure never
 retries at all.
 
+**A rung's own failure can end the ladder outright instead of falling to the next rung.** Once a
+rung's final failure (after its own same-rung retry above) already declares that THIS attempt's
+provider work was already paid for — `retry=reconcile`, or `civitai_submit_unconfirmed` — the
+chain stops rather than hands off to a different, reduced-reference request on a different model:
+that fallback would be a second paid render racing a workflow that may still be running or may
+still deliver (#685). `images.scene_render.paid_attempt_stop` (warn) names the rung that stopped
+and the provider's own workflow id when one is known, and the failed row's provenance (prompt,
+model, identity references, reference views, program meta) is corrected onto that rung, the same
+way a fallback rung that WINS already replaces the primary rung's reserve-time provenance. Every
+other failure — a preflight refusal, an automatic retry already spent (`retry=deliberate` on a
+failure that never reached the provider), a content rejection, an ordinary transient failure —
+keeps falling through the ladder exactly as before; only a failure that already proves money was
+spent on this specific attempt stops it.
+
 Every downgrade logs `images.scene_render.provider_fallback` (info, `{from,to,reason}`,
 including the upstream error message); a chain where every rung failed transiently logs
 `images.scene_render.service_outage` (warn). A chain where every rung failed marks the row

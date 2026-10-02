@@ -369,11 +369,12 @@ characters unchanged.
   (review P3-5). The failure is always `retry=reconcile` and classifies as
   `other`, never `transient` and never a billing or content-rejection
   reading, so the SAME rung is never rerun and the character-chat selfie
-  retry's own guard skips it entirely. A scene chain FALLBACK to its next
-  rung — a different, reduced-reference request to a different model — is
-  unaffected and still runs, exactly as for any other non-transient failure,
-  and that fallback DOES render again; only a rerun of the identical rung is
-  ruled out.
+  retry's own guard skips it entirely. The scene chain's own paid-stop rule
+  ends the render here instead of falling back to the next rung: once this
+  rung's provider work is already paid for, no further rung — not even a
+  different, reduced-reference request to a different model — runs, and the
+  failed row's provenance is corrected onto this rung, the one Civitai
+  actually billed (#685).
 - **`recoverCivitaiOutput` recovers that output without rendering again.**
   Read-only end to end: one GET to re-read the workflow, then the same
   retried download above. It never POSTs, never creates a workflow, and
