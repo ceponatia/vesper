@@ -74,12 +74,18 @@ import { logDiagnostics } from "@/server/log";
 import { hasReplicate, isDemoMode } from "../ai";
 import { db } from "../db";
 import { readImageBytes, type ImageRow } from "./asset-storage";
-import { runImagePipeline, type ImagePipelineOptions } from "./assets";
+import { ImageProduceError, runImagePipeline, type ImagePipelineOptions } from "./assets";
 import { identityPackRenderReferences, type IdentityPackRenderReferencesResult } from "./identity-pack-consume";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderImageIntent } from "./render-intent";
 import { composeSceneSpec, renderResolvedScene, type RenderResolvedSceneInput } from "./scene";
-import { CHAT_LOOK_VISUAL_CUT_MISSING, latestChatLook, renderChatLookImage, type ChatLookVisualCut } from "./chat-look";
+import {
+  CHAT_LOOK_VISUAL_CUT_MISSING,
+  latestChatLook,
+  renderChatLookImage,
+  renderChatPlaceImage,
+  type ChatLookVisualCut,
+} from "./chat-look";
 import { emptySceneRenderPlan } from "./prompts-scene-plan";
 import { generateVariant, VARIANT_PROGRAM_UNBOUND } from "./variants";
 import { renderCharacterSceneImage } from "./character-scene";
@@ -305,6 +311,87 @@ describe("chat_look lane", () => {
       expect.arrayContaining([expect.objectContaining({ code: "images.identity_pack.profile_ineligible" })]),
       expect.objectContaining({ chatId: "chat1", characterId: "charaaaaaaaaaaaaaaaaaaaa" }),
     );
+  });
+
+  /**
+   * PROTECTS (#686): a failed chat-look render keeps this lane's ruled THROW
+   * shape (the shell's warn diagnostic and the error-carrying event line) and
+   * still hands the pipeline its attempt record, so the failed row records
+   * `meta.render` exactly as a failed variant row does. The bad
+   * implementation this kills throws a plain `Error`: the row then keeps no
+   * attempt record, and the ids a Civitai transport records before its
+   * download outlive a failure that already proved the output unrecoverable
+   * — a false recovery offer. That the pipeline merges a thrown
+   * `ImageProduceError`'s meta into the row at all is `assets.int.test.ts`'s
+   * claim; this one is that the chat-look lane actually throws it, with the
+   * real attempt attached.
+   */
+  it("a failed render throws its attempt record with it", async () => {
+    mockResolve.mockResolvedValue(resolved("chat_look"));
+    mockConsume.mockResolvedValue(packOk());
+    const attempt = { modelSlug: "qwen/qwen-image-edit-2511", predictionId: "wf-1", shape: null };
+    mockIntent.mockResolvedValue(
+      {
+        ok: false,
+        error: "Civitai output download failed (civitai_output_too_large; retry=never)",
+        attempt,
+      } as unknown as Awaited<ReturnType<typeof renderImageIntent>>,
+    );
+    let thrown: unknown;
+    mockPipeline.mockImplementation(async (opts) => {
+      try {
+        await opts.produce({ id: "imgnew" } as unknown as ImageRow);
+      } catch (caught) {
+        thrown = caught;
+      }
+      return { imageId: "imgnew", status: "failed" };
+    });
+
+    expect(await run()).toBeNull();
+
+    expect(thrown).toBeInstanceOf(ImageProduceError);
+    if (!(thrown instanceof ImageProduceError)) throw new Error("expected an ImageProduceError");
+    expect(thrown.message).toBe("Civitai output download failed (civitai_output_too_large; retry=never)");
+    expect(thrown.meta).toEqual({ render: attempt });
+  });
+});
+
+describe("chat_place lane", () => {
+  const run = (sketch = "Warm terracotta tiles; copper pans.") =>
+    renderChatPlaceImage({ chatId: "chat1", userId: "user1", placeName: "the kitchen", sketch });
+
+  /**
+   * PROTECTS (#686): a failed place-shot render keeps this lane's ruled THROW
+   * shape and still hands the pipeline its attempt record, exactly as the
+   * chat-look anchor's above — this lane has no identity pack to refuse
+   * through, so the throw path was otherwise untested.
+   */
+  it("a failed render throws its attempt record with it", async () => {
+    mockResolve.mockResolvedValue(resolved("chat_place"));
+    const attempt = { modelSlug: "qwen/qwen-image-2512", predictionId: "wf-2", shape: null };
+    mockIntent.mockResolvedValue(
+      {
+        ok: false,
+        error: "Civitai output download failed (civitai_output_undelivered; retry=reconcile)",
+        attempt,
+      } as unknown as Awaited<ReturnType<typeof renderImageIntent>>,
+    );
+    let thrown: unknown;
+    mockPipeline.mockImplementation(async (opts) => {
+      try {
+        await opts.produce({ id: "imgnew" } as unknown as ImageRow);
+      } catch (caught) {
+        thrown = caught;
+      }
+      return { imageId: "imgnew", status: "failed" };
+    });
+
+    expect(await run()).toBeNull();
+
+    expect(thrown).toBeInstanceOf(ImageProduceError);
+    if (!(thrown instanceof ImageProduceError)) throw new Error("expected an ImageProduceError");
+    expect(thrown.message).toBe("Civitai output download failed (civitai_output_undelivered; retry=reconcile)");
+    expect(thrown.meta).toEqual({ render: attempt });
   });
 });
 
