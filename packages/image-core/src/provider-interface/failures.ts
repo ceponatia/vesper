@@ -18,6 +18,15 @@ export type ImageFailureReason = "transient" | "content_rejection" | "other";
 export interface ImageProviderFailure {
   reason: ImageFailureReason;
   message: string;
+  /**
+   * The provider's own prediction/workflow id for THIS attempt, when the
+   * failure happened after one was created — carried so a caller that stops
+   * on a paid failure (#685) can name which provider record was paid for,
+   * the same id `ResolvedImageAttempt.predictionId` records on success.
+   * Absent on a failure that never reached the provider (a pre-spend
+   * refusal); `null` is an explicit "the provider named none".
+   */
+  predictionId?: string | null;
 }
 
 export interface ProviderRenderResult {
@@ -57,6 +66,12 @@ const BILLING = /insufficient credit|payment required|\b402\b|billing/;
  * existed.
  */
 const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
+/**
+ * The narrower disposition set {@link declaresSpentProviderWork} tests --
+ * see that function's doc comment for why it differs from the predicate
+ * built on {@link NON_TRANSIENT_DISPOSITION} above.
+ */
+const SPENT_PROVIDER_WORK = /retry=reconcile|submit_unconfirmed/;
 
 /**
  * Whether a failure message already declares a non-automatic retry
@@ -72,6 +87,34 @@ const NON_TRANSIENT_DISPOSITION = /retry=(?:deliberate|never|reconcile)/;
  */
 export function declaresNonAutomaticRetry(message: string): boolean {
   return NON_TRANSIENT_DISPOSITION.test(message.toLowerCase());
+}
+
+/**
+ * The exact two dispositions that mean provider work was already SPENT on
+ * this attempt: `retry=reconcile` (a workflow that already exists and may
+ * still finish — an exhausted workflow-status read, the post-submit
+ * catch-all `civitai-runtime.ts` appends onto an otherwise-undeclared
+ * identity/shape failure once a workflow id exists, or
+ * `civitai_output_undelivered`'s own disposition) and
+ * `civitai_submit_unconfirmed` (a paid submit whose own answer was lost and
+ * an externalId lookup could not resolve it either — Civitai may still
+ * accept, or may already have accepted, that workflow).
+ *
+ * This is NARROWER than {@link declaresNonAutomaticRetry}, deliberately:
+ * that predicate answers "should a caller repeat this automatically"
+ * (`deliberate`, `never`, and `reconcile` all answer no), while this one
+ * answers "was money already spent on THIS attempt" — true for only two of
+ * those three. A preflight refusal that declares `retry=deliberate` (one
+ * automatic repeat already spent, nothing paid for) or `retry=never` must
+ * still fall through the scene chain's degradation ladder to its next rung;
+ * only the subset that also means a paid workflow may still be running or
+ * may still deliver must stop the chain outright rather than risk a second
+ * paid rung racing the first (#685). Built on its own regex, not
+ * `NON_TRANSIENT_DISPOSITION`, because it tests a different, smaller set of
+ * strings and must not drift when that larger set grows.
+ */
+export function declaresSpentProviderWork(message: string): boolean {
+  return SPENT_PROVIDER_WORK.test(message.toLowerCase());
 }
 
 /** Classify an already-described provider failure message. */

@@ -765,6 +765,7 @@ export {
   attemptReferenceCount,
   classifyImageFailureMessage,
   declaresNonAutomaticRetry,
+  declaresSpentProviderWork,
   imageFailureHealthOutcome,
   isBillingFailureMessage,
   routeSceneAttempts,

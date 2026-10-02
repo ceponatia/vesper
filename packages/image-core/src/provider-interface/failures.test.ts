@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageFailureHealthOutcome, isBillingFailureMessage } from "./failures";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, declaresSpentProviderWork, imageFailureHealthOutcome, isBillingFailureMessage } from "./failures";
 
 describe("classifyImageFailureMessage", () => {
   it("classifies provider content-policy strings as content rejections", () => {
@@ -90,6 +90,58 @@ describe("declaresNonAutomaticRetry", () => {
     expect(declaresNonAutomaticRetry("civitai lora metadata failed (civitai_http_503; retry=automatic).")).toBe(false);
     expect(declaresNonAutomaticRetry("replicate prediction abc never started: startup timed out")).toBe(false);
     expect(declaresNonAutomaticRetry("blocked by content policy")).toBe(false);
+  });
+});
+
+/**
+ * PROTECTS (#685): the scene chain's paid-stop rule reads exactly this
+ * predicate to decide whether a rung's final failure already spent provider
+ * work — mirrors the issue's accept/deny table, including the two cases that
+ * must NOT stop the chain despite also declaring a non-automatic retry
+ * disposition (a preflight `retry=deliberate`/`retry=never` refusal).
+ */
+describe("declaresSpentProviderWork", () => {
+  it("is true for a civitai_output_undelivered failure (retry=reconcile)", () => {
+    expect(
+      declaresSpentProviderWork(
+        "Civitai output download failed (civitai_output_undelivered; retry=reconcile). The workflow succeeded and was already paid for, but its output could not be downloaded after 3 attempts. It can be recovered from that output without rendering again.",
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for the post-submit catch-all civitai-runtime.ts appends once a workflow id exists", () => {
+    expect(
+      declaresSpentProviderWork(
+        "Civitai returned a different workflow while polling Civitai workflow abc-123 was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.",
+      ),
+    ).toBe(true);
+  });
+
+  it("is true for any other message that merely states retry=reconcile", () => {
+    expect(declaresSpentProviderWork("civitai workflow status failed (civitai_http_503; retry=reconcile).")).toBe(true);
+  });
+
+  it("is true for civitai_submit_unconfirmed even though its own disposition is retry=deliberate", () => {
+    expect(
+      declaresSpentProviderWork(
+        "Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as civitai_http_503, and no workflow in the list carried this externalId after 2 lookup rounds. Civitai may still accept, or may already have accepted, this workflow under externalId=abc-123 — check the workflow list for it before starting one deliberate replacement.",
+      ),
+    ).toBe(true);
+  });
+
+  it("is false for a preflight retry=never refusal — falls through to the next rung, unchanged", () => {
+    expect(declaresSpentProviderWork("Civitai preflight failed (civitai_http_400; retry=never). Do not repeat this request with the same input.")).toBe(false);
+  });
+
+  it("is false for a plain retry=deliberate disposition that is NOT civitai_submit_unconfirmed — the automatic repeat was spent, not money", () => {
+    expect(
+      declaresSpentProviderWork("Civitai preflight failed (civitai_http_503; retry=deliberate). Vesper already reposted this preflight once automatically; that retry is spent, so start one deliberate replacement only after reviewing the request."),
+    ).toBe(false);
+  });
+
+  it("is false for content rejection and transient failures", () => {
+    expect(declaresSpentProviderWork("blocked by content policy")).toBe(false);
+    expect(declaresSpentProviderWork("fetch failed: ETIMEDOUT")).toBe(false);
   });
 });
 
