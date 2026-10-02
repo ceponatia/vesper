@@ -1471,6 +1471,46 @@ describe.runIf(ready)("roster — participants add/remove/presence", () => {
     expect(got.character.id).toBe(joinerId);
   });
 
+  it("keeps a scene filed under the old primary in the chat's scene list after that primary is removed (#436)", async () => {
+    const chat = await createChat(ids.character);
+    const bId = await mkCharacter("Bea Heir");
+    await participantAdd(addReq(chat.id, { characterId: bId }), ctx(chat.id));
+
+    // A scene filed under A (the primary at render time), sent by B (a selfie).
+    const [scene] = await db()
+      .insert(images)
+      .values(
+        canonicalImageRow({
+          ownerId: authState.user.id,
+          kind: "scene" as const,
+          entityKind: "character" as const,
+          entityId: ids.character,
+          chatId: chat.id,
+          prompt: "selfie moment",
+        }),
+      )
+      .returning({ id: images.id });
+    await db().insert(imageReferences).values({
+      sceneImageId: scene!.id,
+      kind: "character",
+      entityId: bId,
+      name: "Bea Heir",
+      source: "generated",
+    });
+
+    // Remove A through the real route: B is promoted to primary.
+    expect((await participantRemove(removeReq(chat.id, ids.character), pCtx(chat.id, ids.character))).status).toBe(200);
+    const got = await expectJson<{ character: { id: string } }>(await chatGet(getReq(chat.id), ctx(chat.id)));
+    expect(got.character.id).toBe(bId);
+
+    const res = await sceneList(getReq(chat.id), ctx(chat.id));
+    const { scenes } = await expectJson<{ scenes: { id: string; references: unknown[] }[] }>(res, 200);
+    expect(scenes.map((s) => s.id)).toEqual([scene!.id]);
+    expect(scenes[0]?.references).toEqual([{ kind: "character", id: bId, name: "Bea Heir" }]);
+
+    await chatDelete(delReq(chat.id), ctx(chat.id));
+  });
+
   it("seeds a preset's premise onto the shared scenario; outfit/bands to the primary only", async () => {
     const [preset] = await db()
       .insert(chatScenarioPresets)
