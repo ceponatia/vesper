@@ -633,7 +633,12 @@ export const referenceViewSummarySchema = z.object({
   attemptId: z.string().nullable().default(null),
   reviewRevision: z.number().int().nonnegative().default(0),
   feedback: referenceViewFeedbackSchema.nullable().default(null),
-  /** The rendered or uploaded asset, when there is one. Null while pending and after a failure. */
+  /**
+   * The rendered or uploaded asset, when there is one. Null while pending and
+   * after a failure — including a failed attempt that keeps its failed render's
+   * row so a paid output can be recovered (`recoverable`): a failed row is
+   * never drawn or consumed.
+   */
   imageId: z.string().nullable(),
   method: z.string().nullable(),
   reviewedAt: z.string().nullable(),
@@ -678,6 +683,14 @@ export const referenceViewSummarySchema = z.object({
    * settles, because replacing the upstream mid-render strands those renders.
    */
   downstreamBuilding: z.boolean().default(false),
+  /**
+   * This failed attempt's render was paid for, and its image can be recovered
+   * without a new render. The conditions live in one function
+   * ({@link isRecoverableReferenceView}). Build, and the builds an approval or
+   * an upload queues, leave a recoverable slot alone, so it is never paid for
+   * twice; only the slot's own Regenerate renders it again.
+   */
+  recoverable: z.boolean().default(false),
 });
 export type ReferenceViewSummary = z.infer<typeof referenceViewSummarySchema>;
 
@@ -715,6 +728,7 @@ export function emptyReferenceViewSetSummary(): ReferenceViewSetSummary {
       uploadBuilds: [],
       lineageId: null,
       downstreamBuilding: false,
+      recoverable: false,
     })),
   };
 }
@@ -768,6 +782,14 @@ export interface ReferenceViewProjectionInput {
    * (`referenceViewBodySetKey`); null or absent when none are.
    */
   readonly currentBodyReferenceSet?: string | null;
+  /**
+   * The row's linked asset is a failed render whose paid output is still on
+   * offer: a Civitai render that succeeded and was billed, whose download
+   * failed, and whose output nobody has found gone for good. A fact the store
+   * reads off that asset row; absent is no. Only
+   * {@link isRecoverableReferenceView} reads it.
+   */
+  readonly outputRecoverable?: boolean;
 }
 
 /**
@@ -824,18 +846,58 @@ export function projectReferenceViewState(row: ReferenceViewProjectionInput): Re
     !row.current ||
     row.status === "stale" ||
     row.status === "superseded" ||
-    row.sourceImageId === null ||
-    row.acceptedImageId === null ||
-    row.sourceImageId !== row.acceptedImageId ||
     row.imageId === null ||
     row.imageStatus !== "ready" ||
-    row.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
-    ((row.upstreamViewId ?? null) !== null && row.upstreamViewId !== (row.approvedUpstreamId ?? null)) ||
-    referenceViewBodySetMoved(row)
+    !referenceViewRenderCurrent(row)
   ) {
     return "stale";
   }
   return row.reviewedAt === null ? "unreviewed" : "approved";
+}
+
+/**
+ * Whether a row was rendered against everything this slot would be rendered
+ * against right now: the portrait the character has accepted, the current
+ * generation version, its upstream slot's approved current attempt when it
+ * records one, and — for a rendered view — the character's body-image set.
+ *
+ * The comparison staleness and the recovery offer share: a recovered output is
+ * installed as an unreviewed attempt, so an output that would read stale on
+ * arrival is not worth recovering. PURE.
+ */
+function referenceViewRenderCurrent(row: ReferenceViewProjectionInput): boolean {
+  return (
+    row.sourceImageId !== null &&
+    row.acceptedImageId !== null &&
+    row.sourceImageId === row.acceptedImageId &&
+    row.generationVersion === REFERENCE_VIEW_GENERATION_VERSION &&
+    ((row.upstreamViewId ?? null) === null || row.upstreamViewId === (row.approvedUpstreamId ?? null)) &&
+    !referenceViewBodySetMoved(row)
+  );
+}
+
+/**
+ * **The one recoverability rule.** A failed attempt's paid output may be
+ * recovered — downloaded again from the provider and installed as this same
+ * attempt, unreviewed, with no new render — iff all of these hold: the slot is
+ * in the character's current age-gated plan, the row is its current one and
+ * `failed`, its linked asset still offers a paid output
+ * ({@link ReferenceViewProjectionInput.outputRecoverable}), and the render is
+ * still current by the staleness comparison ({@link projectReferenceViewState}).
+ *
+ * Computed inside the projection, so a what-if approval of the upstream slot
+ * answers it against the assumed upstream, exactly as staleness is answered.
+ * A recoverable slot reads `failed` all the same: nothing about it may be
+ * drawn or consumed until the recovery has installed its image. PURE.
+ */
+export function isRecoverableReferenceView(row: ReferenceViewProjectionInput): boolean {
+  return (
+    row.eligible &&
+    row.current &&
+    row.status === "failed" &&
+    row.outputRecoverable === true &&
+    referenceViewRenderCurrent(row)
+  );
 }
 
 /**
@@ -886,6 +948,8 @@ export interface ReferenceViewSlotFacts {
 export interface ReferenceViewSlotProjection extends ReferenceView {
   readonly state: ReferenceViewState;
   readonly consumable: boolean;
+  /** A failed attempt whose paid output can be recovered ({@link isRecoverableReferenceView}). */
+  readonly recoverable: boolean;
   /** The upstream slot this one waits on — see {@link ReferenceViewSummary.waitingOn}. */
   readonly waitingOn: ReferenceView | null;
 }
@@ -902,12 +966,15 @@ export interface ReferenceViewAssumedApproval {
 }
 
 /**
- * Every slot's state, waiting status and consumability, in the caller's order.
+ * Every slot's state, waiting status, consumability and recoverability, in the
+ * caller's order.
  *
  * Projected in {@link referenceViewBuildOrder} because a slot's staleness reads
  * its upstream's projected answer: a bare view whose clothed view went stale
  * because the front moved is stale with it, and nothing but the order of
- * evaluation carries that down. PURE.
+ * evaluation carries that down. Recoverability reads the same upstream answer,
+ * so a failed view whose paid output was rendered from an upstream attempt the
+ * sheet no longer approves is not offered for recovery. PURE.
  *
  * `assume` answers "what would this sheet be if that attempt were approved",
  * which is the question the Approve control and the upload dialog ask before
@@ -947,6 +1014,7 @@ export function projectReferenceViewSlots(
       wardrobe: view.wardrobe,
       state,
       consumable: input !== null && isConsumableReferenceView(input),
+      recoverable: input !== null && isRecoverableReferenceView(input),
       waitingOn: upstream !== null && !upstreamApproved ? upstream : null,
     });
   }
@@ -963,6 +1031,8 @@ const BUILDABLE_STATES: ReadonlySet<ReferenceViewState> = new Set<ReferenceViewS
 export type ReferenceViewBuildFacts = ReferenceView & {
   readonly state: ReferenceViewState;
   readonly waitingOn: ReferenceView | null;
+  /** A failed slot whose paid output can be recovered — never built in bulk. */
+  readonly recoverable: boolean;
 };
 
 /**
@@ -970,18 +1040,24 @@ export type ReferenceViewBuildFacts = ReferenceView & {
  * an upstream view nobody has approved. On a fresh character that is the root
  * view alone. `rejected` is never rebuilt in bulk, and a plan-withheld slot is
  * `ineligible` rather than missing.
+ *
+ * Nor is a `recoverable` failed slot: its render was already paid for, and its
+ * image comes back through recovery for free. Building it in bulk would pay
+ * for the same view twice; the slot's own Regenerate still renders it again
+ * when the owner asks for that by name.
  */
 export function referenceViewsReadyToBuild(views: readonly ReferenceViewBuildFacts[]): ReferenceView[] {
   return views
-    .filter((view) => BUILDABLE_STATES.has(view.state) && view.waitingOn === null)
+    .filter((view) => BUILDABLE_STATES.has(view.state) && view.waitingOn === null && !view.recoverable)
     .map((view) => ({ angle: view.angle, wardrobe: view.wardrobe }));
 }
 
 /**
  * What approving `approved` builds: its direct dependents that are ready to
- * build once it is approved. Asked of the sheet AFTER the approval, it is the
- * review route's queue; asked of a what-if projection BEFORE it
- * ({@link referenceViewBuildsOnApproval}), it is the Approve control's count.
+ * build once it is approved — never a recoverable one. Asked of the sheet AFTER
+ * the approval, it is the review route's queue; asked of a what-if projection
+ * BEFORE it ({@link referenceViewBuildsOnApproval}), it is the Approve
+ * control's count.
  */
 export function referenceViewDependentsToBuild(
   views: readonly ReferenceViewBuildFacts[],

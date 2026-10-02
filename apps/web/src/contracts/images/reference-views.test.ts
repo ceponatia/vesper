@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   allReferenceViews,
+  emptyReferenceViewSetSummary,
   imageAgeAllowsIntimate,
   selectReferenceView,
   isConsumableReferenceView,
+  isRecoverableReferenceView,
   normalizeReferenceViewTargets,
   plannedReferenceViews,
   projectReferenceViewSlots,
@@ -27,6 +29,7 @@ import {
   referenceViewReviewRequestSchema,
   referenceViewRestoreRequestSchema,
   referenceViewQueueOutcomeSchema,
+  referenceViewSummarySchema,
   referenceViewHistoryVerdict,
   referenceViewLineageId,
   referenceViewLineBusy,
@@ -347,6 +350,66 @@ describe("what a stored row projects to, and what may be sent to a render", () =
   // would happily re-render.
   it("keeps a rejection visible even when the portrait also moved on", () => {
     expect(projectReferenceViewState({ ...base, status: "rejected", acceptedImageId: "portrait-b" })).toBe("rejected");
+  });
+});
+
+/**
+ * **Which failed attempt's paid output may be recovered** (#682).
+ *
+ * A render that succeeded and was billed can still fail its download. Its row
+ * offers the output for recovery — fetched again and installed as this same
+ * attempt, with no new render — only while that output would arrive current.
+ * The table kills the implementation that checks the offer and stops: an
+ * output rendered from a portrait, wording, upstream view or body-image set
+ * the sheet has since moved past would install a view that is stale on
+ * arrival, which Build would then pay to render again anyway.
+ */
+describe("which failed attempt's paid output may be recovered", () => {
+  const ACCEPTED = "portrait-a";
+  const offered: ReferenceViewProjectionInput = {
+    eligible: true,
+    current: true,
+    status: "failed",
+    sourceImageId: ACCEPTED,
+    imageId: "img-failed-render",
+    imageStatus: "failed",
+    generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
+    reviewedAt: null,
+    acceptedImageId: ACCEPTED,
+    upstreamViewId: "up-1",
+    approvedUpstreamId: "up-1",
+    method: null,
+    bodyReferenceSet: "img-a:clothed",
+    currentBodyReferenceSet: "img-a:clothed",
+    outputRecoverable: true,
+  };
+
+  const cases: ReadonlyArray<[string, Partial<ReferenceViewProjectionInput>, boolean]> = [
+    ["its paid output is on offer and it matches everything the sheet holds now", {}, true],
+    ["it was rendered from no upstream view", { upstreamViewId: null, approvedUpstreamId: null }, true],
+    ["its asset offers no paid output", { outputRecoverable: false }, false],
+    ["nothing was read about its asset", { outputRecoverable: undefined }, false],
+    ["its slot is no longer in the character's age-gated plan", { eligible: false }, false],
+    ["a newer attempt replaced it", { current: false, status: "superseded" }, false],
+    ["its render did not fail", { status: "ready", imageStatus: "ready" }, false],
+    ["the accepted portrait moved on", { acceptedImageId: "portrait-b" }, false],
+    ["the character has no accepted portrait", { acceptedImageId: null }, false],
+    ["its source pointer was cleared", { sourceImageId: null }, false],
+    ["it was rendered by wording this code no longer emits", { generationVersion: REFERENCE_VIEW_GENERATION_VERSION - 1 }, false],
+    ["its upstream view was replaced and re-approved", { approvedUpstreamId: "up-2" }, false],
+    ["its upstream view has no approved current attempt", { approvedUpstreamId: null }, false],
+    ["the character's body images changed since", { currentBodyReferenceSet: "img-b:clothed" }, false],
+  ];
+
+  it.each(cases)("%s ⇒ %s", (_name, patch, recoverable) => {
+    expect(isRecoverableReferenceView({ ...offered, ...patch })).toBe(recoverable);
+  });
+
+  // An offer changes what the owner may do with the slot, never what it shows
+  // or what a render may send.
+  it("still reads failed, and is never consumable", () => {
+    expect(projectReferenceViewState(offered)).toBe("failed");
+    expect(isConsumableReferenceView(offered)).toBe(false);
   });
 });
 
@@ -675,6 +738,66 @@ describe("the sheet, projected in build order", () => {
     // Still usable, still the owner's — but nothing may rebuild it until the root is approved.
     expect(slot(facts, BACK)).toMatchObject({ state: "approved", consumable: true, waitingOn: ROOT });
   });
+
+  /**
+   * **A paid render is never bought twice in bulk** (#682). A failed view
+   * whose paid output can still be recovered is left out of Build and out of
+   * what an approval or an upload queues; a failed view with nothing to
+   * recover is rebuilt exactly as before. The implementation this kills
+   * filters the summaries by `recoverable` in one caller and forgets another.
+   */
+  const paidFailure = (attemptId: string, upstreamViewId: string | null): ReferenceViewSlotRow =>
+    attempt(attemptId, { status: "failed", imageStatus: "failed", upstreamViewId, outputRecoverable: true });
+  const lostFailure = (attemptId: string, upstreamViewId: string | null): ReferenceViewSlotRow =>
+    attempt(attemptId, { status: "failed", imageStatus: "failed", upstreamViewId });
+
+  it("leaves a recoverable failed view out of Build and keeps a failed view with nothing to recover", () => {
+    const facts = sheet([
+      [ROOT, approved("front-1")],
+      [BACK, paidFailure("back-1", "front-1")],
+      [LEFT, lostFailure("left-1", "front-1")],
+    ]);
+    expect(slot(facts, BACK)).toMatchObject({ state: "failed", consumable: false, recoverable: true, waitingOn: null });
+    expect(slot(facts, LEFT)).toMatchObject({ state: "failed", recoverable: false, waitingOn: null });
+    const projected = projectReferenceViewSlots(facts);
+    expect(slotSet(referenceViewsReadyToBuild(projected))).toEqual(slotSet([LEFT, RIGHT, FRONT_BARE]));
+    expect(slotSet(referenceViewDependentsToBuild(projected, ROOT))).toEqual(slotSet([LEFT, RIGHT, FRONT_BARE]));
+  });
+
+  it("never queues a recoverable view on the approval of the upstream it was rendered from, as disclosed", () => {
+    // The root was undone: the attempt the failed back view was rendered from waits for approval again.
+    const facts = sheet([
+      [ROOT, attempt("front-1")],
+      [BACK, paidFailure("back-1", "front-1")],
+      [LEFT, lostFailure("left-1", "front-1")],
+    ]);
+    // With no approved upstream the offer is not current, and the slot waits anyway.
+    expect(slot(facts, BACK)).toMatchObject({ state: "failed", recoverable: false, waitingOn: ROOT });
+    const disclosed = referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: "front-1" });
+    expect(slotSet(disclosed)).toEqual(slotSet([LEFT, RIGHT, FRONT_BARE]));
+    // The review route's queue after the write is the same answer.
+    const after = projectReferenceViewSlots(withApproval(facts, ROOT));
+    expect(after.find((entry) => sameReferenceView(entry, BACK))?.recoverable).toBe(true);
+    expect(referenceViewDependentsToBuild(after, ROOT)).toEqual(disclosed);
+  });
+
+  it("withdraws the offer when the approval assumed is of a different upstream, and builds the view again", () => {
+    const facts = sheet([
+      [ROOT, approved("front-1")],
+      [BACK, paidFailure("back-1", "front-1")],
+    ]);
+    expect(slot(facts, BACK)?.recoverable).toBe(true);
+    // An upload installs a new attempt that no stored row was rendered from.
+    const upload = projectReferenceViewSlots(facts, { view: ROOT, attemptId: null });
+    expect(upload.find((entry) => sameReferenceView(entry, BACK))).toMatchObject({ state: "failed", recoverable: false });
+    expect(referenceViewBuildsOnApproval(facts, { view: ROOT, attemptId: null })).toContainEqual(BACK);
+    // So does approving a regenerated root.
+    const regenerated = sheet([
+      [ROOT, attempt("front-2")],
+      [BACK, paidFailure("back-1", "front-1")],
+    ]);
+    expect(referenceViewBuildsOnApproval(regenerated, { view: ROOT, attemptId: "front-2" })).toContainEqual(BACK);
+  });
 });
 
 /** `fnv1a32("char-b")` is even — a golden value; see the side-parity test below. */
@@ -874,5 +997,24 @@ describe("reference build admission wire guards", () => {
     })).toMatchObject({ admitted: 1, targets: [{ state: "queued" }] });
     expect(referenceViewQueueOutcomeSchema.parse({ queued: false, reason: null, planned: 0 }))
       .toMatchObject({ admitted: 0, targets: [] });
+  });
+
+  // A server that predates recovery offers nothing to recover, and so does an
+  // unreadable sheet.
+  it("reads a summary with no recovery field, and the empty sheet, as nothing to recover", () => {
+    const older = referenceViewSummarySchema.parse({
+      angle: "front_full",
+      wardrobe: "clothed",
+      state: "failed",
+      imageId: null,
+      method: null,
+      reviewedAt: null,
+      failureCode: "other",
+      failureMessage: null,
+      updatedAt: null,
+      consumable: false,
+    });
+    expect(older.recoverable).toBe(false);
+    expect(emptyReferenceViewSetSummary().views.every((view) => !view.recoverable)).toBe(true);
   });
 });

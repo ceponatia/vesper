@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
+import { z } from "zod";
+import { imageModelProvider } from "@vesper/image-models";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -36,7 +38,7 @@ import {
   type ReferenceViewReviewRequest,
 } from "@/contracts";
 import { characterReferenceViews, characters, db, images, jobs, JOB_STALE_MS } from "../db";
-import { createImageAsset, failImage, readImageBytes } from "./asset-storage";
+import { createImageAsset, failImage, readImageBytes, type ImageRow } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
 import { log } from "@/server/log";
@@ -710,6 +712,90 @@ async function readViewImageStatuses(
   return new Map(assets.map((asset) => [asset.id, asset.status]));
 }
 
+// ---------------------------------------------------------------------------
+// A failed render's paid output
+// ---------------------------------------------------------------------------
+
+/**
+ * The meta key that withdraws a recovery offer: an ISO timestamp stamped on the
+ * failed render's row once the provider has shown its output can never be
+ * fetched. Retention's own clock (`failedAt`) is left alone.
+ */
+export const REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY = "recoveryUnavailableAt";
+
+/**
+ * What a failed render's row records when the provider rendered and billed an
+ * output Vesper could not download: the workflow, the output blob, and the
+ * model (`meta.render`, written with the failure). Parsed at the trust
+ * boundary; anything less is a failure with nothing to recover.
+ */
+const undeliveredRenderSchema = z.object({
+  predictionId: z.string().min(1),
+  undeliveredOutputId: z.string().min(1),
+  modelSlug: z.string().min(1),
+});
+
+const assetMetaSchema = z.record(z.string(), z.unknown());
+
+/** A paid output a failed render could not deliver, as a recovery fetches it again. */
+export interface ReferenceViewPaidOutput {
+  /** The failed render's own images row — the offer, and what the view row links. */
+  readonly imageId: string;
+  /** The provider workflow that rendered and billed it. */
+  readonly workflowId: string;
+  /** The output that workflow produced. */
+  readonly blobId: string;
+}
+
+/**
+ * What a failed view's linked asset offers: a paid output still to be fetched,
+ * an output the provider has shown is gone for good (`withdrawn`), or nothing —
+ * a failure that never had a paid output, such as a moderated render, or a
+ * render on a model whose outputs cannot be fetched again.
+ */
+export type ReferenceViewOutputOffer =
+  | { readonly state: "on_offer"; readonly output: ReferenceViewPaidOutput }
+  | { readonly state: "withdrawn" }
+  | { readonly state: "none" };
+
+/**
+ * The one reading of a failed render's row as a recovery offer. Only a `failed`
+ * row offers anything, only a Civitai render can be fetched again from its
+ * workflow, and a stamped row has been withdrawn. Never throws.
+ */
+export function referenceViewOutputOffer(asset: Pick<ImageRow, "id" | "status" | "meta">): ReferenceViewOutputOffer {
+  if (asset.status !== "failed") return { state: "none" };
+  const meta = parseOr(assetMetaSchema, asset.meta, {});
+  const stamp = meta[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY];
+  if (stamp !== undefined && stamp !== null) return { state: "withdrawn" };
+  const render = parseOrNull(undeliveredRenderSchema, meta.render);
+  if (render === null || imageModelProvider(render.modelSlug) !== "civitai") return { state: "none" };
+  return {
+    state: "on_offer",
+    output: { imageId: asset.id, workflowId: render.predictionId, blobId: render.undeliveredOutputId },
+  };
+}
+
+/**
+ * The image ids, among a sheet's failed rows' linked assets, that still offer a
+ * paid output. A failed row's link is its failed render's own row
+ * (`failReferenceView`), and nothing else carries an offer, so no other row is
+ * read. Owner- and kind-scoped like every asset read here.
+ */
+async function readOfferedOutputs(
+  rows: readonly ReferenceViewRow[],
+  ownerId: string,
+  executor: ReferenceViewExecutor,
+): Promise<Set<string>> {
+  const ids = [...new Set(rows.flatMap((row) => (row.status === "failed" && row.imageId !== null ? [row.imageId] : [])))];
+  if (ids.length === 0) return new Set();
+  const assets = await executor
+    .select({ id: images.id, status: images.status, meta: images.meta })
+    .from(images)
+    .where(and(inArray(images.id, ids), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
+  return new Set(assets.flatMap((asset) => (referenceViewOutputOffer(asset).state === "on_offer" ? [asset.id] : [])));
+}
+
 /**
  * One slot's attempts as the studio's history list reads them, newest first —
  * every image the slot has produced, rendered and uploaded alike, each with the
@@ -722,10 +808,11 @@ async function readViewImageStatuses(
  * accepted portrait still has a history — the sheet's rows outlive the pointer.
  *
  * Two filters, and both mean "there is nothing to look at": a row with no
- * `image_id` never produced bytes (a failed render) or had them collected by the
- * retention sweep, and a row whose asset is not `ready` points at a file that
- * was reserved and never written. The list is evidence for a wording comparison;
- * a row with no picture is not evidence.
+ * `image_id` never produced bytes or had them collected by the retention sweep,
+ * and a row whose asset is not `ready` points at a file that was reserved and
+ * never written — which is what a failed render's link is: its failed row,
+ * kept so a paid output can be recovered (`failReferenceView`). The list is
+ * evidence for a wording comparison; a row with no picture is not evidence.
  *
  * The first filter is the query's, and there is no row cap on top of it: the
  * retention sweep is the list's ONLY bound, and the studio states that bound in
@@ -788,6 +875,7 @@ function slotRowFacts(
   acceptedImageId: string | null,
   imageStatus: string | null,
   currentBodyReferenceSet: string | null,
+  outputRecoverable: boolean,
 ): ReferenceViewSlotRow {
   return {
     attemptId: row.id,
@@ -804,6 +892,7 @@ function slotRowFacts(
     bodyReferenceSet: row.bodyReferenceSet,
     currentBodyReferenceSet,
     originAttemptId: row.originAttemptId,
+    outputRecoverable,
   };
 }
 
@@ -828,6 +917,7 @@ function unbuiltSummary(view: ReferenceView, eligible: boolean): ReferenceViewSu
     uploadBuilds: [],
     lineageId: null,
     downstreamBuilding: false,
+    recoverable: false,
   };
 }
 
@@ -843,6 +933,8 @@ function unbuiltSummary(view: ReferenceView, eligible: boolean): ReferenceViewSu
 function projectSheet(input: {
   bySlot: ReadonlyMap<string, ReferenceViewRow>;
   statuses: ReadonlyMap<string, string>;
+  /** The failed rows' linked assets that still offer a paid output (`readOfferedOutputs`). */
+  offered: ReadonlySet<string>;
   acceptedImageId: string | null;
   eligible: ReadonlySet<string>;
   /** Each view's body-image set now — what its rendered row is compared against. */
@@ -853,10 +945,11 @@ function projectSheet(input: {
   const facts: ReferenceViewSlotFacts[] = allReferenceViews().map((view) => {
     const row = input.bySlot.get(slotKey(view));
     const imageStatus = row === undefined || row.imageId === null ? null : (input.statuses.get(row.imageId) ?? null);
+    const outputRecoverable = row !== undefined && row.status === "failed" && row.imageId !== null && input.offered.has(row.imageId);
     return {
       view,
       eligible: input.eligible.has(slotKey(view)),
-      row: row === undefined ? null : slotRowFacts(row, input.acceptedImageId, imageStatus, input.bodySetFor(view)),
+      row: row === undefined ? null : slotRowFacts(row, input.acceptedImageId, imageStatus, input.bodySetFor(view), outputRecoverable),
     };
   });
   const projected = projectReferenceViewSlots(facts);
@@ -873,8 +966,11 @@ function projectSheet(input: {
       feedback: row === undefined ? null : parseOrNull(referenceViewFeedbackSchema, row.feedback),
       // The asset id rides even on a stale or rejected row: the studio shows the
       // owner what it is calling stale, which is the difference between a state
-      // they can act on and one they have to take on faith.
-      imageId: row?.imageId ?? null,
+      // they can act on and one they have to take on faith. Never on a FAILED
+      // row, whatever it projects: its link is its failed render's own row,
+      // kept only so a paid output can be recovered, and nothing may draw or
+      // consume it.
+      imageId: row === undefined || row.status === "failed" ? null : row.imageId,
       method: row?.method ?? null,
       reviewedAt: row?.reviewedAt ? row.reviewedAt.toISOString() : null,
       failureCode: row?.failureCode ?? null,
@@ -894,6 +990,7 @@ function projectSheet(input: {
       uploadBuilds: slot.eligible ? referenceViewBuildsOnApproval(facts, { view: slot.view, attemptId: null }) : [],
       lineageId: slot.row === null ? null : referenceViewLineageId(slot.row),
       downstreamBuilding: referenceViewDescendantBusy(slot.view, input.building),
+      recoverable: projection.recoverable,
     };
   });
 }
@@ -929,6 +1026,7 @@ export async function getReferenceViewSet(
 
   const rows = await currentReferenceViewRows(characterId, reader);
   const statuses = await readViewImageStatuses(rows, reader);
+  const offered = await readOfferedOutputs(rows, ownerId, reader);
 
   const bySlot = new Map<string, ReferenceViewRow>();
   for (const row of rows) {
@@ -963,6 +1061,7 @@ export async function getReferenceViewSet(
     views: projectSheet({
       bySlot,
       statuses,
+      offered,
       acceptedImageId: accepted,
       eligible: eligibleSlots,
       bodySetFor: character.bodySetFor,
@@ -1559,7 +1658,8 @@ export async function restoreReferenceView(input: {
  *
  * Deliberately NOT `rejected` — the owner said no to that view, and a bulk build
  * must not quietly re-render something they turned down. A rejected slot is
- * rebuilt one at a time, through its own regenerate.
+ * rebuilt one at a time, through its own regenerate. Nor a `recoverable` failed
+ * slot: its render was paid for, and recovery brings its image back for free.
  */
 export function referenceViewsToRebuild(
   set: ReferenceViewSetSummary,
