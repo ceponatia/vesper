@@ -1535,6 +1535,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           finalized,
           // #637: correlates this leg's own telemetry with the exchange trace.
           traceId: exchangeTrace.traceId,
+          exchangeTrace,
         }));
 
         // Fold the members' new looks into the chat-wide garment

@@ -9,6 +9,7 @@ import {
 import { lifeStageForAge } from "@/contracts/world/life-stage";
 import { log } from "../log";
 import type { ChatRecognitionRead } from "./chat-recognition-adapter";
+import type { ExchangeTrace } from "./chat-exchange-trace";
 import { saveChatVisualMemory } from "./visual-memory-store";
 import { saveChatVisualCues } from "./visual-cue-store";
 import { mentionsCharacter, spokeInReply } from "./chat-intent";
@@ -32,6 +33,9 @@ export async function settleChatTurnMembers(args: {
   characterName: string;
   /** The exchange trace (#637) this settle ran under, when the caller has one. */
   traceId?: string;
+  /** The full exchange trace (#637) — threaded into `onSelfie` so the route
+   * can record its own `jobs.*` stages on THIS exchange's trace. */
+  exchangeTrace: ExchangeTrace;
   sink: DiagnosticSink;
   driftedState: ChatState;
   scenario: ChatScenario;
@@ -54,6 +58,7 @@ export async function settleChatTurnMembers(args: {
     chatId,
     characterName,
     traceId,
+    exchangeTrace,
     sink,
     driftedState,
     scenario,
@@ -232,7 +237,7 @@ export async function settleChatTurnMembers(args: {
         // The addressed member actually sent the photo (their pulse read it) —
         // queue the render with THEIR identity (ruling 12).
         if (isSelfieTarget && pulsed && !pulsed.state.lastPulseTrace.degraded && pulsed.state.lastPulseTrace.sentPhoto) {
-          input.onSelfie?.({ assistantMessageId, characterId: member.characterId });
+          input.onSelfie?.({ assistantMessageId, characterId: member.characterId, exchangeTrace });
         }
       } catch (error) {
         log.error("engine.chat", "ensemble member state persist failed", {
