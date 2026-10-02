@@ -461,6 +461,8 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
           userId: user.id,
           chatId,
           character: sender,
+          // Drawn as the sender; the roster's first member (the primary) owns the filing (#436).
+          roster: owned.roster.map((member) => member.character),
           anchorMessageId: assistantMessageId,
           flavor: "selfie",
         });

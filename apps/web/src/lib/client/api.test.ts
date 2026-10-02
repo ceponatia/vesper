@@ -63,6 +63,16 @@ describe("imageUrl", () => {
 });
 
 describe("imageRecordSchema", () => {
+  it("parses scene references and defaults to [] when absent or malformed", () => {
+    const parsed = imageRecordSchema.parse({
+      id: "img-selfie",
+      references: [{ kind: "character", id: "char-1", name: "Bea" }],
+    });
+    expect(parsed.references).toEqual([{ kind: "character", id: "char-1", name: "Bea" }]);
+    expect(imageRecordSchema.parse({ id: "img-2" }).references).toEqual([]);
+    expect(imageRecordSchema.parse({ id: "img-3", references: "nope" }).references).toEqual([]);
+  });
+
   it("preserves image failure details from row meta", () => {
     const parsed = imageRecordSchema.parse({
       id: "img-failed",

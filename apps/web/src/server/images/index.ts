@@ -35,7 +35,11 @@ export {
   imageMeta,
   saveImageBuffer,
   GALLERY_IMAGE_KINDS,
+  PORTRAIT_IMAGE_KINDS,
   HIDDEN_IMAGE_KINDS,
+  CHAT_PRIVATE_IMAGE_KINDS,
+  UNSHAREABLE_IMAGE_KINDS,
+  isShareableImageKind,
   failImage,
 } from "./asset-storage";
 export {
@@ -419,6 +423,7 @@ export * from "./upload";
 export * from "./entity";
 export * from "./scene";
 export * from "./character-scene";
+export * from "./scene-references";
 export {
   mergeRenderAdvisoryReview,
   type RenderAdvisoryReviewOutcome,

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ImageRecord } from "@/lib/client/api";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { selfieLabels, selfieSenderName } from "./scene-moment-attribution";
 
 /**
  * Inline scene moments: scene images rendered IN the transcript, under the
@@ -37,7 +38,7 @@ export function scenesByAnchor(scenes: readonly ImageRecord[]): Map<string, Imag
 
 /** The thumbnails under one message — tap to enlarge (shared lightbox idiom). */
 export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: string }) {
-  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
+  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null; alt: string } | null>(null);
   if (!images.length) return null;
   return (
     // overflow-x-auto (matching the sibling scene strip, chat-scene-strip.tsx):
@@ -48,13 +49,17 @@ export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: 
       {images.map((img) => {
         const selfie = img.meta.flavor === "selfie";
         const failed = img.status === "failed";
+        // A selfie is named for its own sender (from its recorded cast), never the
+        // transcript's primary; a non-selfie keeps the primary's name.
+        const selfieText = selfie ? selfieLabels(selfieSenderName(img)) : null;
+        const imageName = selfieText ? selfieText.alt : name;
         return (
           <button
             key={img.id}
             type="button"
-            onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
-            aria-label={failed ? "Selfie failed — enlarge for details" : selfie ? `Photo from ${name}` : "Enlarge scene moment"}
-            title={selfie ? `A photo from ${name}` : undefined}
+            onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null, alt: imageName })}
+            aria-label={failed ? "Selfie failed — enlarge for details" : selfieText ? selfieText.ariaLabel : "Enlarge scene moment"}
+            title={selfieText ? selfieText.title : undefined}
             className={`block w-36 shrink-0 cursor-pointer overflow-hidden border transition-colors hover:border-accent-500/60 ${
               selfie ? "rounded-2xl border-accent-500/40" : "rounded-card border-ink-600"
             }`}
@@ -67,14 +72,14 @@ export function SceneMomentRow({ images, name }: { images: ImageRecord[]; name: 
                 <span className="px-2 text-center text-[10px] text-paper-600">the photo never arrived</span>
               </div>
             ) : (
-              <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
+              <EntityImage imageId={img.id} name={imageName} className="aspect-[3/4] w-full" />
             )}
           </button>
         );
       })}
       <ImageLightbox
         imageId={enlarged?.id ?? null}
-        alt={name}
+        alt={enlarged?.alt ?? name}
         prompt={enlarged?.prompt ?? null}
         onClose={() => setEnlarged(null)}
       />
