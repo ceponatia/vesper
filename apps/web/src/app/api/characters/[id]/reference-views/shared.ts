@@ -389,6 +389,11 @@ export const referenceViewWriteMessages = {
  * a different thing to explain than a kept copy that cannot be restored or
  * reviewed. `not_ready` is unreachable here (recovery never asks whether the
  * attempt has been reviewed) but is included for the shared refusal type.
+ *
+ * `unavailable` and `expired` name no provider: each also answers failures
+ * that happen after the provider delivered the bytes — a disk or database
+ * error is `unavailable`, and bytes that cannot be decoded are `expired` — so
+ * blaming the provider would misdirect the owner (Codex review on PR #688).
  */
 export const referenceViewRecoverMessages = {
   not_found: referenceViewWriteMessages.not_found,
@@ -397,6 +402,6 @@ export const referenceViewRecoverMessages = {
   ineligible: referenceViewWriteMessages.ineligible,
   busy: referenceViewWriteMessages.busy,
   incompatible: "This render no longer matches the accepted portrait, the approved view it was built from, or the current body images; regenerate it instead.",
-  unavailable: "Civitai did not send the image this time; try Recover again in a moment.",
-  expired: "Civitai no longer has this image, so it can't be recovered; Regenerate renders it again, and that is charged.",
+  unavailable: "The image could not be recovered this time. Try Recover again in a moment.",
+  expired: "This image can no longer be recovered. Regenerate renders it again, and that is charged.",
 } as const;
