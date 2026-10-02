@@ -102,7 +102,7 @@ function undeliveredRender(patch: Record<string, unknown> = {}): Record<string, 
 async function storedImage(characterId: string, kind: "avatar" | "reference_view") {
   const reserved = await createImageAsset({ ownerId, kind, entityKind: "character", entityId: characterId });
   const stored = await saveImageBuffer(reserved.id, await testPngBuffer());
-  if (stored?.status !== "ready") throw new Error(`the ${kind} fixture did not store`);
+  if (stored === null || stored.status !== "ready") throw new Error(`the ${kind} fixture did not store`);
   return stored;
 }
 
