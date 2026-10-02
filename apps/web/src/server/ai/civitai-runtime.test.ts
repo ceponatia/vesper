@@ -1601,7 +1601,10 @@ describe("Civitai Klein v2 transport", () => {
     if (result.ok) throw new Error("expected the output download to end as undelivered");
     expect(result.error).not.toContain("secret");
     expect(result.error).not.toContain("private");
-    expect(result.error).toContain("output-undelivered.jpg");
+    // The blob id rides the structured undeliveredOutputId field above
+    // (review P3-5), never the free text: a provider-supplied id could
+    // otherwise misclassify the failure as billing or content rejection.
+    expect(result.error).not.toContain("output-undelivered.jpg");
   });
 
   it.each([

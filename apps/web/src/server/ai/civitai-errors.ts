@@ -23,9 +23,11 @@ export type CivitaiCode = `civitai_http_${number}`
    * which proves the output can never be fetched and throws on its first
    * occurrence instead. This is the OPPOSITE claim: the output is still
    * there, just not fetched yet, so it is recoverable from the same blob
-   * (`recoverCivitaiOutput`) without rendering again. `messageFor` names the
-   * blob id and the attempt count from {@link CivitaiFailure.outputId} and
-   * {@link CivitaiFailure.downloadAttempts}.
+   * (`recoverCivitaiOutput`) without rendering again. `messageFor` names only
+   * the attempt count ({@link CivitaiFailure.downloadAttempts}) in its free
+   * text; the blob id ({@link CivitaiFailure.outputId}) travels as structured
+   * data only, since it is provider-supplied and a keyword classifier reads
+   * free text, not fields (review P3-5).
    */
   | "civitai_output_undelivered"
   /**
@@ -104,7 +106,11 @@ export interface CivitaiFailure {
    * `civitai_output_undelivered` only: the Civitai blob id whose download
    * could not complete, so an operator (or the read-only recovery primitive,
    * `recoverCivitaiOutput`) can recover the already-paid-for output directly
-   * instead of rendering again.
+   * instead of rendering again. Carried as structured data ONLY — never
+   * interpolated into `messageFor`'s free text, because this id is
+   * provider-supplied and `classifyImageFailureMessage` reads that text by
+   * keyword; an unlucky id could otherwise misclassify the failure as
+   * billing or content rejection (review P3-5).
    */
   outputId?: string;
   /** `civitai_output_undelivered` only: how many download attempts were made before giving up. */
@@ -145,10 +151,16 @@ function messageFor(failure: CivitaiFailure): string {
     return `Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as ${original}, and ${outcome}. Civitai may still accept, or may already have accepted, this workflow under externalId=${externalId} — check the workflow list for it before starting one deliberate replacement.`;
   }
   if (failure.code === "civitai_output_undelivered") {
-    const outputId = failure.outputId ?? "unknown";
+    // The blob id is PROVIDER-SUPPLIED and therefore untrusted text: an id
+    // that happened to contain a word like "flagged" or a bare "402" would
+    // make `classifyImageFailureMessage` misread this as content rejection
+    // or billing, and a sanitized retry would then pay for a second render
+    // over an output that is still sitting there (review P3-5). The id
+    // travels only as the structured `outputId` field (and the lane
+    // result's `undeliveredOutputId`); it is never interpolated here.
     const attempts = failure.downloadAttempts ?? 0;
     const plural = attempts === 1 ? "" : "s";
-    return `Civitai output download failed (civitai_output_undelivered; retry=reconcile). The workflow succeeded and was already paid for, but its output could not be downloaded after ${String(attempts)} attempt${plural}. It can be recovered from that output without rendering again — recover blob ${outputId} instead of starting a replacement.`;
+    return `Civitai output download failed (civitai_output_undelivered; retry=reconcile). The workflow succeeded and was already paid for, but its output could not be downloaded after ${String(attempts)} attempt${plural}. It can be recovered from that output without rendering again.`;
   }
   const reason = failure.reason ? ` reason=${failure.reason}: ${VALIDATION_REASON_TEXT[failure.reason]}` : "";
   const paths = failure.validationPaths?.length ? ` paths=${failure.validationPaths.join(",")}.` : "";

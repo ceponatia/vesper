@@ -300,15 +300,18 @@ describe("Civitai error contract", () => {
   /**
    * PROTECTS (#682): a workflow that succeeded and was already paid for, but
    * whose output could not be downloaded, must read as recoverable — never
-   * as a reason to render again. The message names the blob id and the
-   * attempt count, says the workflow succeeded and was paid for, and says
-   * the output can be recovered without rendering again; it must never read
-   * as billing or content rejection, both of which
+   * as a reason to render again. The message names the attempt count, says
+   * the workflow succeeded and was paid for, and says the output can be
+   * recovered without rendering again; it must never read as billing or
+   * content rejection, both of which
    * `classifyImageFailureMessage`/`isBillingFailureMessage` check BEFORE the
    * retry-disposition marker this failure relies on
-   * (`packages/image-core/src/provider-interface/failures.ts`).
+   * (`packages/image-core/src/provider-interface/failures.ts`). The blob id
+   * rides the structured `outputId` field, never the message text (review
+   * P3-5): a provider-supplied id is untrusted, and embedding it in text a
+   * keyword classifier scans would let an unlucky id reclassify this failure.
    */
-  it("names the blob id and attempt count on civitai_output_undelivered, classifying it other/reconcile/non-billing", () => {
+  it("names the attempt count on civitai_output_undelivered without the blob id, classifying it other/reconcile/non-billing", () => {
     const failure = civitaiOutputUndeliveredFailure("abc123.jpg", 4);
 
     expect(failure).toMatchObject({
@@ -319,9 +322,10 @@ describe("Civitai error contract", () => {
     expect(failure.message).toMatch(/succeeded/i);
     expect(failure.message).toMatch(/paid for/i);
     expect(failure.message).toContain("4 attempts");
-    expect(failure.message).toContain("abc123.jpg");
     expect(failure.message).toMatch(/recovered/i);
     expect(failure.message).toMatch(/without rendering again/i);
+    // The id lives on the structured field only, never in the free text.
+    expect(failure.message).not.toContain("abc123.jpg");
 
     // Never a billing or content-rejection reading, even though both are
     // checked before the retry-disposition marker in the shared classifier.
@@ -339,5 +343,34 @@ describe("Civitai error contract", () => {
     const failure = civitaiOutputUndeliveredFailure("abc123.jpg", 1);
     expect(failure.message).toContain("1 attempt.");
     expect(failure.message).not.toContain("1 attempts");
+  });
+
+  /**
+   * PROTECTS (review P3-5): the blob id is Civitai's to name, not Vesper's,
+   * so a real id could spell a moderation word by accident. This id would
+   * flip `classifyImageFailureMessage` from "other" to "content_rejection"
+   * if it ever reached the message text — proving the id never does.
+   */
+  it("keeps classification as other, not content rejection, when the blob id itself spells a moderation word", () => {
+    const failure = civitaiOutputUndeliveredFailure("flagged-output-id.jpg", 2);
+
+    expect(failure.outputId).toBe("flagged-output-id.jpg");
+    expect(failure.message).not.toContain("flagged-output-id.jpg");
+    expect(classifyImageFailureMessage(failure.message)).toBe("other");
+  });
+
+  /**
+   * PROTECTS (review P3-5): companion to the moderation-word case above, for
+   * a bare "402" set off by punctuation in the id — the exact shape the
+   * correction round named. `isBillingFailureMessage` would flip to true if
+   * this id ever reached the message text.
+   */
+  it("keeps isBillingFailureMessage false when the blob id itself spells a billing trigger", () => {
+    const failure = civitaiOutputUndeliveredFailure("order-402-result.jpg", 2);
+
+    expect(failure.outputId).toBe("order-402-result.jpg");
+    expect(failure.message).not.toContain("order-402-result.jpg");
+    expect(isBillingFailureMessage(failure.message)).toBe(false);
+    expect(classifyImageFailureMessage(failure.message)).toBe("other");
   });
 });
