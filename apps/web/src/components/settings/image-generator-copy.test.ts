@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { IMAGE_LORA_INCOMPATIBLE, IMAGE_LORA_UNREACHABLE } from "@vesper/image-core";
 import { imageGeneratorDiagnosticCode, imageGeneratorFailureCodes } from "@/contracts/images/image-generator";
-import { imageGeneratorFailureExplanation } from "./image-generator-copy";
+import {
+  imageGeneratorFailureExplanation,
+  imageGeneratorRecoverableHint,
+  imageGeneratorRecoverActionLabel,
+  imageGeneratorRecoverFailedTitle,
+  imageGeneratorRecoveredToast,
+} from "./image-generator-copy";
 
 /**
  * A settled run's `failureCode` is stored in dotted diagnostic form
@@ -42,5 +48,25 @@ describe("imageGeneratorFailureExplanation", () => {
     expect(imageGeneratorFailureExplanation("image_profile.control_unsupported")).toBe(
       "image_profile.control_unsupported",
     );
+  });
+});
+
+/**
+ * A failed output's recoverable copy (#682/#686) reads from `output.recoverable`
+ * alone — never from a failure code — so it must never collide with any of the
+ * ordinary failure explanations above: a tile showing the wrong one would tell
+ * the admin a dead offer is still live, or hide a live one behind a generic
+ * failure sentence.
+ */
+describe("the recoverable output's own copy", () => {
+  it("is a real sentence, distinct from every ordinary failure explanation", () => {
+    expect(imageGeneratorRecoverableHint.length).toBeGreaterThan(20);
+    expect(imageGeneratorRecoverActionLabel.length).toBeGreaterThan(0);
+    expect(imageGeneratorRecoverFailedTitle.length).toBeGreaterThan(0);
+    expect(imageGeneratorRecoveredToast.title.length).toBeGreaterThan(0);
+    for (const code of imageGeneratorFailureCodes) {
+      const explanation = imageGeneratorFailureExplanation(imageGeneratorDiagnosticCode(code));
+      expect(explanation).not.toBe(imageGeneratorRecoverableHint);
+    }
   });
 });
