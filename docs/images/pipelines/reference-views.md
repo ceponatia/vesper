@@ -192,6 +192,7 @@ approval and opening the bytes.
 - **Each slot has one heartbeat-backed lease.** A request may claim every requested slot that has no
   live lease while another job continues on disjoint slots. An overlapping slot converges on the
   current attempt and reports `busy`; partial admission reports one result per requested target.
+  A recovery holds the same lease while it runs (§Recovering a paid output).
 - **One line of the build order builds at a time.** The claim, under the character lock, also
   reports `busy` — unleased and uncharged — for a slot whose upstream or whose dependent, at any
   depth, holds a live lease or a pending attempt, or was claimed earlier in the same request
@@ -351,14 +352,27 @@ it as the same attempt, with no new render.
   slot's own Regenerate, single or batch, still renders it again when the owner asks by name.
 - **Recovery is restoration's shape** (`recoverReferenceView`). Outside any lock it checks, in
   order: the owned character has an accepted portrait, the slot is in the plan, the current row is
-  the named attempt and still `failed`, nothing builds on the slot or below it, the output is still
-  on offer and the slot projects `recoverable`, and the accepted portrait's bytes hash to the
-  attempt's `source_content_hash`. It then downloads read-only from the stored workflow and output,
-  outside any lock, and never submits a workflow.
+  the named attempt and still `failed`, nothing builds on the slot or below it, the failed render
+  is still linked (`expired` once retention has nulled the link), the output is still on offer and
+  the slot projects `recoverable`, and the accepted portrait's bytes hash to the attempt's
+  `source_content_hash`. It then downloads read-only from the stored workflow and output, outside
+  any lock, and never submits a workflow.
+- **It holds the slot for its whole run.** Under the character lock, after the attempt and busy
+  checks again, a recovery takes the slot the way a build does: a heartbeat-live
+  `reference_views` job whose lease names the slot and the failed attempt. Every lease reader sees
+  it, in any tab or process — single and batch regenerate, upload, restoration and another
+  recovery of the slot answer `busy`, the views on its line wait as for any lease, and the sheet
+  reads `building`. The request beats the claim every 30 seconds whatever happens to the client,
+  and releases it when it ends: in the installing transaction, or after a refusal or a failure.
+  A process that dies leaves a claim that lapses within `JOB_STALE_MS` (15 minutes), with the
+  failed attempt and its offer untouched. The leased row is `failed`, so lease reconciliation and
+  a build's own finalize and fail fencing never act on it.
 - **A permanent answer withdraws the offer.** When the provider shows the output can never be
   fetched, the failed `images` row gets `recoveryUnavailableAt`, written owner-scoped and only
   while the row is still `failed`; retention's `failedAt` clock is untouched. The answer is
-  `expired`. Any other failed fetch answers `unavailable` and leaves the offer standing.
+  `expired`. So are fetched bytes sharp cannot decode, or cannot encode as the stored webp: the
+  provider serves the same bytes every time. Any other failed fetch, and any failure after the
+  bytes decode — the disk, the database — answers `unavailable` and leaves the offer standing.
 - **The bytes take the render's own shape.** They are the provider's original, so they cross the
   output-shape decision a live render of the same request makes (`shapeProviderOutput`, from the
   failed row's recorded `meta.render.shape`), then the one webp writer, as a NEW `reference_view`
@@ -366,13 +380,15 @@ it as the same attempt, with no new render.
   `failedAt`, the render lease, `recoveryUnavailableAt`), plus `recoveredFrom` (`imageId`,
   `workflowId`, `blobId`). The crop it performed is recorded in `meta.render.shape` the way a
   render records one, or under `recoveredFrom` when the failed row recorded no shape.
-- **The commit re-checks everything under the character lock**, and that the failed `images` row
-  is still linked. The same attempt goes `failed` → `ready`, unreviewed, `method: rendered`, its
-  failure, verdict and review stamp cleared and its review revision advanced, its recorded
-  upstream and body-image set unchanged, pointing at the copy, which goes `ready` with its byte
-  count in the same transaction. A refusal or a throw after the copy exists deletes the copy; the
-  failed original is never deleted.
-- **It is free:** no admission, no budget charge, no job.
+- **The commit re-checks everything under the character lock**, that the recovery's own claim is
+  still live (a lapsed claim installs nothing and answers `unavailable`), and that the failed
+  `images` row is still linked. The same attempt goes `failed` → `ready`, unreviewed,
+  `method: rendered`, its failure, verdict and review stamp cleared and its review revision
+  advanced, its recorded upstream and body-image set unchanged, pointing at the copy, which goes
+  `ready` with its byte count in the same transaction that releases the claim. A refusal or a
+  throw after the copy exists deletes the copy; the failed original is never deleted.
+- **It is free:** no admission and no budget charge. Its one job row is its own claim, which the
+  character's media jobs show as reference-view work for that slot.
 - **The offer lasts as long as the failed `images` row.** The failed-row retention
   ([../asset-registry.md](../asset-registry.md) §Retention) deletes it a day after the failure, the
   foreign key nulls the link, and the offer ends; a download that lands after that answers
@@ -505,6 +521,7 @@ them to dressed and to undressed views; their own routes are in
 | `images.reference_views.upstream_unapproved`  | A queued view's upstream is no longer approved; nothing ran   |
 | `images.reference_views.output_recovered`     | A failed view's paid output was installed with no new render  |
 | `images.reference_views.output_expired`       | A failed view's paid output is gone; its offer is withdrawn   |
+| `images.reference_views.output_unavailable`   | A paid output was not recovered this time; the offer stands   |
 
 The body-image codes, `images.reference_views.body_reference_dropped` among them, are in
 [body-reference-images.md](body-reference-images.md) §Diagnostic codes.
