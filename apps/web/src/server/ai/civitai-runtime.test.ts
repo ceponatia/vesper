@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { civitaiAsyncFailure } from "./civitai-errors";
-import { classifyImageFailureMessage, declaresNonAutomaticRetry, declaresSpentProviderWork, imageModelSchema, type ImageModel } from "@vesper/image-core";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageModelSchema, providerWorkSpent, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 
 vi.mock("../images/lora-credentials", () => ({
@@ -609,7 +609,7 @@ describe("Civitai Klein v2 transport", () => {
    * measured run succeeded 90 s after a 300 s local deadline). The bad
    * implementation reports it as the provider's own `retry=deliberate`
    * expiry, whose disposition suppresses the post-submit reconcile sentence,
-   * so the scene chain's paid stop (`declaresSpentProviderWork`) never fires
+   * so the scene chain's paid stop (`providerWorkSpent`) never fires
    * and the next rung pays for a second render while the first may still
    * deliver.
    */
@@ -638,7 +638,7 @@ describe("Civitai Klein v2 transport", () => {
     if (result.ok) throw new Error("expected the local poll deadline to end the render");
     expect(result.predictionId).toBe("submit-slow");
     expect(result.error).toContain("Civitai workflow status failed (civitai_async_timeout; retry=reconcile)");
-    expect(declaresSpentProviderWork(result.error ?? "")).toBe(true);
+    expect(providerWorkSpent({ message: result.error ?? "", predictionId: result.predictionId ?? null })).toBe(true);
   });
 
   it("keeps a timeout Civitai itself reports as the deliberate terminal expiry", async () => {
@@ -657,7 +657,43 @@ describe("Civitai Klein v2 transport", () => {
     if (result.ok) throw new Error("expected the provider's expiry to fail the render");
     expect(result.predictionId).toBe("submit-expired");
     expect(result.error).toContain("Civitai workflow terminal failed (civitai_async_timeout; retry=deliberate)");
-    expect(declaresSpentProviderWork(result.error ?? "")).toBe(false);
+    expect(providerWorkSpent({ message: result.error ?? "", predictionId: result.predictionId ?? null })).toBe(false);
+  });
+
+  /**
+   * PROTECTS (PR #692 review): the scene chain's paid stop treats a
+   * `retry=reconcile` as spent provider work only beside a workflow id, so it
+   * relies on this transport naming one on every post-submit failure and on
+   * NO failure before a workflow exists. Civitai's HTTP 409 declares
+   * `reconcile` at every stage; at the preflight, or at a submit Civitai
+   * rejected outright, no workflow was ever created, and the failure must
+   * carry no `predictionId` so the ladder falls through to its next rung.
+   */
+  it.each([
+    ["the zero-cost preflight", "true"],
+    ["a submit Civitai rejected outright", "false"],
+  ] as const)("names no workflow on a 409 from %s, so the paid stop does not fire", async (_label, rejectedWhatif) => {
+    let workflowPosts = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        workflowPosts += 1;
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === rejectedWhatif) return Response.json({ detail: "conflict" }, { status: 409 });
+        return Response.json(workflowFrom(body, "estimate-409", "unassigned"));
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    if (result.ok) throw new Error("expected the 409 to fail the render");
+    expect(result.error).toContain("civitai_http_409; retry=reconcile");
+    expect(result.predictionId).toBeUndefined();
+    expect(providerWorkSpent({ message: result.error ?? "", predictionId: result.predictionId ?? null })).toBe(false);
+    // Neither 409 is ever reposted: the preflight's one automatic repeat is for 429/5xx only.
+    expect(workflowPosts).toBe(rejectedWhatif === "true" ? 1 : 2);
   });
 
   it("retries a transient preflight exactly once, then still posts the paid submission only once", async () => {

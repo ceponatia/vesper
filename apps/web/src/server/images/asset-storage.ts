@@ -145,8 +145,22 @@ const metaSchema = z.record(z.string(), z.unknown());
  */
 export const RENDER_LEASE_META_KEY = "renderLeaseAtMs";
 
-/** What a `ready` row never carries: a failure it no longer has, and a lease nobody holds. */
-export const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY] as const;
+/**
+ * Which attempt a pending row's render is running right now, for a lane that
+ * runs more than one provider attempt on one row (the scene chain's rungs). A
+ * paid output's early record names the attempt that started it, and lands only
+ * while the row still names that attempt ({@link recordPendingRenderOutput}),
+ * so a slow record from an attempt the lane has moved past can never overwrite
+ * the ids of the attempt now running. A lane with one attempt per row writes
+ * none.
+ */
+export const RENDER_ATTEMPT_META_KEY = "renderAttempt";
+
+/**
+ * What a `ready` row never carries: a failure it no longer has, a lease nobody
+ * holds, and an attempt fence no render is writing through any more.
+ */
+export const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY, RENDER_ATTEMPT_META_KEY] as const;
 
 /**
  * The write-path merge: the stored jsonb re-parsed at the trust boundary, minus
@@ -239,8 +253,20 @@ function mergeRenderMetaSql(patch: Record<string, unknown>): SQL {
  * that died mid-download (the sweep's reclaim keeps `meta.render`), or a
  * produce that threw. Either way the row then offers the output for recovery
  * (`paidOutputOffer`).
+ *
+ * **Fenced to the attempt that started it.** The lane stops waiting for this
+ * write after a few seconds while the UPDATE runs on, so a slow record can land
+ * after its lane has moved on to another attempt on the same row. `attempt` is
+ * the attempt the record belongs to, and the write lands only while the row
+ * still names that attempt ({@link RENDER_ATTEMPT_META_KEY}); with no
+ * `attempt`, only while the row names none — every lane with one attempt per
+ * row, whose rows never carry the key.
  */
-export async function recordPendingRenderOutput(imageId: string, output: PaidRenderOutputRecord): Promise<boolean> {
+export async function recordPendingRenderOutput(
+  imageId: string,
+  output: PaidRenderOutputRecord,
+  attempt?: string,
+): Promise<boolean> {
   const touched = await db()
     .update(images)
     .set({
@@ -250,7 +276,11 @@ export async function recordPendingRenderOutput(imageId: string, output: PaidRen
         modelSlug: output.modelSlug,
       }),
     })
-    .where(and(eq(images.id, imageId), eq(images.status, "pending")))
+    .where(and(
+      eq(images.id, imageId),
+      eq(images.status, "pending"),
+      sql`coalesce(${images.meta} ->> ${RENDER_ATTEMPT_META_KEY}::text, '') = ${attempt ?? ""}`,
+    ))
     .returning({ id: images.id });
   return touched.length > 0;
 }

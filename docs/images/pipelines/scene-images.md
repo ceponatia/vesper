@@ -237,20 +237,30 @@ The executor walks the chain with a **reason-keyed retry** over `classifyImageFa
 rung, a content rejection never retries and drops to the next rung, and a billing failure never
 retries at all.
 
-**The row describes the rung that is running.** The row is reserved against the primary rung.
-Before a fallback rung runs, the row's prompt, model, identity references, reference views and
-program meta are rewritten to that rung, and any paid-output ids a previous rung recorded before
-its download are dropped: that rung did not fail undelivered, since an undelivered failure stops
-the ladder, so its output is gone. The write lands only while the row is still `pending`. A
-process that dies during a fallback rung's download therefore leaves a row whose recovery offer
-and provenance both name that rung.
+**The row describes the rung that is running.** The row is reserved against the primary rung and
+names it in `meta.renderAttempt`. Before a fallback rung runs, the row's prompt, model, identity
+references, reference views and program meta are rewritten to that rung, `meta.renderAttempt`
+names it, and any paid-output ids a previous rung recorded before its download are dropped: that
+rung did not fail undelivered, since an undelivered failure stops the ladder, so its output is
+gone. The write lands only while the row is still `pending`. Each rung records its paid output's
+ids through its own recorder, naming the rung, and the record lands only while the row still
+names that rung ([../asset-registry.md](../asset-registry.md) §The sweep), so a slow record from a
+rung the ladder moved past never overwrites the running rung's. A process that dies during a
+fallback rung's download therefore leaves a row whose recovery offer and provenance both name
+that rung.
 
-**A rung's own failure can end the ladder outright instead of falling to the next rung.** Once a
-rung's final failure (after its own same-rung retry above) already declares that THIS attempt's
-provider work was already paid for — `retry=reconcile`, or `civitai_submit_unconfirmed` — the
-chain stops rather than hands off to a different, reduced-reference request on a different model:
-that fallback would be a second paid render racing a workflow that may still be running or may
-still deliver (#685). `images.scene_render.paid_attempt_stop` (warn) names the rung that stopped
+**A rung's own failure can end the ladder outright instead of falling to the next rung.** When a
+rung's final failure (after its own same-rung retry above) shows that THIS attempt's provider
+work was paid for and may still deliver, the chain stops rather than hands off to a different,
+reduced-reference request on a different model: that fallback would be a second paid render
+racing a workflow that may still be running or may still deliver (#685). The evidence is
+structured (`providerWorkSpent`, `@vesper/image-core`): the failure names the provider's workflow
+(`predictionId`) AND declares `retry=reconcile`, or it names `civitai_submit_unconfirmed`, a paid
+submit whose answer was lost and whose workflow id is unknown by definition. A `retry=reconcile`
+with no workflow id does not stop the ladder: the Civitai transport declares an HTTP 409
+`reconcile` at every stage, and a 409 from the LoRA read, the preflight or a submit Civitai
+rejected outright never created a workflow. Nor does a workflow id alone: any provider's failed
+prediction names one. `images.scene_render.paid_attempt_stop` (warn) names the rung that stopped
 and the provider's own workflow id when one is known, and the failed row's provenance (prompt,
 model, identity references, reference views, program meta) is corrected onto that rung, the same
 way a fallback rung that WINS already replaces the primary rung's reserve-time provenance. Every

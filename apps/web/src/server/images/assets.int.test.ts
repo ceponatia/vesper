@@ -27,6 +27,7 @@ import {
   imageMeta,
   recordPendingRenderOutput,
   refreshRenderLease,
+  RENDER_ATTEMPT_META_KEY,
   RENDER_LEASE_META_KEY,
   saveImageBuffer,
   writeWebpAtomic,
@@ -863,5 +864,56 @@ describe.skipIf(!ready)("a paid output recorded before its download (#687)", () 
     await failImage(settled.id, "provider exploded");
     expect(await recordPendingRenderOutput(settled.id, record)).toBe(false);
     expect(imageMeta((await imageRow(settled.id))?.meta).render).toEqual({ seed: 4 });
+  });
+
+  /**
+   * PROTECTS (PR #692 review): the lane stops waiting for an early record
+   * after a few seconds while its UPDATE runs on. A scene's first rung whose
+   * record is that slow, and whose download then fails for good, hands the
+   * row to its fallback rung — which drops the first rung's ids and may
+   * record its own. The first rung's late UPDATE, guarded on `pending` alone,
+   * used to land after that and overwrite them: a restart during the fallback
+   * rung's download then offered the first rung's gone output and lost the
+   * fallback rung's real one. Each record now names its attempt and lands
+   * only while the row still names that attempt.
+   */
+  it("fences an early record to its attempt: a late record from an attempt the row moved past never overwrites", async () => {
+    const ownerId = await sweepOwner("images-int-paid-fence");
+    const first = { predictionId: "wf-multi", undeliveredOutputId: "blob-multi", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+    const fallback = { predictionId: "wf-edit", undeliveredOutputId: "blob-edit", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+    const row = await createImageAsset({ ownerId, kind: "scene", meta: { [RENDER_ATTEMPT_META_KEY]: "multi_edit" } });
+
+    // The chain moves to its fallback rung: the row now names that rung and
+    // holds no ids, and the fallback rung records its own.
+    await db().update(images).set({ meta: { [RENDER_ATTEMPT_META_KEY]: "edit" } }).where(eq(images.id, row.id));
+    expect(await recordPendingRenderOutput(row.id, fallback, "edit")).toBe(true);
+
+    // The first rung's slow record lands afterwards, and is refused.
+    expect(await recordPendingRenderOutput(row.id, first, "multi_edit")).toBe(false);
+    // So is a record that names no attempt at all, on a row that names one.
+    expect(await recordPendingRenderOutput(row.id, first)).toBe(false);
+    expect(imageMeta((await imageRow(row.id))?.meta).render).toEqual(fallback);
+
+    // A ready settle retires the fence with the lease.
+    const saved = await saveImageBuffer(row.id, monogramSvg("Fenced"));
+    expect(saved?.status).toBe("ready");
+    expect(imageMeta(saved?.meta)).not.toHaveProperty(RENDER_ATTEMPT_META_KEY);
+  });
+
+  it("still lands the pipeline's ordinary record, which names no attempt, on a row that names none", async () => {
+    const ownerId = await sweepOwner("images-int-paid-unfenced");
+
+    const outcome = await runImagePipeline({
+      asset: { ownerId, kind: "entity", entityKind: "world" },
+      produce: async () => {
+        await recordPaidRenderOutput(PAID);
+        return { ok: false, error: "the render died" };
+      },
+    });
+
+    const failed = await imageRow(outcome.imageId);
+    if (failed === undefined) throw new Error("the failed row is gone");
+    expect(imageMeta(failed.meta).render).toMatchObject(PAID_RENDER);
+    expect(paidOutputOffer(failed).state).toBe("on_offer");
   });
 });

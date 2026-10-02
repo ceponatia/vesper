@@ -188,7 +188,11 @@ has chosen its output, and before the download starts, the lane records the work
 so concurrent renders each reach only their own row and a render outside the pipeline records
 nothing. The write merges into `meta.render` in SQL, guarded by `status = 'pending'`, like a lease
 beat. It is best-effort: a failed write is logged and the render carries on, and the lane waits for
-it at most 5 seconds before downloading anyway. A settle that records the attempt replaces
+it at most 5 seconds before downloading anyway. Because the write can land after that wait, it is
+fenced to the attempt that started it: a lane that runs several attempts on one row (the scene
+chain's rungs) names the running attempt in `meta.renderAttempt`, records through a recorder that
+names it too, and the write lands only while the row still names that attempt. Every other lane
+names none and its rows carry no such key. A `ready` row never carries it. A settle that records the attempt replaces
 `meta.render` whole, so on a saved row, or one failed with the attempt's own record, the early ids
 are gone. They outlive the render only where nothing replaced them: a produce that threw, or a
 process that died mid-download.

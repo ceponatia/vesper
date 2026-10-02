@@ -242,6 +242,33 @@ describe("executeSceneChain (degradation ladder + reason-keyed retry)", () => {
     expect(paidStop?.context).toMatchObject({ rung: "multi_edit", workflowId: "wf-slow" });
   });
 
+  /**
+   * PROTECTS (PR #692 review): the paid stop needs a WORKFLOW beside the
+   * `reconcile` disposition. Civitai's HTTP 409 declares `retry=reconcile` at
+   * every stage, so a 409 from the preflight or from a submit Civitai rejected
+   * outright — neither of which created a workflow, so neither carries a
+   * prediction id — must fall through to the next rung rather than fail an
+   * otherwise renderable scene. Nor is a prediction id alone a stop: another
+   * provider's failed prediction names its id with no reconcile at all.
+   */
+  it.each([
+    ["a preflight 409 reconcile with no workflow", "Civitai preflight failed (civitai_http_409; retry=reconcile). Refresh workflow status before deciding whether to replace it.", undefined],
+    ["a submit 409 Civitai rejected outright", "Civitai submit failed (civitai_http_409; retry=reconcile). Refresh workflow status before deciding whether to replace it.", null],
+    ["another provider's failed prediction naming its id", "replicate prediction failed: CUDA out of memory", "pred-1"],
+  ] as const)("%s is not a paid stop — falls through to the next rung", async (_label, message, predictionId) => {
+    const sink = new DiagnosticCollector();
+    const calls: SceneAttemptId[] = [];
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+      calls.push(id);
+      return id === "edit" ? failResult("other", message, predictionId) : okResult();
+    };
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome?.attemptId).toBe("generate");
+    expect(calls).toEqual(["edit", "generate"]);
+    expect(sink.items.some((d) => d.code === "images.scene_render.paid_attempt_stop")).toBe(false);
+    expect(sink.items.some((d) => d.code === "images.scene_render.provider_fallback")).toBe(true);
+  });
+
   it("a preflight retry=never refusal is not a paid stop — falls through to the next rung, unchanged", async () => {
     const sink = new DiagnosticCollector();
     const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> =>

@@ -1,4 +1,4 @@
-import { describeProviderError, withPaidRenderOutputRecorder, type PaidRenderOutput } from "../ai";
+import { describeProviderError, withPaidRenderOutputRecorder, type PaidRenderOutput, type PaidRenderOutputRecorder } from "../ai";
 import { JOB_HEARTBEAT_INTERVAL_MS } from "../db";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import { log } from "@/server/log";
@@ -151,7 +151,7 @@ export interface ImagePipelineResult {
  * §The sweep).
  *
  * **A paid output's ids.** `produce` runs with a paid-output recorder installed
- * on this row ({@link recordPaidOutputOnRow}): a provider lane that has a
+ * on this row ({@link paidOutputRecorderForRow}): a provider lane that has a
  * succeeded, billed output records its workflow and output ids here before it
  * downloads, so a render whose process dies mid-download leaves a row that
  * offers the output for recovery instead of nothing.
@@ -174,10 +174,7 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
   const releaseLease = await holdRenderLease(asset.id);
   const startedMs = Date.now();
   try {
-    const produced = await withPaidRenderOutputRecorder(
-      (output) => recordPaidOutputOnRow(asset.id, output),
-      () => opts.produce(asset),
-    );
+    const produced = await withPaidRenderOutputRecorder(paidOutputRecorderForRow(asset.id), () => opts.produce(asset));
     if (!produced.ok) {
       await failImage(asset.id, produced.error, produced.meta);
       opts.onSettled?.({ imageId: asset.id, status: "failed", startedMs });
@@ -210,28 +207,36 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
 }
 
 /**
- * The pipeline's paid-output recorder (`withPaidRenderOutputRecorder`): a
- * provider lane that has a succeeded, billed output in hand records its ids on
- * this render's own row before it downloads ({@link recordPendingRenderOutput}),
- * so a process that dies mid-download leaves the row offering that output for
- * recovery once it is failed (docs/images/asset-registry.md §The sweep).
+ * A paid-output recorder for one render's row (`withPaidRenderOutputRecorder`):
+ * a provider lane that has a succeeded, billed output in hand records its ids on
+ * the row before it downloads ({@link recordPendingRenderOutput}), so a process
+ * that dies mid-download leaves the row offering that output for recovery once
+ * it is failed (docs/images/asset-registry.md §The sweep). The pipeline installs
+ * one with no attempt around every `produce`; a lane that runs several attempts
+ * on one row (the scene chain's rungs) installs one per attempt, naming it, so
+ * a slow record lands only while the row still names that attempt.
  *
  * Best-effort like the lease heartbeat: a write that fails, or a row that
- * already left `pending`, is logged and the render carries on. The lane bounds
- * how long it waits for this, so a database that is not answering never holds
- * a paid download back.
+ * already left `pending` or moved to another attempt, is logged and the render
+ * carries on. The lane bounds how long it waits for this, so a database that is
+ * not answering never holds a paid download back.
  */
-async function recordPaidOutputOnRow(imageId: string, output: PaidRenderOutput): Promise<void> {
+export function paidOutputRecorderForRow(imageId: string, attempt?: string): PaidRenderOutputRecorder {
+  return (output) => recordPaidOutputOnRow(imageId, output, attempt);
+}
+
+async function recordPaidOutputOnRow(imageId: string, output: PaidRenderOutput, attempt: string | undefined): Promise<void> {
   try {
     const recorded = await recordPendingRenderOutput(imageId, {
       predictionId: output.predictionId,
       undeliveredOutputId: output.outputId,
       modelSlug: output.modelSlug,
-    });
+    }, attempt);
     if (!recorded) {
-      log.warn("images", "a paid output's ids reached a render row that is no longer pending; not recorded", {
+      log.warn("images", "a paid output's ids reached a render row no longer pending on that attempt; not recorded", {
         imageId,
         predictionId: output.predictionId,
+        ...(attempt === undefined ? {} : { attempt }),
       });
     }
   } catch (error) {

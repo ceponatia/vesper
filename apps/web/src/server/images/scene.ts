@@ -8,13 +8,13 @@ import {
   isDemoMode,
   qualifiedImageModelIdentity,
   sceneComposerModelId,
+  withPaidRenderOutputRecorder,
 } from "../ai";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logDiagnostics } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   attemptReferenceCount,
-  declaresSpentProviderWork,
   type IdentityReferenceProvenance,
   type ImageLoraRenderBinding,
   IMAGE_TARGET_ASPECT,
@@ -22,6 +22,7 @@ import {
   type ImageReferenceRole,
   type ImageRenderReference,
   type ProviderRenderResult,
+  providerWorkSpent,
   referenceCapacity,
   type RenderAdvisory,
   type ResolvedImageAttempt,
@@ -35,8 +36,8 @@ import {
   type SceneVisualReferenceKind,
 } from "@vesper/image-core";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
-import { imageMeta, type ImageEntityKind } from "./asset-storage";
-import { runImagePipeline } from "./assets";
+import { imageMeta, RENDER_ATTEMPT_META_KEY, type ImageEntityKind } from "./asset-storage";
+import { paidOutputRecorderForRow, runImagePipeline } from "./assets";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
@@ -945,6 +946,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         sourceImageId: anchorRef?.imageId,
         meta: {
           demo,
+          // The rung this row's render is running, which a paid output's early
+          // record must still match to land (`recordPendingRenderOutput`): the
+          // primary rung until a fallback rung is described below.
+          ...(primary === undefined ? {} : { [RENDER_ATTEMPT_META_KEY]: primary }),
           focalName: plan.focal?.name ?? null,
           referenceName: anchorRef?.name ?? null,
           model: primary ? modelFor(primary) : "none",
@@ -1017,11 +1022,17 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
               provenanceFor(id),
               referenceViewsFor(id),
               compiledFor(id)?.meta,
-              { beforeRung: true },
+              { beforeRung: id },
             );
             described = id;
           }
-          return runSceneProvider(id, ctx);
+          // This rung's own paid-output recorder, overriding the pipeline's:
+          // its early record lands only while the row still names this rung,
+          // so a slow record from a rung the chain has moved past can never
+          // overwrite the ids of the rung now running. A rung that recorded
+          // ids gets no same-rung retry — a failure after the record is
+          // undelivered (the chain stops) or final (the chain moves on).
+          return withPaidRenderOutputRecorder(paidOutputRecorderForRow(asset.id, id), () => runSceneProvider(id, ctx));
         };
         const outcome = await executeSceneChain(runnableChain, runRung, sink, (rung) => {
           paidStopRung = rung;
@@ -1190,14 +1201,18 @@ export async function executeSceneChain(
     if (failure.reason === "transient") sawTransient = true;
     else sawNonTransient = true;
     // A rung's FINAL failure (its own same-rung transient retry already
-    // spent, above) that already declares provider work was PAID FOR on
-    // this attempt ends the chain right here (#685): no further rung,
+    // spent, above) whose provider work was PAID FOR on this attempt and may
+    // still deliver ends the chain right here (#685): no further rung,
     // because a fallback would risk a second paid render racing a workflow
-    // that may still be running or may still deliver. Checked before the
-    // ordinary fallback diagnostic below, so a paid stop never also logs a
-    // `provider_fallback` it never took, and never reaches the generic
-    // `all_failed`/`service_outage` terminal after the loop.
-    if (declaresSpentProviderWork(failure.message)) {
+    // that may still be running or may still deliver. Judged on structured
+    // evidence (`providerWorkSpent`): the failure names the workflow and
+    // declares `retry=reconcile`, or the submit's answer was lost
+    // (`submit_unconfirmed`). A `reconcile` with no workflow id — an HTTP 409
+    // before any workflow existed — falls through like any other failure.
+    // Checked before the ordinary fallback diagnostic below, so a paid stop
+    // never also logs a `provider_fallback` it never took, and never reaches
+    // the generic `all_failed`/`service_outage` terminal after the loop.
+    if (providerWorkSpent(failure)) {
       sink?.push(
         diag(
           "warn",
@@ -1319,7 +1334,8 @@ async function correctProviderMeta(
   identityReferences: IdentityReferenceProvenance[],
   referenceViews: SceneReferenceViewProvenance[],
   program?: Record<string, unknown>,
-  options: { beforeRung?: boolean } = {},
+  /** `beforeRung`: the fallback rung about to run, which the row is rewritten to describe. */
+  options: { beforeRung?: SceneAttemptId } = {},
 ): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(program ?? {}) };
@@ -1328,16 +1344,18 @@ async function correctProviderMeta(
   // Same rule, same reason: a rung that dropped the view claims none.
   if (referenceViews.length > 0) meta.referenceViews = referenceViews;
   else delete meta.referenceViews;
-  if (options.beforeRung === true) {
+  if (options.beforeRung !== undefined) {
     // Before a fallback rung runs, nothing has rendered for it yet, so the row
     // holds no attempt record — only the paid-output ids a previous rung may
     // have recorded before its download (`recordPendingRenderOutput`). That
     // rung did not fail undelivered: an undelivered failure stops the chain
-    // (`declaresSpentProviderWork`), so its download failed for good, and a
+    // (`providerWorkSpent`), so its download failed for good, and a
     // death during THIS rung must not leave an offer for an output that is
     // gone. Written only while the row is still `pending`: a row a sweep or a
     // settle already left is never rewritten from here.
     delete meta.render;
+    // The attempt fence: from here only this rung's early record lands.
+    meta[RENDER_ATTEMPT_META_KEY] = options.beforeRung;
     await db()
       .update(images)
       .set({ prompt, meta })
