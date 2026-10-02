@@ -298,6 +298,21 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
     expect(mockRecover).toHaveBeenCalledTimes(1);
   });
 
+  // Two clicks race: both may pass the unlocked checks and fetch, but the
+  // commit is serialized on the character lock and only a still-failed attempt
+  // takes a copy. The loser's copy is compensated, so exactly one remains.
+  it("installs one of two simultaneous recoveries and leaves no second copy", async () => {
+    const state = await failedRender(FRONT);
+    mockRecover.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+
+    const outcomes = await Promise.all([recoverReferenceView(state.request), recoverReferenceView(state.request)]);
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(["changed", "recovered"]);
+    const installed = (await viewRow(state.attemptId)).imageId;
+    expect(installed).not.toBeNull();
+    expect(await referenceViewAssets(state.characterId)).toEqual([state.failedImageId, installed ?? ""].sort());
+  });
+
   it("refuses another attempt, a foreign owner, a busy slot and a moved portrait before fetching anything", async () => {
     const state = await failedRender(FRONT);
     expect((await recoverReferenceView({ ...state.request, attemptId: "not-this-attempt" })).status).toBe("changed");
