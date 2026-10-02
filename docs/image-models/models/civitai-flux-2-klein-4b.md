@@ -351,12 +351,20 @@ characters unchanged.
 - **Exhausting every download attempt reports the output as RECOVERABLE
   (`civitai_output_undelivered`) rather than losing it.** The workflow
   already succeeded and was already paid for, so the render fails with a
-  message naming the blob id and the attempt count, stating that the output
-  can be recovered without rendering again. It is always `retry=reconcile`
-  and classifies as `other`, never `transient` and never a billing or
-  content-rejection reading, so neither a scene rerun nor the selfie retry's
-  own guard ever reposts a second paid render over an output that is still
-  sitting there.
+  message naming the attempt count, stating that the output can be
+  recovered without rendering again. The blob id itself travels only as
+  structured provenance on the lane result, never embedded in that message:
+  it is provider-supplied and therefore untrusted, and an id that happened
+  to spell a billing or moderation word would otherwise make the shared
+  keyword classifier misread an ordinary download failure as one of those
+  (review P3-5). The failure is always `retry=reconcile` and classifies as
+  `other`, never `transient` and never a billing or content-rejection
+  reading, so the SAME rung is never rerun and the character-chat selfie
+  retry's own guard skips it entirely. A scene chain FALLBACK to its next
+  rung — a different, reduced-reference request to a different model — is
+  unaffected and still runs, exactly as for any other non-transient failure,
+  and that fallback DOES render again; only a rerun of the identical rung is
+  ruled out.
 - **`recoverCivitaiOutput` recovers that output without rendering again.**
   Read-only end to end: one GET to re-read the workflow, then the same
   retried download above. It never POSTs, never creates a workflow, and
