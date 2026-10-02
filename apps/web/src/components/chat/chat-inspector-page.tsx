@@ -6,6 +6,7 @@ import { ChatInspectorAffordances } from "@/components/chat/chat-inspector-affor
 import { ChatInspectorAgentHealth } from "@/components/chat/chat-inspector-agent-health";
 import { ChatInspectorCompositionHealth } from "@/components/chat/chat-inspector-composition-health";
 import { ChatInspectorEpisodes } from "@/components/chat/chat-inspector-episodes";
+import { ChatInspectorExchangeTrace } from "@/components/chat/chat-inspector-exchange-trace";
 import { ChatInspectorFacts } from "@/components/chat/chat-inspector-facts";
 import { ChatInspectorPhysicalGuidance } from "@/components/chat/chat-inspector-physical-guidance";
 import { ChatInspectorVisualState } from "@/components/chat/chat-inspector-visual-state";
@@ -73,6 +74,10 @@ function InspectorBody({ chatId }: { chatId: string }) {
           {/* Composed-turn health beside agent health: the choreography degrades as silently as
               the agent legs do — a "traveled alone" reads exactly like a normal turn (C15). */}
           <ChatInspectorCompositionHealth chatId={chatId} />
+          {/* The exchange trace (#637), right after the two health panels: those answer "is
+              something failing, in general?" across many exchanges; this answers "what exactly
+              happened on THIS exchange?" once one of them already pointed at a suspect turn. */}
+          <ChatInspectorExchangeTrace chatId={chatId} />
           <ChatInspectorFacts
             chatId={chatId}
             characterName={data.character.name}
