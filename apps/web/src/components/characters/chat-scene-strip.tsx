@@ -1,8 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { chatsApi, galleryApi, imageProfilesApi, type ImageRecord } from "@/lib/client/api";
+import { chatsApi, galleryApi, imageProfilesApi, ownedImagesApi, type ImageRecord } from "@/lib/client/api";
 import { useAsyncData } from "@/components/hooks/use-async";
+import {
+  imageRecoverableHint,
+  imageRecoverActionLabel,
+  imageRecoverFailedTitle,
+  imageRecoveredToastTitle,
+} from "@/components/images/recovery-copy";
 import { ImageProfileSelect } from "./image-profile-select";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -66,6 +72,9 @@ export function SceneStrip({
   );
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Per-tile, not a single flag: Civitai's download retry can take minutes,
+  // and only the recovering tile's own controls should wait on it.
+  const [recovering, setRecovering] = useState<ReadonlySet<string>>(new Set());
   const baselineRef = useRef(0);
 
   const hasPendingRow = sceneList.some((s) => s.status === "pending");
@@ -112,6 +121,35 @@ export function SceneStrip({
     if (enlarged?.id === pendingDelete) setEnlarged(null);
     setPendingDelete(null);
     toast.push({ title: "Scene deleted", tone: "success" });
+    onRefresh();
+  };
+
+  /**
+   * Recover a failed scene's already-paid-for render onto its own row — no
+   * new render, no new charge. This strip is the ONLY place a recoverable
+   * failed scene whose anchor message was deleted or rerun-snipped can ever
+   * be reached, since the inline transcript moments only ever show an
+   * anchored one — so Delete alone here would throw away a paid output with
+   * no other recovery path. Refetches the shared scene list on success or an
+   * `expired` refusal through the page's own `onRefresh`, the same handle
+   * Generate and Delete already use — no second data path.
+   */
+  const recover = async (imageId: string) => {
+    setRecovering((prev) => new Set(prev).add(imageId));
+    const result = await ownedImagesApi.recover(imageId);
+    setRecovering((prev) => {
+      const next = new Set(prev);
+      next.delete(imageId);
+      return next;
+    });
+    if (!result.ok) {
+      toast.push({ title: imageRecoverFailedTitle, description: result.error.message, tone: "error" });
+      // The offer is gone for good — refresh so the tile drops the action
+      // rather than offering a recovery that will only refuse again.
+      if (result.error.code === "expired") onRefresh();
+      return;
+    }
+    toast.push({ title: imageRecoveredToastTitle, description: "It now shows in the conversation." });
     onRefresh();
   };
 
@@ -167,9 +205,24 @@ export function SceneStrip({
                     <Tag tone="danger" className="self-start">
                       failed
                     </Tag>
-                    <p className="max-h-20 overflow-y-auto text-[11px] break-words text-paper-400" title={error ?? undefined}>
-                      {error ?? "The image provider returned an error."}
-                    </p>
+                    {img.recoverable ? (
+                      <>
+                        <p className="text-[11px] leading-snug text-paper-400">{imageRecoverableHint}</p>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          className="self-start"
+                          busy={recovering.has(img.id)}
+                          onClick={() => void recover(img.id)}
+                        >
+                          {imageRecoverActionLabel}
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="max-h-20 overflow-y-auto text-[11px] break-words text-paper-400" title={error ?? undefined}>
+                        {error ?? "The image provider returned an error."}
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <button
@@ -189,7 +242,8 @@ export function SceneStrip({
                     type="button"
                     onClick={() => setPendingDelete(img.id)}
                     aria-label="Delete scene image"
-                    className="hover-reveal touch-target absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-xs text-paper-300 backdrop-blur-sm transition-opacity hover:border-danger-500 hover:text-danger-300"
+                    disabled={recovering.has(img.id)}
+                    className="hover-reveal touch-target absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-md border border-ink-600 bg-ink-900/80 text-xs text-paper-300 backdrop-blur-sm transition-opacity hover:border-danger-500 hover:text-danger-300 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     ✕
                   </button>
