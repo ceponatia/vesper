@@ -89,7 +89,7 @@ export function ChatInspectorExchangeTrace({ chatId }: { chatId: string }) {
       ) : traces.length === 0 ? (
         <EmptyState
           title="No traces recorded yet"
-          description="This conversation hasn't produced an exchange trace — either it predates #637, or nothing has been sent since."
+          description="Every new exchange records a trace. Exchanges from before tracing existed have none, and traces expire after 30 days."
         />
       ) : selected ? (
         <div className="flex flex-col gap-4 rounded-card border border-paper-800 bg-paper-950/40 p-4">
@@ -132,7 +132,12 @@ function formatMs(ms: number | null): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
 }
 
-/** Browser-only side effect (not extracted to the pure format module): saves JSON as a file. */
+/**
+ * Browser-only side effect (not extracted to the pure format module): saves
+ * JSON as a file. The revoke is deferred rather than run right after
+ * `click()` — some browsers treat an immediately-revoked object URL as a
+ * cancelled download, since the actual save can still be in flight.
+ */
 function downloadJson(filename: string, data: unknown): void {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -140,7 +145,7 @@ function downloadJson(filename: string, data: unknown): void {
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function TracePicker({
