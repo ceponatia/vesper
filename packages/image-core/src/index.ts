@@ -765,9 +765,9 @@ export {
   attemptReferenceCount,
   classifyImageFailureMessage,
   declaresNonAutomaticRetry,
-  declaresSpentProviderWork,
   imageFailureHealthOutcome,
   isBillingFailureMessage,
+  providerWorkSpent,
   routeSceneAttempts,
 } from "./provider-interface";
 export type {

@@ -14,7 +14,6 @@ import { logDiagnostics } from "@/server/log";
 import { diag, DiagnosticCollector, teeSink, type Diagnostic, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
   attemptReferenceCount,
-  declaresSpentProviderWork,
   type IdentityReferenceProvenance,
   type ImageLoraRenderBinding,
   IMAGE_TARGET_ASPECT,
@@ -22,6 +21,7 @@ import {
   type ImageReferenceRole,
   type ImageRenderReference,
   type ProviderRenderResult,
+  providerWorkSpent,
   referenceCapacity,
   type RenderAdvisory,
   type ResolvedImageAttempt,
@@ -1190,14 +1190,18 @@ export async function executeSceneChain(
     if (failure.reason === "transient") sawTransient = true;
     else sawNonTransient = true;
     // A rung's FINAL failure (its own same-rung transient retry already
-    // spent, above) that already declares provider work was PAID FOR on
-    // this attempt ends the chain right here (#685): no further rung,
+    // spent, above) whose provider work was PAID FOR on this attempt and may
+    // still deliver ends the chain right here (#685): no further rung,
     // because a fallback would risk a second paid render racing a workflow
-    // that may still be running or may still deliver. Checked before the
-    // ordinary fallback diagnostic below, so a paid stop never also logs a
-    // `provider_fallback` it never took, and never reaches the generic
-    // `all_failed`/`service_outage` terminal after the loop.
-    if (declaresSpentProviderWork(failure.message)) {
+    // that may still be running or may still deliver. Judged on structured
+    // evidence (`providerWorkSpent`): the failure names the workflow and
+    // declares `retry=reconcile`, or the submit's answer was lost
+    // (`submit_unconfirmed`). A `reconcile` with no workflow id — an HTTP 409
+    // before any workflow existed — falls through like any other failure.
+    // Checked before the ordinary fallback diagnostic below, so a paid stop
+    // never also logs a `provider_fallback` it never took, and never reaches
+    // the generic `all_failed`/`service_outage` terminal after the loop.
+    if (providerWorkSpent(failure)) {
       sink?.push(
         diag(
           "warn",
@@ -1333,7 +1337,7 @@ async function correctProviderMeta(
     // holds no attempt record — only the paid-output ids a previous rung may
     // have recorded before its download (`recordPendingRenderOutput`). That
     // rung did not fail undelivered: an undelivered failure stops the chain
-    // (`declaresSpentProviderWork`), so its download failed for good, and a
+    // (`providerWorkSpent`), so its download failed for good, and a
     // death during THIS rung must not leave an offer for an output that is
     // gone. Written only while the row is still `pending`: a row a sweep or a
     // settle already left is never rewritten from here.
