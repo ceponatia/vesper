@@ -1,6 +1,7 @@
 import { computeMoveArrivalTarget, planStrandedSettlement } from "@vesper/simulation-core/travel-settle";
 import { newId } from "@/lib/ids";
 import { readChatEngineAuthority } from "../chat-authority";
+import { noopExchangeTrace, type ExchangeTrace } from "../chat-exchange-trace";
 import { readBranchClock, type SimChatClock } from "../sim-beats";
 import type { CompositionFallbackCode, CompositionFallbackSite } from "@/contracts/turns/composition-fallback";
 import type { SpaceProjection } from "@vesper/simulation-core/contracts/space";
@@ -101,38 +102,57 @@ export function noteDrainDiagnostics(
  * never a thrown error, so a caller can report "how far time moved" instead of a 500 after the
  * world already committed (docs/resilience.md).
  */
-export async function drainBranchTo(branchId: string, target: number): Promise<DrainResult> {
-  let drained = 0;
-  let terminalFailures = 0;
-  for (let calls = 0; ; calls += 1) {
-    if (calls > 1_000) {
-      // The runaway backstop: the clock advanced as far as it got (every advance persists it),
-      // so read the real reached second rather than pretending we hit the target.
-      const reached = (await readBranchClock(branchId))?.storySecond ?? target;
-      return { converged: false, reachedStorySecond: reached, target, drained, shortReason: "diverged", terminalFailures };
-    }
-    const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-skip-${newId()}` });
-    drained += outcome.drained;
-    terminalFailures += outcome.terminalFailures ?? 0;
-    if (outcome.status === "advanced") {
-      return { converged: true, reachedStorySecond: outcome.storySecond, target, drained, terminalFailures };
-    }
-    // A6: a backed-off trigger parks the clock at its due second. STOP here (an honest short
-    // drain) rather than re-looping — the next pass cannot see the trigger and would jump the
-    // clock past it, mis-stamping its event. The clock stays parked, so when the backoff
-    // elapses the trigger resolves at exactly the second it was due.
-    if (outcome.reason === "trigger_backoff") {
-      return {
-        converged: false,
-        reachedStorySecond: outcome.storySecond,
-        target,
-        drained,
-        shortReason: "trigger_backoff",
-        terminalFailures,
-      };
-    }
-    // trigger_budget / time_budget: more visible work remains — keep draining.
-  }
+export async function drainBranchTo(
+  branchId: string,
+  target: number,
+  /** The exchange trace (#637) this drain runs under — a travel/accompany choreography's own
+   * clock advance, recorded as one `sim.time` stage. Omitted (the sim-command route, durable
+   * jobs) ⇒ untraced, unchanged behavior. */
+  exchangeTrace?: ExchangeTrace,
+): Promise<DrainResult> {
+  const trace = exchangeTrace ?? noopExchangeTrace();
+  return trace.time(
+    "sim.time",
+    "prepare",
+    async (): Promise<DrainResult> => {
+      let drained = 0;
+      let terminalFailures = 0;
+      for (let calls = 0; ; calls += 1) {
+        if (calls > 1_000) {
+          // The runaway backstop: the clock advanced as far as it got (every advance persists it),
+          // so read the real reached second rather than pretending we hit the target.
+          const reached = (await readBranchClock(branchId))?.storySecond ?? target;
+          return { converged: false, reachedStorySecond: reached, target, drained, shortReason: "diverged", terminalFailures };
+        }
+        const outcome = await advanceBranchStoryTime(branchId, target, { workerId: `sim-skip-${newId()}` });
+        drained += outcome.drained;
+        terminalFailures += outcome.terminalFailures ?? 0;
+        if (outcome.status === "advanced") {
+          return { converged: true, reachedStorySecond: outcome.storySecond, target, drained, terminalFailures };
+        }
+        // A6: a backed-off trigger parks the clock at its due second. STOP here (an honest short
+        // drain) rather than re-looping — the next pass cannot see the trigger and would jump the
+        // clock past it, mis-stamping its event. The clock stays parked, so when the backoff
+        // elapses the trigger resolves at exactly the second it was due.
+        if (outcome.reason === "trigger_backoff") {
+          return {
+            converged: false,
+            reachedStorySecond: outcome.storySecond,
+            target,
+            drained,
+            shortReason: "trigger_backoff",
+            terminalFailures,
+          };
+        }
+        // trigger_budget / time_budget: more visible work remains — keep draining.
+      }
+    },
+    (result) => ({
+      status: result.converged ? "success" : "degraded",
+      ...(result.converged ? {} : { reason: drainShortCode(result.shortReason) }),
+      count: result.drained,
+    }),
+  );
 }
 
 /**

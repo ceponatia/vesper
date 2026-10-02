@@ -18,6 +18,9 @@ export interface AdmissionOutcome {
 interface AdmittedForChat {
   command: AdmittedCommand | null;
   zones: { zoneId: string; kind: string }[];
+  /** True when the match degraded to `command: null` because the legal-surface READ failed
+   * (never when the player's words simply matched no command) — #637 sim.admission stage. */
+  degraded?: boolean;
 }
 
 /**
@@ -63,9 +66,9 @@ export async function admitPlayerCommandForChat(input: {
       zones,
       actionDefinitionIds: actions.map((row) => row.actionDefinitionId),
     });
-    return { command, zones };
+    return { command, zones, degraded: false };
   } catch {
-    return { command: null, zones: [] };
+    return { command: null, zones: [], degraded: true };
   }
 }
 
@@ -85,6 +88,8 @@ export async function admitIntoCoPresentTurn(
     primaryActorId: string;
     playerName: string;
     primaryName: string;
+    /** The exchange trace (#637) correlating this turn's composition fallbacks. */
+    traceId?: string;
   },
   command: Exclude<AdmittedCommand, { kind: "accompany" }>,
   zones: { zoneId: string; kind: string }[],
@@ -98,6 +103,7 @@ export async function admitIntoCoPresentTurn(
         branchId: input.branchId,
         kind: "traveled",
         destinationLabel: zoneLabelFromKind(command.toZoneId, kind),
+        ...(input.traceId ? { traceId: input.traceId } : {}),
       });
     }
     return outcome;

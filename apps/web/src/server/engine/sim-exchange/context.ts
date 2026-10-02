@@ -1,13 +1,16 @@
 import { characterProfileSchema, DiagnosticCollector, emptyCharacterProfile } from "@/contracts";
 import type { NarratorInstructionSource } from "@/contracts/narrator-prompts";
 import type { CharacterProfile } from "@/contracts/world/profile";
+import { fnv1aHex } from "@/lib/hash";
 import { parseOr } from "@/lib/parse";
 import { characterChatMessages, characters, chatParticipants, db, simCharacters, simZones } from "@/server/db";
 import { asc, desc, eq } from "drizzle-orm";
+import type { EngineAuthority } from "@vesper/simulation-core/contracts/authority";
 import { embedText, embedTexts } from "@/server/ai";
 import { resolveChatPersona } from "../../players";
 import { readChatEngineAuthority } from "../chat-authority";
-import { isWorldBeatMeta } from "../sim-beats";
+import type { ExchangeCoverageInput } from "../chat-exchange-trace";
+import { isWorldBeatMeta, type SimChatClock } from "../sim-beats";
 import { loadChatSummary } from "../chat-summary";
 import { log } from "../../log";
 import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";
@@ -92,6 +95,8 @@ export function isSimRoutedAuthority(
 }
 
 export interface ResolvedSimExchange {
+  /** The chat's engine authority (#637 trace header) — always a sim-routed value here. */
+  authority: EngineAuthority;
   branchId: string;
   playerActorId: string;
   primaryActorId: string;
@@ -156,6 +161,7 @@ export async function resolveSimExchange(
   return {
     ok: true,
     ctx: {
+      authority: authority.authority,
       branchId,
       playerActorId,
       primaryActorId: authority.simPrimaryActorId,
@@ -358,4 +364,101 @@ export async function loadSimPresentationInputs(input: {
     ...(zoneNames ? { zoneNames } : {}),
     narrationShape: narrationShapeId("chat"),
   };
+}
+
+// ---------------------------------------------------------------------------
+// #637 coverage — what the sim narrator actually received this exchange
+// ---------------------------------------------------------------------------
+
+/**
+ * The context families the sim narrator actually receives, derived from
+ * ALREADY-LOADED values (no extra reads, no behavior change) — the exchange
+ * trace's coverage table (#637), using the recommended family ids where they
+ * fit: `history`, `summary`, `memory.episodes`, `actor_state`, `relationship`,
+ * `garments`, `schedule_time`.
+ *
+ * `missing` vs `empty` is honest only as far as the callers below already
+ * distinguish it: `loadSimConversationContext` degrades a failed summary or
+ * memory read to the SAME empty value a genuinely-empty one would carry (by
+ * design, docs/resilience.md), so this records `empty` for both rather than
+ * guessing at `missing` — a real distinction would need that function's own
+ * degrade boundary to expose it, which is out of this slice's owned surface.
+ * `relationship` / `garments` / `actor_state` carry the same limitation: the
+ * underlying reads self-degrade to absent in `sim-surfaces.ts` (not owned by
+ * this slice), so "never fetched" and "fetched, found nothing" both read here
+ * as `empty`.
+ */
+export function simContextCoverage(input: {
+  dialogueTail: readonly { speaker: string; text: string }[];
+  conversationSummary: string;
+  memory: readonly string[];
+  ragEligibility: boolean;
+  hadUtterance: boolean;
+  presentation: SimPresentationInputs;
+  clock: SimChatClock | null;
+}): ExchangeCoverageInput[] {
+  const entries: ExchangeCoverageInput[] = [];
+
+  const tailChars = input.dialogueTail.reduce((sum, line) => sum + line.text.length, 0);
+  entries.push(
+    input.dialogueTail.length > 0
+      ? {
+          family: "history",
+          status: "present",
+          count: input.dialogueTail.length,
+          chars: tailChars,
+          hash: fnv1aHex(input.dialogueTail.map((line) => line.text).join("\n")),
+        }
+      : { family: "history", status: "empty" },
+  );
+
+  entries.push(
+    input.conversationSummary.length > 0
+      ? {
+          family: "summary",
+          status: "present",
+          chars: input.conversationSummary.length,
+          hash: fnv1aHex(input.conversationSummary),
+        }
+      : { family: "summary", status: "empty" },
+  );
+
+  if (!input.ragEligibility) {
+    entries.push({ family: "memory.episodes", status: "suppressed", reason: "policy:rag_ineligible" });
+  } else if (!input.hadUtterance) {
+    entries.push({ family: "memory.episodes", status: "suppressed", reason: "policy:no_utterance" });
+  } else if (input.memory.length > 0) {
+    const joined = input.memory.join("\n");
+    entries.push({ family: "memory.episodes", status: "present", count: input.memory.length, chars: joined.length, hash: fnv1aHex(joined) });
+  } else {
+    entries.push({ family: "memory.episodes", status: "empty" });
+  }
+
+  entries.push(
+    input.presentation.primary
+      ? { family: "actor_state", status: "present", count: 1 }
+      : { family: "actor_state", status: "empty" },
+  );
+
+  entries.push(
+    input.presentation.relationship
+      ? { family: "relationship", status: "present", count: 1 }
+      : { family: "relationship", status: "empty" },
+  );
+
+  entries.push(
+    input.presentation.garments
+      ? { family: "garments", status: "present", count: 1, reason: "structured" }
+      : input.presentation.outfitLine
+        ? { family: "garments", status: "present", count: 1, reason: "outfit_line" }
+        : { family: "garments", status: "empty" },
+  );
+
+  entries.push(
+    input.clock
+      ? { family: "schedule_time", status: "present", count: 1 }
+      : { family: "schedule_time", status: "missing", reason: "source_unavailable:branch_clock" },
+  );
+
+  return entries;
 }

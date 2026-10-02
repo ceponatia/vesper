@@ -93,6 +93,12 @@ export async function writeWorldBeat(input: {
    * one beat. Omitted (NL choreographies, durable jobs) ⇒ a fresh `newId()` per call.
    */
   dedupeId?: string;
+  /**
+   * The exchange trace (#637) this beat's write runs under, when the caller has one —
+   * carried onto the `beat_write_degraded` composition-fallback record so a vanished
+   * beat correlates back to its exchange.
+   */
+  traceId?: string;
 }): Promise<void> {
   try {
     const clock = await readBranchClock(input.branchId);
@@ -135,6 +141,7 @@ export async function writeWorldBeat(input: {
       site: "beat",
       code: "beat_write_degraded",
       chatId: input.chatId,
+      ...(input.traceId ? { traceId: input.traceId } : {}),
       detail: error instanceof Error ? error.message : String(error),
     });
   }

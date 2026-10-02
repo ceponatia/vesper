@@ -1,8 +1,26 @@
+import type { ExchangeOperation } from "@/contracts/turns/chat-exchange-trace";
+import { startExchangeTrace } from "./chat-exchange-trace";
 import { hasActiveTimeJob } from "./simulation";
 import { resolveSimExchange } from "./sim-exchange/context";
 import type { SimChatExchangeResult, SimChatExchangeMode } from "./sim-exchange/types";
 import { runSimTurn } from "./sim-exchange/turn";
 import { runSimRetake } from "./sim-exchange/retake";
+
+/** The sim lane's four modes, mapped onto the exchange trace's closed operation vocabulary.
+ * `retake` always targets the latest reply (there is no sim equivalent of regenerating an
+ * older one), so it maps to `rerun` rather than `regenerate`. */
+function simModeToExchangeOperation(mode: SimChatExchangeMode): ExchangeOperation {
+  switch (mode) {
+    case "send":
+      return "send";
+    case "continue":
+      return "continue";
+    case "open":
+      return "open";
+    case "retake":
+      return "rerun";
+  }
+}
 
 /**
  * Run one successor exchange for an OWNERSHIP-CHECKED chat (routing parity).
@@ -42,24 +60,36 @@ export async function runSimChatExchange(input: {
   inputMode?: "player" | "narrator";
 }): Promise<SimChatExchangeResult> {
   const resolved = await resolveSimExchange(input.userId, input.chatId);
-  if (!resolved.ok) return resolved.result;
+  if (!resolved.ok) return resolved.result; // refused before admission — no trace (#637).
   const mode = input.mode ?? "send";
-  if (mode === "retake") {
-    // A retake re-renders a committed cut — it changes no world state or time, so it is
-    // allowed even while the world is catching up (the guard below is for real turns only).
-    return runSimRetake({ chatId: input.chatId, userId: input.userId, ctx: resolved.ctx });
-  }
   // A5 slice 4: a real turn advances the span and writes — turn it away while a durable time job
   // is catching this branch's world up. The in-process reply lock does not outlive the request
   // that started the job, so the durable job state is the guard (shared by the send + sim-turn
-  // routes, since both funnel through here).
-  if (await hasActiveTimeJob(resolved.ctx.branchId)) {
+  // routes, since both funnel through here). A retake re-renders a committed cut — it changes no
+  // world state or time, so it is exempt from this gate (allowed even while the world catches up).
+  if (mode !== "retake" && (await hasActiveTimeJob(resolved.ctx.branchId))) {
     return {
       ok: false,
       code: "world_catching_up",
       message: "the world is still catching up on this chat; try again in a moment",
       status: 409,
     };
+  }
+
+  // #637: one trace per ADMITTED exchange — every refusal above this line returns before a
+  // trace exists. `branchId` is known for every sim-routed exchange regardless of which turn
+  // shape runs, so it is annotated immediately; `cutId` and the narrator header fields land
+  // later, once each path actually knows them.
+  const exchangeTrace = startExchangeTrace({
+    chatId: input.chatId,
+    operation: simModeToExchangeOperation(mode),
+    authority: resolved.ctx.authority,
+    lane: "successor",
+  });
+  exchangeTrace.annotate({ sim: { branchId: resolved.ctx.branchId } });
+
+  if (mode === "retake") {
+    return runSimRetake({ chatId: input.chatId, userId: input.userId, ctx: resolved.ctx, exchangeTrace });
   }
   return runSimTurn({
     chatId: input.chatId,
@@ -69,5 +99,6 @@ export async function runSimChatExchange(input: {
     message: input.message,
     ...(input.inputMode === undefined ? {} : { inputMode: input.inputMode }),
     ctx: resolved.ctx,
+    exchangeTrace,
   });
 }
