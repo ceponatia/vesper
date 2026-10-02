@@ -1,12 +1,14 @@
-import { describeProviderError } from "../ai";
+import { describeProviderError, withPaidRenderOutputRecorder, type PaidRenderOutput } from "../ai";
 import { JOB_HEARTBEAT_INTERVAL_MS } from "../db";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
+import { log } from "@/server/log";
 import {
   type ImageRow,
   type CreateImageAssetOptions,
   createImageAsset,
   saveImageBuffer,
   failImage,
+  recordPendingRenderOutput,
   refreshRenderLease,
 } from "./asset-storage";
 import { kickImageSweep } from "./asset-maintenance";
@@ -127,6 +129,12 @@ export interface ImagePipelineResult {
  * the sweep tells a render still running — a Civitai queue wait, every rung of a
  * scene chain — from one whose process died (docs/images/asset-registry.md
  * §The sweep).
+ *
+ * **A paid output's ids.** `produce` runs with a paid-output recorder installed
+ * on this row ({@link recordPaidOutputOnRow}): a provider lane that has a
+ * succeeded, billed output records its workflow and output ids here before it
+ * downloads, so a render whose process dies mid-download leaves a row that
+ * offers the output for recovery instead of nothing.
  */
 export async function runImagePipeline(opts: ImagePipelineOptions): Promise<ImagePipelineResult> {
   // Periodic maintenance rides the work it maintains:
@@ -146,7 +154,10 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
   const releaseLease = await holdRenderLease(asset.id);
   const startedMs = Date.now();
   try {
-    const produced = await opts.produce(asset);
+    const produced = await withPaidRenderOutputRecorder(
+      (output) => recordPaidOutputOnRow(asset.id, output),
+      () => opts.produce(asset),
+    );
     if (!produced.ok) {
       await failImage(asset.id, produced.error, produced.meta);
       opts.onSettled?.({ imageId: asset.id, status: "failed", startedMs });
@@ -175,6 +186,40 @@ export async function runImagePipeline(opts: ImagePipelineOptions): Promise<Imag
     return { imageId: asset.id, status: "failed" };
   } finally {
     releaseLease();
+  }
+}
+
+/**
+ * The pipeline's paid-output recorder (`withPaidRenderOutputRecorder`): a
+ * provider lane that has a succeeded, billed output in hand records its ids on
+ * this render's own row before it downloads ({@link recordPendingRenderOutput}),
+ * so a process that dies mid-download leaves the row offering that output for
+ * recovery once it is failed (docs/images/asset-registry.md §The sweep).
+ *
+ * Best-effort like the lease heartbeat: a write that fails, or a row that
+ * already left `pending`, is logged and the render carries on. The lane bounds
+ * how long it waits for this, so a database that is not answering never holds
+ * a paid download back.
+ */
+async function recordPaidOutputOnRow(imageId: string, output: PaidRenderOutput): Promise<void> {
+  try {
+    const recorded = await recordPendingRenderOutput(imageId, {
+      predictionId: output.predictionId,
+      undeliveredOutputId: output.outputId,
+      modelSlug: output.modelSlug,
+    });
+    if (!recorded) {
+      log.warn("images", "a paid output's ids reached a render row that is no longer pending; not recorded", {
+        imageId,
+        predictionId: output.predictionId,
+      });
+    }
+  } catch (error) {
+    log.warn("images", "a paid output's ids could not be recorded on its render row before the download", {
+      imageId,
+      predictionId: output.predictionId,
+      error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+    });
   }
 }
 

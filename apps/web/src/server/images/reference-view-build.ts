@@ -690,6 +690,12 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
         referenceView: {
           angle: view.angle,
           wardrobe: view.wardrobe,
+          // The attempt this render belongs to, written with the row itself:
+          // lease reconciliation finds an abandoned attempt's render by it, so
+          // a build that dies mid-download still leaves its paid output on
+          // offer (`reconcileExpiredReferenceViewWork`). The pending attempt
+          // itself stays unlinked until the render settles.
+          attemptId: viewId,
           generationVersion: REFERENCE_VIEW_GENERATION_VERSION,
           faceVisibility: referenceViewFaceVisibility(angle),
           // The approved view this one was rendered from, recorded only when it

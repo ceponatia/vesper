@@ -147,6 +147,26 @@ swallowed, a beat stuck on a dead connection never holds back the next one, and 
 beating — a crashed process, a database that stays unreachable — ages until a sweep reclaims the
 row. Only a `pending` row carries a lease; saving and failing remove it.
 
+**A paid output's ids land before its download.** Once a Civitai workflow has succeeded and the lane
+has chosen its output, and before the download starts, the lane records the workflow
+(`predictionId`), the output (`undeliveredOutputId`) and the model (`modelSlug`) under the render's
+`meta.render`. The lane does not know the row: `runImagePipeline` installs a recorder around
+`produce` (`withPaidRenderOutputRecorder`, `server/ai`), carried by the render's own async context,
+so concurrent renders each reach only their own row and a render outside the pipeline records
+nothing. The write merges into `meta.render` in SQL, guarded by `status = 'pending'`, like a lease
+beat. It is best-effort: a failed write is logged and the render carries on, and the lane waits for
+it at most 5 seconds before downloading anyway. A settle that records the attempt replaces
+`meta.render` whole, so on a saved row, or one failed with the attempt's own record, the early ids
+are gone. They outlive the render only where nothing replaced them: a produce that threw, or a
+process that died mid-download.
+
+**A reclaimed row keeps its render record.** The pending reclaim merges only the failure stamp and
+retires the lease, so a render that recorded its paid output's ids and then died becomes a
+`failed` row whose `meta.render` still names both ids. That row offers the output for recovery
+exactly as a render that failed its download does (`paidOutputOffer`, `paid-output.ts`), whatever
+its kind: `failed`, both ids, a Civitai model, and no `recoveryUnavailableAt`. The surface that owns
+the row decides what to do with the offer.
+
 **A late landing is a save.** When a render lands on a row that is already `failed` — the sweep
 reclaimed it while the render was still running — the image is real, so the save marks the row
 `ready` with `meta.error` and `meta.failedAt` removed, pushes an `images.save_late_landing` warn

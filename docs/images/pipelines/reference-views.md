@@ -214,9 +214,23 @@ approval and opening the bytes.
   runs after the transaction commits, and settlement releases that slot while the job's other slots
   may remain live.
 - Lease liveness follows `heartbeat_at`, not job creation time. An expired job is failed, its
-  abandoned pending attempts become retryable failures, and a later request may claim those slots.
-  A late worker must still own the live lease and the current pending attempt to finalize or fail it;
-  otherwise its write is fenced out.
+  abandoned pending attempts become failures, and a later request may claim those slots. Every
+  sheet read, and the scheduled sweep's reference-view pass, reconciles them under the character
+  lock (`reconcileExpiredReferenceViewWork`) by what the attempt's render row says. That row names
+  its attempt (`meta.referenceView.attemptId`, written when the build reserves it), so the pending
+  attempt itself carries no link. A render row still `pending` with no live render lease is failed
+  there and then, through the image sweep's guarded reclaim shape, keeping `meta.render`
+  ([../asset-registry.md](../asset-registry.md) §The sweep). Then:
+  - a render row that still holds a live render lease is running, so its attempt stays `pending`
+    and the next read judges it again;
+  - a render row that offers a paid output — it recorded both ids before downloading, or failed
+    undelivered before its build could fail the view — fails the attempt linked to that row, with
+    the upstream lineage the row records as sent, exactly as an ordinary undelivered failure; the
+    slot projects `recoverable` (§Recovering a paid output). A row the image sweep reclaimed first
+    offers its output the same way;
+  - anything else fails the attempt with no link, retryable.
+- A late worker must still own the live lease and the current pending attempt to finalize or fail
+  it; otherwise its write is fenced out.
 - **Duplicate slots converge to one attempt.** A request naming the same slot twice is normalized
   (`normalizeReferenceViewTargets`) before admission, so it is charged once and rendered once: two
   simultaneous attempts on one slot would supersede each other mid-render, and the second render's
@@ -226,8 +240,9 @@ approval and opening the bytes.
   keeps its failed render's own `images` row as its `image_id`, with the upstream lineage that
   render actually sent, because a render can be billed and still fail its download
   (§Recovering a paid output). The sheet reports a failed row's `imageId` as null, whatever it
-  projects, and nothing draws, consumes, restores or lists it. An attempt that lease
-  reconciliation fails never rendered, and keeps no link.
+  projects, and nothing draws, consumes, restores or lists it. A `pending` attempt has no link
+  until its render settles; lease reconciliation links an abandoned one only to a render row that
+  offers a paid output.
 
 ## Lifecycle
 
@@ -333,11 +348,15 @@ approval and opening the bytes.
 
 ## Recovering a paid output
 
-A Civitai render can succeed and be billed while its output download fails. The failed render's
-`images` row then records the workflow (`meta.render.predictionId`), the output it never delivered
-(`meta.render.undeliveredOutputId`) and the model (`meta.render.modelSlug`), and the failed view
-row keeps that row linked (§Cost and slot leases). Recovery fetches that output again and installs
-it as the same attempt, with no new render.
+A Civitai render can succeed and be billed while its output download fails, or while its process
+dies mid-download. The render's `images` row records the workflow (`meta.render.predictionId`),
+the output (`meta.render.undeliveredOutputId`) and the model (`meta.render.modelSlug`) before the
+download starts, and keeps them on an undelivered failure
+([../asset-registry.md](../asset-registry.md) §The sweep). The failed view row keeps that row
+linked — `failReferenceView` on an ordinary failure, lease reconciliation for a build that died
+(§Cost and slot leases). Recovery fetches that output again and installs it as the same attempt,
+with no new render. The offer, its withdrawal and the fetch, decode and shape step are the shared
+paid-output rules (`paid-output.ts`); this page owns how a view applies them.
 
 - **Recoverable** is one function, `isRecoverableReferenceView`, computed inside the projection
   from one fact the store reads off the linked row (`outputRecoverable`): that row is `failed`,
@@ -376,10 +395,13 @@ it as the same attempt, with no new render.
 - **The bytes take the render's own shape.** They are the provider's original, so they cross the
   output-shape decision a live render of the same request makes (`shapeProviderOutput`, from the
   failed row's recorded `meta.render.shape`), then the one webp writer, as a NEW `reference_view`
-  row. It carries the failed row's prompt, source image and meta minus its failure state (`error`,
-  `failedAt`, the render lease, `recoveryUnavailableAt`), plus `recoveredFrom` (`imageId`,
-  `workflowId`, `blobId`). The crop it performed is recorded in `meta.render.shape` the way a
-  render records one, or under `recoveredFrom` when the failed row recorded no shape.
+  row. A render whose process died mid-download recorded no shape, so the view's own request
+  stands: 3:4 on the `variant` task with nothing expected back, which crops the decoded image
+  toward 3:4 unless it is already there. The new row carries the failed row's prompt, source image
+  and meta minus its failure state (`error`, `failedAt`, the render lease, `recoveryUnavailableAt`),
+  plus `recoveredFrom` (`imageId`, `workflowId`, `blobId`). The crop it performed is recorded in
+  `meta.render.shape` the way a render records one, or under `recoveredFrom` when the failed row
+  recorded no shape.
 - **The commit re-checks everything under the character lock**, that the recovery's own claim is
   still live (a lapsed claim installs nothing and answers `unavailable`), and that the failed
   `images` row is still linked. The same attempt goes `failed` → `ready`, unreviewed,

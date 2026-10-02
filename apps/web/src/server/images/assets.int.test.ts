@@ -16,13 +16,16 @@ import {
   type TempDataRoot,
 } from "@/server/test-support";
 import type { CharacterProfile } from "@/contracts/world/profile";
-import { characters, db, images, items, locations } from "../db";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
+import { recordPaidRenderOutput } from "../ai";
+import { characters, db, images, items, JOB_STALE_MS, locations } from "../db";
 import { absoluteImagePath, dataRoot } from "./paths";
 import {
   createImageAsset,
   failImage,
   GALLERY_IMAGE_KINDS,
   imageMeta,
+  recordPendingRenderOutput,
   refreshRenderLease,
   RENDER_LEASE_META_KEY,
   saveImageBuffer,
@@ -30,6 +33,8 @@ import {
 } from "./asset-storage";
 import { deleteOwnedImage, deleteOwnedImages } from "./asset-deletion";
 import { reclaimStalePendingRows, sweepOrphans } from "./asset-maintenance";
+import { runImagePipeline } from "./assets";
+import { paidOutputOffer } from "./paid-output";
 import { monogramSvg } from "./monogram";
 import { generateAvatar, generateAvatarsBatch } from "./avatar";
 import { generateEntityImage, generateEntityImagesBatch, missingEntityImageIds } from "./entity";
@@ -685,5 +690,126 @@ describe.skipIf(!ready)("generation-failure degradation", () => {
     );
     expect(sink.items.map((d) => d.code)).toContain("images.identity_pack.profile_ineligible");
     expect(sink.items.map((d) => d.code)).not.toContain("images.variant.generate_failed");
+  });
+});
+
+/**
+ * **A paid output's ids reach its render's row before the download, and stay
+ * on offer when the render never settles** (#687).
+ *
+ * A Civitai lane records a succeeded workflow's ids through the pipeline's
+ * recorder before its output downloads (the lane's own call is
+ * `civitai-runtime.test.ts`'s). These kill what would lose them again on a
+ * restart: ids that only reach the row at settle, a write that clobbers the
+ * render lease or the row's other render facts, a write onto a row that
+ * already left `pending`, and a sweep reclaim that drops `meta.render`. They
+ * need the real row, the real SQL merge and the real guarded reclaim.
+ */
+describe.skipIf(!ready)("a paid output recorded before its download (#687)", () => {
+  const PAID = { predictionId: "wf-687", outputId: "blob-687", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+  const PAID_RENDER = { predictionId: "wf-687", undeliveredOutputId: "blob-687", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+
+  it("lands on the pending row mid-render, and a reclaim of the dead render keeps it on offer", async () => {
+    const ownerId = await sweepOwner("images-int-paid-output");
+    let reached: (imageId: string) => void = () => undefined;
+    const recorded = new Promise<string>((resolve) => {
+      reached = resolve;
+    });
+    let die: () => void = () => undefined;
+    const downloading = new Promise<void>((resolve) => {
+      die = resolve;
+    });
+
+    const pipeline = runImagePipeline({
+      asset: { ownerId, kind: "entity", entityKind: "world", meta: { render: { seed: 7 } } },
+      produce: async (asset) => {
+        await recordPaidRenderOutput(PAID);
+        reached(asset.id);
+        await downloading;
+        throw new Error("the render died mid-download");
+      },
+    });
+    const imageId = await recorded;
+
+    // Mid-download: still pending and leased, with the ids beside the row's
+    // other render facts.
+    const midRender = await imageRow(imageId);
+    expect(midRender?.status).toBe("pending");
+    expect(imageMeta(midRender?.meta)).toMatchObject({ render: { seed: 7, ...PAID_RENDER } });
+    expect(typeof imageMeta(midRender?.meta)[RENDER_LEASE_META_KEY]).toBe("number");
+
+    // The process dies: the lease goes quiet and the sweep reclaims the row,
+    // keeping the render record — so the row offers the paid output.
+    const later = new Date(Date.now() + JOB_STALE_MS + MINUTE);
+    expect(await reclaimStalePendingRows(later, ownerId)).toEqual([imageId]);
+    const reclaimed = await imageRow(imageId);
+    expect(reclaimed?.status).toBe("failed");
+    expect(imageMeta(reclaimed?.meta)).toMatchObject({ render: { seed: 7, ...PAID_RENDER } });
+    if (reclaimed === undefined) throw new Error("the reclaimed row is gone");
+    expect(paidOutputOffer(reclaimed)).toEqual({
+      state: "on_offer",
+      output: { imageId, workflowId: "wf-687", blobId: "blob-687" },
+    });
+
+    // A produce that throws records no attempt of its own, so the ids survive
+    // that settle too.
+    die();
+    expect(await pipeline).toEqual({ imageId, status: "failed" });
+    const thrown = await imageRow(imageId);
+    if (thrown === undefined) throw new Error("the thrown render's row is gone");
+    expect(paidOutputOffer(thrown).state).toBe("on_offer");
+  });
+
+  it("is replaced by the attempt's own record when the render settles", async () => {
+    const ownerId = await sweepOwner("images-int-paid-settled");
+    const attempt = { predictionId: "wf-687", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+
+    const failed = await runImagePipeline({
+      asset: { ownerId, kind: "entity", entityKind: "world" },
+      produce: async () => {
+        await recordPaidRenderOutput(PAID);
+        return { ok: false, error: "civitai_output_too_large; retry=never", meta: { render: attempt } };
+      },
+    });
+    const saved = await runImagePipeline({
+      asset: { ownerId, kind: "entity", entityKind: "world" },
+      produce: async () => {
+        await recordPaidRenderOutput(PAID);
+        return { ok: true, image: monogramSvg("Paid"), meta: { render: attempt } };
+      },
+    });
+
+    const failedRow = await imageRow(failed.imageId);
+    const savedRow = await imageRow(saved.imageId);
+    expect(failedRow?.status).toBe("failed");
+    expect(savedRow?.status).toBe("ready");
+    for (const row of [failedRow, savedRow]) {
+      expect(imageMeta(row?.meta).render).toEqual(attempt);
+      if (row !== undefined) expect(paidOutputOffer(row).state).toBe("none");
+    }
+  });
+
+  it("merges into meta.render in SQL, keeping the lease, and never touches a row that left pending", async () => {
+    const ownerId = await sweepOwner("images-int-paid-write");
+    const record = { predictionId: "wf-687", undeliveredOutputId: "blob-687", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+
+    const pending = await createImageAsset({ ownerId, kind: "entity", entityKind: "world", meta: { render: { seed: 3 }, lookKey: "abc" } });
+    expect(await refreshRenderLease(pending.id, 1_000)).toBe(true);
+    expect(await recordPendingRenderOutput(pending.id, record)).toBe(true);
+    expect((await imageRow(pending.id))?.meta).toEqual({
+      render: { seed: 3, ...record },
+      lookKey: "abc",
+      [RENDER_LEASE_META_KEY]: 1_000,
+    });
+
+    // A row with no render object yet gains one.
+    const bare = await createImageAsset({ ownerId, kind: "entity", entityKind: "world" });
+    expect(await recordPendingRenderOutput(bare.id, record)).toBe(true);
+    expect(imageMeta((await imageRow(bare.id))?.meta).render).toEqual(record);
+
+    const settled = await createImageAsset({ ownerId, kind: "entity", entityKind: "world", meta: { render: { seed: 4 } } });
+    await failImage(settled.id, "provider exploded");
+    expect(await recordPendingRenderOutput(settled.id, record)).toBe(false);
+    expect(imageMeta((await imageRow(settled.id))?.meta).render).toEqual({ seed: 4 });
   });
 });

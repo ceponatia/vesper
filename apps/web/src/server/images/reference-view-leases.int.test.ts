@@ -8,8 +8,9 @@ import {
   VISUAL_IMAGE_AGE_ATTRIBUTE_ID,
   type ReferenceView,
 } from "@/contracts";
+import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { readDailyUsage } from "@/server/api";
-import { characterReferenceViews, characters, db, JOB_STALE_MS, jobs } from "@/server/db";
+import { characterReferenceViews, characters, db, images, JOB_STALE_MS, jobs } from "@/server/db";
 import {
   endTestPool,
   expectApiError,
@@ -25,14 +26,18 @@ import {
   queueReviewDependents,
   regenerateReferenceViews,
 } from "../../app/api/characters/[id]/reference-views/shared";
-import { createImageAsset, saveImageBuffer } from "./asset-storage";
+import { createImageAsset, imageMeta, mergeMetaSql, RENDER_LEASE_META_KEY, saveImageBuffer } from "./asset-storage";
+import { reclaimStalePendingRows } from "./asset-maintenance";
 import {
   claimReferenceViewLeases,
   currentReferenceViewRow,
   finalizeReferenceView,
+  getReferenceViewSet,
   getReferenceViewSummary,
+  plannedReferenceViewsForCharacter,
   readAcceptedPortraitSource,
   reconcileExpiredReferenceViewWork,
+  referenceViewsToRebuild,
   reserveReferenceView,
   reviewReferenceView,
   REFERENCE_VIEW_LEASE_EXPIRED,
@@ -133,6 +138,39 @@ async function unreviewedFront(characterId: string, source: { imageId: string; c
   await finalizeReferenceView({ jobId, viewId: attempt, characterId, ownerId, imageId: produced.id, method: "rendered" });
   await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, jobId));
   return attempt;
+}
+
+/** What a render's row records once its workflow succeeded, before the output downloaded. */
+const PAID_RENDER = { predictionId: "wf-abandoned", undeliveredOutputId: "blob-abandoned", modelSlug: CIVITAI_QWEN_IMAGE_21_SLUG };
+
+/** A render lease last beaten past the stale bound — the beat a process that died left behind. */
+function staleLeaseMs(): number {
+  return Date.now() - JOB_STALE_MS - 60_000;
+}
+
+/**
+ * A build that died mid-render: a claimed and reserved `view`, its render's own
+ * `pending` row naming the attempt with `renderMeta`, and the job's heartbeat
+ * then gone quiet past the stale bound.
+ */
+async function abandonedBuild(
+  state: Awaited<ReturnType<typeof fixture>>,
+  view: ReferenceView,
+  renderMeta: Record<string, unknown>,
+): Promise<{ attemptId: string; renderId: string }> {
+  const jobId = await job(state.characterId);
+  await claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId, targets: [view] });
+  const attemptId = await reserve(state.characterId, state.source, jobId, view);
+  if (attemptId === null) throw new Error("the abandoned attempt was not reserved");
+  const render = await createImageAsset({
+    ownerId,
+    kind: "reference_view",
+    entityKind: "character",
+    entityId: state.characterId,
+    meta: { referenceView: { angle: view.angle, wardrobe: view.wardrobe, attemptId }, ...renderMeta },
+  });
+  await db().update(jobs).set({ heartbeatAt: new Date(Date.now() - JOB_STALE_MS - 60_000) }).where(eq(jobs.id, jobId));
+  return { attemptId, renderId: render.id };
 }
 
 function routeRequest(characterId: string): NextRequest {
@@ -293,6 +331,85 @@ describe.skipIf(!ready)("reference view per-slot leases", () => {
       status: "failed",
       failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
     });
+  });
+
+  /**
+   * PROTECTS (#687): a build that dies while a paid render is still
+   * downloading leaves its attempt `pending` with no link and its render's
+   * row `pending` with the workflow and output ids. Reconciliation used to
+   * fail the attempt with `imageId: null` whatever that row said, so the
+   * slot read as an ordinary failure and Build paid for the view again. It
+   * must now find the render by the attempt id the row carries, and link it
+   * when it offers a paid output — whether the image sweep reclaimed the row
+   * first or reconciliation reaches it first — so the slot projects
+   * `recoverable` and Build skips it.
+   */
+  it.each(["reconciliation", "the image sweep"] as const)(
+    "links an abandoned attempt to its paid render and projects recoverable when %s reaches the render first",
+    async (first) => {
+      const state = await fixture();
+      const abandoned = await abandonedBuild(state, front, { render: PAID_RENDER, [RENDER_LEASE_META_KEY]: staleLeaseMs() });
+      if (first === "the image sweep") {
+        expect(await reclaimStalePendingRows(new Date(), ownerId)).toContain(abandoned.renderId);
+      }
+
+      expect(await reconcileExpiredReferenceViewWork(state.characterId)).toBe(1);
+
+      expect(await currentReferenceViewRow(state.characterId, front)).toMatchObject({
+        id: abandoned.attemptId,
+        status: "failed",
+        imageId: abandoned.renderId,
+        failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+      });
+      const [render] = await db().select().from(images).where(eq(images.id, abandoned.renderId));
+      expect(render?.status).toBe("failed");
+      expect(imageMeta(render?.meta)).toMatchObject({ render: PAID_RENDER });
+      expect(imageMeta(render?.meta)).not.toHaveProperty(RENDER_LEASE_META_KEY);
+      expect(await getReferenceViewSummary(state.characterId, ownerId, front)).toMatchObject({
+        attemptId: abandoned.attemptId,
+        state: "failed",
+        imageId: null,
+        recoverable: true,
+      });
+      const set = await getReferenceViewSet(state.characterId, ownerId);
+      const planned = await plannedReferenceViewsForCharacter(state.characterId, ownerId);
+      expect(referenceViewsToRebuild(set, planned)).not.toContainEqual(front);
+    },
+  );
+
+  it("fails an abandoned attempt unlinked, and its render with it, when the render offers nothing", async () => {
+    const state = await fixture();
+    const abandoned = await abandonedBuild(state, front, { render: { seed: 7 }, [RENDER_LEASE_META_KEY]: staleLeaseMs() });
+
+    expect(await reconcileExpiredReferenceViewWork(state.characterId)).toBe(1);
+
+    expect(await currentReferenceViewRow(state.characterId, front)).toMatchObject({
+      id: abandoned.attemptId,
+      status: "failed",
+      imageId: null,
+      failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+    });
+    const [render] = await db().select().from(images).where(eq(images.id, abandoned.renderId));
+    expect(render?.status).toBe("failed");
+    expect(await getReferenceViewSummary(state.characterId, ownerId, front)).toMatchObject({ state: "failed", recoverable: false });
+  });
+
+  it("keeps an abandoned attempt pending while its render still beats its own lease", async () => {
+    const state = await fixture();
+    const abandoned = await abandonedBuild(state, front, { render: PAID_RENDER, [RENDER_LEASE_META_KEY]: Date.now() });
+
+    expect(await reconcileExpiredReferenceViewWork(state.characterId)).toBe(0);
+    expect(await currentReferenceViewRow(state.characterId, front)).toMatchObject({ id: abandoned.attemptId, status: "pending", imageId: null });
+    const [running] = await db().select({ status: images.status }).from(images).where(eq(images.id, abandoned.renderId));
+    expect(running?.status).toBe("pending");
+
+    // Once the render's own lease goes quiet too, the next read settles both.
+    await db()
+      .update(images)
+      .set({ meta: mergeMetaSql({ [RENDER_LEASE_META_KEY]: staleLeaseMs() }) })
+      .where(eq(images.id, abandoned.renderId));
+    expect(await reconcileExpiredReferenceViewWork(state.characterId)).toBe(1);
+    expect(await currentReferenceViewRow(state.characterId, front)).toMatchObject({ status: "failed", imageId: abandoned.renderId });
   });
 
   it("charges only newly claimed targets and reports every partial-admission outcome", async () => {
