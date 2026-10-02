@@ -62,10 +62,10 @@ vi.mock("@/server/log", () => ({
   logDiagnostics: vi.fn(),
 }));
 
-import { classifyImageFailure, isDemoMode } from "../ai";
+import { classifyImageFailure, isDemoMode, recordPaidRenderOutput } from "../ai";
 import { db } from "../db";
 import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult } from "./assets";
-import type { ImageRow } from "./asset-storage";
+import { RENDER_ATTEMPT_META_KEY, type ImageRow } from "./asset-storage";
 import { renderImageIntent } from "./render-intent";
 import { renderResolvedScene, type RenderResolvedSceneInput, type SceneRenderReferenceView } from "./scene";
 
@@ -176,7 +176,9 @@ beforeEach(() => {
         return {
           where: (condition: unknown) => {
             whereCalls.push(condition);
-            return Promise.resolve([]);
+            // Awaitable as is (the corrections) and with `.returning()` (a
+            // paid output's early record).
+            return Object.assign(Promise.resolve([]), { returning: () => Promise.resolve([]) });
           },
         };
       },
@@ -313,9 +315,43 @@ describe("renderResolvedScene identity provenance", () => {
     const described = updateCalls[0];
     expect(described?.prompt).not.toBe(pipelineCalls[0]?.asset.prompt);
     expect(described?.meta as Record<string, unknown>).not.toHaveProperty("render");
+    expect((described?.meta as Record<string, unknown>)[RENDER_ATTEMPT_META_KEY]).toBe("edit");
     const guard = new PgDialect().sqlToQuery(whereCalls[0] as SQL);
     expect(guard.sql).toContain('"status"');
     expect(guard.params).toContain("pending");
+  });
+
+  /**
+   * PROTECTS (PR #692 review): each rung records its paid output through its
+   * OWN recorder, naming the rung, and the row names the rung that is running —
+   * the primary at reserve, each fallback in its correction — so a slow record
+   * from a rung the chain moved past is refused by the write's own guard
+   * (`recordPendingRenderOutput`, whose SQL `assets.int.test.ts` owns). The
+   * bad implementation records every rung through the pipeline's one
+   * recorder, which names no rung, so nothing tells a late record apart.
+   */
+  it("records each rung's paid output under that rung's own attempt", async () => {
+    mockIntent
+      .mockImplementationOnce(async () => {
+        await recordPaidRenderOutput({ predictionId: "wf-multi", outputId: "blob-multi", modelSlug: MODEL_SLUG });
+        return { ok: false, error: "Civitai output download failed (civitai_output_http_404; retry=deliberate)." };
+      })
+      .mockImplementationOnce(async () => {
+        await recordPaidRenderOutput({ predictionId: "wf-edit", outputId: "blob-edit", modelSlug: MODEL_SLUG });
+        return { ok: true, image: Buffer.from("rendered") };
+      });
+    rowQueue.push([{ meta: { model: `replicate/${MODEL_SLUG}`, [RENDER_ATTEMPT_META_KEY]: "multi_edit" } }]);
+
+    await renderResolvedScene(baseInput({}));
+
+    expect(pipelineCalls[0]?.asset.meta?.[RENDER_ATTEMPT_META_KEY]).toBe("multi_edit");
+    const dialect = new PgDialect();
+    const params = whereCalls.map((condition) => dialect.sqlToQuery(condition as SQL).params);
+    // In order: the primary rung's record, the fallback's correction, the fallback's record.
+    expect(params[0]).toContain("multi_edit");
+    expect((updateCalls[1]?.meta as Record<string, unknown>)[RENDER_ATTEMPT_META_KEY]).toBe("edit");
+    expect(params[2]).toContain("edit");
+    expect(params[2]).not.toContain("multi_edit");
   });
 
   it("an exhausted chain still records the LAST rung's attempt on the failed row", async () => {
