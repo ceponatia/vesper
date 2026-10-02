@@ -165,12 +165,19 @@ export {
   restoreReferenceView,
   withReferenceViewLock,
   type AcceptedPortraitSource,
+  type RecoverReferenceViewResult,
   type ReferenceViewReviewVerdict,
   type ReferenceViewLease,
   type ReferenceViewLeaseClaim,
   type ReferenceViewRow,
+  type ReferenceViewWriteRefusal,
   type ReviewReferenceViewResult,
 } from "./reference-view-store";
+export {
+  recoverReferenceView,
+  REFERENCE_VIEW_OUTPUT_EXPIRED,
+  REFERENCE_VIEW_OUTPUT_RECOVERED,
+} from "./reference-view-recovery";
 export {
   loadConsumableReferenceView,
   REFERENCE_VIEW_DROPPED_FOR_CAPACITY,

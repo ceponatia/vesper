@@ -146,7 +146,7 @@ const metaSchema = z.record(z.string(), z.unknown());
 export const RENDER_LEASE_META_KEY = "renderLeaseAtMs";
 
 /** What a `ready` row never carries: a failure it no longer has, and a lease nobody holds. */
-const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY] as const;
+export const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY] as const;
 
 /**
  * The write-path merge: the stored jsonb re-parsed at the trust boundary, minus

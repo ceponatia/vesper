@@ -38,7 +38,15 @@ import {
   type ReferenceViewReviewRequest,
 } from "@/contracts";
 import { characterReferenceViews, characters, db, images, jobs, JOB_STALE_MS } from "../db";
-import { createImageAsset, failImage, readImageBytes, type ImageRow } from "./asset-storage";
+import {
+  createImageAsset,
+  failImage,
+  mergeMetaSql,
+  READY_RETIRED_META_KEYS,
+  readImageBytes,
+  type ImageRow,
+  type WrittenImageInfo,
+} from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
 import { log } from "@/server/log";
@@ -1660,6 +1668,195 @@ export async function restoreReferenceView(input: {
       catch (error) { log.warn("images", "unused reference copy cleanup failed", { imageId: copy.id, error: String(error).slice(0, 300) }); }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Recovering a failed render's paid output
+// ---------------------------------------------------------------------------
+
+/**
+ * What a recovery answers (`recoverReferenceView`). `unavailable` is transient —
+ * the offer stands and the owner may try again; `expired` means the paid
+ * output is gone for good and the offer is withdrawn.
+ */
+export type RecoverReferenceViewResult =
+  | { status: "recovered"; view: ReferenceViewSummary }
+  | { status: ReferenceViewWriteRefusal };
+
+/** A recovery the pre-read admits: the failed attempt, its failed render's row, and the output to fetch. */
+export type ReferenceViewRecoveryRead =
+  | { readonly ok: true; readonly attempt: ReferenceViewRow; readonly asset: ImageRow; readonly output: ReferenceViewPaidOutput }
+  | { readonly ok: false; readonly refusal: ReferenceViewWriteRefusal };
+
+/**
+ * Every check a recovery makes before it spends a download, outside any lock —
+ * restoration's pre-read, for a failed attempt. In order: the owned character
+ * has an accepted portrait, the slot is in its plan, the slot's current row is
+ * this attempt and still `failed`, nothing is building on the slot or below
+ * it, the failed render's row still offers its paid output and the attempt
+ * still projects `recoverable`, and the accepted portrait's bytes are still the
+ * ones the attempt was rendered from.
+ *
+ * An offer that exists but no longer fits the sheet is `incompatible`; an offer
+ * the provider has shown is gone is `expired`; no offer at all is
+ * `unavailable`. The commit re-checks all of it under the character lock.
+ */
+export async function readReferenceViewRecovery(input: {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+}): Promise<ReferenceViewRecoveryRead> {
+  const { characterId, ownerId, view } = input;
+  const refuse = (refusal: ReferenceViewWriteRefusal): ReferenceViewRecoveryRead => ({ ok: false, refusal });
+  const accepted = await readAcceptedPortrait(characterId, ownerId);
+  if (accepted === undefined || accepted === null) return refuse("not_found");
+  const character = await readReferenceViewCharacter(characterId, ownerId, db());
+  if (character === undefined) return refuse("not_found");
+  if (!planIncludes(character.plan, view)) return refuse("ineligible");
+  // The sheet as an ordinary read projects it: expired leases and lost files
+  // are reconciled first, so the offer is judged against what the studio shows.
+  const set = await getReferenceViewSet(characterId, ownerId);
+  const summary = set.views.find((entry) => sameReferenceView(entry, view));
+  const attempt = await currentReferenceViewRow(characterId, view);
+  if (summary === undefined || attempt === undefined || attempt.id !== input.attemptId ||
+      summary.attemptId !== attempt.id || attempt.status !== "failed") {
+    return refuse("changed");
+  }
+  if (await referenceViewReplacementBusy(characterId, ownerId, view)) return refuse("busy");
+  const [asset] = attempt.imageId === null
+    ? []
+    : await db().select().from(images).where(and(
+        eq(images.id, attempt.imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
+        eq(images.entityKind, "character"), eq(images.entityId, characterId),
+      )).limit(1);
+  if (asset === undefined) return refuse("unavailable");
+  const offer = referenceViewOutputOffer(asset);
+  if (offer.state === "withdrawn") return refuse("expired");
+  if (offer.state === "none") return refuse("unavailable");
+  if (!summary.recoverable) return refuse("incompatible");
+  const source = await readAcceptedPortraitSource(characterId, ownerId);
+  if (!source.ok) return refuse(source.reason === "not_found" ? "not_found" : "incompatible");
+  if (source.imageId !== attempt.sourceImageId || source.contentHash !== attempt.sourceContentHash) return refuse("incompatible");
+  return { ok: true, attempt, asset, output: offer.output };
+}
+
+/**
+ * Withdraw a failed render's recovery offer: stamp
+ * {@link REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY} into its meta once the
+ * provider has shown the output can never be fetched, so the sheet stops
+ * offering it. A SQL-side merge scoped to the owner and to a row that is still
+ * `failed`, so it writes that one key and nothing else, and leaves retention's
+ * `failedAt` clock where it was. True when the row took the stamp.
+ */
+export async function withdrawReferenceViewOutputOffer(imageId: string, ownerId: string, at: Date = new Date()): Promise<boolean> {
+  const stamped = await db()
+    .update(images)
+    .set({ meta: mergeMetaSql({ [REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]: at.toISOString() }) })
+    .where(and(
+      eq(images.id, imageId),
+      eq(images.ownerId, ownerId),
+      eq(images.kind, "reference_view"),
+      eq(images.status, "failed"),
+    ))
+    .returning({ id: images.id });
+  return stamped.length > 0;
+}
+
+export interface InstallRecoveredReferenceViewInput {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+  /** The failed render's row the output was fetched for — the offer the attempt must still link. */
+  failedImageId: string;
+  /** The pending copy holding the recovered bytes. */
+  copyId: string;
+  /** What writing those bytes recorded — `saveImageBuffer`'s file facts. */
+  written: WrittenImageInfo;
+}
+
+/**
+ * Install a recovered output as the SAME attempt, under the character lock:
+ * the failed row goes `ready`, unreviewed, rendered, its failure cleared and
+ * its recorded upstream and body-image set untouched, pointing at the copy —
+ * which goes `ready` in the same transaction. Restoration's commit, for a
+ * failed attempt.
+ *
+ * Every pre-read check is made again here: the owner, the accepted portrait's
+ * id and bytes, the plan, the current attempt still this one and still failed,
+ * nothing building on the slot or below it, the generation version, the
+ * upstream slot's approved lineage, the body-image set, and the failed render's
+ * row still linked. A link that is gone means retention deleted that row and
+ * the foreign key nulled it: the window closed while the bytes were in flight,
+ * so the answer is `expired`.
+ *
+ * The review revision moves on, because the attempt now shows an image a
+ * viewer of the failed tile never saw; a verdict sent against the failure is
+ * refused as `changed`. Nothing here deletes anything — the caller compensates
+ * a copy this refuses.
+ */
+export async function installRecoveredReferenceView(input: InstallRecoveredReferenceViewInput): Promise<RecoverReferenceViewResult> {
+  const { characterId, ownerId, view } = input;
+  return withReferenceViewLock<RecoverReferenceViewResult>(characterId, async (tx) => {
+    const source = await readAcceptedPortraitSource(characterId, ownerId, tx);
+    if (!source.ok) return { status: source.reason === "not_found" ? "not_found" : "incompatible" };
+    const character = await readReferenceViewCharacter(characterId, ownerId, tx);
+    if (character === undefined) return { status: "not_found" };
+    if (!planIncludes(character.plan, view)) return { status: "ineligible" };
+    const current = await currentReferenceViewRow(characterId, view, tx);
+    if (current === undefined || current.id !== input.attemptId || current.status !== "failed") return { status: "changed" };
+    if (await referenceViewReplacementBusy(characterId, ownerId, view, tx)) return { status: "busy" };
+    if (current.sourceImageId !== source.imageId || current.sourceContentHash !== source.contentHash ||
+        current.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
+        referenceViewBodySetMoved({
+          method: "rendered", bodyReferenceSet: current.bodyReferenceSet, currentBodyReferenceSet: character.bodySetFor(view),
+        })) {
+      return { status: "incompatible" };
+    }
+    if (current.upstreamViewId !== null &&
+        approvedUpstreamLineageId(await getReferenceViewSet(characterId, ownerId, undefined, tx), view) !== current.upstreamViewId) {
+      return { status: "incompatible" };
+    }
+    if (current.imageId === null) return { status: "expired" };
+    if (current.imageId !== input.failedImageId) return { status: "changed" };
+
+    const [updated] = await tx
+      .update(characterReferenceViews)
+      .set({
+        status: "ready",
+        imageId: input.copyId,
+        method: "rendered",
+        failureCode: null,
+        failureMessage: null,
+        verdict: null,
+        reviewedByUserId: null,
+        reviewedAt: null,
+        reviewRevision: current.reviewRevision + 1,
+      })
+      .where(and(
+        eq(characterReferenceViews.id, current.id),
+        eq(characterReferenceViews.current, true),
+        eq(characterReferenceViews.status, "failed"),
+      ))
+      .returning({ id: characterReferenceViews.id });
+    if (!updated) return { status: "changed" };
+    // The copy becomes `ready` exactly as `saveImageBuffer` makes a render
+    // ready: its byte count, the file facts the write recorded, and none of the
+    // failure or lease keys a ready row never carries.
+    await tx
+      .update(images)
+      .set({
+        status: "ready",
+        bytes: input.written.bytes,
+        meta: mergeMetaSql(
+          { width: input.written.width, height: input.written.height, bytes: input.written.bytes },
+          READY_RETIRED_META_KEYS,
+        ),
+      })
+      .where(and(eq(images.id, input.copyId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
+    return { status: "recovered", view: await slotSummaryInTransaction(tx, characterId, ownerId, view) };
+  });
 }
 
 // ---------------------------------------------------------------------------
