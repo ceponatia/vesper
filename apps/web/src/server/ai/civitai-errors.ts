@@ -1,4 +1,4 @@
-export type CivitaiStage = "lora_metadata" | "preflight" | "submit" | "workflow_status" | "workflow_terminal" | "output_download";
+export type CivitaiStage = "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status" | "workflow_terminal" | "output_download";
 export type CivitaiRetryDisposition = "automatic" | "deliberate" | "never" | "reconcile";
 
 export type CivitaiCode = `civitai_http_${number}`
@@ -15,7 +15,28 @@ export type CivitaiCode = `civitai_http_${number}`
   | "civitai_output_invalid"
   | "civitai_output_too_large"
   | "civitai_output_empty"
-  | "civitai_output_transport_failure";
+  | "civitai_output_transport_failure"
+  /**
+   * The paid submit's own answer was lost (transport failure, an HTTP 5xx,
+   * or a 2xx body that was not JSON or not a usable workflow) and a bounded
+   * read-only lookup by its externalId, across the workflow list, did not
+   * resolve it either — never found a match in any round whose read
+   * actually succeeded, or every round's read itself failed (#673).
+   * `messageFor` renders which of those applies, and whether the search was
+   * incomplete, from {@link CivitaiFailure.roundsSearched},
+   * {@link CivitaiFailure.roundsAttempted}, and
+   * {@link CivitaiFailure.pageCapHit}.
+   */
+  | "civitai_submit_unconfirmed"
+  /**
+   * The paid submit answered 2xx with a JSON body, but that body did not
+   * parse into a usable workflow identity/status (`parseCivitaiWorkflow`'s
+   * own check) — distinct from `civitai_malformed_response`, which is a 2xx
+   * body that was not JSON at all. Named only as the ORIGINAL failure inside
+   * a `civitai_submit_unconfirmed` message; never thrown to a caller on its
+   * own (#673).
+   */
+  | "civitai_submit_response_invalid";
 
 /**
  * A stable reason a provider validation refusal carries, retained in place of
@@ -52,6 +73,21 @@ export interface CivitaiFailure {
    */
   automaticRetryUsed?: boolean;
   reason?: CivitaiValidationReason;
+  /** `civitai_submit_unconfirmed` only: the code of the submit failure the lookup was run to resolve. */
+  originalCode?: CivitaiCode;
+  /** `civitai_submit_unconfirmed` only: the submit's own externalId, so an operator can match it against the workflow list later (#673). */
+  externalId?: string;
+  /**
+   * `civitai_submit_unconfirmed` only: how many lookup rounds' OWN READS
+   * actually succeeded — never the configured round count when a round's
+   * read itself failed (second correction round, #673). 0 means every round
+   * was unreadable.
+   */
+  roundsSearched?: number;
+  /** `civitai_submit_unconfirmed` only: how many rounds were configured to run, for comparison against `roundsSearched`. */
+  roundsAttempted?: number;
+  /** `civitai_submit_unconfirmed` only: true when some round that did read hit its page cap without a match, so the search may not have covered the whole list. */
+  pageCapHit?: boolean;
 }
 
 const VALIDATION_REASON_TEXT: Record<CivitaiValidationReason, string> = {
@@ -69,6 +105,24 @@ const DOCUMENTED_ASYNC_REASONS = new Set([
 ]);
 
 function messageFor(failure: CivitaiFailure): string {
+  if (failure.code === "civitai_submit_unconfirmed") {
+    const original = failure.originalCode ?? "unknown";
+    const externalId = failure.externalId ?? "unknown";
+    const searched = failure.roundsSearched ?? 0;
+    const attempted = failure.roundsAttempted ?? searched;
+    // Second correction round (#673): `searched` counts only rounds whose OWN
+    // read succeeded, never the configured round count regardless of whether
+    // every round could actually be read. When fewer rounds could be read
+    // than were attempted, the wording says so rather than implying a full
+    // search; when a round that WAS read hit its page cap without a match,
+    // that is named too, since the list may hold more than this search saw.
+    const outcome = searched === 0
+      ? "the lookup itself could not be read"
+      : `no workflow in the list carried this externalId after ${String(searched)} lookup round${searched === 1 ? "" : "s"}`
+        + (searched < attempted ? " that could be read" : "")
+        + (failure.pageCapHit ? " (the list was only searched up to its page cap)" : "");
+    return `Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as ${original}, and ${outcome}. Civitai may still accept, or may already have accepted, this workflow under externalId=${externalId} — check the workflow list for it before starting one deliberate replacement.`;
+  }
   const reason = failure.reason ? ` reason=${failure.reason}: ${VALIDATION_REASON_TEXT[failure.reason]}` : "";
   const paths = failure.validationPaths?.length ? ` paths=${failure.validationPaths.join(",")}.` : "";
   const retry = failure.retry === "automatic"
@@ -93,6 +147,11 @@ export class CivitaiError extends Error implements CivitaiFailure {
   readonly automaticRetriesExhausted: boolean | undefined;
   readonly automaticRetryUsed: boolean | undefined;
   readonly reason: CivitaiValidationReason | undefined;
+  readonly originalCode: CivitaiCode | undefined;
+  readonly externalId: string | undefined;
+  readonly roundsSearched: number | undefined;
+  readonly roundsAttempted: number | undefined;
+  readonly pageCapHit: boolean | undefined;
 
   constructor(failure: CivitaiFailure) {
     super(messageFor(failure));
@@ -105,6 +164,11 @@ export class CivitaiError extends Error implements CivitaiFailure {
     this.automaticRetriesExhausted = failure.automaticRetriesExhausted;
     this.automaticRetryUsed = failure.automaticRetryUsed;
     this.reason = failure.reason;
+    this.originalCode = failure.originalCode;
+    this.externalId = failure.externalId;
+    this.roundsSearched = failure.roundsSearched;
+    this.roundsAttempted = failure.roundsAttempted;
+    this.pageCapHit = failure.pageCapHit;
   }
 }
 
@@ -118,6 +182,19 @@ export function civitaiRetryableStatus(status: number): boolean {
   return status === 429 || (status >= 500 && status <= 599);
 }
 
+/**
+ * Whether `stage` is one where a workflow id is already established — the
+ * render has already been billed, so no automatic disposition belongs here
+ * even for an otherwise-retryable HTTP status or transport failure: a scene
+ * rerun of this rung would be a second paid submit (#673, the "Related
+ * double-spend path" issue comment on #673). `workflow_status` is the only
+ * such stage `civitaiHttpFailure`/`civitaiTransportFailure` ever see today —
+ * it exists solely to poll a workflow id `runCivitaiLane` already has.
+ */
+function isPostSubmitStage(stage: CivitaiStage): boolean {
+  return stage === "workflow_status";
+}
+
 export function civitaiHttpFailure(
   status: number,
   stage: CivitaiStage,
@@ -127,8 +204,11 @@ export function civitaiHttpFailure(
   reason?: CivitaiValidationReason,
   automaticRetryUsed = false,
 ): CivitaiError {
-  const retry: CivitaiRetryDisposition = civitaiRetryableStatus(status)
-    ? readOnly ? "automatic" : "deliberate"
+  const retryable = civitaiRetryableStatus(status);
+  const retry: CivitaiRetryDisposition = retryable
+    ? readOnly
+      ? isPostSubmitStage(stage) ? "reconcile" : "automatic"
+      : "deliberate"
     : status === 409
       ? "reconcile"
       : "never";
@@ -145,12 +225,39 @@ export function civitaiTransportFailure(
   automaticRetriesExhausted = false,
   automaticRetryUsed = false,
 ): CivitaiError {
+  const automatic = readOnly && !isPostSubmitStage(stage);
   return new CivitaiError({
     code: "civitai_transport_failure",
-    retry: readOnly ? "automatic" : "deliberate",
+    retry: automatic ? "automatic" : readOnly ? "reconcile" : "deliberate",
     stage,
     automaticRetriesExhausted,
     automaticRetryUsed,
+  });
+}
+
+/**
+ * The paid submit's own answer was lost, and the read-only externalId lookup
+ * across the workflow list did not resolve it either (#673). `retry` is
+ * always `deliberate`: Civitai may still accept or have already accepted the
+ * workflow, so one deliberate replacement after review is the right next
+ * step, never an automatic repeat of a paid POST.
+ */
+export function civitaiSubmitUnconfirmedFailure(
+  originalCode: CivitaiCode,
+  externalId: string,
+  roundsSearched: number,
+  roundsAttempted: number,
+  pageCapHit = false,
+): CivitaiError {
+  return new CivitaiError({
+    code: "civitai_submit_unconfirmed",
+    retry: "deliberate",
+    stage: "submit",
+    originalCode,
+    externalId,
+    roundsSearched,
+    roundsAttempted,
+    pageCapHit,
   });
 }
 

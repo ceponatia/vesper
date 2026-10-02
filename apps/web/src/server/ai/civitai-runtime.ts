@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { ImageModel } from "@vesper/image-core";
+import { declaresNonAutomaticRetry, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
+import { log } from "@/server/log";
 import { civitaiApiToken } from "../images/lora-credentials";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -30,7 +31,8 @@ const BLOBS_URL = "https://orchestration.civitai.com/v2/consumer/blobs";
 const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
 /**
- * The what-if preflight's own per-attempt timeout.
+ * The per-attempt timeout shared by both workflow POSTs: the what-if
+ * preflight and the paid submit.
  *
  * Every other stage keeps the 30 s {@link REQUEST_TIMEOUT_MS} budget. On
  * 2026-10-01 all 8 reference-view preflights in one production batch failed
@@ -42,8 +44,44 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * diagnostics for the full table and build/version provenance. Those probes
  * do not reproduce the production latency, so this ceiling is headroom over
  * the measured range, not a tuned minimum (#672).
+ *
+ * The paid submit (#673) gets the identical budget rather than its own,
+ * smaller one: it carries the same data-URL references the preflight just
+ * ingested, in the same body shape, so whatever makes a preflight run long can
+ * equally make the submit run long. A submit that times out at this budget is
+ * handled by the lost-answer lookup below, never by repeating the POST.
  */
-const CIVITAI_PREFLIGHT_TIMEOUT_MS = 120_000;
+const CIVITAI_WORKFLOW_POST_TIMEOUT_MS = 120_000;
+
+/**
+ * The lost-submit-answer lookup (#673): how many read-only rounds Vesper
+ * searches the workflow list for a paid submit whose own answer it could not
+ * read, before giving up and naming the loss rather than repeating the POST.
+ *
+ * Two rounds, not one: the live-evidence comment on #673 measured the
+ * workflow list answering in 0.3-0.4 s and a workflow appearing in it
+ * immediately after a normal submit, but a submit whose OWN answer was lost
+ * (timeout, 5xx, a malformed body) is exactly the case where Civitai's own
+ * processing may still be catching up. A single immediate check would read
+ * "not there yet" as "never happened." Two rounds, spaced out, trade a little
+ * latency against that false negative without searching indefinitely.
+ */
+const CIVITAI_SUBMIT_LOOKUP_ROUNDS = 2;
+/** Round 1 waits this long first, so a workflow the provider only just accepted has time to settle into the list. */
+const CIVITAI_SUBMIT_LOOKUP_SETTLE_DELAY_MS = 5_000;
+/** Round 2 (and any later round) waits this long after the previous one. */
+const CIVITAI_SUBMIT_LOOKUP_ROUND_INTERVAL_MS = 30_000;
+/** Page size for each workflow-list read; the live-evidence comment confirms the provider accepts up to 100. */
+const CIVITAI_SUBMIT_LOOKUP_PAGE_TAKE = 100;
+/** Bound on `next`-cursor pages followed within one round, so a pathological or looping cursor cannot turn one round into an unbounded scan. */
+const CIVITAI_SUBMIT_LOOKUP_MAX_PAGES = 3;
+/**
+ * `fromDate` is anchored this far before the submit actually started, to
+ * absorb clock skew between this process and the provider rather than risk
+ * excluding the very workflow being searched for.
+ */
+const CIVITAI_SUBMIT_LOOKUP_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
 const MAX_REFERENCES = 2;
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 const ALLOWED_CONTROLS = new Set([
@@ -421,13 +459,17 @@ async function waitForCivitaiRetry(attempt: number, deadline?: number): Promise<
   return deadline === undefined || Date.now() < deadline;
 }
 
-async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "workflow_status", deadline?: number): Promise<unknown> {
+async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status", deadline?: number): Promise<unknown> {
   const method = init.method ?? "GET";
-  // GET reads (lora metadata, workflow-status polls) get the shared bounded
-  // retry; the what-if preflight gets its own single automatic repeat (#672);
-  // every other POST (the paid submit) gets none.
+  // GET reads (lora metadata, the lost-submit-answer lookup, workflow-status
+  // polls) get the shared bounded retry; the what-if preflight gets its own
+  // single automatic repeat (#672); every other POST (the paid submit) gets
+  // none — #673 keeps that rule: the submit's own transport/HTTP failures are
+  // never reposted here, only looked up read-only, in `runCivitaiLane`.
   const maxRetries = method === "GET" ? MAX_GET_RETRIES : stage === "preflight" ? MAX_PREFLIGHT_RETRIES : 0;
-  const timeoutMs = stage === "preflight" ? CIVITAI_PREFLIGHT_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  // #673: the paid submit shares the preflight's 120 s budget, not the
+  // default 30 s one — see CIVITAI_WORKFLOW_POST_TIMEOUT_MS.
+  const timeoutMs = stage === "preflight" || stage === "submit" ? CIVITAI_WORKFLOW_POST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
   for (let attempt = 0; ; attempt += 1) {
     if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
     const headers = new Headers(init.headers);
@@ -649,6 +691,160 @@ async function sendWorkflow(body: CivitaiWorkflow, token: string, whatif: boolea
 }
 
 /**
+ * Whether a submit failure already PROVES Civitai did not accept the
+ * workflow — a plain 4xx, including 429 — so no lookup is warranted (#673).
+ * Everything else (a transport failure, any 5xx, a malformed or
+ * not-a-workflow 2xx body) is an UNKNOWN outcome: the provider may have
+ * accepted the workflow despite Vesper's own read of the answer failing, so
+ * {@link lookupUnconfirmedSubmit} gets a chance to find it before the render
+ * is declared failed.
+ */
+function isDefinitelyRejectedSubmit(error: unknown): boolean {
+  return error instanceof CivitaiError && typeof error.httpStatus === "number"
+    && error.httpStatus >= 400 && error.httpStatus < 500;
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/** What one page-bounded pass over the workflow list found. */
+interface LookupPageResult {
+  /** The matching raw item, unparsed, or null when this pass carried no match. */
+  match: JsonRecord | null;
+  /**
+   * True when every page up to {@link CIVITAI_SUBMIT_LOOKUP_MAX_PAGES} carried
+   * no match AND the last one still offered a `next` cursor — the list may
+   * hold more than this pass looked at. False when the list ended naturally
+   * (`next` null or empty) before the cap, with or without a match.
+   */
+  pageCapHit: boolean;
+}
+
+/**
+ * One page-bounded pass over the workflow list, searching for an item whose
+ * `externalId` ends with `-${the submit's own externalId}` — the shape the
+ * provider stores it in, `"<civitaiUserId>-<the client value Vesper sent>"`
+ * (#673 live-evidence comment). A v4 UUID client value makes a suffix match
+ * unambiguous. Throws if a page could not be read at all (after
+ * `requestJson`'s own bounded retry), so the caller can tell "absent" apart
+ * from "unreadable".
+ */
+async function lookupSubmitPage(
+  token: string,
+  externalIdSuffix: string,
+  fromDateIso: string,
+): Promise<LookupPageResult> {
+  let cursor: string | undefined;
+  for (let page = 0; page < CIVITAI_SUBMIT_LOOKUP_MAX_PAGES; page += 1) {
+    // `hideMatureContent=false` is explicit, not relied on as a default
+    // (second correction round, #673): the provider OpenAPI defaults
+    // `hideMatureContent=true` on this LIST endpoint specifically. A live
+    // probe (zero Buzz) found a mature workflow's `available` flag and id
+    // still true/present under that default, with only its signed `url`
+    // withheld — Vesper never reads that `url` (#630) — so adoption was not
+    // actually broken; this removes the dependency on that default rather
+    // than on having verified its current behavior is harmless forever.
+    const url = `${WORKFLOWS_URL}?tags=vesper&fromDate=${encodeURIComponent(fromDateIso)}&take=${String(CIVITAI_SUBMIT_LOOKUP_PAGE_TAKE)}&hideMatureContent=false${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
+    const body = asRecord(await requestJson(url, { method: "GET" }, token, "submit_lookup"));
+    // A malformed envelope is UNREADABLE, never a clean "searched, not
+    // found" (third correction round, #673 / Codex on PR #684): coercing a
+    // non-object body or a non-array `items` to `[]` would misreport a page
+    // this process could not actually interpret as one that simply carried
+    // no match.
+    const items: unknown = body?.items;
+    if (!body || !Array.isArray(items)) {
+      throw new Error("Civitai workflow list returned a malformed envelope");
+    }
+    for (const item of items) {
+      const record = asRecord(item);
+      const externalId = asString(record?.externalId);
+      if (externalId?.endsWith(externalIdSuffix)) return { match: record, pageCapHit: false };
+    }
+    // The provider's OpenAPI marks `next` required, but a live probe
+    // (2026-10-01, zero Buzz) found the LAST page omits the key entirely —
+    // so absent, `null`, and `""` all mean the natural end of the list,
+    // never a malformed response. Any other type is neither a cursor this
+    // process understands nor one of those documented end-of-list shapes,
+    // so it is unreadable rather than silently treated as either.
+    const next: unknown = body.next;
+    if (next === undefined || next === null || next === "") return { match: null, pageCapHit: false };
+    if (typeof next !== "string") {
+      throw new Error("Civitai workflow list returned a malformed `next` cursor");
+    }
+    cursor = next;
+  }
+  // Every page up to the cap carried no match, and the last one still had a
+  // `next` cursor this pass declined to follow further.
+  return { match: null, pageCapHit: true };
+}
+
+/** What the lost-submit-answer lookup concluded. */
+interface SubmitLookupOutcome {
+  /**
+   * The matching RAW list item, unparsed, or null when no round found one.
+   * Deliberately not parsed here (#673 correction): parsing is the caller's
+   * job, specifically so a shape failure on a workflow that WAS found
+   * surfaces as that parse error — with the found id already attached as
+   * `predictionId` — rather than being swallowed by this function's own
+   * read-failure handling and misreported as "no workflow carries this
+   * key", which is false when one does.
+   */
+  match: JsonRecord | null;
+  /**
+   * How many rounds' own reads actually SUCCEEDED (regardless of finding a
+   * match) — never just the configured round count, which would overstate
+   * the search when a round's read itself failed (second correction round,
+   * #673). 0 means every round's read failed outright.
+   */
+  roundsSearched: number;
+  /** True when some round that did read hit its page cap without a match, so the search did not necessarily cover the whole list. */
+  pageCapHit: boolean;
+}
+
+/**
+ * Searches the workflow list, read-only, for a submit whose own answer
+ * Vesper could not read — across {@link CIVITAI_SUBMIT_LOOKUP_ROUNDS} bounded,
+ * spaced rounds (#673). Sends no POST at any point, only the bounded GET the
+ * workflow list already supports. Returns the found item's raw record
+ * unparsed (see {@link SubmitLookupOutcome.match}); the caller resumes the
+ * ordinary poll/terminal/download path on it after parsing.
+ */
+async function lookupUnconfirmedSubmit(
+  token: string,
+  submitExternalId: string,
+  submitStartedAt: number,
+): Promise<SubmitLookupOutcome> {
+  const fromDateIso = new Date(submitStartedAt - CIVITAI_SUBMIT_LOOKUP_CLOCK_SKEW_MS).toISOString();
+  const suffix = `-${submitExternalId}`;
+  let roundsSearched = 0;
+  let pageCapHit = false;
+  for (let round = 0; round < CIVITAI_SUBMIT_LOOKUP_ROUNDS; round += 1) {
+    await delay(round === 0 ? CIVITAI_SUBMIT_LOOKUP_SETTLE_DELAY_MS : CIVITAI_SUBMIT_LOOKUP_ROUND_INTERVAL_MS);
+    let page: LookupPageResult;
+    try {
+      page = await lookupSubmitPage(token, suffix, fromDateIso);
+    } catch {
+      // This round's read itself failed (transport failure, or every bounded
+      // GET retry inside requestJson exhausted). `roundsSearched` stays
+      // whatever earlier rounds already proved; the next round gets its own
+      // chance. Unchanged by the first correction: a FOUND item's parse
+      // failure never reaches this catch, because parsing no longer happens
+      // in this loop.
+      continue;
+    }
+    roundsSearched += 1;
+    if (page.pageCapHit) pageCapHit = true;
+    if (page.match) {
+      log.warn("ai.civitai", "found a workflow by externalId lookup after the submit's own answer was lost", {
+        workflowId: asString(page.match.id), externalId: submitExternalId,
+      });
+      return { match: page.match, roundsSearched, pageCapHit };
+    }
+  }
+  return { match: null, roundsSearched, pageCapHit };
+}
+/**
  * One output location this download is allowed to visit, or a refusal.
  *
  * Applied to the provider's own URL and again to every redirect target, because
@@ -834,12 +1030,53 @@ export async function runCivitaiLane(
     const refusal = validateCivitaiPreflightEcho(preflight, preflightRequest, lane);
     if (refusal) return { ok: false, error: refusal };
 
-    // Reusing a what-if externalId can retrieve the unexecuted estimate. Only
-    // this id changes: generation inputs and the payment policy stay identical.
-    const submitted = await sendWorkflow({ ...preflightRequest, externalId: randomUUID() }, token, false);
-    predictionId = asString(asRecord(submitted)?.id) ?? undefined;
-    let result = parseCivitaiWorkflow(submitted, "Civitai generation submit");
-    predictionId = result.id;
+    // Only the externalId changes here: generation inputs and the payment
+    // policy stay identical to the preflight. A fresh id rather than the
+    // preflight's own — measured 2026-10-01, a what-if does not claim its
+    // key, so reuse would not retrieve an unexecuted estimate either way; see
+    // docs/image-models/models/civitai-flux-2-klein-4b.md §Execution and
+    // diagnostics — but a submit needs its OWN identity for the lost-answer
+    // lookup below to search for.
+    const submitWorkflow = { ...preflightRequest, externalId: randomUUID() };
+    const submitStartedAt = Date.now();
+    let result: CivitaiWorkflowResult;
+    try {
+      const submitted = await sendWorkflow(submitWorkflow, token, false);
+      // Recorded BEFORE parsing (second correction round, #673), restoring
+      // the pre-#673 contract (see `ReplicateImageResult.predictionId`,
+      // packages/image-replicate/src/prediction.ts): a 2xx body that carries
+      // an id but fails to parse must keep that id even though `result` is
+      // never assigned here — including if the lookup below then cannot
+      // read the list and the render ends as civitai_submit_unconfirmed.
+      predictionId = asString(asRecord(submitted)?.id) ?? undefined;
+      result = parseCivitaiWorkflow(submitted, "Civitai generation submit");
+      predictionId = result.id;
+    } catch (submitError) {
+      // #673: a plain 4xx (429 included) already proves Civitai rejected the
+      // workflow, so it fails exactly as before, with no lookup. Everything
+      // else here — a transport failure, any 5xx, or a 2xx body this process
+      // could not read as a usable workflow — is an UNKNOWN outcome: Civitai
+      // may have accepted and even billed the workflow despite Vesper's own
+      // read of the answer failing, so it is looked up read-only, by this
+      // submit's own externalId, before the render is declared failed. The
+      // paid POST above is never resent on any path through this catch.
+      if (isDefinitelyRejectedSubmit(submitError)) throw submitError;
+      const originalCode = submitError instanceof CivitaiError ? submitError.code : "civitai_submit_response_invalid";
+      const outcome = await lookupUnconfirmedSubmit(token, submitWorkflow.externalId, submitStartedAt);
+      if (!outcome.match) {
+        throw civitaiSubmitUnconfirmedFailure(
+          originalCode, submitWorkflow.externalId, outcome.roundsSearched, CIVITAI_SUBMIT_LOOKUP_ROUNDS, outcome.pageCapHit,
+        );
+      }
+      // The id is recorded BEFORE parsing (first correction round, #673): a
+      // found item whose shape then fails `parseCivitaiWorkflow` must
+      // surface as that parse failure, with this id attached, never as
+      // civitai_submit_unconfirmed — the workflow WAS found, so "no workflow
+      // carries this key" would be false.
+      predictionId = asString(outcome.match.id) ?? undefined;
+      result = parseCivitaiWorkflow(outcome.match, "Civitai workflow lookup");
+      predictionId = result.id;
+    }
     const deadline = Date.now() + Math.max(30_000, request.timeoutMs ?? CIVITAI_DEFAULT_TIMEOUT_MS);
     while (PENDING_STATUSES.has(result.status)) {
       if (result.insufficient === true) throw civitaiInsufficientBuzzFailure();
@@ -872,6 +1109,26 @@ export async function runCivitaiLane(
       sentReferenceCount: references.length,
     };
   } catch (error) {
-    return { ok: false, ...(predictionId ? { predictionId } : {}), error: error instanceof Error ? error.message : "Civitai generation failed" };
+    const message = error instanceof Error ? error.message : "Civitai generation failed";
+    // #673 (second Codex round on PR #684): every failure that can surface
+    // once a workflow id exists must declare a non-automatic disposition,
+    // so the selfie retry's own guard (`declaresNonAutomaticRetry`) never
+    // mistakes it for an ordinary automatic-retry-eligible failure and
+    // reposts a SECOND paid submit. A CivitaiError thrown post-submit
+    // already declares one (civitai_submit_unconfirmed; an exhausted
+    // workflow_status read's reconcile override; an async failure's own
+    // deliberate/never) and is left exactly as it is — appending twice
+    // would be redundant, not safer. This only appends the sentence when
+    // `predictionId` is set AND the message carries no disposition at
+    // all: a found-but-unparseable lookup match, a 2xx submit body that
+    // carried an id but failed to parse, "returned a different workflow
+    // while polling", a parse failure mid-poll, the mature/yellow
+    // retention check, or anything else non-Civitai thrown after a
+    // workflow id already exists. A pre-submit failure (no `predictionId`)
+    // is unchanged.
+    const final = predictionId && !declaresNonAutomaticRetry(message)
+      ? `${message} Civitai workflow ${predictionId} was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.`
+      : message;
+    return { ok: false, ...(predictionId ? { predictionId } : {}), error: final };
   }
 }

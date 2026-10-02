@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { civitaiAsyncFailure } from "./civitai-errors";
-import { imageModelSchema, type ImageModel } from "@vesper/image-core";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageModelSchema, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 
 vi.mock("../images/lora-credentials", () => ({
@@ -41,6 +41,17 @@ const request = {
 /** The blob-endpoint href the runtime fetches for a given output blob id (#630). */
 function blobUrl(id: string): string {
   return `https://orchestration.civitai.com/v2/consumer/blobs/${encodeURIComponent(id)}`;
+}
+
+/**
+ * A read-only workflow-list GET: present whenever `whatif` is absent from
+ * the query string. Hoisted to module scope (second correction round, #673)
+ * so every test can tell the lost-answer lookup's GET apart from the
+ * preflight/submit POSTs BEFORE touching `init.body` — the lookup has none,
+ * and `JSON.parse`-ing it unconditionally throws.
+ */
+function isLookupGet(href: string): boolean {
+  return href.includes("/consumer/workflows?") && new URL(href).searchParams.get("whatif") === null;
 }
 
 function workflowFrom(body: Record<string, unknown>, id: string, status: string, images: unknown[] = []): Record<string, unknown> {
@@ -405,7 +416,14 @@ describe("Civitai Klein v2 transport", () => {
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=false")]);
   });
 
-  it("stops transient workflow-status retries after the bounded third read", async () => {
+  it("stops transient workflow-status retries after the bounded third read, reporting reconcile rather than automatic (#673)", async () => {
+    // Pre-#673 this read's exhausted disposition was `retry=automatic`,
+    // worded "temporarily unavailable" — which `classifyImageFailureMessage`
+    // read as transient and let `executeSceneChain` rerun the rung, sending
+    // a SECOND paid submit while the first, already billed, might still
+    // finish (the "Related double-spend path" issue comment on #673). A
+    // workflow-status read only ever runs once a submit already exists, so
+    // it now reports `reconcile` instead.
     vi.useFakeTimers();
     let statusReads = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
@@ -427,11 +445,87 @@ describe("Civitai Klein v2 transport", () => {
     const result = await pending;
 
     expect(statusReads).toBe(3);
-    expect(result).toMatchObject({ ok: false, predictionId: "submit-exhausted", error: expect.stringContaining("civitai_http_503; retry=automatic") });
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-exhausted", error: expect.stringContaining("civitai_http_503; retry=reconcile") });
     if (result.ok) throw new Error("expected the exhausted workflow-status read to fail");
+    if (result.error === undefined) throw new Error("expected the exhausted workflow-status read to carry an error");
     expect(result.error).toContain("paths=steps[0].input.resolution");
     expect(result.error).not.toContain("private");
     expect(result.error).not.toContain("secret");
+    expect(classifyImageFailureMessage(result.error)).not.toBe("transient");
+    // Third correction round (#673 / Codex on PR #684): this CivitaiError
+    // already declares `retry=reconcile` on its own, so runCivitaiLane's
+    // outer catch must not also append the fixed "was already submitted"
+    // sentence — that would be redundant, never safer.
+    expect(result.error).not.toContain("was already submitted");
+  });
+
+  /**
+   * PROTECTS (third correction round, #673 / Codex on PR #684): a plain
+   * `Error` thrown once a workflow id exists carries no `retry=` marker of
+   * its own, so the selfie retry's own guard (`declaresNonAutomaticRetry`)
+   * would otherwise mistake it for an ordinary failure and repost a SECOND
+   * paid submit. `runCivitaiLane`'s outer catch appends a fixed reconcile
+   * sentence naming the id whenever `predictionId` is set and the thrown
+   * message does not already declare a disposition.
+   */
+  it("names the workflow id and declares reconcile when polling returns a different workflow", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-swap" : "submit-swap", whatif === "true" ? "unassigned" : "processing"));
+      }
+      if (href.endsWith("/submit-swap")) {
+        return Response.json({
+          id: "submit-swap-impostor", status: "processing", allowMatureContent: true,
+          currencies: ["yellow"], upgradeMode: "manual", transactions: { insufficientBuzz: false },
+          steps: [{ $type: "imageGen", input: {}, output: {} }],
+        });
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-swap" });
+    if (result.ok) throw new Error("expected the workflow-id mismatch to fail");
+    if (result.error === undefined) throw new Error("expected the workflow-id mismatch to carry an error");
+    expect(result.error).toBe(
+      "Civitai returned a different workflow while polling Civitai workflow submit-swap was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.",
+    );
+    expect(declaresNonAutomaticRetry(result.error)).toBe(true);
+    expect(classifyImageFailureMessage(result.error)).not.toBe("transient");
+  });
+
+  it("names the workflow id and declares reconcile when the mature/yellow retention check fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      const whatif = new URL(href).searchParams.get("whatif");
+      if (whatif === "true") return Response.json(workflowFrom(body, "estimate-retention", "unassigned"));
+      const submitted = workflowFrom(body, "submit-retention", "succeeded", [{ id: "output.jpg", available: true }]);
+      // The submit's own terminal answer silently dropped mature permission
+      // — the retention check's own failure mode, independent of the
+      // lost-answer lookup.
+      submitted.allowMatureContent = false;
+      return Response.json(submitted);
+    });
+
+    const result = await runCivitaiKleinImageModel(MODEL, request);
+
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-retention" });
+    if (result.ok) throw new Error("expected the retention check to fail");
+    if (result.error === undefined) throw new Error("expected the retention check to carry an error");
+    expect(result.error).toBe(
+      "Civitai workflow did not retain mature-content permission and yellow-only payment Civitai workflow submit-retention was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.",
+    );
+    expect(declaresNonAutomaticRetry(result.error)).toBe(true);
+    expect(classifyImageFailureMessage(result.error)).not.toBe("transient");
   });
 
   it("ends a near-deadline workflow-status retry at the minimum 30-second budget without repeating the paid POST", async () => {
@@ -500,59 +594,609 @@ describe("Civitai Klein v2 transport", () => {
     expect(preflightFailure.error).not.toContain("read retries");
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=true")]);
 
+    // #673: a 503 on the paid submit is now an UNKNOWN outcome that triggers
+    // the read-only lost-answer lookup (settle delay, then a bounded GET)
+    // rather than failing immediately, so this phase must drive the call
+    // through fake-timer advancement and must answer the lookup's GET
+    // (which carries no body) before touching `init.body`.
     phase = "submit";
-    workflowUrls.length = 0;
+    const paidPosts: string[] = [];
     vi.mocked(globalThis.fetch).mockImplementation(async (url, init) => {
       const href = String(url);
       if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
-      workflowUrls.push(href);
+      if (isLookupGet(href)) return Response.json({ items: [], next: null });
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const whatif = new URL(href).searchParams.get("whatif");
       if (whatif === "true") return Response.json(workflowFrom(body, "estimate-post", "unassigned"));
+      paidPosts.push(href);
       return Response.json({ detail: "prompt=private" }, { status: 503 });
     });
 
-    const submitFailure = await runCivitaiKleinImageModel(MODEL, request);
-    expect(submitFailure).toMatchObject({ ok: false, error: expect.stringContaining("civitai_http_503; retry=deliberate") });
+    const submitPending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const submitFailure = await submitPending;
+    expect(submitFailure).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
     if (submitFailure.ok) throw new Error("expected the submit failure to fail");
+    expect(submitFailure.error).toContain("civitai_http_503");
     expect(submitFailure.error).not.toContain("already reposted");
-    expect(workflowUrls).toEqual([expect.stringContaining("whatif=true"), expect.stringContaining("whatif=false")]);
+    // The invariant this test exists to protect: still exactly one paid POST.
+    expect(paidPosts).toHaveLength(1);
   });
 
-  it.each(["fetch", "response text"] as const)("posts the paid submit exactly once even when it throws a transport %s failure", async (sentinel) => {
-    // #672 spend safety: requestJson's transport-catch retry gate is now just
-    // `attempt < maxRetries`, and `maxRetries` is 0 for the submit stage. A
-    // regression that widened that gate to cover every POST — not just the
-    // preflight — would silently re-post a PAID submission the account may
-    // already have been billed for. This proves the submit POST still never
-    // repeats on a thrown transport failure, exactly as before #672.
-    const workflowUrls: string[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-      const href = String(url);
-      if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
-      workflowUrls.push(href);
-      const whatif = new URL(href).searchParams.get("whatif");
-      if (whatif === "true") {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return Response.json(workflowFrom(body, "estimate-submit-throw", "unassigned"));
-      }
-      if (sentinel === "fetch") throw new Error("provider token=secret prompt=private");
-      const response = Response.json({ id: "unused" });
-      vi.spyOn(response, "text").mockRejectedValue(new Error("provider token=secret prompt=private"));
-      return response;
+  /**
+   * PROTECTS (#673): a submit whose own answer Vesper could not read is
+   * looked up read-only, by its own externalId, across the workflow list —
+   * never by reposting the paid workflow. These cases cover item 2's three
+   * "unknown outcome" triggers (transport failure, HTTP 5xx, an unparsable
+   * 2xx body) and item 2's "known not accepted" exclusion (429/4xx), plus
+   * the adopt-vs-unconfirmed and readable-vs-unreadable outcomes.
+   */
+  describe("Civitai Klein v2 lost-submit-answer lookup (#673)", () => {
+    it.each(["fetch", "response text"] as const)(
+      "adopts the workflow the lookup finds, polls and downloads it, after a thrown transport %s failure — still exactly one paid POST",
+      async (sentinel) => {
+        // #672 regression guard, carried forward: requestJson's transport-catch
+        // retry gate for the submit stage is still just `attempt < maxRetries`
+        // with `maxRetries` 0, so a widened gate that reposted the PAID
+        // submission would show up here as more than one `whatif=false` POST.
+        vi.useFakeTimers();
+        const paidPosts: string[] = [];
+        const lookupGets: string[] = [];
+        let submitExternalId = "";
+        vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+          const href = String(url);
+          if (href === blobUrl("output.jpg")) return new Response("image-bytes", { status: 200 });
+          if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+          if (isLookupGet(href)) {
+            lookupGets.push(href);
+            return Response.json({
+              items: [{
+                id: "adopted-workflow",
+                externalId: `5910720-${submitExternalId}`,
+                status: "succeeded",
+                allowMatureContent: true,
+                currencies: ["yellow"],
+                upgradeMode: "manual",
+                transactions: { insufficientBuzz: false },
+                steps: [{ $type: "imageGen", input: {}, output: { images: [{ id: "output.jpg", available: true }] } }],
+              }],
+              next: null,
+            });
+          }
+          const whatif = new URL(href).searchParams.get("whatif");
+          if (whatif === "true") {
+            const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+            return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+          }
+          paidPosts.push(href);
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          submitExternalId = body.externalId as string;
+          if (sentinel === "fetch") throw new Error("provider token=secret prompt=private");
+          const response = Response.json({ id: "unused" });
+          vi.spyOn(response, "text").mockRejectedValue(new Error("provider token=secret prompt=private"));
+          return response;
+        });
+
+        const pending = runCivitaiKleinImageModel(MODEL, request);
+        await vi.runAllTimersAsync();
+        const result = await pending;
+
+        expect(paidPosts).toHaveLength(1);
+        expect(lookupGets.length).toBeGreaterThanOrEqual(1);
+        expect(result).toMatchObject({ ok: true, predictionId: "adopted-workflow" });
+        if (!result.ok) throw new Error("expected the adopted workflow to succeed");
+        expect(result.image?.toString()).toBe("image-bytes");
+      },
+    );
+
+    /**
+     * PROTECTS (test gap, second correction round, #673): adoption must
+     * resume the ORDINARY poll on the ADOPTED id, not the submit's own
+     * (never-confirmed) one — a still-`processing` adopted workflow has to
+     * keep being polled by `GET /workflows/{adopted id}` until it reaches a
+     * terminal status, exactly as an ordinary submit-confirmed workflow
+     * would be.
+     */
+    it("polls a still-pending adopted workflow by its own id until it succeeds", async () => {
+      vi.useFakeTimers();
+      let submitExternalId = "";
+      let statusReads = 0;
+      const statusUrls: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (href === blobUrl("output.jpg")) return new Response("image-bytes", { status: 200 });
+        if (href.includes("/consumer/workflows?")) {
+          if (isLookupGet(href)) {
+            return Response.json({
+              items: [{
+                id: "adopted-pending",
+                externalId: `5910720-${submitExternalId}`,
+                status: "processing",
+                allowMatureContent: true,
+                currencies: ["yellow"],
+                upgradeMode: "manual",
+                transactions: { insufficientBuzz: false },
+                steps: [{ $type: "imageGen", input: {}, output: {} }],
+              }],
+              next: null,
+            });
+          }
+          const whatif = new URL(href).searchParams.get("whatif");
+          if (whatif === "true") {
+            const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+            return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+          }
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          submitExternalId = body.externalId as string;
+          throw new Error("provider token=secret prompt=private");
+        }
+        if (href.endsWith("/adopted-pending")) {
+          statusUrls.push(href);
+          statusReads += 1;
+          if (statusReads === 1) {
+            return Response.json({
+              id: "adopted-pending", status: "processing", allowMatureContent: true,
+              currencies: ["yellow"], upgradeMode: "manual", transactions: { insufficientBuzz: false },
+              steps: [{ $type: "imageGen", input: {}, output: {} }],
+            });
+          }
+          return Response.json({
+            id: "adopted-pending", status: "succeeded", allowMatureContent: true,
+            currencies: ["yellow"], upgradeMode: "manual", transactions: { insufficientBuzz: false },
+            steps: [{ $type: "imageGen", input: {}, output: { images: [{ id: "output.jpg", available: true }] } }],
+          });
+        }
+        throw new Error(`Unexpected fetch ${href}`);
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(statusReads).toBe(2);
+      expect(statusUrls.every((url) => url.endsWith("/adopted-pending"))).toBe(true);
+      expect(result).toMatchObject({ ok: true, predictionId: "adopted-pending" });
+      if (!result.ok) throw new Error("expected the adopted-then-polled workflow to succeed");
+      expect(result.image?.toString()).toBe("image-bytes");
     });
 
-    const result = await runCivitaiKleinImageModel(MODEL, request);
+    it("throws civitai_submit_unconfirmed naming the externalId and the original code when the lookup never finds the workflow, after exactly one paid POST", async () => {
+      vi.useFakeTimers();
+      const paidPosts: string[] = [];
+      let lookupRounds = 0;
+      let submitExternalId = "";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupRounds += 1;
+          return Response.json({ items: [], next: null });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        paidPosts.push(href);
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        submitExternalId = body.externalId as string;
+        throw new Error("provider token=secret prompt=private");
+      });
 
-    expect(workflowUrls).toEqual([
-      expect.stringContaining("whatif=true"),
-      expect.stringContaining("whatif=false"),
-    ]);
-    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_transport_failure; retry=deliberate") });
-    if (result.ok) throw new Error("expected the submit transport failure to fail");
-    expect(result.error).not.toContain("secret");
-    expect(result.error).not.toContain("private");
-    expect(result.error).not.toContain("already reposted");
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(paidPosts).toHaveLength(1);
+      expect(lookupRounds).toBe(2);
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed; retry=deliberate") });
+      if (result.ok) throw new Error("expected the unconfirmed submit to fail");
+      expect(result.predictionId).toBeUndefined();
+      expect(result.error).toContain("civitai_transport_failure");
+      expect(result.error).toContain(submitExternalId);
+      expect(result.error).toContain("no workflow in the list carried this externalId after 2 lookup rounds");
+      expect(result.error).not.toContain("secret");
+      expect(result.error).not.toContain("private");
+    });
+
+    it.each([
+      ["a 5xx submit", () => Response.json({ detail: "prompt=private" }, { status: 503 }), "civitai_http_503", undefined],
+      ["a malformed 2xx submit", () => new Response("not json", { status: 200 }), "civitai_malformed_response", undefined],
+      // Distinct from both rows above: a 2xx body that IS valid JSON -- so
+      // `requestJson` returns it with no throw of its own -- but is not a
+      // usable workflow shape (no `status`), so `parseCivitaiWorkflow` throws
+      // a plain `Error`, never a `CivitaiError`. This is the only path that
+      // exercises the catch block's `instanceof CivitaiError` fallback to
+      // `civitai_submit_response_invalid`, and the only path proving a
+      // non-CivitaiError thrown here still reaches the lookup rather than
+      // skipping it -- `isDefinitelyRejectedSubmit` requires a CivitaiError
+      // with an httpStatus, so a bug that let a bare Error through
+      // unconditionally (or crashed deriving its code) would leave this
+      // submit a silent orphan instead of naming the workflow (#673). Its
+      // body DOES carry an id, so unlike the two rows above — whose own
+      // responses never resolve to anything with an id — this is also the
+      // case that proves the pre-#673 contract (second correction round):
+      // predictionId is set from that raw id BEFORE the parse that fails,
+      // and survives all the way through the lookup giving up too.
+      ["a 2xx submit whose valid-JSON body is not a usable workflow", () => Response.json({ id: "shapeless" }), "civitai_submit_response_invalid", "shapeless"],
+    ] as const)("leads to a lookup after %s, naming that code once the lookup gives up", async (_description, submitResponse, originalCode, expectedPredictionId) => {
+      vi.useFakeTimers();
+      const paidPosts: string[] = [];
+      let lookupRounds = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupRounds += 1;
+          return Response.json({ items: [], next: null });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        paidPosts.push(href);
+        return submitResponse();
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(paidPosts).toHaveLength(1);
+      expect(lookupRounds).toBe(2);
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
+      if (result.ok) throw new Error("expected the lookup to give up");
+      expect(result.error).toContain(originalCode);
+      expect(result.predictionId).toBe(expectedPredictionId);
+    });
+
+    it.each([429, 400, 404])(
+      "never looks up the workflow list after an HTTP %i submit, which already proves Civitai rejected it",
+      async (status) => {
+        let paidPosts = 0;
+        let lookupCalls = 0;
+        vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+          const href = String(url);
+          if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+          if (isLookupGet(href)) {
+            lookupCalls += 1;
+            return Response.json({ items: [], next: null });
+          }
+          const whatif = new URL(href).searchParams.get("whatif");
+          if (whatif === "true") {
+            const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+            return Response.json(workflowFrom(body, "estimate-rejected", "unassigned"));
+          }
+          paidPosts += 1;
+          return Response.json({ detail: "prompt=private" }, { status });
+        });
+
+        const result = await runCivitaiKleinImageModel(MODEL, request);
+
+        expect(paidPosts).toBe(1);
+        expect(lookupCalls).toBe(0);
+        expect(result).toMatchObject({ ok: false, error: expect.stringContaining(`civitai_http_${String(status)}`) });
+        if (result.ok) throw new Error("expected the rejected submit to fail");
+        expect(result.predictionId).toBeUndefined();
+      },
+    );
+
+    it("reports the lookup as unreadable, not merely absent, when every round's own read fails", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) throw new Error("provider token=secret prompt=private");
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
+      if (result.ok) throw new Error("expected the unreadable lookup to fail");
+      expect(result.error).toContain("the lookup itself could not be read");
+      expect(result.error).not.toContain("no workflow in the list carried this externalId");
+      expect(result.error).not.toContain("secret");
+      expect(result.error).not.toContain("private");
+    });
+
+    /**
+     * PROTECTS (second correction round, #673): a list item that MATCHES the
+     * externalId suffix must be treated as FOUND even if its shape then
+     * fails `parseCivitaiWorkflow` — the round's own try/catch must not
+     * swallow that parse failure as "this round's read failed", which would
+     * misreport `civitai_submit_unconfirmed` ("no workflow carries this
+     * key") for a key a workflow demonstrably DOES carry. The found id must
+     * also still reach `predictionId`, matching the pre-#673 behavior for an
+     * ordinary 2xx submit body that carried an id but failed to parse.
+     */
+    it("surfaces a parse failure on a found workflow with its id attached, never as civitai_submit_unconfirmed", async () => {
+      vi.useFakeTimers();
+      const paidPosts: string[] = [];
+      let submitExternalId = "";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          return Response.json({
+            items: [{
+              id: "found-but-broken",
+              externalId: `5910720-${submitExternalId}`,
+              status: "not-a-real-status",
+            }],
+            next: null,
+          });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        paidPosts.push(href);
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        submitExternalId = body.externalId as string;
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(paidPosts).toHaveLength(1);
+      expect(result).toMatchObject({ ok: false, predictionId: "found-but-broken" });
+      if (result.ok) throw new Error("expected the found-but-unparseable workflow to fail");
+      if (result.error === undefined) throw new Error("expected the found-but-unparseable workflow to carry an error");
+      expect(result.error).not.toContain("civitai_submit_unconfirmed");
+      // Third correction round (#673 / Codex on PR #684): this plain Error
+      // carries no `retry=` marker of its own, so runCivitaiLane's outer
+      // catch appends the fixed reconcile sentence, naming the FOUND id —
+      // which is what keeps the selfie retry's own guard
+      // (`declaresNonAutomaticRetry`) from reposting a second paid submit
+      // over a workflow that was found, just not parseable.
+      expect(result.error).toBe(
+        "Civitai workflow lookup returned an invalid workflow identity or status Civitai workflow found-but-broken was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.",
+      );
+      expect(declaresNonAutomaticRetry(result.error)).toBe(true);
+      expect(classifyImageFailureMessage(result.error)).not.toBe("transient");
+    });
+
+    it("follows the list's next cursor within one round to find a match on a later page", async () => {
+      vi.useFakeTimers();
+      const lookupUrls: string[] = [];
+      const cursorsSeen: (string | null)[] = [];
+      let submitExternalId = "";
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (href === blobUrl("output.jpg")) return new Response("image-bytes", { status: 200 });
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupUrls.push(href);
+          const cursor = new URL(href).searchParams.get("cursor");
+          cursorsSeen.push(cursor);
+          if (cursor === null) return Response.json({ items: [{ id: "other", externalId: "5910720-not-this-one" }], next: "page-2" });
+          return Response.json({
+            items: [{
+              id: "adopted-page-2", externalId: `5910720-${submitExternalId}`, status: "succeeded",
+              allowMatureContent: true, currencies: ["yellow"], upgradeMode: "manual",
+              transactions: { insufficientBuzz: false },
+              steps: [{ $type: "imageGen", input: {}, output: { images: [{ id: "output.jpg", available: true }] } }],
+            }],
+            next: null,
+          });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        submitExternalId = body.externalId as string;
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(lookupUrls).toHaveLength(2);
+      expect(cursorsSeen).toEqual([null, "page-2"]);
+      expect(result).toMatchObject({ ok: true, predictionId: "adopted-page-2" });
+    });
+
+    it("bounds one round's pagination at the page cap, and names that cap in the failure", async () => {
+      vi.useFakeTimers();
+      let lookupGets = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupGets += 1;
+          // Never carries a match and never stops offering another page.
+          return Response.json({ items: [], next: `cursor-${String(lookupGets)}` });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      // 2 rounds * the page cap, never more, despite `next` always being present.
+      expect(lookupGets).toBe(2 * 3);
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
+      if (result.ok) throw new Error("expected the capped pagination to still give up");
+      expect(result.error).toContain("no workflow in the list carried this externalId after 2 lookup rounds");
+      // Both rounds DID read successfully (just capped), so the message must
+      // not claim a partial search — only that the cap, not absence, is what
+      // ended each round (second correction round, #673).
+      expect(result.error).not.toContain("that could be read");
+      expect(result.error).toContain("the list was only searched up to its page cap");
+    });
+
+    it("counts only rounds that actually read successfully, and says so when some did not", async () => {
+      // Round 1's read fails outright (unreadable): requestJson's own
+      // bounded GET retry exhausts after 3 attempts (1 initial + 2 retries,
+      // MAX_GET_RETRIES), so the first 3 lookup fetches must all throw before
+      // round 2's first attempt can succeed. Round 2 then reads cleanly and
+      // finds nothing. roundsSearched must be 1, not the configured 2, and
+      // the message must say the round that WAS read, qualified as such —
+      // never silently inflated to "2 lookup rounds" (second correction
+      // round, #673).
+      vi.useFakeTimers();
+      let lookupAttempts = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupAttempts += 1;
+          if (lookupAttempts <= 3) throw new Error("provider token=secret prompt=private");
+          return Response.json({ items: [], next: null });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
+      if (result.ok) throw new Error("expected the partially-unreadable lookup to fail");
+      expect(result.error).toContain("1 lookup round that could be read");
+      expect(result.error).not.toContain("the lookup itself could not be read");
+      expect(result.error).not.toContain("2 lookup round");
+    });
+
+    it("pins the lookup URL's tags, fromDate, take, and hideMatureContent", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      const lookupUrls: string[] = [];
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupUrls.push(href);
+          return Response.json({ items: [], next: null });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      await pending;
+
+      expect(lookupUrls.length).toBeGreaterThan(0);
+      const first = lookupUrls[0];
+      if (!first) throw new Error("expected at least one lookup URL");
+      const params = new URL(first).searchParams;
+      expect(params.get("tags")).toBe("vesper");
+      expect(params.get("take")).toBe("100");
+      expect(params.get("hideMatureContent")).toBe("false");
+      // The preflight and submit POSTs resolve without any real or faked
+      // delay in this mock, so the submit still starts at the pinned system
+      // time; fromDate is that time minus the clock-skew margin.
+      expect(params.get("fromDate")).toBe(new Date(Date.parse("2026-01-01T00:00:00.000Z") - 5 * 60 * 1000).toISOString());
+    });
+
+    /**
+     * PROTECTS (third correction round, #673 / Codex on PR #684): a list
+     * response this process cannot actually interpret must count as
+     * UNREADABLE, never as a clean "searched, this page carried no match" —
+     * coercing a missing/non-array `items` or a malformed `next` to an
+     * empty result would misreport the search as more thorough than it was.
+     */
+    it.each([
+      ["a body with no items array", { foo: "bar" }],
+      ["a non-array items field", { items: "x" }],
+      ["a non-string, non-nullish next", { items: [], next: 5 }],
+    ] as const)("treats %s as an unreadable round, not a clean search", async (_description, malformedBody) => {
+      vi.useFakeTimers();
+      let lookupRounds = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupRounds += 1;
+          return Response.json(malformedBody);
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(lookupRounds).toBe(2);
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
+      if (result.ok) throw new Error("expected the malformed envelope to be treated as unreadable");
+      if (result.error === undefined) throw new Error("expected an error message");
+      expect(result.error).toContain("the lookup itself could not be read");
+      expect(result.error).not.toContain("no workflow in the list carried this externalId");
+    });
+
+    /**
+     * PROTECTS: the provider's OpenAPI marks `next` required, but a live
+     * probe (2026-10-01, zero Buzz) found the LAST page omits the key
+     * entirely. That omission must stay the ordinary end-of-list reading —
+     * a round that read it counts as searched, not unreadable.
+     */
+    it("treats a body with no `next` key as a clean end of the list, not malformed", async () => {
+      vi.useFakeTimers();
+      let lookupRounds = 0;
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+        const href = String(url);
+        if (!href.includes("/consumer/workflows?")) throw new Error(`Unexpected fetch ${href}`);
+        if (isLookupGet(href)) {
+          lookupRounds += 1;
+          return Response.json({ items: [] });
+        }
+        const whatif = new URL(href).searchParams.get("whatif");
+        if (whatif === "true") {
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json(workflowFrom(body, "estimate-lost", "unassigned"));
+        }
+        throw new Error("provider token=secret prompt=private");
+      });
+
+      const pending = runCivitaiKleinImageModel(MODEL, request);
+      await vi.runAllTimersAsync();
+      const result = await pending;
+
+      expect(lookupRounds).toBe(2);
+      expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_submit_unconfirmed") });
+      if (result.ok) throw new Error("expected the omitted-next body to end the search cleanly");
+      if (result.error === undefined) throw new Error("expected an error message");
+      expect(result.error).toContain("no workflow in the list carried this externalId after 2 lookup rounds");
+      expect(result.error).not.toContain("the lookup itself could not be read");
+      expect(result.error).not.toContain("that could be read");
+    });
   });
 
   it.each([429, 503])("recovers a preflight that fails once with HTTP %i by reposting the identical body, then submits under a fresh externalId", async (status) => {
@@ -662,7 +1306,7 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("read retries");
   });
 
-  it("gives the preflight its own 120 s per-attempt timeout, leaving the paid submit at 30 s", async () => {
+  it("gives the preflight and the paid submit the same 120 s per-attempt timeout (#673)", async () => {
     // Proves the per-stage timeout split against the REAL AbortSignal.timeout
     // rather than faked wall time, since vitest's fake timers do not reliably
     // drive it. Nothing in this test actually waits out a timeout: the mocked
@@ -692,17 +1336,17 @@ describe("Civitai Klein v2 transport", () => {
     const result = await runCivitaiKleinImageModel(MODEL, request);
 
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_insufficient_buzz") });
-    // Preflight first (120 s), then the paid submit (30 s); no status poll or
-    // download followed because the submit itself already reported
-    // insufficient Buzz.
-    expect(timeoutCalls).toEqual([120_000, 30_000]);
+    // Preflight (120 s), then the paid submit — now on the SAME 120 s budget
+    // (#673) rather than the default 30 s one; no status poll or download
+    // followed because the submit itself already reported insufficient Buzz.
+    expect(timeoutCalls).toEqual([120_000, 120_000]);
   });
 
-  it("also gives the preflight's automatic retry its own 120 s, while a lora_metadata GET and the paid submit stay at 30 s", async () => {
+  it("also gives the preflight's automatic retry its own 120 s, while a lora_metadata GET stays at 30 s", async () => {
     // Companion to the test above, exercising every stage's timeout in one
     // request: the lora_metadata GET (30 s), a failed first preflight
     // attempt (120 s), its automatic retry (120 s), then the paid submit
-    // (30 s). The insufficient-Buzz trick again keeps the submit from
+    // (120 s, #673). The insufficient-Buzz trick again keeps the submit from
     // reaching a status poll or output download, so these four calls are the
     // complete sequence — proving the retry attempt is not silently left on
     // the shared 30 s budget.
@@ -745,7 +1389,7 @@ describe("Civitai Klein v2 transport", () => {
 
     expect(preflightAttempts).toBe(2);
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_insufficient_buzz") });
-    expect(timeoutCalls).toEqual([30_000, 120_000, 120_000, 30_000]);
+    expect(timeoutCalls).toEqual([30_000, 120_000, 120_000, 120_000]);
   });
 
   it.each(["fetch", "response text"] as const)("retries a thrown workflow-status %s failure as a bounded read", async (sentinel) => {

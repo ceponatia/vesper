@@ -136,8 +136,14 @@ characters unchanged.
 - A what-if response can be `unassigned`: no rendering has occurred. Its policy,
   model identity, payment evidence, and errors determine whether it admits a paid
   request; it need not claim a completed generation.
-- Preflight and paid submission have distinct top-level `externalId` keys.
-  Reusing one key can return the preflight workflow instead of executing a render.
+- Preflight and paid submission have distinct top-level `externalId` keys. A
+  what-if does not persist and does not claim its key: two what-if requests
+  sent under one fresh key returned two different workflow ids, and `GET
+  /workflows/{id}` on either answered 404 (measured 2026-10-01). Reusing the
+  preflight's key for the paid submission would therefore not retrieve an
+  unexecuted estimate either way; whether reusing an EXISTING PAID workflow's
+  key deduplicates a submission is unmeasured. The paid submission always
+  mints its own fresh key regardless, so the distinction stays theoretical.
 - Permission, payment, malformed-response, unavailable-resource, and blocked-output
   failures remain distinguishable. A generic readiness failure does not prove
   that a checkpoint and LoRA are incompatible.
@@ -156,26 +162,46 @@ characters unchanged.
   matching credit, `cost.total: 0`) and carries no diagnostic detail —
   `errors: []`, no jobs, no reason — so `civitai_async_unknown_terminal` is often
   as specific as the provider permits.
-- Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, and `civitai_output_*` codes,
+- Diagnostics expose only stable `civitai_http_*`, `civitai_async_*`, `civitai_transport_failure`, `civitai_malformed_response`, `civitai_submit_unconfirmed`, and `civitai_output_*` codes,
   plus a retry disposition. HTTP 429/5xx retries are bounded, exponentially
   backed off with jitter, and apply to idempotent metadata or workflow-status
   reads and, up to one retry, the what-if preflight; a paid submission is
-  never repeated automatically.
-- The what-if preflight runs under its own 120 s per-attempt timeout; every
-  other stage keeps a 30 s budget. A transport failure (abort or timeout,
-  network error, an unreadable response body) or an HTTP 429/5xx is POSTed
-  again automatically exactly once, with the identical preflight body and its
-  `externalId`, after the same jittered backoff as a read retry. Any other
-  4xx — including the 400 `resource_not_enabled` — a 200 OK whose body is not
-  JSON, and a failure surfaced only after a 200 OK (insufficient Buzz, a
-  failed or blocked workflow status, an echo refusal) are never retried; a
-  non-2xx with an unparseable body (an HTML gateway page from a 502/503, say)
-  is judged by status like any other response and is retried if that status
-  is 429/5xx too. When the repeat fails the same transient way — another
-  transport failure, or another 429/5xx — the render fails with its stable
-  code, `retry=deliberate`, and a message saying the automatic retry already
-  ran; a repeat that fails a different way (a plain 4xx, or a 409) reports
-  that failure's own disposition instead.
+  never repeated automatically — not by this transport, and not by the scene
+  chain's own retry. Every failure that can surface once a workflow id
+  exists declares a non-automatic disposition (`deliberate`, `never`, or
+  `reconcile`, never `automatic`). The ones Civitai's own error vocabulary
+  describes carry one on their own; a small set of plain identity/shape
+  failures carry none natively — a workflow answering with a different id
+  while polling, a shape a submitted or adopted record fails to parse, the
+  mature/yellow retention check — so the transport appends one fixed
+  sentence naming the workflow id and declaring `retry=reconcile` whenever a
+  workflow id already exists and the failure does not already declare a
+  disposition of its own; a failure that already declares one is left
+  exactly as it is.
+- The what-if preflight and the paid submission share a 120 s per-attempt
+  timeout; every other stage keeps a 30 s budget. The submission carries the
+  same data-URL references the preflight already validated, in the same
+  body shape, so whatever makes a preflight run long can equally make the
+  submission run long.
+
+  The automatic retry described next belongs to the PREFLIGHT alone; the
+  submission still gets none, on this timeout or any other failure — an
+  unreadable submission answer is handled by the read-only lookup described
+  below instead, never by reposting. A transport failure (abort or timeout,
+  network error, an unreadable response body) or an HTTP 429/5xx on the
+  preflight is POSTed again automatically exactly once, with the identical
+  preflight body and its `externalId`, after the same jittered backoff as a
+  read retry. Any other 4xx — including the 400 `resource_not_enabled` — a
+  200 OK whose body is not JSON, and a failure surfaced only after a 200 OK
+  (insufficient Buzz, a failed or blocked workflow status, an echo refusal)
+  are never retried; a non-2xx with an unparseable body (an HTML gateway page
+  from a 502/503, say) is judged by status like any other response and is
+  retried if that status is 429/5xx too. When the repeat fails the same
+  transient way — another transport failure, or another 429/5xx — the
+  render fails with its stable code, `retry=deliberate`, and a message
+  saying the automatic retry already ran; a repeat that fails a different
+  way (a plain 4xx, or a 409) reports that failure's own disposition
+  instead.
 
   Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (checkpoint
   version `3352534`, `model: "2.1"`, `editImage`, one synthetic 768x1024 jpeg
@@ -195,6 +221,73 @@ characters unchanged.
   before any paid submit. The probes do not reproduce the production
   latency, so the 120 s ceiling is headroom over the measured range, not a
   tuned minimum.
+- **A submission whose own answer is unreadable is looked up, never
+  reposted.** Civitai may still have accepted and billed the workflow even
+  though this process could not read the submission's own answer — a
+  transport failure, any HTTP 5xx, or a 2xx body that is not JSON or does
+  not parse into a usable workflow identity and status. The paid POST is
+  never sent again to find out. Instead the workflow list is searched,
+  read-only, for an item whose `externalId` ends with the submission's own
+  key: `GET /v2/consumer/workflows?tags=vesper&fromDate=<the submission's
+  own start time, minus a clock-skew margin of a few minutes>&take=100&hideMatureContent=false`
+  (explicit, since the endpoint defaults it to `true`), following `next` as
+  `cursor` up to a small page cap. Two rounds run — the first after a short
+  settle delay, the second after a longer wait — because
+  the provider may still be registering the workflow at the moment of the
+  first read. A match is parsed and adopted as the submitted workflow, and
+  the ordinary poll, terminal-status, and download path resumes on it
+  unchanged. An HTTP 429 or any other 4xx on the submission already proves
+  Civitai rejected it, so these fail exactly as before, with no lookup.
+  Finding no match after every round, or being unable to read the list at
+  all, both end the render in a stable `civitai_submit_unconfirmed` failure
+  naming the original failure's code and the submission's own externalId —
+  distinguishing "no workflow under this key was found" from "the lookup
+  itself could not be read."
+- **A list response this process cannot interpret counts as unreadable,
+  never as a clean page with no match.** A body that is not an object, or
+  whose `items` is not an array, makes the round that read it unreadable
+  rather than an empty search. `next` absent, `null`, or `""` means the
+  natural end of the list; a non-empty string means another page follows;
+  any other type is unreadable too. Measured 2026-10-01, zero Buzz: the
+  provider's own OpenAPI marks `next` required, but the LAST page omits the
+  key entirely — an absent `next` is the ordinary, expected end of the
+  list, never a malformed response.
+- **No lookup can fence off a workflow that lands later.** A workflow absent
+  from every lookup round can still be created under the same key
+  afterward, so the unconfirmed failure always names the externalId: an
+  operator checks the workflow list for that key before starting one
+  deliberate replacement.
+- **Every failure that can surface once a workflow id exists — from the
+  submission's own answer, or from the lookup's adoption — declares a
+  non-automatic disposition, so it is never retried automatically by this
+  transport or by the scene chain's own same-rung retry.** A scene-chain
+  rerun of that rung would be a second paid submission while the first,
+  already billed, may still finish untracked. The ones Civitai's own error
+  vocabulary describes carry one on their own (`deliberate`, `never`, or
+  `reconcile`, never `automatic`); a handful of plain identity/shape
+  failures — a workflow answering with a different id while polling, a
+  shape a submitted or adopted record fails to parse, the mature/yellow
+  retention check — carry none natively, so the transport appends one
+  fixed sentence naming the workflow id and declaring `retry=reconcile`
+  whenever a workflow id already exists and the failure does not already
+  declare its own disposition; a failure that already declares one is left
+  unchanged, never double-suffixed. This is why an exhausted
+  workflow-status read reports `reconcile` rather than `automatic`, and why
+  `civitai_submit_unconfirmed` is always `deliberate`.
+  The character-chat selfie lane's own retry — which runs outside the scene
+  chain's same-rung guard — honors this same rule and skips its retry on a
+  non-automatic disposition, a content rejection excepted, since that is
+  classified first. A scene chain FALLBACK to its next rung — a different,
+  reduced-reference request to a different model — is unaffected and still
+  runs; only a rerun of the SAME rung is ruled out.
+
+  Measured 2026-10-01 against the live workflow list: a `GET` carrying
+  `tags` and `fromDate` answered in 0.3-0.4 s and returned every persisted
+  workflow under that tag since the given time, each with its full state
+  (id, status, steps, transactions, `allowMatureContent`, `currencies`,
+  `upgradeMode`) and an `externalId` stored as
+  `"<civitaiUserId>-<the client value Vesper sent>"`. A what-if estimate
+  never appeared in this list.
 - A `civitai_http_400` whose RFC7807 `errors.messages[]` says a selected
   resource "is not enabled for generation" also carries
   `reason=resource_not_enabled`: the request was well formed, and Civitai will

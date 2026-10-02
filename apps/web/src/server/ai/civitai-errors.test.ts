@@ -1,17 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { classifyImageFailureMessage } from "@vesper/image-core";
-import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiReasonCodes, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 describe("Civitai error contract", () => {
   it("classifies HTTP failures without provider response text", () => {
+    // `lora_metadata` here, not `workflow_status`: this table is pinning the
+    // STATUS-code mapping in general, and `workflow_status` is the one stage
+    // (#673) whose retryable statuses now override to `reconcile` instead of
+    // `automatic` — covered on its own below, not conflated with this table.
     const failures = [
       [400, "never"], [401, "never"], [402, "never"], [403, "never"], [404, "never"],
       [409, "reconcile"], [429, "automatic"], [503, "automatic"],
     ] as const;
 
     for (const [status, retry] of failures) {
-      expect(civitaiHttpFailure(status, "workflow_status")).toMatchObject({
-        code: `civitai_http_${String(status)}`, retry, stage: "workflow_status", httpStatus: status,
+      expect(civitaiHttpFailure(status, "lora_metadata")).toMatchObject({
+        code: `civitai_http_${String(status)}`, retry, stage: "lora_metadata", httpStatus: status,
       });
     }
     expect(civitaiHttpFailure(503, "submit", false)).toMatchObject({
@@ -20,16 +24,47 @@ describe("Civitai error contract", () => {
   });
 
   it("classifies transport and output boundaries without response text", () => {
-    expect(civitaiTransportFailure("workflow_status", true, true)).toMatchObject({
+    // lora_metadata is a PRE-spend GET: no paid workflow exists yet, so an
+    // exhausted automatic retry here is legitimately transient. (#673:
+    // workflow_status is the post-submit GET, and gets its own test below —
+    // it must never report `automatic`.)
+    expect(civitaiTransportFailure("lora_metadata", true, true)).toMatchObject({
       code: "civitai_transport_failure", retry: "automatic", automaticRetriesExhausted: true,
     });
-    expect(classifyImageFailureMessage(civitaiHttpFailure(503, "workflow_status", true, [], true).message)).toBe("transient");
+    expect(classifyImageFailureMessage(civitaiHttpFailure(503, "lora_metadata", true, [], true).message)).toBe("transient");
     expect(civitaiTransportFailure("submit", false)).toMatchObject({
       code: "civitai_transport_failure", retry: "deliberate",
     });
     expect(civitaiOutputFailure("civitai_output_http_503", "deliberate")).toMatchObject({
       code: "civitai_output_http_503", retry: "deliberate", stage: "output_download",
     });
+  });
+
+  /**
+   * PROTECTS (#673, the "Related double-spend path" issue comment): a
+   * workflow-status read only ever runs after a paid submit already exists,
+   * so an exhausted read here must never report `retry=automatic` — that
+   * disposition, worded "temporarily unavailable", is exactly what let
+   * `classifyImageFailureMessage` call this failure `transient` and let
+   * `executeSceneChain` rerun the rung, submitting a SECOND paid workflow
+   * while the first — already billed — might still finish untracked.
+   * `reconcile` reuses the existing "Refresh workflow status before
+   * deciding whether to replace it." wording instead.
+   */
+  it("reports a post-submit workflow-status failure as reconcile, never automatic, so it never reads as transient", () => {
+    expect(civitaiTransportFailure("workflow_status", true, true)).toMatchObject({
+      code: "civitai_transport_failure", retry: "reconcile",
+    });
+    const http = civitaiHttpFailure(503, "workflow_status", true, [], true);
+    expect(http).toMatchObject({ code: "civitai_http_503", retry: "reconcile" });
+    expect(http.message).toContain("retry=reconcile");
+    expect(http.message).toContain("Refresh workflow status before deciding whether to replace it.");
+    expect(http.message).not.toContain("temporarily");
+    expect(classifyImageFailureMessage(http.message)).toBe("other");
+    expect(classifyImageFailureMessage(civitaiTransportFailure("workflow_status", true, true).message)).toBe("other");
+
+    // A 429, not just a 5xx, must get the same reconcile override.
+    expect(civitaiHttpFailure(429, "workflow_status", true, [], true).retry).toBe("reconcile");
   });
 
   /**
@@ -99,7 +134,10 @@ describe("Civitai error contract", () => {
   });
 
   it("retains only safe RFC7807 validation paths and uses bounded jitter", () => {
-    const failure = civitaiHttpFailure(429, "workflow_status", true, civitaiValidationPaths({
+    // lora_metadata, not workflow_status: this is a pre-submit GET, so the
+    // ordinary `automatic` wording applies — see the dedicated
+    // workflow_status/reconcile tests above and below for #673's override.
+    const failure = civitaiHttpFailure(429, "lora_metadata", true, civitaiValidationPaths({
       title: "secret title", detail: "prompt=private", errors: {
         "steps[0].input.resolution": ["token=secret"], "not a path": ["private"],
       },
@@ -157,5 +195,105 @@ describe("Civitai error contract", () => {
     expect(civitaiValidationReason({ detail: "X is not enabled for generation" })).toBeUndefined();
     expect(civitaiValidationReason(null)).toBeUndefined();
     expect(civitaiHttpFailure(400, "preflight", false).reason).toBeUndefined();
+  });
+
+  /**
+   * PROTECTS (#673): `civitai_submit_unconfirmed` names the ORIGINAL submit
+   * failure's code and the submit's own externalId (never pasted into prose
+   * ad hoc — both are fields on the failure, rendered centrally by
+   * `messageFor`), and distinguishes a lookup that read cleanly and found no
+   * match from a lookup whose reads themselves failed. It is always
+   * `retry=deliberate`: Civitai may still accept or have already accepted
+   * the workflow, so this is never retried automatically.
+   */
+  it("names the original code and externalId on civitai_submit_unconfirmed, and distinguishes not-found from unreadable", () => {
+    const notFound = civitaiSubmitUnconfirmedFailure("civitai_http_504", "99a07779-ef94-43b6-bbc4-bc4ab9005f75", 2, 2);
+    expect(notFound).toMatchObject({ code: "civitai_submit_unconfirmed", retry: "deliberate", stage: "submit" });
+    expect(notFound.message).toContain("civitai_submit_unconfirmed; retry=deliberate");
+    expect(notFound.message).toContain("civitai_http_504");
+    expect(notFound.message).toContain("99a07779-ef94-43b6-bbc4-bc4ab9005f75");
+    expect(notFound.message).toContain("2 lookup rounds");
+    expect(notFound.message).not.toContain("could not be read");
+    expect(notFound.message).not.toContain("that could be read");
+    expect(notFound.message).not.toContain("page cap");
+    expect(notFound.message).toContain("check the workflow list for it before starting one deliberate replacement");
+
+    const unreadable = civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "99a07779-ef94-43b6-bbc4-bc4ab9005f75", 0, 2);
+    expect(unreadable.message).toContain("civitai_transport_failure");
+    expect(unreadable.message).toContain("the lookup itself could not be read");
+    expect(unreadable.message).not.toContain("no workflow in the list carried this externalId");
+
+    expect(civitaiSubmitUnconfirmedFailure("civitai_malformed_response", "x", 1, 1).message).toContain("1 lookup round.");
+  });
+
+  /**
+   * PROTECTS (second correction round, #673): `roundsSearched` counts only
+   * rounds whose own read succeeded, never the configured round count
+   * regardless of whether a round could actually be read, and a round that
+   * hit its page cap without a match is named so the operator does not read
+   * "not found" as "exhaustively searched."
+   */
+  it("qualifies civitai_submit_unconfirmed when the search was incomplete", () => {
+    // One of two configured rounds could be read: "that could be read"
+    // distinguishes this from the fully-searched case above.
+    const partial = civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "ext-id", 1, 2);
+    expect(partial.message).toContain("1 lookup round that could be read");
+    expect(partial.message).not.toContain("could not be read");
+
+    // Both rounds read, but one hit its page cap without a match.
+    const capped = civitaiSubmitUnconfirmedFailure("civitai_http_504", "ext-id", 2, 2, true);
+    expect(capped.message).toContain("2 lookup rounds");
+    expect(capped.message).not.toContain("that could be read");
+    expect(capped.message).toContain("the list was only searched up to its page cap");
+  });
+
+  /**
+   * PROTECTS (#673): every failure `runCivitaiLane` can return once a
+   * workflow id exists — whether from the submit's own answer or by
+   * adoption through the lookup — classifies as NON-transient, so
+   * `executeSceneChain` (`MAX_TRANSIENT_RETRIES = 1`) never reruns the rung
+   * and sends a second paid submit while the first, already billed, may
+   * still finish. Pinned on the EXACT message string each factory actually
+   * produces, per the PR #675 trap: a status-code regex like `\b503\b` does
+   * not match inside a code token like `civitai_http_503`, so eyeballing a
+   * code name is not evidence of its classification.
+   */
+  it("classifies every post-submit failure as non-transient (civitai_submit_unconfirmed included)", () => {
+    const postSubmitFailures = [
+      civitaiSubmitUnconfirmedFailure("civitai_transport_failure", "ext-id", 2, 2).message,
+      civitaiSubmitUnconfirmedFailure("civitai_http_504", "ext-id", 0, 2).message,
+      civitaiHttpFailure(503, "workflow_status", true, [], true).message,
+      civitaiTransportFailure("workflow_status", true, true).message,
+      civitaiAsyncFailure("expired", ["timeout"]).message, // civitai_async_timeout
+      civitaiAsyncFailure("failed", ["no_provider_available"]).message,
+      civitaiAsyncFailure("failed", []).message, // civitai_async_unknown_terminal
+      civitaiOutputFailure("civitai_output_http_503", "deliberate").message,
+      civitaiOutputFailure("civitai_output_transport_failure", "deliberate").message,
+      civitaiInsufficientBuzzFailure().message,
+      // The three plain `Error` messages `runCivitaiLane` throws after a
+      // workflow id exists (apps/web/src/server/ai/civitai-runtime.ts),
+      // copied verbatim rather than imported, so this test does not need the
+      // runtime module and its mocked credentials to pin the exact strings.
+      "Civitai returned a different workflow while polling",
+      "Civitai generation submit returned an invalid workflow identity or status",
+      "Civitai workflow did not retain mature-content permission and yellow-only payment",
+    ];
+    for (const message of postSubmitFailures) {
+      expect(classifyImageFailureMessage(message), message).not.toBe("transient");
+    }
+  });
+
+  /**
+   * PROTECTS: the lora-metadata GET — the only pre-spend read with an
+   * `automatic` disposition — is UNCHANGED by #673 and keeps classifying as
+   * transient: retrying before any Buzz is spent is cheap and was always
+   * the point of the bounded automatic retry. (The preflight's own POST
+   * failures were already `deliberate`, never `automatic`, before #673 —
+   * see "keeps a spent-retry preflight failure non-transient" above — so
+   * they were never a transient case to begin with.)
+   */
+  it("keeps the pre-spend lora-metadata transient failure transient", () => {
+    expect(classifyImageFailureMessage(civitaiHttpFailure(503, "lora_metadata", true, [], true).message)).toBe("transient");
+    expect(classifyImageFailureMessage(civitaiTransportFailure("lora_metadata", true, true).message)).toBe("transient");
   });
 });
