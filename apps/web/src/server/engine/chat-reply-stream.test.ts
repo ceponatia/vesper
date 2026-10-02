@@ -231,7 +231,11 @@ describe("the exchange trace's narrator.stream stage and finish() verdict", () =
     expect(trace.flushCount).toBeGreaterThanOrEqual(1);
   });
 
-  it("records narrator.stream stopped + finish stopped on a player Stop with no text kept", async () => {
+  it("records narrator.stream success/player_stop + finish stopped on a player Stop with no text kept", async () => {
+    // The stage-status vocabulary is closed and has no "stopped" — a genuine
+    // Stop is a clean `success` with `reason: "player_stop"` at the STAGE
+    // level; the exchange-level `finish({kind:"stopped"})` is where "stopped"
+    // actually lives.
     const trace = fakeExchangeTrace();
     const controller = new AbortController();
     const settle = vi.fn(async () => {});
@@ -246,7 +250,8 @@ describe("the exchange trace's narrator.stream stage and finish() verdict", () =
     });
     for await (const token of stream) void token;
     expect(settle).not.toHaveBeenCalled();
-    expect(trace.stageEnds[0]?.result?.status).toBe("stopped");
+    expect(trace.stageEnds[0]?.result?.status).toBe("success");
+    expect(trace.stageEnds[0]?.result?.reason).toBe("player_stop");
     expect(trace.finishes).toEqual([{ kind: "stopped" }]);
   });
 

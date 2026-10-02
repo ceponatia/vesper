@@ -486,7 +486,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     /** Did the primary's state load degrade (#637 `actor_state` coverage)? */
     let actorStateDegraded = false;
     if (regenerateTarget) {
-      const restored = await exchangeTrace.time("state.rollback", "admission", () => restoreOrDegrade(characterId));
+      const restored = await exchangeTrace.time("state.rollback", "prepare", () => restoreOrDegrade(characterId));
       storedState = restored.state;
       actorStateDegraded = restored.degraded;
       await reconcileMessageMemory(regenerateTarget.id, sink);
@@ -495,7 +495,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       // rejected before mutation because this one-exchange anchor cannot restore them.
       // (A failed-reply rerun — no successors — skips the restore entirely: that
       // exchange never settled, so the live state IS the correct starting point.)
-      const restored = await exchangeTrace.time("state.rollback", "admission", () => restoreOrDegrade(characterId));
+      const restored = await exchangeTrace.time("state.rollback", "prepare", () => restoreOrDegrade(characterId));
       storedState = restored.state;
       actorStateDegraded = restored.degraded;
       // Retract the extracted memory of every assistant reply this rerun deleted,
@@ -509,12 +509,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // never settled, so live state is already the right starting point.
         exchangeTrace.record({
           stage: "state.rollback",
-          phase: "admission",
+          phase: "prepare",
           status: "skipped",
           reason: "policy:zero_successor_rerun",
         });
       }
-      storedState = await exchangeTrace.time("state.load", "admission", () => loadChatState(chatId, characterId, sink));
+      storedState = await exchangeTrace.time("state.load", "prepare", () => loadChatState(chatId, characterId, sink));
     }
     // `actor_state` coverage (#637): a fresh chat's null row seeds defaults —
     // that is a legitimately EMPTY state, never missing; a degraded rollback
@@ -646,7 +646,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // Meters catch up by the story minutes elapsed since they were stamped; the
     // feeling takes its separate per-exchange beat.
-    let driftedState = await exchangeTrace.time("state.drift", "admission", async () =>
+    let driftedState = await exchangeTrace.time("state.drift", "prepare", async () =>
       decayExchangeFeeling(
         driftChatState(
           await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
@@ -707,7 +707,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     );
     const history = await exchangeTrace.time(
       "history.window",
-      "admission",
+      "prepare",
       () => loadVerbatimWindow(chatId, summaryState?.watermark ?? null, sink),
       (h) => ({ count: h.length }),
     );
@@ -723,7 +723,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       void enqueueChatSummary({ chatId });
       // Fire-and-forget (#637): records that the job was ENQUEUED, not that it
       // ran — the same honesty the call site itself already has (`void`).
-      exchangeTrace.record({ stage: "jobs.summary_enqueue", phase: "admission", status: "success" });
+      exchangeTrace.record({ stage: "jobs.summary_enqueue", phase: "prepare", status: "success" });
     }
 
     // What the post-turn agents read as the player's turn: the message plus a
@@ -750,7 +750,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     const others = ensembleActive
       ? await exchangeTrace.time(
           "ensemble.load",
-          "admission",
+          "prepare",
           () =>
             Promise.all(
               (input.roster ?? [])
@@ -1157,7 +1157,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         ...(stopped ? { stopped: true } : {}),
         traceId: exchangeTrace.traceId,
       });
-      const replyPersistStage = exchangeTrace.begin("reply.persist", "narrator");
+      const replyPersistStage = exchangeTrace.begin("reply.persist", "settle");
       if (regenerateTarget) {
         // Update the row in place: the old take stays browsable, the new one is
         // active. Row-existence is the guard — a delete landing

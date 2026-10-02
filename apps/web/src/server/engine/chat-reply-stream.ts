@@ -187,17 +187,35 @@ export function streamExchange(
       const failure = resolveReplyFailure({ hasText, stopped, streamError, timedOut, completion: narrator });
       // The trace's own verdict (#637), derived from the exact same evidence
       // `resolveReplyFailure` just read — never a second, possibly-divergent
-      // classification. A genuine player Stop (or a watchdog trip that kept no
-      // text) ends the stage `stopped`; any other failure ends it `failed` with
-      // the failure's own stable code; otherwise the stream ran to a clean
-      // `success` — upgraded to `retried` when the narrator itself spent more
-      // than one attempt (the hidden silent-stop retry), so a retry is visible
-      // without inventing a status the contract does not have.
-      const streamStatus: "success" | "stopped" | "failed" | "retried" =
-        failure !== null ? "failed" : stopped ? "stopped" : narrator && narrator.attempts > 1 ? "retried" : "success";
+      // classification. The stage-status vocabulary is CLOSED (success |
+      // degraded | failed | skipped | retried | blocked — no "stopped"), so a
+      // player Stop or a watchdog trip cannot end the stage `stopped`: that
+      // outcome rides `finish({kind:"stopped"})` below instead, unchanged.
+      // Here: any failure ends the stage `failed` with the failure's own
+      // stable code; a watchdog trip that still kept text (failure === null,
+      // `timedOut` set — the only way `resolveReplyFailure` can return null
+      // WITH a timeout is when text was kept) is `degraded`, since the
+      // generation did not run to its own end; a genuine player Stop is a
+      // clean `success` (the stream behaved exactly as asked) with a reason
+      // naming why; otherwise `success` — upgraded to `retried` when the
+      // narrator itself spent more than one attempt (the hidden silent-stop
+      // retry), so a retry is visible without inventing a status the
+      // contract does not have.
+      const streamStatus: "success" | "degraded" | "failed" | "retried" =
+        failure !== null
+          ? "failed"
+          : timedOut !== null
+            ? "degraded"
+            : stopped
+              ? "success"
+              : narrator && narrator.attempts > 1
+                ? "retried"
+                : "success";
+      const streamReason: string | undefined =
+        failure !== null ? failure.code : timedOut !== null ? "watchdog_timeout" : stopped ? "player_stop" : undefined;
       streamStage.end({
         status: streamStatus,
-        ...(failure === null ? {} : { reason: failure.code }),
+        ...(streamReason === undefined ? {} : { reason: streamReason }),
         ...(narrator === null ? {} : { attempt: narrator.attempts }),
         ...(narrator === null ? (modelId ? { model: { modelId } } : {}) : { model: { modelId: narrator.modelId, provider: narrator.provider } }),
         outputChars: full.length,
