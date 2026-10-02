@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { resolveImageLoraArtifactLocator, type RenderAdvisory } from "@vesper/image-core";
+import { resolveImageLoraArtifactLocator, type RenderAdvisory, type ResolvedImageAttempt } from "@vesper/image-core";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import { and, eq, inArray } from "drizzle-orm";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
@@ -3009,8 +3009,10 @@ describe.skipIf(!ready)("image generator over the seeded Civitai Qwen Image 2.1 
 const RECOVERY_BLOB_ID = "civitai-blob-generator-recovery";
 const RECOVERY_UNDELIVERED_ERROR = "Civitai output download failed (civitai_output_undelivered; retry=reconcile)";
 
-/** The loose attempt record one Civitai pass of the recovery suite's fixture run carries. */
-function civitaiRecoveryAttempt(patch: Record<string, unknown>): Record<string, unknown> {
+/** The attempt record one Civitai pass of the recovery suite's fixture run carries. */
+function civitaiRecoveryAttempt(
+  patch: Pick<ResolvedImageAttempt, "predictionId"> & Pick<Partial<ResolvedImageAttempt>, "undeliveredOutputId">,
+): ResolvedImageAttempt {
   return {
     shape: null,
     modelId: CIVITAI_QWEN21_ID,

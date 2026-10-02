@@ -21,7 +21,9 @@ function scene(
     id,
     kind: "scene",
     status,
-    anchorMessageId: opts.anchorMessageId ?? "msg-1",
+    // `undefined` means "use the default anchor"; an explicit `null` is a
+    // scene with no anchor message, which `??` would wrongly replace.
+    anchorMessageId: opts.anchorMessageId === undefined ? "msg-1" : opts.anchorMessageId,
     recoverable: opts.recoverable ?? false,
     ...(opts.selfie ? { meta: { flavor: "selfie" } } : {}),
   });

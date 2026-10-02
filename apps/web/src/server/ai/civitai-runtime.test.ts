@@ -638,7 +638,7 @@ describe("Civitai Klein v2 transport", () => {
     if (result.ok) throw new Error("expected the local poll deadline to end the render");
     expect(result.predictionId).toBe("submit-slow");
     expect(result.error).toContain("Civitai workflow status failed (civitai_async_timeout; retry=reconcile)");
-    expect(declaresSpentProviderWork(result.error)).toBe(true);
+    expect(declaresSpentProviderWork(result.error ?? "")).toBe(true);
   });
 
   it("keeps a timeout Civitai itself reports as the deliberate terminal expiry", async () => {
@@ -657,7 +657,7 @@ describe("Civitai Klein v2 transport", () => {
     if (result.ok) throw new Error("expected the provider's expiry to fail the render");
     expect(result.predictionId).toBe("submit-expired");
     expect(result.error).toContain("Civitai workflow terminal failed (civitai_async_timeout; retry=deliberate)");
-    expect(declaresSpentProviderWork(result.error)).toBe(false);
+    expect(declaresSpentProviderWork(result.error ?? "")).toBe(false);
   });
 
   it("retries a transient preflight exactly once, then still posts the paid submission only once", async () => {
