@@ -328,10 +328,16 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "return { > ctx: { :: instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/dialogue.ts": [
-    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
+    // The render call now runs inside the exchange trace's `sim.narrator` stage
+    // (`exchangeTrace.time(…, () => renderCommittedCut({…}))`); the source still
+    // reaches only the narrator render, and the trace wrapper reads none of it.
+    "renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/retake.ts": [
-    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
+    // The render call now runs inside the exchange trace's `sim.narrator` stage
+    // (`exchangeTrace.time(…, () => renderCommittedCut({…}))`); the source still
+    // reaches only the narrator render, and the trace wrapper reads none of it.
+    "renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/solo.ts": [
     "const narratorRun = buildNarratorRunProvenance( :: source: ctx.instructionSource,",
