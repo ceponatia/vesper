@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { characterChats, characters, db, images, items, jobs, locations } from "@/server/db";
 import { resetRateLimits } from "@/server/api";
-import { saveImageBuffer, type ImageRow } from "@/server/images";
+import { saveOwnedImageBuffer, type ImageRow } from "@/server/images";
 
 // Demo-mode route-handler integration suite (docs/testing.md §api): handlers
 // invoked directly with mocked auth against DATABASE_URL. Self-skips when the
@@ -445,7 +445,7 @@ describe.skipIf(!ready)("entity visibility", () => {
         .values(canonicalImageRow({ ownerId: owner.id, entityKind: "character" as const, entityId: charId, ...values }))
         .returning({ id: images.id });
       if (!row) throw new Error("failed to insert image");
-      const saved = await saveImageBuffer(row.id, await testPngBuffer());
+      const saved = await saveOwnedImageBuffer(row.id, owner.id, await testPngBuffer());
       if (saved?.status !== "ready") throw new Error("failed to store image bytes");
       return row.id;
     };
