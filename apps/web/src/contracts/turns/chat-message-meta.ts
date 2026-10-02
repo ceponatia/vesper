@@ -397,6 +397,8 @@ export function userLineMeta(input: {
   attachmentDescriptions?: readonly string[];
   inputMode?: ChatMessageInputMode;
   simTurn?: boolean;
+  /** The exchange trace that admitted this line (#637); an empty id (no trace) writes nothing. */
+  traceId?: string;
 }): ChatMessageMeta {
   const ids = input.attachmentIds ?? [];
   return compact({
@@ -414,6 +416,7 @@ export function userLineMeta(input: {
     // register is worth a durable key.
     ...(input.inputMode === "narrator" ? { inputMode: "narrator" as const } : {}),
     ...(input.simTurn ? { simTurn: true } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   });
 }
 
@@ -422,11 +425,14 @@ export function assistantReplyMeta(input: {
   actionBeat?: ChatActionId | null;
   narratorRun?: NarratorRunProvenance;
   stopped?: boolean;
+  /** The exchange trace that generated this take (#637); an empty id (no trace) writes nothing. */
+  traceId?: string;
 }): ChatMessageMeta {
   return compact({
     ...(input.actionBeat ? { actionBeat: input.actionBeat } : {}),
     ...(input.narratorRun === undefined ? {} : { narratorRun: input.narratorRun }),
     ...(input.stopped ? { stopped: true } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   });
 }
 
@@ -441,9 +447,12 @@ export function successorReplyMeta(input: {
   narratorRun?: NarratorRunProvenance;
   compositionFallbacks?: readonly CompositionFallbackCode[] | readonly string[];
   renderDiagnostics?: readonly string[];
+  /** The exchange trace that generated this reply (#637); an empty id (no trace) writes nothing. */
+  traceId?: string;
 }): ChatMessageMeta {
   return compact({
     simTurn: true,
+    ...(input.traceId ? { traceId: input.traceId } : {}),
     ...(input.cutId === undefined || input.cutId === "" ? {} : { cutId: input.cutId }),
     ...(input.modelId === undefined ? {} : { modelId: input.modelId }),
     ...(input.attempts === undefined ? {} : { attempts: input.attempts }),
