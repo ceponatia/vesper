@@ -398,15 +398,20 @@ export function claimReferenceViewLeases(input: {
   });
 }
 
-/** Whether one slot currently belongs to a heartbeat-live build. */
+/**
+ * Whether one slot currently belongs to a heartbeat-live lease — a build's, or
+ * a recovery's claim (`claimReferenceViewRecovery`). `excludeJobId` leaves out
+ * the caller's own lease, so a recovery's commit does not find itself busy.
+ */
 export async function referenceViewSlotBusy(
   characterId: string,
   ownerId: string,
   view: ReferenceView,
   executor: ReferenceViewExecutor = db(),
   now: Date = new Date(),
+  excludeJobId?: string,
 ): Promise<boolean> {
-  const live = await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId);
+  const live = await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId, excludeJobId);
   return live.some((job) => payloadLeases(job.payload).some((lease) => slotKey(lease) === slotKey(view)));
 }
 
@@ -425,8 +430,9 @@ async function buildingReferenceViewSlots(
   characterId: string,
   ownerId: string,
   now: Date = new Date(),
+  excludeJobId?: string,
 ): Promise<ReferenceView[]> {
-  const leased = leasedSlots(await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId));
+  const leased = leasedSlots(await liveReferenceViewLeaseJobs(executor, characterId, now, ownerId, excludeJobId));
   return [...leased, ...(await pendingReferenceViewSlots(executor, characterId))];
 }
 
@@ -470,6 +476,7 @@ export async function referenceViewBuildLive(
  * building (`referenceViewDescendantBusy`). Replacing the upstream mid-render
  * would let those renders land stale, paid for and offered by Build again, so
  * an upload, a restoration and a regeneration of the slot all answer `busy`.
+ * `excludeJobId` leaves out the caller's own lease (`referenceViewSlotBusy`).
  */
 export async function referenceViewReplacementBusy(
   characterId: string,
@@ -477,9 +484,10 @@ export async function referenceViewReplacementBusy(
   view: ReferenceView,
   executor: ReferenceViewExecutor = db(),
   now: Date = new Date(),
+  excludeJobId?: string,
 ): Promise<boolean> {
-  if (await referenceViewSlotBusy(characterId, ownerId, view, executor, now)) return true;
-  return referenceViewDescendantBusy(view, await buildingReferenceViewSlots(executor, characterId, ownerId, now));
+  if (await referenceViewSlotBusy(characterId, ownerId, view, executor, now, excludeJobId)) return true;
+  return referenceViewDescendantBusy(view, await buildingReferenceViewSlots(executor, characterId, ownerId, now, excludeJobId));
 }
 
 /** Shared with the sweep; restoration eligibility expires even before a delayed sweep runs. */
@@ -1698,8 +1706,12 @@ export type ReferenceViewRecoveryRead =
  * ones the attempt was rendered from.
  *
  * An offer that exists but no longer fits the sheet is `incompatible`; an offer
- * the provider has shown is gone is `expired`; no offer at all is
- * `unavailable`. The commit re-checks all of it under the character lock.
+ * the provider has shown is gone is `expired`, and so is a link retention has
+ * already nulled — the commit's answer for the same condition, and only a stale
+ * tab can ask, since recovery is offered only on a linked row. A link this
+ * owner-, kind- and entity-scoped read cannot resolve, or a failure with no
+ * paid output, is `unavailable`. The commit re-checks all of it under the
+ * character lock.
  */
 export async function readReferenceViewRecovery(input: {
   characterId: string;
@@ -1724,12 +1736,13 @@ export async function readReferenceViewRecovery(input: {
     return refuse("changed");
   }
   if (await referenceViewReplacementBusy(characterId, ownerId, view)) return refuse("busy");
-  const [asset] = attempt.imageId === null
-    ? []
-    : await db().select().from(images).where(and(
-        eq(images.id, attempt.imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
-        eq(images.entityKind, "character"), eq(images.entityId, characterId),
-      )).limit(1);
+  // Retention deleted the failed render's row and the foreign key nulled the
+  // link: the window has closed, exactly as the commit finds it.
+  if (attempt.imageId === null) return refuse("expired");
+  const [asset] = await db().select().from(images).where(and(
+    eq(images.id, attempt.imageId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view"),
+    eq(images.entityKind, "character"), eq(images.entityId, characterId),
+  )).limit(1);
   if (asset === undefined) return refuse("unavailable");
   const offer = referenceViewOutputOffer(asset);
   if (offer.state === "withdrawn") return refuse("expired");
@@ -1763,11 +1776,139 @@ export async function withdrawReferenceViewOutputOffer(imageId: string, ownerId:
   return stamped.length > 0;
 }
 
+/**
+ * A recovery's claim on its slot, or why it could not take one.
+ *
+ * A recovery downloads for as long as the provider is slow — minutes, at the
+ * worst moment — and the browser tab that asked is no guard on what another
+ * tab, a reload or another process does meanwhile. So for its whole run a
+ * recovery holds the slot exactly as a build does: a heartbeat-live
+ * `reference_views` job whose payload leases the slot, with the lease's
+ * attempt set to the failed attempt being recovered. Every lease reader sees
+ * it — `claimReferenceViewLeases` (single and batch regenerate),
+ * `referenceViewSlotBusy`, `referenceViewReplacementBusy` (upload,
+ * restoration, another recovery) and the sheet's `building` — and answers
+ * `busy`. It lives as long as its process beats it (`JOB_HEARTBEAT_INTERVAL_MS`)
+ * whatever happens to the client, and it lapses within `JOB_STALE_MS` of the
+ * process dying, which leaves the failed attempt and its offer exactly as they
+ * were. The leased row is `failed`, never `pending`, so lease reconciliation
+ * and the build's own finalize and fail fencing never act on it.
+ */
+export type ReferenceViewRecoveryClaim =
+  | { readonly ok: true; readonly jobId: string }
+  | { readonly ok: false; readonly refusal: "changed" | "busy" | "unavailable" };
+
+/**
+ * Take the slot for one recovery, under the character lock: the slot's current
+ * row must still be this failed attempt (`changed` otherwise), and nothing may
+ * be building on the slot or below it (`busy`) — the pre-read's checks, made
+ * again where they cannot race. The claim is free: no admission and no budget,
+ * and it is not counted in through the per-user job cap, though while it is
+ * live it is in-flight work for the cap's own count.
+ */
+export async function claimReferenceViewRecovery(input: {
+  characterId: string;
+  ownerId: string;
+  view: ReferenceView;
+  attemptId: string;
+}): Promise<ReferenceViewRecoveryClaim> {
+  const { characterId, ownerId, view } = input;
+  return withReferenceViewLock<ReferenceViewRecoveryClaim>(characterId, async (tx) => {
+    const current = await currentReferenceViewRow(characterId, view, tx);
+    if (current === undefined || current.id !== input.attemptId || current.status !== "failed") {
+      return { ok: false, refusal: "changed" };
+    }
+    if (await referenceViewReplacementBusy(characterId, ownerId, view, tx)) return { ok: false, refusal: "busy" };
+    const now = new Date();
+    const [job] = await tx
+      .insert(jobs)
+      .values({
+        ownerId,
+        type: "reference_views",
+        status: "running",
+        attempts: 1,
+        startedAt: now,
+        heartbeatAt: now,
+        payload: {
+          characterId,
+          targets: [slotKey(view)],
+          leases: [{ angle: view.angle, wardrobe: view.wardrobe, attemptId: input.attemptId }],
+          // The character media-jobs read lists this attempt, with its image
+          // once the recovery has installed one.
+          referenceViewAttemptIds: [input.attemptId],
+          recovery: true,
+        },
+      })
+      .returning({ id: jobs.id });
+    return job === undefined ? { ok: false, refusal: "unavailable" } : { ok: true, jobId: job.id };
+  });
+}
+
+/** One heartbeat on a recovery's claim, while and only while it is still running. Never throws. */
+export async function beatReferenceViewRecoveryClaim(jobId: string, at: Date = new Date()): Promise<boolean> {
+  try {
+    const beat = await db()
+      .update(jobs)
+      .set({ heartbeatAt: at })
+      .where(and(eq(jobs.id, jobId), eq(jobs.type, "reference_views"), eq(jobs.status, "running")))
+      .returning({ id: jobs.id });
+    return beat.length > 0;
+  } catch {
+    // Heartbeats are best-effort: a claim the database stops taking lapses
+    // within JOB_STALE_MS, as it would had the process died.
+    return false;
+  }
+}
+
+/**
+ * How a recovery's claim settles. A recovery that ended in a refusal settles
+ * `done` with nothing built and the refusal's diagnostic code, the way a build
+ * that rendered nothing settles; one that threw settles `failed` with its text.
+ */
+export type ReferenceViewRecoveryClaimSettlement =
+  | { readonly recovered: true }
+  | { readonly recovered: false; readonly code: string | null; readonly error: string | null };
+
+/** Settle a claim on the caller's connection: its lease goes, and the job reads as finished. */
+async function settleRecoveryClaim(
+  executor: ReferenceViewExecutor,
+  jobId: string,
+  settlement: ReferenceViewRecoveryClaimSettlement,
+): Promise<void> {
+  const outcome = settlement.recovered
+    ? { leases: [], planned: 1, built: 1, failed: 0 }
+    : { leases: [], planned: 1, built: 0, failed: 1, ...(settlement.code === null ? {} : { code: settlement.code }) };
+  const error = settlement.recovered ? null : settlement.error;
+  await executor
+    .update(jobs)
+    .set({
+      status: error === null ? "done" : "failed",
+      finishedAt: new Date(),
+      payload: sql`${jobs.payload} || ${JSON.stringify(outcome)}::jsonb`,
+      ...(error === null ? {} : { error: error.slice(0, 500) }),
+    })
+    .where(and(eq(jobs.id, jobId), eq(jobs.type, "reference_views"), eq(jobs.status, "running")));
+}
+
+/**
+ * Release a recovery's claim after any end but an installed one — the install
+ * releases its own claim in the transaction that installs. Guarded on a claim
+ * still running, so releasing twice changes nothing.
+ */
+export async function releaseReferenceViewRecoveryClaim(
+  jobId: string,
+  settlement: ReferenceViewRecoveryClaimSettlement,
+): Promise<void> {
+  await settleRecoveryClaim(db(), jobId, settlement);
+}
+
 export interface InstallRecoveredReferenceViewInput {
   characterId: string;
   ownerId: string;
   view: ReferenceView;
   attemptId: string;
+  /** The recovery's own claim on the slot (`claimReferenceViewRecovery`), which must still be live. */
+  claimJobId: string;
   /** The failed render's row the output was fetched for — the offer the attempt must still link. */
   failedImageId: string;
   /** The pending copy holding the recovered bytes. */
@@ -1785,11 +1926,17 @@ export interface InstallRecoveredReferenceViewInput {
  *
  * Every pre-read check is made again here: the owner, the accepted portrait's
  * id and bytes, the plan, the current attempt still this one and still failed,
- * nothing building on the slot or below it, the generation version, the
- * upstream slot's approved lineage, the body-image set, and the failed render's
- * row still linked. A link that is gone means retention deleted that row and
- * the foreign key nulled it: the window closed while the bytes were in flight,
- * so the answer is `expired`.
+ * the recovery's own claim still live, nothing else building on the slot or
+ * below it, the generation version, the upstream slot's approved lineage, the
+ * body-image set, and the failed render's row still linked. A link that is
+ * gone means retention deleted that row and the foreign key nulled it: the
+ * window closed while the bytes were in flight, so the answer is `expired`. A
+ * claim that lapsed means other writers may already have been admitted to the
+ * slot, so nothing is installed and the offer stands (`unavailable`).
+ *
+ * The claim is released in the same transaction that installs, so the slot
+ * never reads free with the failed attempt still current. A refusal leaves the
+ * claim to the caller, which releases it after every other end.
  *
  * The review revision moves on, because the attempt now shows an image a
  * viewer of the failed tile never saw; a verdict sent against the failure is
@@ -1806,7 +1953,12 @@ export async function installRecoveredReferenceView(input: InstallRecoveredRefer
     if (!planIncludes(character.plan, view)) return { status: "ineligible" };
     const current = await currentReferenceViewRow(characterId, view, tx);
     if (current === undefined || current.id !== input.attemptId || current.status !== "failed") return { status: "changed" };
-    if (await referenceViewReplacementBusy(characterId, ownerId, view, tx)) return { status: "busy" };
+    const now = new Date();
+    const claim = await lockLiveReferenceViewLeaseJob(tx, { characterId, ownerId, jobId: input.claimJobId }, now);
+    const claimed = claim !== null && payloadLeases(claim.payload).some((lease) =>
+      slotKey(lease) === slotKey(view) && lease.attemptId === input.attemptId);
+    if (!claimed) return { status: "unavailable" };
+    if (await referenceViewReplacementBusy(characterId, ownerId, view, tx, now, input.claimJobId)) return { status: "busy" };
     if (current.sourceImageId !== source.imageId || current.sourceContentHash !== source.contentHash ||
         current.generationVersion !== REFERENCE_VIEW_GENERATION_VERSION ||
         referenceViewBodySetMoved({
@@ -1855,6 +2007,7 @@ export async function installRecoveredReferenceView(input: InstallRecoveredRefer
         ),
       })
       .where(and(eq(images.id, input.copyId), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
+    await settleRecoveryClaim(tx, input.claimJobId, { recovered: true });
     return { status: "recovered", view: await slotSummaryInTransaction(tx, characterId, ownerId, view) };
   });
 }

@@ -177,6 +177,7 @@ export {
   recoverReferenceView,
   REFERENCE_VIEW_OUTPUT_EXPIRED,
   REFERENCE_VIEW_OUTPUT_RECOVERED,
+  REFERENCE_VIEW_OUTPUT_UNAVAILABLE,
 } from "./reference-view-recovery";
 export {
   loadConsumableReferenceView,

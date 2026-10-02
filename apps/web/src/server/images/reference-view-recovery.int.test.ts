@@ -1,14 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { NextRequest } from "next/server";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { CIVITAI_QWEN_IMAGE_21_SLUG } from "@vesper/image-models";
 import {
   emptyCharacterProfile,
   referenceViewUpstream,
   VISUAL_IMAGE_AGE_ATTRIBUTE_ID,
   type ReferenceView,
+  type ReferenceViewQueueOutcome,
 } from "@/contracts";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { expectDiagnostic } from "@/test/diagnostics";
@@ -21,17 +23,24 @@ import { expectDiagnostic } from "@/test/diagnostics";
  * view's row stays `failed` but keeps that render's own `images` row so the
  * paid output can be fetched again with no new workflow. Each case here kills
  * one way that promise would break under the real character lock, the real
- * `images` foreign key, and real files on disk — none of it provable against
- * a mocked store:
+ * `images` foreign key, the real lease readers, and real files on disk — none
+ * of it provable against a mocked store:
  *
  * - a failed row's link leaking into the sheet, the consumable-view seam, the
  *   history list, or a bulk Build that would pay for the same render again;
- * - two concurrent recoveries both installing, rather than the lock settling
- *   exactly one and compensating the loser's orphan copy;
+ * - a recovery guarded only by the tab that started it: while it downloads,
+ *   another tab's regenerate (paid), upload or restore replaces the slot, so
+ *   the paid output is thrown away or the queued render overwrites it;
+ * - a recovery's claim on its slot that outlives the run (the slot stays busy
+ *   after an install or a refusal), or that never lapses when its process
+ *   dies, or that takes the offer with it when it does;
+ * - two concurrent recoveries both downloading or both installing, rather
+ *   than the claim admitting one;
  * - a copy from a refused install (the sheet moved, the linked row vanished
  *   under retention) surviving on disk instead of being deleted;
- * - a withdrawn or still-standing offer read wrong, so a gone-for-good output
- *   keeps getting retried, or a merely slow one stops being offered.
+ * - a withdrawn or still-standing offer read wrong — fetched bytes that can
+ *   never be decoded, or a link retention already nulled, offered forever, or
+ *   a merely slow output withdrawn.
  *
  * The transport's read-only fetch of a paid output is the one collaborator
  * replaced here: it is another lane's network call, and these claims are about
@@ -43,14 +52,31 @@ vi.mock("../ai", async (importOriginal) => {
 });
 
 import { recoverCivitaiOutput } from "../ai";
-import { characterReferenceViews, characters, db, images, jobs, usageCounters } from "@/server/db";
-import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser, testPngBuffer, withTempDataRoot, type TempDataRoot } from "@/server/test-support";
+import { regenerateReferenceViews } from "../../app/api/characters/[id]/reference-views/shared";
+import { characterReferenceViews, characters, db, images, jobs, JOB_STALE_MS, usageCounters } from "@/server/db";
+import {
+  endTestPool,
+  expectJson,
+  probeIntegrationDb,
+  purgeOwnerRows,
+  seedTestUser,
+  testPngBuffer,
+  withTempDataRoot,
+  type TempDataRoot,
+} from "@/server/test-support";
 import { createImageAsset, failImage, imageMeta, mergeMetaSql, readImageBytes, saveImageBuffer } from "./asset-storage";
+import { listCharacterMediaJobs } from "./character-media-jobs";
 import { imagesDirectoryPath } from "./paths";
 import { loadConsumableReferenceView } from "./reference-view-consume";
-import { recoverReferenceView, REFERENCE_VIEW_OUTPUT_EXPIRED, REFERENCE_VIEW_OUTPUT_RECOVERED } from "./reference-view-recovery";
+import {
+  recoverReferenceView,
+  REFERENCE_VIEW_OUTPUT_EXPIRED,
+  REFERENCE_VIEW_OUTPUT_RECOVERED,
+  REFERENCE_VIEW_OUTPUT_UNAVAILABLE,
+} from "./reference-view-recovery";
 import {
   claimReferenceViewLeases,
+  claimReferenceViewRecovery,
   failReferenceView,
   finalizeReferenceView,
   getReferenceViewSet,
@@ -59,18 +85,22 @@ import {
   readAcceptedPortraitSource,
   REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY,
   referenceViewHistoryEntries,
+  referenceViewSlotBusy,
   referenceViewsToRebuild,
   reserveReferenceView,
+  restoreReferenceView,
   reviewReferenceView,
 } from "./reference-view-store";
+import { uploadReferenceView } from "./reference-view-upload";
 
 // These claims depend on the character lock, stored rows, the images foreign
-// key, and the file the one webp writer leaves on disk.
+// key, the lease readers, and the file the one webp writer leaves on disk.
 const ready = await probeIntegrationDb("reference-view-recovery.int.test", "character_reference_views");
 const mockRecover = vi.mocked(recoverCivitaiOutput);
 
 const FRONT: ReferenceView = { angle: "front_full", wardrobe: "clothed" };
 const BACK: ReferenceView = { angle: "back_full", wardrobe: "clothed" };
+const LEFT: ReferenceView = { angle: "side_left", wardrobe: "clothed" };
 const FRONT_BARE: ReferenceView = { angle: "front_full", wardrobe: "bare" };
 const WORKFLOW_ID = "civitai-workflow-recovery";
 const BLOB_ID = "civitai-blob-recovery";
@@ -130,9 +160,15 @@ async function storedImage(characterId: string, kind: "avatar" | "reference_view
  * job's lease, a reserved attempt, the render's own row failed with the
  * workflow and blob it never delivered, and the attempt failed with that row
  * linked — the build lane's own sequence. A slot with an upstream view gets
- * that view built and approved first, so the attempt records it.
+ * that view built and approved first, so the attempt records it; with
+ * `priorReady`, the slot first gets a ready attempt the failed one supersedes,
+ * so there is a retained version to restore.
  */
-async function failedRender(slot: ReferenceView, render: Record<string, unknown> = undeliveredRender()) {
+async function failedRender(
+  slot: ReferenceView,
+  render: Record<string, unknown> = undeliveredRender(),
+  options: { priorReady?: boolean } = {},
+) {
   const [character] = await db().insert(characters).values({
     ownerId,
     name: "Reference recovery fixture",
@@ -163,20 +199,25 @@ async function failedRender(slot: ReferenceView, render: Record<string, unknown>
     return { jobId: job.id, attemptId };
   };
   const settle = (jobId: string) => db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, jobId));
+  const renderReady = async (target: ReferenceView, upstreamViewId: string | null) => {
+    const built = await leaseAndReserve(target, upstreamViewId);
+    const asset = await storedImage(characterId, "reference_view");
+    await finalizeReferenceView({ jobId: built.jobId, viewId: built.attemptId, characterId, ownerId, imageId: asset.id, method: "rendered" });
+    await settle(built.jobId);
+    return built.attemptId;
+  };
 
   let upstreamViewId: string | null = null;
   const upstream = referenceViewUpstream(slot);
   if (upstream !== null) {
-    const built = await leaseAndReserve(upstream, null);
-    const asset = await storedImage(characterId, "reference_view");
-    await finalizeReferenceView({ jobId: built.jobId, viewId: built.attemptId, characterId, ownerId, imageId: asset.id, method: "rendered" });
-    await settle(built.jobId);
+    const built = await renderReady(upstream, null);
     const approval = await reviewReferenceView({
-      characterId, ownerId, view: upstream, attemptId: built.attemptId, expectedRevision: 0, verdict: "approve",
+      characterId, ownerId, view: upstream, attemptId: built, expectedRevision: 0, verdict: "approve",
     });
     if (approval.status !== "reviewed") throw new Error("the recovery upstream was not approved");
-    upstreamViewId = built.attemptId;
+    upstreamViewId = built;
   }
+  const priorAttemptId = options.priorReady === true ? await renderReady(slot, upstreamViewId) : null;
 
   const attempt = await leaseAndReserve(slot, upstreamViewId);
   const renderRow = await createImageAsset({
@@ -196,6 +237,7 @@ async function failedRender(slot: ReferenceView, render: Record<string, unknown>
     attemptId: attempt.attemptId,
     failedImageId: renderRow.id,
     upstreamViewId,
+    priorAttemptId,
     request: { characterId, ownerId, view: slot, attemptId: attempt.attemptId },
   };
 }
@@ -216,6 +258,28 @@ async function referenceViewAssets(characterId: string): Promise<string[]> {
     eq(images.entityId, characterId), eq(images.kind, "reference_view"),
   ));
   return rows.map((row) => row.id).sort();
+}
+
+/** Every recovery claim ever taken on this character's slots, oldest first. */
+async function recoveryClaims(characterId: string) {
+  return db().select().from(jobs).where(and(
+    eq(jobs.ownerId, ownerId),
+    eq(jobs.type, "reference_views"),
+    sql`${jobs.payload} ->> 'characterId' = ${characterId}`,
+    sql`${jobs.payload} ->> 'recovery' = 'true'`,
+  )).orderBy(jobs.createdAt);
+}
+
+/** A download held open until the test lets it land — a recovery caught mid-flight. */
+function heldDownload() {
+  let land: (answer: Awaited<ReturnType<typeof recoverCivitaiOutput>>) => void = () => undefined;
+  const started = new Promise<void>((resolveStarted) => {
+    mockRecover.mockImplementation(() => new Promise((resolve) => {
+      land = resolve;
+      resolveStarted();
+    }));
+  });
+  return { started, land: (answer: Awaited<ReturnType<typeof recoverCivitaiOutput>>) => land(answer) };
 }
 
 describe.skipIf(!ready)("a failed render's paid output", () => {
@@ -305,28 +369,89 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
       shape: { crop: { targetRatio: 3 / 4, placement: "center" }, providerSize: { width: 900, height: 1000 }, returned: { width: 750, height: 1000 } },
     });
 
-    // The failed original is left to retention; nothing was queued or charged.
+    // The failed original is left to retention; nothing was charged, and the
+    // one job row is the recovery's own claim, released as it installed —
+    // never a render.
     expect((await imageRow(state.failedImageId))?.status).toBe("failed");
-    expect(await db().select({ id: jobs.id }).from(jobs).where(eq(jobs.ownerId, ownerId))).toHaveLength(jobsBefore.length);
+    const jobsAfter = await db().select({ id: jobs.id }).from(jobs).where(eq(jobs.ownerId, ownerId));
+    expect(jobsAfter).toHaveLength(jobsBefore.length + 1);
+    const [claim] = await recoveryClaims(state.characterId);
+    expect(claim).toMatchObject({ status: "done" });
+    expect(claim?.payload).toMatchObject({ leases: [], built: 1, failed: 0, referenceViewAttemptIds: [state.attemptId] });
     expect(await db().select({ id: usageCounters.id }).from(usageCounters).where(and(
       eq(usageCounters.ownerId, ownerId), eq(usageCounters.kind, "provider_image_day"),
     ))).toEqual([]);
+    // The slot is free again, and the character's media jobs show the image.
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, BACK)).toBe(false);
+    expect((await getReferenceViewSet(state.characterId, ownerId)).building).toBe(false);
+    const recovery = (await listCharacterMediaJobs(state.characterId, ownerId)).find((job) => job.id === claim?.id);
+    expect(recovery).toMatchObject({ lifecycle: "succeeded", results: [{ id: state.attemptId, imageId: row.imageId }] });
 
     // A second recovery of the same attempt finds nothing failed to recover.
     expect((await recoverReferenceView(state.request)).status).toBe("changed");
     expect(mockRecover).toHaveBeenCalledTimes(1);
   });
 
-  // Two clicks race: both may pass the unlocked checks and fetch, but the
-  // commit is serialized on the character lock and only a still-failed attempt
-  // takes a copy. The loser's copy is compensated, so exactly one remains.
-  it("installs one of two simultaneous recoveries and leaves no second copy", async () => {
+  // While a recovery downloads, every other writer — in any tab or process —
+  // sees its claim: the slot reads busy to regenerate (single and batch),
+  // upload, restoration and another recovery, and the sheet reads building.
+  it("holds its slot against every other writer for as long as it downloads", async () => {
+    const state = await failedRender(BACK, undeliveredRender(), { priorReady: true });
+    const download = heldDownload();
+    const inFlight = recoverReferenceView(state.request);
+    await download.started;
+
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, BACK)).toBe(true);
+    expect((await getReferenceViewSet(state.characterId, ownerId)).building).toBe(true);
+
+    const regenerate = await regenerateReferenceViews({
+      characterId: state.characterId,
+      ownerId,
+      req: new NextRequest(`https://vesper.test/api/characters/${state.characterId}/reference-views/regenerate`, { method: "POST" }),
+      user: { id: ownerId },
+      requested: [BACK],
+    });
+    const regenerated = await expectJson<{ views: ReferenceViewQueueOutcome }>(regenerate, 200);
+    expect(regenerated.views).toMatchObject({ queued: false, reason: "busy", targets: [{ ...BACK, state: "busy" }] });
+    // A batch's admission takes a slot off the recovering one's line and
+    // leaves the recovering slot alone.
+    const [batch] = await db().insert(jobs).values({
+      ownerId, type: "reference_views", status: "running", payload: { characterId: state.characterId, targets: [], leases: [] },
+    }).returning({ id: jobs.id });
+    if (!batch) throw new Error("the batch job did not insert");
+    const admitted = await claimReferenceViewLeases({ characterId: state.characterId, ownerId, jobId: batch.id, targets: [BACK, LEFT] });
+    expect(admitted).toEqual({ claimed: [{ ...LEFT, attemptId: null }], busy: [BACK] });
+    await db().update(jobs).set({ status: "done", finishedAt: new Date() }).where(eq(jobs.id, batch.id));
+
+    const dataUrl = `data:image/png;base64,${(await testPngBuffer()).toString("base64")}`;
+    expect((await uploadReferenceView({ characterId: state.characterId, ownerId, view: BACK, dataUrl })).status).toBe("busy");
+    expect((await restoreReferenceView({
+      characterId: state.characterId, ownerId, view: BACK, attemptId: state.priorAttemptId ?? "",
+      expectedCurrentAttemptId: state.attemptId, expectedCurrentRevision: 0,
+    })).status).toBe("busy");
+    expect((await recoverReferenceView(state.request)).status).toBe("busy");
+    expect(mockRecover).toHaveBeenCalledTimes(1);
+
+    download.land({ ok: true, image: await testPngBuffer(600, 800) });
+    expect((await inFlight).status).toBe("recovered");
+    expect((await viewRow(state.attemptId)).status).toBe("ready");
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, BACK)).toBe(false);
+    expect((await getReferenceViewSet(state.characterId, ownerId)).building).toBe(false);
+  });
+
+  // Two clicks race: both may pass the unlocked checks, but the claim is
+  // taken under the character lock, so only one recovery downloads and
+  // installs; the other is refused before it fetches anything.
+  it("downloads and installs one of two simultaneous recoveries", async () => {
     const state = await failedRender(FRONT);
     mockRecover.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
 
     const outcomes = await Promise.all([recoverReferenceView(state.request), recoverReferenceView(state.request)]);
 
-    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(["changed", "recovered"]);
+    const statuses = outcomes.map((outcome) => outcome.status).sort();
+    expect(statuses).toContain("recovered");
+    expect(["busy", "changed"]).toContain(statuses.find((status) => status !== "recovered"));
+    expect(mockRecover).toHaveBeenCalledTimes(1);
     const installed = (await viewRow(state.attemptId)).imageId;
     expect(installed).not.toBeNull();
     expect(await referenceViewAssets(state.characterId)).toEqual([state.failedImageId, installed ?? ""].sort());
@@ -357,6 +482,19 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
 
     expect(mockRecover).not.toHaveBeenCalled();
     expect((await viewRow(state.attemptId)).status).toBe("failed");
+    // None of these took a claim.
+    expect(await recoveryClaims(state.characterId)).toEqual([]);
+  });
+
+  // A link retention already nulled is the commit's `expired`, answered at
+  // the door: only a stale tab can still be offering it.
+  it("answers expired before fetching anything once retention has unlinked the failed render", async () => {
+    const state = await failedRender(FRONT);
+    await db().update(characterReferenceViews).set({ imageId: null }).where(eq(characterReferenceViews.id, state.attemptId));
+
+    expect((await recoverReferenceView(state.request)).status).toBe("expired");
+    expect(mockRecover).not.toHaveBeenCalled();
+    expect(await recoveryClaims(state.characterId)).toEqual([]);
   });
 
   it("withdraws the offer when the provider shows the output is gone for good", async () => {
@@ -381,16 +519,65 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
     expect(mockRecover).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the offer when a fetch fails for a reason that may pass", async () => {
+  // Bytes sharp cannot decode are the provider's stored output: every fetch
+  // returns the same garbage, so the offer is withdrawn rather than retried.
+  it("withdraws the offer when the fetched bytes cannot be decoded, and stores nothing", async () => {
+    const state = await failedRender(FRONT);
+    mockRecover.mockResolvedValue({ ok: true, image: Buffer.from("these bytes are not an image") });
+    const sink = new DiagnosticCollector();
+
+    expect((await recoverReferenceView({ ...state.request, sink })).status).toBe("expired");
+
+    expectDiagnostic(sink, REFERENCE_VIEW_OUTPUT_EXPIRED);
+    expect(typeof imageMeta((await imageRow(state.failedImageId))?.meta)[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]).toBe("string");
+    expect(await getReferenceViewSummary(state.characterId, ownerId, FRONT)).toMatchObject({ state: "failed", recoverable: false });
+    expect(await referenceViewAssets(state.characterId)).toEqual([state.failedImageId]);
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, FRONT)).toBe(false);
+  });
+
+  it("keeps the offer, and releases its claim, when a fetch fails for a reason that may pass", async () => {
     const state = await failedRender(FRONT);
     mockRecover.mockResolvedValue({ ok: false, permanent: false, error: "Civitai answered 503" });
+    const sink = new DiagnosticCollector();
 
-    expect((await recoverReferenceView(state.request)).status).toBe("unavailable");
+    expect((await recoverReferenceView({ ...state.request, sink })).status).toBe("unavailable");
 
+    expectDiagnostic(sink, REFERENCE_VIEW_OUTPUT_UNAVAILABLE);
     const meta = imageMeta((await imageRow(state.failedImageId))?.meta);
     expect(meta).not.toHaveProperty(REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY);
     expect(await getReferenceViewSummary(state.characterId, ownerId, FRONT)).toMatchObject({ state: "failed", recoverable: true });
     expect(await referenceViewAssets(state.characterId)).toEqual([state.failedImageId]);
+    // The refused run gave the slot back, and says how it ended.
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, FRONT)).toBe(false);
+    const [claim] = await recoveryClaims(state.characterId);
+    expect(claim).toMatchObject({ status: "done" });
+    expect(claim?.payload).toMatchObject({ leases: [], built: 0, failed: 1, code: REFERENCE_VIEW_OUTPUT_UNAVAILABLE });
+  });
+
+  // A process that dies mid-download beats its claim no more. The claim
+  // lapses within JOB_STALE_MS, the slot is free, and the offer is exactly
+  // as it was, for the next recovery to take.
+  it("lets a dead run's claim lapse, and leaves the offer for the next recovery", async () => {
+    const state = await failedRender(FRONT);
+    const claim = await claimReferenceViewRecovery(state.request);
+    if (!claim.ok) throw new Error("the claim was not taken");
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, FRONT)).toBe(true);
+    expect((await getReferenceViewSet(state.characterId, ownerId)).building).toBe(true);
+
+    await db().update(jobs).set({ heartbeatAt: new Date(Date.now() - JOB_STALE_MS - 60_000) }).where(eq(jobs.id, claim.jobId));
+
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, FRONT)).toBe(false);
+    const set = await getReferenceViewSet(state.characterId, ownerId);
+    expect(set.building).toBe(false);
+    expect(set.views.find((view) => view.angle === FRONT.angle && view.wardrobe === FRONT.wardrobe))
+      .toMatchObject({ attemptId: state.attemptId, state: "failed", recoverable: true });
+    // The ordinary read reconciled the dead claim; the failed attempt is untouched.
+    const [lapsed] = await db().select({ status: jobs.status }).from(jobs).where(eq(jobs.id, claim.jobId));
+    expect(lapsed?.status).toBe("failed");
+    expect(await viewRow(state.attemptId)).toMatchObject({ status: "failed", imageId: state.failedImageId });
+
+    mockRecover.mockResolvedValue({ ok: true, image: await testPngBuffer(600, 800) });
+    expect((await recoverReferenceView(state.request)).status).toBe("recovered");
   });
 
   // Retention deletes a failed row a day after it failed, and the foreign key
@@ -408,6 +595,7 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
     const row = await viewRow(state.attemptId);
     expect(row).toMatchObject({ status: "failed", imageId: null });
     expect(await referenceViewAssets(state.characterId)).toEqual([]);
+    expect(await referenceViewSlotBusy(state.characterId, ownerId, FRONT)).toBe(false);
     // No file outlives the row that explained it.
     const owned = new Set((await db().select({ id: images.id }).from(images).where(eq(images.ownerId, ownerId))).map((entry) => entry.id));
     const files = await fs.readdir(imagesDirectoryPath(ownerId));
