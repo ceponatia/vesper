@@ -21,6 +21,7 @@ import {
   validateCivitaiKleinRequest,
   validateCivitaiPreflightEcho,
 } from "./civitai-runtime";
+import { withPaidRenderOutputRecorder, type PaidRenderOutput } from "./paid-render-output";
 
 const MODEL: ImageModel = imageModelSchema.parse({
   id: "civitai-klein",
@@ -1892,6 +1893,82 @@ describe("Civitai Klein v2 transport", () => {
 
     expect(result.ok).toBe(false);
     expect(workflowUrls).toEqual([expect.stringContaining("whatif=true")]);
+  });
+});
+
+/**
+ * PROTECTS (#687): a workflow that succeeded and was billed has its ids
+ * recorded BEFORE its output download starts, so a process that dies during
+ * the download (up to four 120 s attempts) leaves the render's row offering
+ * the paid output for recovery instead of nothing. The bad implementations
+ * this kills: recording after the download (a restart mid-download loses the
+ * ids exactly as before), recording the wrong ids (the preflight's estimate
+ * id, or no output id), and recording for a workflow that produced nothing
+ * fetchable — a failed or blocked workflow, or a hidden output — which would
+ * offer a recovery that can never succeed.
+ */
+describe("Civitai Klein v2 paid output recorded before its download (#687)", () => {
+  /** A full render whose submit answers `status` with `images`; every blob fetch is logged into `events`. */
+  function stubWorkflow(status: string, images: unknown[], events: string[]): void {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(
+          body,
+          whatif === "true" ? "estimate-paid" : "submit-paid",
+          whatif === "true" ? "unassigned" : status,
+          images,
+        ));
+      }
+      events.push(`fetch ${href}`);
+      return new Response("image-bytes", { status: 200 });
+    });
+  }
+
+  it("records the workflow, the chosen output and the model before the download's first fetch", async () => {
+    const events: string[] = [];
+    const recorded: PaidRenderOutput[] = [];
+    stubWorkflow("succeeded", [{ id: "pending.jpg", available: false }, { id: "output.jpg", available: true }], events);
+
+    const result = await withPaidRenderOutputRecorder(async (output) => {
+      recorded.push(output);
+      events.push("record");
+    }, () => runCivitaiKleinImageModel(MODEL, request));
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-paid" });
+    expect(recorded).toEqual([{ predictionId: "submit-paid", outputId: "output.jpg", modelSlug: CIVITAI_FLUX2_KLEIN4B_SLUG }]);
+    expect(events).toEqual(["record", `fetch ${blobUrl("output.jpg")}`]);
+  });
+
+  it.each([
+    ["a failed workflow", "failed", [{ id: "output.jpg", available: true }]],
+    ["a workflow whose only output is blocked", "succeeded", [{ id: "blocked.jpg", available: true, blockedReason: "blocked" }]],
+    ["a workflow whose only output is hidden", "succeeded", [{ id: "hidden.jpg", available: true, hidden: true }]],
+  ] as const)("records nothing for %s", async (_description, status, images) => {
+    const events: string[] = [];
+    const recorder = vi.fn(async () => undefined);
+    stubWorkflow(status, [...images], events);
+
+    const result = await withPaidRenderOutputRecorder(recorder, () => runCivitaiKleinImageModel(MODEL, request));
+
+    expect(result).toMatchObject({ ok: false, predictionId: "submit-paid" });
+    expect(recorder).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it("downloads the output all the same when the record fails", async () => {
+    const events: string[] = [];
+    stubWorkflow("succeeded", [{ id: "output.jpg", available: true }], events);
+
+    const result = await withPaidRenderOutputRecorder(async () => {
+      throw new Error("the database is not answering");
+    }, () => runCivitaiKleinImageModel(MODEL, request));
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-paid" });
+    expect(result.image?.toString()).toBe("image-bytes");
+    expect(events).toEqual([`fetch ${blobUrl("output.jpg")}`]);
   });
 });
 

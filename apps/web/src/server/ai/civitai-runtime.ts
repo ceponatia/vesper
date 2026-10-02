@@ -4,6 +4,7 @@ import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { log } from "@/server/log";
 import { civitaiApiToken } from "../images/lora-credentials";
+import { recordPaidRenderOutput } from "./paid-render-output";
 import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
@@ -1263,6 +1264,13 @@ export async function runCivitaiLane(
         ? civitaiAsyncFailure(result.status, [blocked], true)
         : new CivitaiError({ code: "civitai_output_unavailable", retry: "deliberate", stage: "workflow_terminal" });
     }
+    // #687: the workflow has succeeded and been billed, and this is the output
+    // it will download — retried for up to ~8 minutes. Its ids go to whatever
+    // record the render belongs to BEFORE that starts, so a process that dies
+    // mid-download leaves a paid output to recover rather than nothing at all.
+    // Best-effort and bounded (`recordPaidRenderOutput`): it never fails the
+    // render and never holds the download back for long.
+    await recordPaidRenderOutput({ predictionId: result.id, outputId: image.id, modelSlug: model.slug });
     return {
       ok: true,
       image: await downloadOutput(image.id, token),
