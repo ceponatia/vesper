@@ -3,6 +3,7 @@ import { pinnedImageModelVersion } from "@vesper/image-core";
 import { db, images } from "@/server/db";
 import {
   avatarReplayCheapEligibility,
+  imageOutputRecoverable,
   resolveImageProfileForTask,
   type AvatarReplayEligibility,
   type AvatarReplaySourceRow,
@@ -62,9 +63,12 @@ export async function findPortrait(ownerId: string, characterId: string, imageId
  * (kind="scene") are filed against the character too, but belong to the Chat
  * tab, not the studio. The route pairs this with a `findOwnedCharacter` gate;
  * both halves are owner-scoped, so neither alone leaks a foreign roster.
+ *
+ * Each row carries `recoverable`: a failed render whose paid output can be
+ * recovered onto it with no new render (`POST /api/images/[id]/recover`).
  */
 export async function listOwnedPortraits(ownerId: string, characterId: string) {
-  return db()
+  const rows = await db()
     .select()
     .from(images)
     .where(
@@ -76,6 +80,7 @@ export async function listOwnedPortraits(ownerId: string, characterId: string) {
       ),
     )
     .orderBy(desc(images.createdAt));
+  return rows.map((row) => ({ ...row, recoverable: imageOutputRecoverable(row) }));
 }
 
 /** The wire shape of one row's replay hint — `{ ok: true }` never carries the

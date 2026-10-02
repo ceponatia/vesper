@@ -115,6 +115,15 @@ face every identity-critical render receives is unchanged until it is accepted.
 Variants are single-reference edits only: re-roll from the accepted portrait rather than
 chaining edits, because drift compounds.
 
+## Recovering a paid output
+
+A failed variant whose render was billed but whose output never arrived — the download failed, or
+the process died mid-download — keeps the workflow and the output under `meta.render`, and reads
+`recoverable: true` in `GET /api/characters/:id/portraits`. `POST /api/images/:id/recover` fetches
+that output again and stores it on the same row, free and with no new render
+([../asset-registry.md](../asset-registry.md) §Recovering a paid output in place). The variant
+becomes `ready` where it already sits in the studio; nothing is promoted and no pointer moves.
+
 ## The `nsfw test` anatomy bench
 
 `nsfw test` (`NSFW_TEST_VARIANT_KIND`) is the studio's anatomy bench, and the only variant kind
