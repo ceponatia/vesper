@@ -118,10 +118,13 @@ Each stage carries:
   - the five `prepare.*` stages: `recall`, `beats`, `presentation`, `contact`, `guidance`
   - `narrator.prompt`, `narrator.stream`, `reply.persist`
   - the `settle.*` stages: `npc_decision_begin`, `finalize`, `members`, `wardrobe`,
-    `npc_decision_finish`, `contact_events`, `permission`
+    `npc_decision_finish`, `contact_events`, `permission`, and `settle.error` when settle
+    itself throws
   - `post_turn.shadow` (on `successor_shadow` chats only) and `jobs.scene_enqueue`
 - `narrator.stream` ends:
   - `failed`, with the reply-failure code, when no reply settled
+  - `degraded`, with the provider's error code, when a provider error mid-stream kept
+    partial text
   - `degraded` (`watchdog_timeout`) when a watchdog trip kept partial text
   - `retried` when the narrator spent more than one attempt
   - `success` otherwise, with reason `player_stop` when the player stopped it
@@ -147,9 +150,10 @@ failed one are the same absent key.
 - Families: `history`, `summary`, `memory.facts`, `memory.episodes`, `memory.callback`,
   `scene`, `actor_state`, `relationship` (ensemble only), `schedule_time`,
   `physical_guidance`, `visual_state`, `garments`, `affordances`, `contact`, `directives`.
-- Some sim-lane loaders degrade a failed read to the same value as a genuine absence. Those
-  families read `empty` in both cases. On the sim lane, only `schedule_time` can report
-  `missing`.
+- Some sim-lane loaders degrade a failed read to the same value as a genuine absence, so
+  `summary`, `memory.episodes`, `actor_state`, `relationship` and `garments` read `empty` in
+  both cases. On the sim lane, only `schedule_time` (no branch clock) and the solo cut's
+  `scene` (a failed space read) can report `missing`.
 
 ### Correlation
 
@@ -187,15 +191,17 @@ The outcome is derived from the persisted evidence, checked in this order:
 ## Reading a trace
 
 - Both readers emit the contract's versioned output, `{ schemaVersion: 1, chatId, traces }`,
-  newest first.
+  newest first by when each exchange **started** — a late part (the shadow pass, a scene
+  enqueue) never reorders an older exchange ahead of a newer one.
 - The inspector route takes:
   - `limit` — default 10, clamped to 1–50; a non-numeric `limit` is a 400
   - `traceId`
   - `messageId` — matches any trace whose prompt, reply, or guard id is that message, so a
     regenerated reply lists every exchange that wrote it
 - The CLI takes `--chat <chatId>` and at most one selector: `--latest` (the default),
-  `--message <id>`, `--trace <id>`, or `--limit <n>` (1–50). `--json` prints the versioned
-  output and nothing else on stdout. Exit codes:
+  `--message <id>` (every trace naming that message, newest first, up to 10 unless `--limit`
+  says otherwise), `--trace <id>`, or `--limit <n>` (1–50) alone for the newest traces.
+  `--json` prints the versioned output and nothing else on stdout. Exit codes:
   - 0 when traces are found
   - 1 for an unknown chat, no matching trace, or a database error. With `--json`, stdout still
     gets a valid empty document.
