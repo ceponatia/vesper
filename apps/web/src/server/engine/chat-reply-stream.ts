@@ -134,10 +134,20 @@ export function streamExchange(
      * not exist.
      */
     exchangeTrace?: ExchangeTrace;
+    /**
+     * Attach the coordinator's collected diagnostics to `exchangeTrace` (#637).
+     * `settle()` already does this when it runs; this covers every path where
+     * it does NOT (no-text, a withheld length stub, a zero-text provider
+     * error) by calling it here too, right before `finish()`. The coordinator
+     * implements this with its own watermark, so calling it whether or not
+     * settle already did is always safe — never a duplicate entry.
+     */
+    attachDiagnostics?: () => void;
   },
 ): AsyncGenerator<string, void, unknown> {
   const { chatId, settle, abortController, completion, modelId, release } = options;
   const exchangeTrace = options.exchangeTrace ?? noopExchangeTrace();
+  const attachDiagnostics = options.attachDiagnostics ?? (() => {});
   // Register synchronously, before returning the generator to its consumer, so
   // Stop and rerun find this same controller even before the first next().
   inflightReplyAborts.set(chatId, abortController);
@@ -192,27 +202,39 @@ export function streamExchange(
       // player Stop or a watchdog trip cannot end the stage `stopped`: that
       // outcome rides `finish({kind:"stopped"})` below instead, unchanged.
       // Here: any failure ends the stage `failed` with the failure's own
-      // stable code; a watchdog trip that still kept text (failure === null,
-      // `timedOut` set — the only way `resolveReplyFailure` can return null
-      // WITH a timeout is when text was kept) is `degraded`, since the
-      // generation did not run to its own end; a genuine player Stop is a
-      // clean `success` (the stream behaved exactly as asked) with a reason
-      // naming why; otherwise `success` — upgraded to `retried` when the
-      // narrator itself spent more than one attempt (the hidden silent-stop
-      // retry), so a retry is visible without inventing a status the
-      // contract does not have.
+      // stable code; a mid-stream provider error that still kept text
+      // (`streamError` set but `failure === null`, since `resolveReplyFailure`
+      // withholds a failure whenever text was kept) is `degraded` with the
+      // provider's own code — a fallback (the partial) reached the player,
+      // not a clean run; a watchdog trip that still kept text (`timedOut` set,
+      // same reasoning) is `degraded` too, since the generation did not run to
+      // its own end; a genuine player Stop is a clean `success` (the stream
+      // behaved exactly as asked) with a reason naming why; otherwise
+      // `success` — upgraded to `retried` when the narrator itself spent more
+      // than one attempt (the hidden silent-stop retry), so a retry is visible
+      // without inventing a status the contract does not have.
       const streamStatus: "success" | "degraded" | "failed" | "retried" =
         failure !== null
           ? "failed"
-          : timedOut !== null
+          : streamError !== null
             ? "degraded"
-            : stopped
-              ? "success"
-              : narrator && narrator.attempts > 1
-                ? "retried"
-                : "success";
+            : timedOut !== null
+              ? "degraded"
+              : stopped
+                ? "success"
+                : narrator && narrator.attempts > 1
+                  ? "retried"
+                  : "success";
       const streamReason: string | undefined =
-        failure !== null ? failure.code : timedOut !== null ? "watchdog_timeout" : stopped ? "player_stop" : undefined;
+        failure !== null
+          ? failure.code
+          : streamError !== null
+            ? streamError.code
+            : timedOut !== null
+              ? "watchdog_timeout"
+              : stopped
+                ? "player_stop"
+                : undefined;
       streamStage.end({
         status: streamStatus,
         ...(streamReason === undefined ? {} : { reason: streamReason }),
@@ -240,14 +262,22 @@ export function streamExchange(
           await settle(full, stopped);
         } catch (error) {
           log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
+          // #637: a thrown settle leaves the reply unpersisted and the whole
+          // post-turn fan-out un-run — the outcome must not read back "ok".
+          exchangeTrace.record({ stage: "settle.error", phase: "settle", status: "failed", reason: "exception" });
         }
       }
+      // #637: attach whatever diagnostics were collected before finish() —
+      // settle (when it ran) already did this with the same watermarked
+      // helper, so calling it again here is always safe.
+      attachDiagnostics();
       // Finish() is called exactly once per admitted exchange (#637), after
-      // settle has had its chance to run — "stopped" for a genuine player Stop
-      // or a kept-no-text watchdog trip, "failed" with the failure's code for
-      // every other failure, "ok" otherwise. A partial reply that still settled
-      // (text kept despite a Stop) is reported "stopped": the exchange was
-      // interrupted even though what streamed was kept.
+      // settle has had its chance to run. "failed" whenever the verdict
+      // recorded one — including a no-text watchdog trip, whose own code is
+      // "timeout", never "stopped". "stopped" covers every other case where
+      // the stream was interrupted and produced no failure: a genuine player
+      // Stop (with or without kept text), or a watchdog trip that still kept
+      // text. "ok" otherwise.
       exchangeTrace.finish(
         failure !== null ? { kind: "failed", failureCode: failure.code } : stopped ? { kind: "stopped" } : { kind: "ok" },
       );
