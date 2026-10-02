@@ -13,7 +13,26 @@ import {
 import { DiagnosticCollector } from "@/contracts/diagnostics";
 import { expectDiagnostic } from "@/test/diagnostics";
 
-/*
+/**
+ * **Recovering a failed render's paid output never pays for it twice, and
+ * never hands out bytes nobody reviewed** (#682).
+ *
+ * A Civitai render can succeed and be billed, then fail its download; the
+ * view's row stays `failed` but keeps that render's own `images` row so the
+ * paid output can be fetched again with no new workflow. Each case here kills
+ * one way that promise would break under the real character lock, the real
+ * `images` foreign key, and real files on disk — none of it provable against
+ * a mocked store:
+ *
+ * - a failed row's link leaking into the sheet, the consumable-view seam, the
+ *   history list, or a bulk Build that would pay for the same render again;
+ * - two concurrent recoveries both installing, rather than the lock settling
+ *   exactly one and compensating the loser's orphan copy;
+ * - a copy from a refused install (the sheet moved, the linked row vanished
+ *   under retention) surviving on disk instead of being deleted;
+ * - a withdrawn or still-standing offer read wrong, so a gone-for-good output
+ *   keeps getting retried, or a merely slow one stops being offered.
+ *
  * The transport's read-only fetch of a paid output is the one collaborator
  * replaced here: it is another lane's network call, and these claims are about
  * the rows, the lock and the bytes on disk. Everything else is real.
