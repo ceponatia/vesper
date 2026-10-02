@@ -3,6 +3,7 @@ import { planDepartureChoreography } from "@vesper/simulation-core/departure";
 import { serializeChatMessageMeta, userLineMeta } from "@/contracts/turns/chat-message-meta";
 import { newId } from "@/lib/ids";
 import { characterChatMessages, db } from "@/server/db";
+import type { ExchangeTrace } from "../chat-exchange-trace";
 import { CompositionFallbackCollector } from "../composition-diagnostics";
 import { findOrOpenStandingEngagement } from "./engagements";
 import { type ResolvedSimExchange, loadSimDialogueTail } from "./context";
@@ -32,12 +33,14 @@ export async function runSimTurn(input: {
   message?: string;
   inputMode?: "player" | "narrator";
   ctx: ResolvedSimExchange;
+  /** The exchange trace (#637) `runSimChatExchange` started for this admitted exchange. */
+  exchangeTrace: ExchangeTrace;
 }): Promise<SimChatExchangeResult> {
-  const { chatId, ctx } = input;
+  const { chatId, ctx, exchangeTrace } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
   // C15: one collector per turn, threaded through the choreography. Each degradation site
   // notes it (durable events row now + a public-safe code for the reply meta at persist).
-  const fallbacks = new CompositionFallbackCollector(chatId);
+  const fallbacks = new CompositionFallbackCollector(chatId, exchangeTrace.traceId || undefined);
   // continue/open carry no utterance (ruling 19) — only a send speaks.
   const message = input.mode === "send" ? (input.message ?? "").trim() : "";
   // A "narrator" send is storyteller steering (not the player-character acting):
@@ -59,7 +62,11 @@ export async function runSimTurn(input: {
       role: "user",
       content: message,
       meta: serializeChatMessageMeta(
-        userLineMeta({ simTurn: true, ...(narratorInput ? { inputMode: "narrator" as const } : {}) }),
+        userLineMeta({
+          simTurn: true,
+          ...(narratorInput ? { inputMode: "narrator" as const } : {}),
+          traceId: exchangeTrace.traceId,
+        }),
       ),
     });
   }
@@ -74,6 +81,9 @@ export async function runSimTurn(input: {
   // A genuine open fault (not "simply not co-present") still 409s. Otherwise the
   // turn runs — co-present (scene.ok) or the dual-block solo cut (ruling 21).
   if (!scene.ok && !SOLO_CUT_OPEN_CODES.has(scene.code)) {
+    exchangeTrace.record({ stage: "sim.turn", phase: "prepare", status: "failed", reason: "sim_open_failed" });
+    exchangeTrace.finish({ kind: "failed" });
+    exchangeTrace.flush();
     return { ok: false, code: "sim_open_failed", message: `the scene could not open: ${scene.publicReason}`, status: 409 };
   }
 
@@ -81,10 +91,26 @@ export async function runSimTurn(input: {
   // words may BE a legal command. Pattern-match now (no submit) so the branches
   // below can route it before the scene resolves (a MOVE → the departure
   // choreography; an ACCOMPANY → walk-with-me).
-  const admitted =
-    input.mode === "send" && !narratorInput && message.length > 0
-      ? await admitPlayerCommandForChat({ branchId, playerActorId, message })
-      : { command: null, zones: [] };
+  let admitted: Awaited<ReturnType<typeof admitPlayerCommandForChat>>;
+  if (input.mode === "send" && !narratorInput && message.length > 0) {
+    admitted = await exchangeTrace.time(
+      "sim.admission",
+      "admission",
+      () => admitPlayerCommandForChat({ branchId, playerActorId, message }),
+      (result) => ({
+        status: result.degraded ? "degraded" : "success",
+        ...(result.degraded ? { reason: "admission_read_failed" } : {}),
+        count: result.command ? 1 : 0,
+      }),
+    );
+  } else {
+    admitted = { command: null, zones: [], degraded: false };
+    exchangeTrace.record({
+      stage: "sim.admission",
+      phase: "admission",
+      reason: input.mode !== "send" ? "no_utterance" : narratorInput ? "narrator_input" : "empty_message",
+    });
+  }
   const command = admitted.command;
 
   // Walk-with-me: an admitted ACCOMPANY while the
@@ -104,6 +130,7 @@ export async function runSimTurn(input: {
       dialogueTail,
       userMessageId,
       fallbacks,
+      exchangeTrace,
     });
   }
 
@@ -131,6 +158,7 @@ export async function runSimTurn(input: {
       dialogueTail,
       userMessageId,
       fallbacks,
+      exchangeTrace,
     });
   }
 
@@ -148,6 +176,7 @@ export async function runSimTurn(input: {
       userMessageId,
       dialogueTail,
       fallbacks,
+      exchangeTrace,
     });
   }
 
@@ -157,18 +186,25 @@ export async function runSimTurn(input: {
     command?.kind === "give_item" || command?.kind === "start_activity" ? command : null;
   const admission =
     coPresentCommand !== null
-      ? await admitIntoCoPresentTurn(
-          {
-            chatId,
-            userId: input.userId,
-            branchId,
-            playerActorId,
-            primaryActorId,
-            playerName,
-            primaryName: actorNames[primaryActorId] ?? "them",
-          },
-          coPresentCommand,
-          admitted.zones,
+      ? await exchangeTrace.time(
+          "sim.admission",
+          "admission",
+          () =>
+            admitIntoCoPresentTurn(
+              {
+                chatId,
+                userId: input.userId,
+                branchId,
+                playerActorId,
+                primaryActorId,
+                playerName,
+                primaryName: actorNames[primaryActorId] ?? "them",
+                traceId: exchangeTrace.traceId,
+              },
+              coPresentCommand,
+              admitted.zones,
+            ),
+          (outcome) => ({ status: "success", ...(outcome.failure ? { reason: outcome.failure.code } : {}) }),
         )
       : null;
   return runCoPresentTurn({
@@ -184,5 +220,6 @@ export async function runSimTurn(input: {
     dialogueTail,
     userMessageId,
     fallbacks,
+    exchangeTrace,
   });
 }

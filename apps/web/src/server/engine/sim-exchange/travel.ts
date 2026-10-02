@@ -4,6 +4,7 @@ import type { planDepartureChoreography, SoloDeparture } from "@vesper/simulatio
 import { computeMoveArrivalTarget } from "@vesper/simulation-core/travel-settle";
 import { placeGoPhrase } from "@vesper/simulation-core/world-read";
 import { newId } from "@/lib/ids";
+import type { ExchangeTrace } from "../chat-exchange-trace";
 import { writeWorldBeat } from "../sim-beats";
 import type { CompositionFallbackCollector } from "../composition-diagnostics";
 import { log } from "../../log";
@@ -54,8 +55,10 @@ export async function runSimDepartureTurn(input: {
   dialogueTail: { speaker: string; text: string }[];
   userMessageId: string | null;
   fallbacks?: CompositionFallbackCollector;
+  /** The exchange trace (#637) threaded from the turn entry. */
+  exchangeTrace: ExchangeTrace;
 }): Promise<SimChatExchangeResult> {
-  const { chatId, ctx, command, plan } = input;
+  const { chatId, ctx, command, plan, exchangeTrace } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
   const primaryName = actorNames[primaryActorId] ?? "them";
   const zoneKindOf = (zoneId: string): string => input.zones.find((zone) => zone.zoneId === zoneId)?.kind ?? "";
@@ -72,6 +75,7 @@ export async function runSimDepartureTurn(input: {
     userMessageId: input.userMessageId,
     dialogueTail: input.dialogueTail,
     ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+    exchangeTrace,
   };
 
   // The zone the player is leaving (for the departure context). Read once here;
@@ -124,8 +128,23 @@ export async function runSimDepartureTurn(input: {
         code: "end_engagement_fallback",
         detail: `end-engagement ${ended?.status ?? "threw"}`,
       });
+      exchangeTrace.record({
+        stage: "sim.travel",
+        phase: "prepare",
+        status: "degraded",
+        reason: "end_engagement_fallback",
+      });
       const admission = await admitIntoCoPresentTurn(
-        { chatId, userId: input.userId, branchId, playerActorId, primaryActorId, playerName, primaryName },
+        {
+          chatId,
+          userId: input.userId,
+          branchId,
+          playerActorId,
+          primaryActorId,
+          playerName,
+          primaryName,
+          traceId: exchangeTrace.traceId,
+        },
         command,
         input.zones,
       );
@@ -142,6 +161,7 @@ export async function runSimDepartureTurn(input: {
         dialogueTail: input.dialogueTail,
         userMessageId: input.userMessageId,
         ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+        exchangeTrace,
       });
     }
   }
@@ -176,6 +196,7 @@ export async function runSimDepartureTurn(input: {
       code: "move_rejected_solo_render",
       detail: `move ${move?.status ?? "threw"}${move?.status === "rejected" ? ` code=${move.code}` : ""}`,
     });
+    exchangeTrace.record({ stage: "sim.travel", phase: "prepare", status: "degraded", reason: "move_rejected_solo_render" });
     return runSimSoloTurn(soloArgs);
   }
 
@@ -183,7 +204,7 @@ export async function runSimDepartureTurn(input: {
   //    (ruling 20, A7). A divergent drain degrades to the current clock — the arrival
   //    trigger simply settles on a later turn (never a dead turn).
   const target = await moveArrivalTarget(branchId, playerActorId);
-  const drain = await drainBranchTo(branchId, target);
+  const drain = await drainBranchTo(branchId, target, exchangeTrace);
   if (!drain.converged) {
     log.warn("engine.sim.departure", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
@@ -200,7 +221,15 @@ export async function runSimDepartureTurn(input: {
   });
 
   // 4) ONE traveled beat, phrased with the parting when a scene was ended.
-  await writeWorldBeat({ chatId, branchId, kind: "traveled", destinationLabel: toLabel, parted: plan.parted });
+  await writeWorldBeat({
+    chatId,
+    branchId,
+    kind: "traveled",
+    destinationLabel: toLabel,
+    parted: plan.parted,
+    ...(exchangeTrace.traceId ? { traceId: exchangeTrace.traceId } : {}),
+  });
+  exchangeTrace.record({ stage: "sim.travel", phase: "prepare", status: "success", reason: "departed" });
 
   // 5) Render the arrival through the solo cut with the departure arc. A departure
   //    turn does NOT advance the clock again (it already drained to the arrival), so
@@ -259,6 +288,9 @@ export async function runAccompanyTogether(input: {
   commandId?: string;
   /** Deterministic world-beat id (route path); omitted ⇒ a fresh id per NL turn. */
   beatDedupeId?: string;
+  /** The exchange trace (#637), when this runs inside an admitted sim exchange (the NL
+   * choreography has one; the walk-together chip route does not). */
+  exchangeTrace?: ExchangeTrace;
 }): Promise<AccompanyResult> {
   const { chatId, userId, branchId, playerActorId, primaryActorId, toZoneId } = input;
 
@@ -301,9 +333,14 @@ export async function runAccompanyTogether(input: {
   if (outcome.status === "rejected") {
     const legalAlternatives = [...outcome.legalAlternativeCommandTypes].map(String).slice(0, 16);
     if (outcome.code === "accompany_declined") {
+      input.exchangeTrace?.record({ stage: "sim.travel", phase: "prepare", status: "success", reason: "accompany_declined" });
       return { status: "declined", publicReason: outcome.publicReason, legalAlternatives };
     }
-    if (outcome.code === "not_copresent") return { status: "not_copresent" };
+    if (outcome.code === "not_copresent") {
+      input.exchangeTrace?.record({ stage: "sim.travel", phase: "prepare", status: "degraded", reason: "not_copresent" });
+      return { status: "not_copresent" };
+    }
+    input.exchangeTrace?.record({ stage: "sim.travel", phase: "prepare", status: "degraded", reason: outcome.code });
     return { status: "rejected", code: outcome.code, publicReason: outcome.publicReason, legalAlternatives };
   }
   if (outcome.status !== "accepted") {
@@ -311,6 +348,7 @@ export async function runAccompanyTogether(input: {
     // committed NOTHING, so the honest degrade is "nobody moved" (the standing
     // scene is intact), recorded via the existing C15 fallback note.
     input.fallbacks?.note({ site: "accompany", code: "traveled_alone", detail: `move_together ${outcome.status}` });
+    input.exchangeTrace?.record({ stage: "sim.travel", phase: "prepare", status: "degraded", reason: "sim_conflict" });
     return { status: "rejected", code: "sim_conflict", publicReason: "The world moved; try again.", legalAlternatives: [] };
   }
 
@@ -319,7 +357,7 @@ export async function runAccompanyTogether(input: {
   // call-site label only — the resolver read the authoritative name under the lock.)
   const postMove = await readDurableSpaceBranch(branchId);
   const target = computeMoveArrivalTarget(postMove, playerActorId);
-  const drain = await drainBranchTo(branchId, target);
+  const drain = await drainBranchTo(branchId, target, input.exchangeTrace);
   if (!drain.converged) {
     log.warn("engine.sim.accompany", "arrival drain did not converge", { chatId, reason: drain.shortReason });
   }
@@ -348,7 +386,9 @@ export async function runAccompanyTogether(input: {
     together: true,
     ...(input.fallbacks && input.fallbacks.codes().length ? { fallbacks: input.fallbacks.codes() } : {}),
     ...(input.beatDedupeId ? { dedupeId: input.beatDedupeId } : {}),
+    ...(input.exchangeTrace?.traceId ? { traceId: input.exchangeTrace.traceId } : {}),
   });
+  input.exchangeTrace?.record({ stage: "sim.travel", phase: "prepare", status: "success", reason: "accompanied" });
 
   const arrived = settled.loci.some(
     (locus) => locus.actorId === playerActorId && locus.kind === "at" && locus.zoneId === toZoneId,
@@ -381,8 +421,10 @@ export async function runSimAccompanyTurn(input: {
   dialogueTail: { speaker: string; text: string }[];
   userMessageId: string | null;
   fallbacks?: CompositionFallbackCollector;
+  /** The exchange trace (#637) threaded from the turn entry. */
+  exchangeTrace: ExchangeTrace;
 }): Promise<SimChatExchangeResult> {
-  const { chatId, ctx, command } = input;
+  const { chatId, ctx, command, exchangeTrace } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
   const primaryName = actorNames[primaryActorId] ?? "them";
 
@@ -395,6 +437,7 @@ export async function runSimAccompanyTurn(input: {
     primaryName,
     toZoneId: command.toZoneId,
     ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+    exchangeTrace,
   });
 
   // A decline (or a rare player-move refusal): the scene still stands. Render the
@@ -419,6 +462,7 @@ export async function runSimAccompanyTurn(input: {
       dialogueTail: input.dialogueTail,
       userMessageId: input.userMessageId,
       ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+      exchangeTrace,
     });
   }
 
@@ -433,6 +477,7 @@ export async function runSimAccompanyTurn(input: {
     userMessageId: input.userMessageId,
     dialogueTail: input.dialogueTail,
     ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+    exchangeTrace,
   };
 
   // not_copresent shouldn't reach here (a standing scene implies co-presence), but
@@ -474,5 +519,6 @@ export async function runSimAccompanyTurn(input: {
     dialogueTail: input.dialogueTail,
     userMessageId: input.userMessageId,
     ...(input.fallbacks ? { fallbacks: input.fallbacks } : {}),
+    exchangeTrace,
   });
 }
