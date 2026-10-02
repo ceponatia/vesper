@@ -69,6 +69,7 @@ export async function runSimTurn(input: {
         }),
       ),
     });
+    exchangeTrace.annotate({ promptMessageId: userMessageId });
   }
 
   const scene = await findOrOpenStandingEngagement({
@@ -204,7 +205,10 @@ export async function runSimTurn(input: {
               coPresentCommand,
               admitted.zones,
             ),
-          (outcome) => ({ status: "success", ...(outcome.failure ? { reason: outcome.failure.code } : {}) }),
+          (outcome) =>
+            outcome.failure
+              ? { status: "blocked", reason: outcome.failure.code }
+              : { status: "success" },
         )
       : null;
   return runCoPresentTurn({

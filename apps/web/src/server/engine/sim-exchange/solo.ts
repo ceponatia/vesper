@@ -359,6 +359,9 @@ export async function runSimSoloTurn(input: {
     exchangeTrace.flush();
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };
   }
+  // Narrowed here so the closure below (a separate function scope) keeps the
+  // `string` type — `rendered.prose`'s narrowing does not carry into it.
+  const prose = rendered.prose;
 
   const narratorRun = buildNarratorRunProvenance({
     lane: "successor",
@@ -384,13 +387,14 @@ export async function runSimSoloTurn(input: {
   const diagnostics = [...ctx.instructionDiagnostics, ...solo.diagnostics, ...rendered.diagnostics];
   const fallbackCodes = input.fallbacks?.codes() ?? [];
   const assistantMessageId = newId();
+  exchangeTrace.annotate({ replyMessageId: assistantMessageId });
   await exchangeTrace.time("sim.persist", "settle", () =>
     persistAssistantReply({
       id: assistantMessageId,
       chatId,
       speakerCharacterId: input.speakerCharacterId,
       promptMessageId: input.userMessageId,
-      content: rendered.prose,
+      content: prose,
       meta: successorReplyMeta({
         solo: true,
         modelId: rendered.modelId,
@@ -411,7 +415,7 @@ export async function runSimSoloTurn(input: {
   return {
     ok: true,
     messageId: assistantMessageId,
-    prose: rendered.prose,
+    prose,
     cutId: "",
     modelId: rendered.modelId,
     attempts: rendered.attempts,

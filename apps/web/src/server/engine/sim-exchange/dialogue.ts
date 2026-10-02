@@ -160,6 +160,9 @@ export async function runCoPresentTurn(input: {
     exchangeTrace.flush();
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };
   }
+  // Narrowed here so the closure below (a separate function scope) keeps the
+  // `string` type — `rendered.prose`'s narrowing does not carry into it.
+  const prose = rendered.prose;
   exchangeTrace.annotate({
     sim: {
       cutId: rendered.cutId,
@@ -182,13 +185,14 @@ export async function runCoPresentTurn(input: {
   });
 
   const assistantMessageId = newId();
+  exchangeTrace.annotate({ replyMessageId: assistantMessageId });
   await exchangeTrace.time("sim.persist", "settle", () =>
     persistAssistantReply({
       id: assistantMessageId,
       chatId,
       speakerCharacterId: input.speakerCharacterId,
       promptMessageId: input.userMessageId,
-      content: rendered.prose,
+      content: prose,
       meta: successorReplyMeta({
         cutId: rendered.cutId,
         modelId: rendered.modelId,
@@ -226,7 +230,7 @@ export async function runCoPresentTurn(input: {
   return {
     ok: true,
     messageId: assistantMessageId,
-    prose: rendered.prose,
+    prose,
     cutId: rendered.cutId,
     modelId: rendered.modelId,
     attempts: rendered.attempts,

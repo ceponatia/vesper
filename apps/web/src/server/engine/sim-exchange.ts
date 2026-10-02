@@ -88,17 +88,28 @@ export async function runSimChatExchange(input: {
   });
   exchangeTrace.annotate({ sim: { branchId: resolved.ctx.branchId } });
 
-  if (mode === "retake") {
-    return runSimRetake({ chatId: input.chatId, userId: input.userId, ctx: resolved.ctx, exchangeTrace });
+  // A thrown error anywhere below (a DB error from `persistAssistantReply`,
+  // `prepareEngagementTurn`, `loadSimDialogueTail`, …) must still finish + flush
+  // the trace — otherwise every stage buffered so far is discarded with it. The
+  // original error always rethrows unchanged; nothing about control flow or the
+  // eventual response changes.
+  try {
+    if (mode === "retake") {
+      return await runSimRetake({ chatId: input.chatId, userId: input.userId, ctx: resolved.ctx, exchangeTrace });
+    }
+    return await runSimTurn({
+      chatId: input.chatId,
+      userId: input.userId,
+      speakerCharacterId: input.speakerCharacterId,
+      mode,
+      message: input.message,
+      ...(input.inputMode === undefined ? {} : { inputMode: input.inputMode }),
+      ctx: resolved.ctx,
+      exchangeTrace,
+    });
+  } catch (error) {
+    exchangeTrace.finish({ kind: "failed" });
+    exchangeTrace.flush();
+    throw error;
   }
-  return runSimTurn({
-    chatId: input.chatId,
-    userId: input.userId,
-    speakerCharacterId: input.speakerCharacterId,
-    mode,
-    message: input.message,
-    ...(input.inputMode === undefined ? {} : { inputMode: input.inputMode }),
-    ctx: resolved.ctx,
-    exchangeTrace,
-  });
 }
