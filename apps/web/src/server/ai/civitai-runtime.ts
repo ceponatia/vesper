@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ImageModel } from "@vesper/image-core";
+import { declaresNonAutomaticRetry, type ImageModel } from "@vesper/image-core";
 import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { log } from "@/server/log";
@@ -747,15 +747,31 @@ async function lookupSubmitPage(
     // than on having verified its current behavior is harmless forever.
     const url = `${WORKFLOWS_URL}?tags=vesper&fromDate=${encodeURIComponent(fromDateIso)}&take=${String(CIVITAI_SUBMIT_LOOKUP_PAGE_TAKE)}&hideMatureContent=false${cursor === undefined ? "" : `&cursor=${encodeURIComponent(cursor)}`}`;
     const body = asRecord(await requestJson(url, { method: "GET" }, token, "submit_lookup"));
-    for (const item of asArray(body?.items)) {
+    // A malformed envelope is UNREADABLE, never a clean "searched, not
+    // found" (third correction round, #673 / Codex on PR #684): coercing a
+    // non-object body or a non-array `items` to `[]` would misreport a page
+    // this process could not actually interpret as one that simply carried
+    // no match.
+    const items: unknown = body?.items;
+    if (!body || !Array.isArray(items)) {
+      throw new Error("Civitai workflow list returned a malformed envelope");
+    }
+    for (const item of items) {
       const record = asRecord(item);
       const externalId = asString(record?.externalId);
       if (externalId?.endsWith(externalIdSuffix)) return { match: record, pageCapHit: false };
     }
-    const next = asString(body?.next);
-    // Treated the same as a literal `next: null`: an empty string names no
-    // cursor to follow, so it is the end of the list, not a page to re-fetch.
-    if (next === null || next === "") return { match: null, pageCapHit: false };
+    // The provider's OpenAPI marks `next` required, but a live probe
+    // (2026-10-01, zero Buzz) found the LAST page omits the key entirely —
+    // so absent, `null`, and `""` all mean the natural end of the list,
+    // never a malformed response. Any other type is neither a cursor this
+    // process understands nor one of those documented end-of-list shapes,
+    // so it is unreadable rather than silently treated as either.
+    const next: unknown = body.next;
+    if (next === undefined || next === null || next === "") return { match: null, pageCapHit: false };
+    if (typeof next !== "string") {
+      throw new Error("Civitai workflow list returned a malformed `next` cursor");
+    }
     cursor = next;
   }
   // Every page up to the cap carried no match, and the last one still had a
@@ -1093,6 +1109,26 @@ export async function runCivitaiLane(
       sentReferenceCount: references.length,
     };
   } catch (error) {
-    return { ok: false, ...(predictionId ? { predictionId } : {}), error: error instanceof Error ? error.message : "Civitai generation failed" };
+    const message = error instanceof Error ? error.message : "Civitai generation failed";
+    // #673 (second Codex round on PR #684): every failure that can surface
+    // once a workflow id exists must declare a non-automatic disposition,
+    // so the selfie retry's own guard (`declaresNonAutomaticRetry`) never
+    // mistakes it for an ordinary automatic-retry-eligible failure and
+    // reposts a SECOND paid submit. A CivitaiError thrown post-submit
+    // already declares one (civitai_submit_unconfirmed; an exhausted
+    // workflow_status read's reconcile override; an async failure's own
+    // deliberate/never) and is left exactly as it is — appending twice
+    // would be redundant, not safer. This only appends the sentence when
+    // `predictionId` is set AND the message carries no disposition at
+    // all: a found-but-unparseable lookup match, a 2xx submit body that
+    // carried an id but failed to parse, "returned a different workflow
+    // while polling", a parse failure mid-poll, the mature/yellow
+    // retention check, or anything else non-Civitai thrown after a
+    // workflow id already exists. A pre-submit failure (no `predictionId`)
+    // is unchanged.
+    const final = predictionId && !declaresNonAutomaticRetry(message)
+      ? `${message} Civitai workflow ${predictionId} was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.`
+      : message;
+    return { ok: false, ...(predictionId ? { predictionId } : {}), error: final };
   }
 }
