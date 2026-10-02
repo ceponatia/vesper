@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startExchangeTrace } from "@/server/engine/chat-exchange-trace";
-import { recordAgentRun } from "@/server/ai/agent-failures";
+import { recordAgentFailure, recordAgentRun } from "@/server/ai/agent-failures";
 import { endTestPool, probeIntegrationDb, purgeOwnerRows, seedTestUser } from "@/server/test-support";
 import { characterChats, db, events } from "../db";
 import { loadChatExchangeTraces } from "./chat-exchange-trace-log";
@@ -17,6 +17,14 @@ import { loadChatExchangeTraces } from "./chat-exchange-trace-log";
  * must never await a write on the caller's path), so this suite POLLS for the
  * row rather than sleeping a fixed amount — the same pattern
  * `identity-pack-lifecycle.int.test.ts` uses for its own fire-and-forget writer.
+ *
+ * Two suites below prove the correction-round fix directly (#637 slice A):
+ * correlated rows and trace lookups are now filtered in SQL by the selected
+ * trace id(s), so a busy chat's newer, unrelated activity can no longer crowd
+ * an older selected trace's own rows out of a bounded scan window. Each
+ * bulk-inserts enough noise (one multi-row INSERT, not many round trips) to
+ * exceed the read model's private per-type caps, with the noise landing AFTER
+ * the target's own rows so it is provably newer.
  */
 
 const ready = await probeIntegrationDb("chat-exchange-trace-log.int.test", "events");
@@ -141,5 +149,86 @@ describe.skipIf(!ready)("chat exchange trace log (integration)", () => {
     const [emptyChat] = await db().insert(characterChats).values({ ownerId }).returning({ id: characterChats.id });
     if (!emptyChat) throw new Error("failed to create test chat");
     expect(await loadChatExchangeTraces({ chatId: emptyChat.id })).toEqual([]);
+  });
+
+  it("a correlated agent_failure older than many newer unrelated agent rows still surfaces (no crowding)", async () => {
+    const trace = startExchangeTrace({ chatId, operation: "send", authority: "legacy_chat", lane: "legacy_chat" });
+    const traceId = trace.traceId;
+    // A clean finish — only the correlated failure below should degrade the outcome.
+    trace.finish({ kind: "ok" });
+    trace.flush();
+    await waitForEventRows("chat_trace", chatId, 1);
+
+    // The trace's OWN correlated failure, written BEFORE the noise below so it is genuinely the
+    // older row (real inserts, real wall-clock `created_at` — not a faked timestamp).
+    recordAgentFailure({ legId: "chat_memory_scribe", chatId, traceId, kind: "timeout", detail: "an old, real failure" });
+    await waitForEventRows("agent_failure", chatId, 1);
+
+    // Comfortably above the read model's private per-type scan cap (1000 agent_failure rows):
+    // one bulk INSERT (fast — a single multi-row statement, not 1,050 round trips), every row
+    // landing with a LATER created_at than the trace's own row above. Under the PRE-FIX
+    // implementation (scan the newest 1000 agent_failure rows for the WHOLE CHAT, then filter by
+    // traceId in app code), this noise would crowd the trace's own, older row out of the window
+    // entirely and the correlation would silently read as healthy.
+    const noiseCount = 1050;
+    await db()
+      .insert(events)
+      .values(
+        Array.from({ length: noiseCount }, (_, i) => ({
+          type: "agent_failure",
+          chatId,
+          payload: { legId: "noise", kind: "timeout", cause: "model_slow", traceId: `noise-trace-${i}` },
+        })),
+      );
+
+    const traces = await loadChatExchangeTraces({ chatId, traceId });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.agentFailures).toHaveLength(1);
+    expect(traces[0]?.agentFailures[0]).toMatchObject({ legId: "chat_memory_scribe", traceId });
+    // finish was "ok", but a correlated agent failure still degrades the outcome (the outcome table) —
+    // the exact fallback-reads-as-healthy failure mode this fix closes.
+    expect(traces[0]?.outcome).toBe("degraded");
+  });
+
+  it("an explicit traceId lookup finds a trace whose rows are older than many newer unrelated chat_trace rows", async () => {
+    const trace = startExchangeTrace({
+      chatId,
+      operation: "send",
+      authority: "legacy_chat",
+      lane: "legacy_chat",
+      promptMessageId: "msg-old-window",
+    });
+    const traceId = trace.traceId;
+    trace.finish({ kind: "ok" });
+    trace.flush();
+
+    // Confirm it is findable BEFORE burying it under noise, so a failure below points at the
+    // noise step rather than an ordinary fire-and-forget race.
+    let found = await loadChatExchangeTraces({ chatId, traceId });
+    for (let attempt = 0; attempt < 400 && found.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      found = await loadChatExchangeTraces({ chatId, traceId });
+    }
+    expect(found).toHaveLength(1);
+
+    // Comfortably above TRACE_ROW_SCAN_CAP (2000): one bulk INSERT, every row landing with a
+    // LATER created_at than the trace's own row above. Under the PRE-FIX implementation (scan the
+    // newest 2000 chat_trace rows for the WHOLE CHAT, then group/filter by traceId in app code),
+    // this noise would push the trace's own row out of the window and the lookup would return [].
+    const noiseCount = 2050;
+    await db()
+      .insert(events)
+      .values(
+        Array.from({ length: noiseCount }, (_, i) => ({
+          type: "chat_trace",
+          chatId,
+          payload: { v: 1, traceId: `noise-part-${i}`, part: 0, stages: [], coverage: [], diagnostics: [] },
+        })),
+      );
+
+    const traces = await loadChatExchangeTraces({ chatId, traceId });
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.traceId).toBe(traceId);
+    expect(traces[0]?.header.promptMessageId).toBe("msg-old-window");
   });
 });
