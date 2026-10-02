@@ -98,7 +98,9 @@ while still counting against the owner's storage quota. `identity_face_crop`
 
 **Every** delete path — the owned-image helpers, the chat cascades, the entity reclaim, the look
 anchor's keep-latest purge, `deleteNonGalleryCharacterImages` — runs the same `purgeImagesWhere(where)`
-(`images/asset-deletion.ts`): select → invalidate derived sources → delete → best-effort unlink, once. The **caller** supplies the
+(`images/asset-deletion.ts`): select → invalidate derived sources → delete → best-effort unlink, once. The
+delete re-evaluates the predicate, and only the rows it actually removed lose their files and are
+counted, so a row that stopped matching after the select keeps both. The **caller** supplies the
 predicate and therefore owns every guard (owner id, kind, chat/entity), and the helper adds nothing
 to it, so a purge can never be wider than the call site asked for. Route handlers are barred from
 importing it (ESLint) and use the owner-scoped `deleteOwnedImage(s)` instead.
