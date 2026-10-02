@@ -180,6 +180,17 @@ export {
   REFERENCE_VIEW_OUTPUT_UNAVAILABLE,
 } from "./reference-view-recovery";
 export {
+  IMAGE_OUTPUT_EXPIRED,
+  IMAGE_OUTPUT_RECOVERED,
+  IMAGE_OUTPUT_UNAVAILABLE,
+  imageOutputRecoverable,
+  RECOVERABLE_IMAGE_KINDS,
+  recoverImageOutput,
+  type ImageOutputRecoveryRefusal,
+  type RecoverImageOutputInput,
+  type RecoverImageOutputResult,
+} from "./image-output-recovery";
+export {
   loadConsumableReferenceView,
   REFERENCE_VIEW_DROPPED_FOR_CAPACITY,
   REFERENCE_VIEW_UNAVAILABLE,

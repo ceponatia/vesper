@@ -147,6 +147,26 @@ swallowed, a beat stuck on a dead connection never holds back the next one, and 
 beating — a crashed process, a database that stays unreachable — ages until a sweep reclaims the
 row. Only a `pending` row carries a lease; saving and failing remove it.
 
+**A paid output's ids land before its download.** Once a Civitai workflow has succeeded and the lane
+has chosen its output, and before the download starts, the lane records the workflow
+(`predictionId`), the output (`undeliveredOutputId`) and the model (`modelSlug`) under the render's
+`meta.render`. The lane does not know the row: `runImagePipeline` installs a recorder around
+`produce` (`withPaidRenderOutputRecorder`, `server/ai`), carried by the render's own async context,
+so concurrent renders each reach only their own row and a render outside the pipeline records
+nothing. The write merges into `meta.render` in SQL, guarded by `status = 'pending'`, like a lease
+beat. It is best-effort: a failed write is logged and the render carries on, and the lane waits for
+it at most 5 seconds before downloading anyway. A settle that records the attempt replaces
+`meta.render` whole, so on a saved row, or one failed with the attempt's own record, the early ids
+are gone. They outlive the render only where nothing replaced them: a produce that threw, or a
+process that died mid-download.
+
+**A reclaimed row keeps its render record.** The pending reclaim merges only the failure stamp and
+retires the lease, so a render that recorded its paid output's ids and then died becomes a
+`failed` row whose `meta.render` still names both ids. That row offers the output for recovery
+exactly as a render that failed its download does (`paidOutputOffer`, `paid-output.ts`), whatever
+its kind: `failed`, both ids, a Civitai model, and no `recoveryUnavailableAt`. The surface that owns
+the row decides what to do with the offer.
+
 **A late landing is a save.** When a render lands on a row that is already `failed` — the sweep
 reclaimed it while the render was still running — the image is real, so the save marks the row
 `ready` with `meta.error` and `meta.failedAt` removed, pushes an `images.save_late_landing` warn
@@ -199,12 +219,59 @@ existed fall back to `created_at` and are past the window by definition.
 
 Retirement runs LAST, so a row this pass just marked failed always survives it. It goes through
 `purgeImagesWhere` like every other delete path (identity-pack derivations invalidated, any stray
-file unlinked) and clears the soft entity pointers the way the Gallery's delete does.
+file unlinked) and clears the soft entity pointers the way the Gallery's delete does. The purge is
+guarded on `status = 'failed'`, so a row an in-place recovery claims after the pass read it
+(§Recovering a paid output in place) survives with its file, and pointers are cleared only for the
+rows actually removed.
 
 **Two rails, both about the unrecoverable case:** at most 200 rows leave per pass, oldest failure
 first; and when *most* of the rows in scope are expired failures, nothing is retired and the
 disagreement is logged — a volume that did not mount marks every `ready` row failed, and that
 reading is an environment fault, not a database full of garbage.
+
+## Recovering a paid output in place
+
+A failed `portrait_variant`, `avatar` or `scene` row (selfies included) whose render was billed but
+never delivered is recovered onto **its own row**, with no new render
+(`recoverImageOutput`, `image-output-recovery.ts`; `POST /api/images/[id]/recover`). Reference
+views keep their own recovery, because their attempt rows are what the sheet reads
+([pipelines/reference-views.md](pipelines/reference-views.md) §Recovering a paid output); this
+service answers `ineligible` for them.
+
+- **The offer** is the shared reading of a failed row (`paidOutputOffer`, `paid-output.ts`):
+  `failed`, `meta.render` names the workflow and the output on a Civitai model, and no
+  `recoveryUnavailableAt`. The portraits and chat scenes lists project it as each row's
+  `recoverable` flag.
+- **The claim is the row.** One guarded `failed → pending` transition takes it: its own WHERE
+  re-checks the owner, a kind recovered in place, `failed`, the same workflow and output ids, and
+  no withdrawal stamp. It stamps a render lease, beaten every 30 seconds while the recovery runs,
+  and the run's claim token (`meta.recoveryClaim`). The row keeps its `error` and `failedAt`.
+  From there it reads as a live render: the sweep leaves it alone while the lease beats, retention
+  never sees a `failed` row, the studio and the chat poll it, and a second recovery answers `busy`.
+- **The bytes** come read-only from the stored ids (`recoverPaidOutput`: the decode rule, then
+  the output shape the lane's live render would have made — the row's recorded `meta.render.shape`,
+  else the lane's own 3:4 request on its task). They are written through the one webp writer at
+  the row's own path.
+- **Every write that ends the claim is guarded on the token**, on a row that is `pending`, or
+  `failed` when the sweep reclaimed it under this run:
+  - **recovered:** `→ ready` with its byte count and file facts, the output's shape recorded where
+    a render records its own, `recoveredFrom` (`workflowId`, `blobId`), and the failure, lease,
+    withdrawal and claim keys retired;
+  - **transient failure:** `→ failed` with the lease and the claim retired; the original `error`
+    and `failedAt` stand, so retention's clock does not move, and the offer stands;
+  - **permanent failure** (the provider shows the output is gone, or its bytes can never be
+    decoded): `→ failed` with `recoveryUnavailableAt`; the offer is withdrawn.
+- **A recovery whose process dies** leaves a leased `pending` row; the sweep reclaims it after
+  `JOB_STALE_MS`, keeping `meta.render`, so the offer stands. **A row its owner deletes
+  mid-recovery** answers `not_found`; a file already written is an orphan the sweep removes.
+  Retention never deletes a claimed row (§Retention).
+- **Nothing else settles** (owner ruling 2026-10-02). No lane's `onReady` runs and no pointer
+  moves: a recovered avatar is a ready candidate the owner promotes with the existing action, and
+  a recovered scene or selfie is drawn under its anchor message like any ready scene. A recovered
+  row carries no render advisories; those are measured only on a live render's output.
+- **It is free:** no admission, budget or job cap, and never a new workflow. Diagnostics:
+  `images.output_recovery.recovered` (info), `.expired` and `.unavailable` (warn), each with
+  `imageId`, `kind` and `workflowId`, always logged.
 
 ## Retry and dedupe
 

@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { imageRenderRejection, jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import { db, images } from "@/server/db";
+import { imageOutputRecoverable } from "@/server/images";
 import { isSimRoutedAuthority, readChatEngineAuthority } from "@/server/engine";
 import { loadOwnedChat, type OwnedChat } from "../../owned";
 import { hasLiveChatSceneJob, queueChatScene } from "./queue";
@@ -34,7 +35,8 @@ const sceneBodySchema = z.object({});
 /**
  * GET /api/chats/:chatId/scene — this chat's scenes only, newest first, plus whether a
  * render job is live (`rendering`): the pending image row doesn't exist until the slow
- * composer step finishes, so the flag is what keeps the client polling through it.
+ * composer step finishes, so the flag is what keeps the client polling through it. Each
+ * scene carries `recoverable` (a failed render whose paid output is still on offer).
  */
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
@@ -59,7 +61,9 @@ export const GET = withOwnedChat<Params, OwnedChat>(
         .orderBy(desc(images.createdAt)),
       hasLiveChatSceneJob(chatId),
     ]);
-    return jsonOk({ scenes, rendering });
+    // `recoverable`: a failed scene or selfie whose paid output can be recovered
+    // onto its row with no new render (`POST /api/images/[id]/recover`).
+    return jsonOk({ scenes: scenes.map((scene) => ({ ...scene, recoverable: imageOutputRecoverable(scene) })), rendering });
   },
 );
 
