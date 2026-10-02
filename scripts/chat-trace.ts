@@ -29,7 +29,7 @@ import { loadChatExchangeTraces, type LoadChatExchangeTracesQuery } from "@/serv
  * no database, no clock — which is what lets `chat-trace.test.ts` pin the
  * argument parsing and the report layout without a Postgres.
  *
- *   pnpm trace:chat --chat <chatId> [--latest | --message <id> | --trace <id> | --limit <n>] [--json]
+ *   pnpm trace:chat --chat <chatId> [--latest | --trace <id> | --message <id> [--limit <n>] | --limit <n>] [--json]
  *
  * Locally it reads `DATABASE_URL` through dotenv, exactly like every other
  * root script. Against production, run it on the machine that holds the
@@ -54,14 +54,18 @@ const USAGE = [
   "Usage: pnpm trace:chat --chat <chatId> [options]",
   "  --chat <chatId>      the chat to read traces for (required)",
   "  --latest             the single most recently active trace (default)",
-  "  --message <id>       the trace whose header names this message as prompt/reply/guard",
   "  --trace <id>         exactly this trace id",
-  "  --limit <n>          the n most recently active traces (1-50)",
+  "  --message <id>       every trace naming this message as prompt/reply/guard, newest",
+  "                       first (a reply can be regenerated, so there can be more than",
+  "                       one); default cap 10, combine with --limit to change it",
+  "  --limit <n>          with --message, caps its results (1-50); alone (no --latest,",
+  "                       --message, or --trace), the n most recently active traces (1-50)",
   "  --json               print the contract's versioned JSON output instead of the text report",
   "  --help               print this and exit",
   "",
-  "Exactly one of --latest, --message, --trace, --limit may be given; --latest is the default",
-  "when none is given.",
+  "--latest, --message, and --trace are mutually exclusive (--latest is the default when none",
+  "is given). --limit may be combined with --message to change its cap, or used alone as its",
+  "own selector; it cannot be combined with --latest or --trace.",
 ].join("\n");
 
 // ---------------------------------------------------------------------------
@@ -78,7 +82,8 @@ export class UsageError extends Error {
 
 export type TraceSelector =
   | { readonly kind: "latest" }
-  | { readonly kind: "message"; readonly messageId: string }
+  /** Every trace naming this message, newest first, capped at `limit` (default {@link DEFAULT_MESSAGE_LIMIT}). */
+  | { readonly kind: "message"; readonly messageId: string; readonly limit: number }
   | { readonly kind: "trace"; readonly traceId: string }
   | { readonly kind: "limit"; readonly limit: number };
 
@@ -88,6 +93,10 @@ export type ParsedArgs =
 
 const BOOLEAN_FLAGS = new Set(["latest", "json"]);
 const VALUE_FLAGS = new Set(["chat", "message", "trace", "limit"]);
+
+/** `--message`'s result cap when `--limit` is not also given — a regenerated reply can be
+ * written by several exchanges, so showing only the newest would hide the others by default. */
+const DEFAULT_MESSAGE_LIMIT = 10;
 
 /** Parse `--limit`'s value: an integer in [1, 50], per the contract's own `loadChatExchangeTraces` cap. */
 function parseLimit(raw: string): number {
@@ -150,16 +159,23 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
     throw new UsageError("--chat <chatId> is required");
   }
 
-  const selectorCount = [latest, messageId !== undefined, traceId !== undefined, limitRaw !== undefined].filter(
-    Boolean,
-  ).length;
-  if (selectorCount > 1) {
-    throw new UsageError("specify exactly one of --latest, --message, --trace, --limit");
+  // --latest / --message / --trace choose WHICH trace(s) are wanted; at most one of them.
+  const primarySelectorCount = [latest, messageId !== undefined, traceId !== undefined].filter(Boolean).length;
+  if (primarySelectorCount > 1) {
+    throw new UsageError("specify exactly one of --latest, --message, --trace");
+  }
+  // --limit is a COUNT, not a third way to pick a trace: it either caps --message's
+  // results, or (with none of --latest/--message/--trace given) stands alone as its own
+  // selector. --latest and --trace already name exactly one trace, so either combined
+  // with --limit is still a conflict.
+  if (limitRaw !== undefined && (latest || traceId !== undefined)) {
+    throw new UsageError("--limit cannot be combined with --latest or --trace");
   }
 
   let selector: TraceSelector;
   if (messageId !== undefined) {
-    selector = { kind: "message", messageId };
+    const limit = limitRaw === undefined ? DEFAULT_MESSAGE_LIMIT : parseLimit(limitRaw);
+    selector = { kind: "message", messageId, limit };
   } else if (traceId !== undefined) {
     selector = { kind: "trace", traceId };
   } else if (limitRaw !== undefined) {
@@ -177,7 +193,7 @@ export function selectorQuery(chatId: string, selector: TraceSelector): LoadChat
     case "latest":
       return { chatId };
     case "message":
-      return { chatId, messageId: selector.messageId };
+      return { chatId, messageId: selector.messageId, limit: selector.limit };
     case "trace":
       return { chatId, traceId: selector.traceId };
     case "limit":
