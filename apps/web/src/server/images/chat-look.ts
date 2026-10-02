@@ -31,7 +31,7 @@ import {
 } from "@vesper/image-core";
 import { imageMeta, readImageBytes } from "./asset-storage";
 import { purgeImagesWhere } from "./asset-deletion";
-import { runImagePipeline } from "./assets";
+import { ImageProduceError, runImagePipeline } from "./assets";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
@@ -624,9 +624,16 @@ export async function renderChatLookImage(input: RenderChatLookInput): Promise<s
           },
           sink,
         );
-        // A failure still THROWS (this lane's ruled failure shape), so provenance
-        // is recorded only on success — a thrown produce has no meta channel.
-        if (!edit.ok || !edit.image) throw new Error(edit.error ?? `${model.slug} returned no image`);
+        // A failure still THROWS (this lane's ruled failure shape), as an
+        // `ImageProduceError` carrying the attempt's provenance: the failed row
+        // records it, and an attempt record replaces any paid-output ids the
+        // transport recorded before a download that then failed for good.
+        if (!edit.ok || !edit.image) {
+          throw new ImageProduceError(
+            edit.error ?? `${model.slug} returned no image`,
+            renderAttemptMeta(edit.attempt, edit.advisories).meta,
+          );
+        }
         return { ok: true, image: edit.image, ...renderAttemptMeta(edit.attempt, edit.advisories) };
       },
       // Keep-latest (ruled), PER CHARACTER: the superseded looks go with their
@@ -700,9 +707,15 @@ export async function renderChatPlaceImage(input: RenderChatPlaceInput): Promise
           { profile: resolved, prompt, references: [], target: { aspectRatio: 3 / 2 } },
           sink,
         );
-        // A failure still THROWS (this lane's ruled failure shape), so provenance
-        // is recorded only on success — a thrown produce has no meta channel.
-        if (!shot.ok || !shot.image) throw new Error(shot.error ?? `${model.slug} returned no image`);
+        // A failure still THROWS (this lane's ruled failure shape), as an
+        // `ImageProduceError` carrying the attempt's provenance, exactly as the
+        // look anchor's above.
+        if (!shot.ok || !shot.image) {
+          throw new ImageProduceError(
+            shot.error ?? `${model.slug} returned no image`,
+            renderAttemptMeta(shot.attempt, shot.advisories).meta,
+          );
+        }
         return { ok: true, image: shot.image, ...renderAttemptMeta(shot.attempt, shot.advisories) };
       },
       failureDiagnostic: { code: "images.chat_place.failed" },
