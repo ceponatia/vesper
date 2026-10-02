@@ -4,7 +4,7 @@ import {
 } from "@/contracts";
 import { characterChats, characters, chatParticipants, db, images } from "@/server/db";
 import { deleteChat } from "@/server/engine";
-import { deleteNonGalleryCharacterImages, HIDDEN_IMAGE_KINDS } from "@/server/images";
+import { deleteNonGalleryCharacterImages, HIDDEN_IMAGE_KINDS, UNSHAREABLE_IMAGE_KINDS } from "@/server/images";
 import {
   characterPatchSchema,
   findViewable,
@@ -25,10 +25,18 @@ export const GET = withAuthorizedResource(
   // Owner-or-public read (the browse/preview/copy path); private non-owned ⇒ 404.
   async (user, params: Params) => (await findViewable("character", params.id, user.id)) ?? null,
   async (user, row) => {
+    // `mine` — read-only preview + duplicate CTA for foreign public rows (the same
+    // pattern items and locations use; edits would 404 server-side anyway). A
+    // foreign viewer gets the allow-listed public representation, not the row.
+    const mine = row.ownerId === user.id;
     // Portraits scope to the entity owner so a public preview shows the author's art.
     // `HIDDEN_IMAGE_KINDS` is subtracted: an identity face crop is an internal render
     // input, and this strip is read by the character's OWNER and by every public
     // viewer alike, so a hidden asset must never surface through it.
+    // A foreign viewer also loses the chat kinds (#436): the author's chat scenes
+    // and selfies are filed under this character but are conversation content,
+    // never part of what publishing it shares — with or without a live `chat_id`.
+    const excludedKinds = mine ? HIDDEN_IMAGE_KINDS : UNSHAREABLE_IMAGE_KINDS;
     const portraitRows = await db()
       .select()
       .from(images)
@@ -37,7 +45,7 @@ export const GET = withAuthorizedResource(
           eq(images.ownerId, row.ownerId),
           eq(images.entityKind, "character"),
           eq(images.entityId, row.id),
-          notInArray(images.kind, [...HIDDEN_IMAGE_KINDS]),
+          notInArray(images.kind, [...excludedKinds]),
         ),
       )
       .orderBy(desc(images.createdAt));
@@ -46,10 +54,6 @@ export const GET = withAuthorizedResource(
     // this response — the portrait studio loads full rows from the owner-strict
     // `GET /characters/:id/portraits`.
     const portraits = portraitRows.map(toPublicEntityImage);
-    // `mine` — read-only preview + duplicate CTA for foreign public rows (the same
-    // pattern items and locations use; edits would 404 server-side anyway). A
-    // foreign viewer gets the allow-listed public representation, not the row.
-    const mine = row.ownerId === user.id;
     // Acceptance is the OWNER's editing state — which portrait is this
     // character's identity source, and whether the one on screen is it. A public
     // viewer sees the portrait and nothing about how its author is working, so

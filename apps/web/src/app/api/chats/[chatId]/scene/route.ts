@@ -3,8 +3,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { imageRenderRejection, jsonError, jsonOk, readBody, withOwnedChat } from "@/server/api";
 import { db, images } from "@/server/db";
-import { imageOutputRecoverable } from "@/server/images";
 import { isSimRoutedAuthority, readChatEngineAuthority } from "@/server/engine";
+import { imageOutputRecoverable, loadSceneReferences } from "@/server/images";
 import { loadOwnedChat, type OwnedChat } from "../../owned";
 import { hasLiveChatSceneJob, queueChatScene } from "./queue";
 
@@ -33,14 +33,16 @@ type Params = { chatId: string };
 const sceneBodySchema = z.object({});
 
 /**
- * GET /api/chats/:chatId/scene — this chat's scenes only, newest first, plus whether a
+ * GET /api/chats/:chatId/scene — this chat's scenes only (chat-scoped: keyed on the owner
+ * and `chat_id`, not on the current primary, so the list survives a primary change; the
+ * Gallery still files each scene under the primary at render time), newest first, plus whether a
  * render job is live (`rendering`): the pending image row doesn't exist until the slow
  * composer step finishes, so the flag is what keeps the client polling through it. Each
  * scene carries `recoverable` (a failed render whose paid output is still on offer).
  */
 export const GET = withOwnedChat<Params, OwnedChat>(
   (user, params) => loadOwnedChat(params.chatId, user.id),
-  async (user, owned, _req, ctx) => {
+  async (user, _owned, _req, ctx) => {
     const { chatId } = await ctx.params;
 
     const [scenes, rendering] = await Promise.all([
@@ -52,18 +54,29 @@ export const GET = withOwnedChat<Params, OwnedChat>(
             eq(images.ownerId, user.id),
             eq(images.kind, "scene"),
             eq(images.entityKind, "character"),
-            eq(images.entityId, owned.character.id),
             // Scoped to THIS conversation — a sibling chat's scenes (or un-chat-keyed
-            // rows) belong to the Gallery, not here.
+            // rows) belong to the Gallery, not here. Deliberately NOT keyed on the
+            // chat's current primary: removing the primary promotes another member,
+            // and scenes filed under the old primary must stay in the chat.
             eq(images.chatId, chatId),
           ),
         )
         .orderBy(desc(images.createdAt)),
       hasLiveChatSceneJob(chatId),
     ]);
-    // `recoverable`: a failed scene or selfie whose paid output can be recovered
-    // onto its row with no new render (`POST /api/images/[id]/recover`).
-    return jsonOk({ scenes: scenes.map((scene) => ({ ...scene, recoverable: imageOutputRecoverable(scene) })), rendering });
+    // Each scene's cast (`image_references`), so the client names a selfie's
+    // sender from the row itself, never from where it is filed; and
+    // `recoverable`: a failed scene or selfie whose paid output can be
+    // recovered onto its row with no new render (`POST /api/images/[id]/recover`).
+    const referencesByScene = await loadSceneReferences(scenes.map((row) => row.id));
+    return jsonOk({
+      scenes: scenes.map((row) => ({
+        ...row,
+        references: referencesByScene.get(row.id) ?? [],
+        recoverable: imageOutputRecoverable(row),
+      })),
+      rendering,
+    });
   },
 );
 

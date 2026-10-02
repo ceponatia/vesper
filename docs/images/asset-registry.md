@@ -35,7 +35,10 @@ under `meta.render`, and — on the character-fact lanes — visual provenance u
 
 **The gate is owner-first:** you always get your own images. A cross-owner read is allowed only
 when the image's `entity_kind` / `entity_id` name a **public** shareable entity **owned by the same
-account as the image** (`isPublicEntityImage(entityKind, entityId, row.ownerId)`).
+account as the image** (`isPublicEntityImage(entityKind, entityId, row.ownerId)`), and only for a
+kind that may ever be shared: the route subtracts `UNSHAREABLE_IMAGE_KINDS` (the
+[hidden kinds](#hidden-kinds) plus the [chat-private kinds](#chat-private-kinds)) through
+`isShareableImageKind` before it asks about the entity.
 
 The ownership half of that predicate is what makes it safe. The entity linkage is polymorphic
 metadata with no FK, so without it the check reads "some public row has this id", and any path that
@@ -46,7 +49,8 @@ public character. `Cache-Control` follows the same split — `public` for public
 Image rows returned **beside a public entity** (the character detail response's portrait strip) are
 projected to `{ id, kind, entityKind, entityId, createdAt }` — never `path` (storage layout) or
 `prompt` (prompts embed authored and chat text, which is why `deleteChat` scrubs them). The
-portrait studio's full rows come from the owner-strict `GET /api/characters/:id/portraits`.
+portrait studio's full rows come from the owner-strict `GET /api/characters/:id/portraits`. A
+foreign viewer's strip also omits the chat-private kinds; the owner's lists them.
 
 ## Hidden kinds
 
@@ -79,6 +83,33 @@ scene's reference ([pipelines/body-reference-images.md](pipelines/body-reference
 hard-deleted with its character by the same rule, collected by the reference-view sweep a week
 after it is replaced or removed, and read by its owner through the owner file route, which is how
 Portrait Studio's body-image area displays it.
+
+## Chat-private kinds
+
+`scene` (chat scenes and selfies), `chat_look`, `chat_place` and `chat_upload` rows are **chat
+content**. Unlike the hidden kinds they are user-visible — their owner sees them in the chat, and
+scenes in the Gallery — but `CHAT_PRIVATE_IMAGE_KINDS` keeps them from ever crossing an owner
+boundary, even when they are filed under an entity the owner has published:
+
+- the file route's public widening (an owner read gets `Cache-Control: private`);
+- a foreign viewer's portrait strip in the character detail response; and
+- a cross-account clone (`cloneEntityImages`). An owner duplicating their own character keeps the
+  chat images on the copy (only hidden kinds are dropped); they keep their kind there, so they stay
+  owner-only even if the copy is published.
+
+A chat scene is filed under the chat's primary character, so without this rule publishing that
+character would publish every picture its author's conversations produced. For the same reason no
+chat image can become the character's avatar: `promoteVariant` accepts only the authored
+`PORTRAIT_IMAGE_KINDS` (avatar, portrait variant), and acceptance only ever accepts the current
+avatar, so a chat image can never become the identity source either.
+
+The rule keys on the **kind**, never on `chat_id`, because it must survive chat deletion: a chat
+delete nulls `images.chat_id` and the scene stays in the Gallery detached, as private as before. The
+kind is durable provenance here: the character-chat scene lane is the only writer of `scene` rows
+filed under an entity (including early chat scenes that never carried a `chat_id`), clone copies are
+the only other source, and the retired session lane filed its scenes with no entity at all.
+`UNSHAREABLE_IMAGE_KINDS` is the union of both lists, and is the one list a cross-owner read or copy
+subtracts.
 
 ## Deletes
 

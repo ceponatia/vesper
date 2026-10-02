@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { db, images } from "@/server/db";
-import { absoluteImagePath, HIDDEN_IMAGE_KINDS, type ImageRow } from "@/server/images";
+import { absoluteImagePath, isShareableImageKind, type ImageRow } from "@/server/images";
 import { isPublicEntityImage, jsonError, withAuthorizedResource } from "@/server/api";
 
 type Params = { id: string };
@@ -28,14 +28,21 @@ interface ServableImage {
  * that character would otherwise publish the crop with it (invariant 4 — a hidden
  * crop never crosses an owner boundary). Its OWNER still reads it here, which is
  * how the crop editor displays it, and the `private` cache policy follows.
+ *
+ * Chat content (`CHAT_PRIVATE_IMAGE_KINDS` — scenes, selfies, look/place anchors,
+ * uploads) is excluded the same way (#436): a chat scene is filed under the
+ * chat's primary character, and publishing that character must not publish the
+ * conversation's pictures. The kind decides, not `chat_id`, so a scene whose chat
+ * was deleted (`chat_id` SET NULL) stays owner-only too. Both halves come from
+ * `isShareableImageKind`.
  */
 export const GET = withAuthorizedResource<Params, ServableImage>(
   "image",
   async (user, params) => {
     const [row] = await db().select().from(images).where(eq(images.id, params.id)).limit(1);
     if (!row || row.status !== "ready") return null;
-    const hidden = HIDDEN_IMAGE_KINDS.some((kind) => kind === row.kind);
-    const entityIsPublic = !hidden && (await isPublicEntityImage(row.entityKind, row.entityId, row.ownerId));
+    const entityIsPublic =
+      isShareableImageKind(row.kind) && (await isPublicEntityImage(row.entityKind, row.entityId, row.ownerId));
     if (row.ownerId !== user.id && !entityIsPublic) return null;
     return { row, entityIsPublic };
   },

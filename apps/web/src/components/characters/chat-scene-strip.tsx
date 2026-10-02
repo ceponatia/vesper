@@ -9,6 +9,7 @@ import {
   imageRecoverFailedTitle,
   imageRecoveredToastTitle,
 } from "@/components/images/recovery-copy";
+import { selfieLabels, selfieSenderName } from "@/components/chat/scene-moment-attribution";
 import { ImageProfileSelect } from "./image-profile-select";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -67,9 +68,12 @@ export function SceneStrip({
   const toast = useToast();
   const sceneProfiles = useAsyncData(() => imageProfilesApi.list("scene"), []);
   const [generating, setGenerating] = useState(false);
-  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null; meta: ImageRecord["meta"] } | null>(
-    null,
-  );
+  const [enlarged, setEnlarged] = useState<{
+    id: string;
+    prompt: string | null;
+    meta: ImageRecord["meta"];
+    alt: string;
+  } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   // Per-tile, not a single flag: Civitai's download retry can take minutes,
@@ -196,6 +200,9 @@ export function SceneStrip({
           ) : null}
           {sceneList.map((img) => {
             const error = sceneError(img);
+            // A selfie is named for its own sender (its recorded cast), never the
+            // chat's primary it is filed under; a non-selfie keeps `name`.
+            const imageName = img.meta.flavor === "selfie" ? selfieLabels(selfieSenderName(img)).alt : name;
             return (
               <div key={img.id} className="group relative w-28 shrink-0">
                 {img.status === "pending" ? (
@@ -227,11 +234,11 @@ export function SceneStrip({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null, meta: img.meta })}
+                    onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null, meta: img.meta, alt: imageName })}
                     aria-label="Enlarge scene image"
                     className="block w-full cursor-pointer overflow-hidden rounded-card border border-ink-600 transition-colors hover:border-accent-500/60"
                   >
-                    <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
+                    <EntityImage imageId={img.id} name={imageName} className="aspect-[3/4] w-full" />
                   </button>
                 )}
                 {img.status !== "pending" ? (
@@ -256,7 +263,7 @@ export function SceneStrip({
 
       <ImageLightbox
         imageId={enlarged?.id ?? null}
-        alt={name}
+        alt={enlarged?.alt ?? name}
         prompt={enlarged?.prompt ?? null}
         meta={enlarged?.meta ?? null}
         onClose={() => setEnlarged(null)}

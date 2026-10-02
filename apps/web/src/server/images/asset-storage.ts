@@ -385,6 +385,16 @@ function reportLateLanding(row: ImageRow, sink: DiagnosticSink | undefined): voi
 export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as const satisfies readonly ImageKind[];
 
 /**
+ * The authored portrait kinds: what the portrait studio lists and addresses, and
+ * the ONLY kinds `promoteVariant` may make a character's candidate avatar. Since
+ * acceptance only ever accepts the current candidate, this is also what can
+ * become a character's identity source. A positive list, so a chat scene, a look
+ * anchor or a hidden render input filed under the same character can never be
+ * promoted, whatever new kind is added later.
+ */
+export const PORTRAIT_IMAGE_KINDS = ["avatar", "portrait_variant"] as const satisfies readonly ImageKind[];
+
+/**
  * Kinds that are INTERNAL operational assets, never user-visible ones: the
  * identity face crop, the identity-trial render output, the
  * Advanced Image Lab's control fixtures and experiment renders, the Image
@@ -406,9 +416,9 @@ export const GALLERY_IMAGE_KINDS = ["scene", "portrait_variant", "entity"] as co
  *   `outputKind` skips the storage reservation for these kinds).
  *
  * Surfaces that filter by a POSITIVE kind list — the Gallery tabs, the chat asset
- * queries, and the portrait studio's `PORTRAIT_STUDIO_KINDS` (which backs the
- * studio's GET/DELETE/promote) — exclude these by construction and need nothing
- * from here. A new surface subtracts them with this list rather than repeating
+ * queries, and `PORTRAIT_IMAGE_KINDS` (which backs the portrait studio's
+ * GET/DELETE and `promoteVariant`) — exclude these by construction and need
+ * nothing from here. A new surface subtracts them with this list rather than repeating
  * the literal.
  */
 export const HIDDEN_IMAGE_KINDS = [
@@ -420,6 +430,53 @@ export const HIDDEN_IMAGE_KINDS = [
   "reference_view",
   "body_reference",
 ] as const satisfies readonly ImageKind[];
+
+/**
+ * Kinds that are CHAT content (#436): the chat's scenes and selfies, its
+ * look/place render anchors and the player's uploads. Unlike
+ * `HIDDEN_IMAGE_KINDS` these are user-visible — their OWNER lists and reads them
+ * in the chat, and scenes in the Gallery, before and after the chat is deleted —
+ * but they never cross an owner boundary, even when filed against an entity the
+ * owner has published. A chat scene is filed under the chat's primary character,
+ * so without this a public character would publish every scene its author's
+ * conversations produced.
+ *
+ * The rule is keyed on the KIND, not on `chat_id`, because it has to survive chat
+ * deletion: `images.chat_id` is SET NULL when a chat goes and the scene stays in
+ * the Gallery, detached. The kind is a durable provenance marker here — every
+ * `scene` row filed under an entity has only ever been written by the
+ * character-chat lane (`renderCharacterSceneImage`, including pre-conversation
+ * rows that never carried a `chat_id`) or copied from one by a clone; the retired
+ * session lane filed its scenes with no entity at all.
+ *
+ * Subtracted, beside the hidden kinds, wherever a read or copy crosses an owner
+ * boundary: the public file-serving widening, the character read's foreign
+ * preview strip, and a cross-account `cloneEntityImages` (an owner's clone of
+ * their own character keeps them, still under their kind, so they stay owner-only
+ * on the copy). Owner-scoped surfaces need nothing from here. Use
+ * {@link UNSHAREABLE_IMAGE_KINDS} for the union.
+ */
+export const CHAT_PRIVATE_IMAGE_KINDS = [
+  "scene",
+  "chat_look",
+  "chat_place",
+  "chat_upload",
+] as const satisfies readonly ImageKind[];
+
+/**
+ * Every kind that never crosses an owner boundary: the internal hidden kinds
+ * plus the owner-visible chat kinds. The ONE list a cross-owner read or copy
+ * subtracts, so a new surface cannot remember one half and forget the other.
+ */
+export const UNSHAREABLE_IMAGE_KINDS = [
+  ...HIDDEN_IMAGE_KINDS,
+  ...CHAT_PRIVATE_IMAGE_KINDS,
+] as const satisfies readonly ImageKind[];
+
+/** Whether an image of this kind may ever be served or copied to another account. */
+export function isShareableImageKind(kind: string): boolean {
+  return !UNSHAREABLE_IMAGE_KINDS.some((unshareable) => unshareable === kind);
+}
 
 /**
  * `extraMeta` rides the same update as the error text; the error wins a collision.

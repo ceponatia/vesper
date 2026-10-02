@@ -86,7 +86,7 @@ export interface SceneCastMember {
 }
 
 export interface RenderCharacterSceneInput {
-  /** The character the scene row is FILED against — the strip reads by this id. */
+  /** The character the scene row is FILED against (the chat's primary) — the strip reads by this id; not necessarily a cast member. */
   characterId: string;
   userId: string;
   /** Everyone in frame, in roster order. Never empty. */

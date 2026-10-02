@@ -9,6 +9,7 @@ import {
   purgeOwnerRows,
   seedTestUser,
 } from "@/server/test-support";
+import { PORTRAIT_IMAGE_KINDS } from "./asset-storage";
 import { promoteVariant } from "./variants";
 
 // Ownership coverage for the avatar-promotion seam. `promoteVariant` is a
@@ -177,4 +178,33 @@ describe.skipIf(!ready)("promoteVariant ownership", () => {
 
     expect(await avatarOf(fixture.publicCharacter)).toBeNull();
   });
+
+  // Derived from the schema enum, so a kind added later is covered the day it
+  // lands. Chat scenes/selfies (#436) and hidden render inputs are the live
+  // cases: each is owned, ready and filed under this very character, so only the
+  // kind guard stands between it and the avatar — and, through acceptance, the
+  // identity source.
+  it.each(images.kind.enumValues.filter((kind) => !PORTRAIT_IMAGE_KINDS.some((portrait) => portrait === kind)))(
+    "the owner's own ready %s filed under the character is not a promotable portrait",
+    async (kind) => {
+      const [row] = await db()
+        .insert(images)
+        .values(
+          canonicalImageRow({
+            ownerId: ownerA,
+            kind,
+            entityKind: "character" as const,
+            entityId: fixture.character,
+            status: "ready" as const,
+          }),
+        )
+        .returning({ id: images.id });
+      if (!row) throw new Error("image insert failed");
+      const before = await avatarOf(fixture.character);
+      const result = await promoteVariant(fixture.character, row.id, ownerA);
+      expect(result).toEqual({ ok: false, error: "image is not a promotable portrait" });
+      expect(await avatarOf(fixture.character)).toBe(before);
+      expect(before).not.toBe(row.id);
+    },
+  );
 });

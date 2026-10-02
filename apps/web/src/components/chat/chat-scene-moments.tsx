@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { EntityImage } from "@/components/ui/entity-image";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { useToast } from "@/components/ui/toast";
+import { selfieLabels, selfieSenderName } from "./scene-moment-attribution";
 
 /**
  * Inline scene moments: scene images rendered IN the transcript, under the
@@ -65,7 +66,7 @@ export function SceneMomentRow({
   onRecovered: () => void;
 }) {
   const toast = useToast();
-  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null } | null>(null);
+  const [enlarged, setEnlarged] = useState<{ id: string; prompt: string | null; alt: string } | null>(null);
   // Tracked per image id, not a single flag: Civitai's download retry can take
   // minutes, and only the recovering tile's own control should wait on it —
   // every other tile in the row (and the row's own poll) stays live.
@@ -100,6 +101,11 @@ export function SceneMomentRow({
       {images.map((img) => {
         const selfie = img.meta.flavor === "selfie";
         const failed = img.status === "failed";
+        // A selfie is named for its own sender (from its recorded cast), never the
+        // transcript's primary; a non-selfie keeps the primary's name.
+        const sender = selfie ? selfieSenderName(img) : null;
+        const selfieText = selfie ? selfieLabels(sender) : null;
+        const imageName = selfieText ? selfieText.alt : name;
         const borderClass = selfie ? "rounded-2xl border-accent-500/40" : "rounded-card border-ink-600";
 
         // A recoverable failed tile needs TWO independent controls — enlarge
@@ -109,11 +115,16 @@ export function SceneMomentRow({
         // nest a button in a button. Every other tile (ready, or failed and
         // NOT recoverable) keeps that exact original single-button shape.
         if (failed && img.recoverable) {
+          const recoverLabel = !selfie
+            ? "Recover this scene image"
+            : sender === null
+              ? "Recover this photo"
+              : `Recover the photo from ${sender}`;
           return (
             <div key={img.id} className={`block w-36 shrink-0 overflow-hidden border ${borderClass}`}>
               <button
                 type="button"
-                onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
+                onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null, alt: imageName })}
                 aria-label={selfie ? "Selfie failed — enlarge for details" : "Scene image failed — enlarge for details"}
                 className="flex aspect-[3/4] w-full cursor-pointer flex-col items-center justify-center gap-1.5 bg-ink-800 px-2 text-center text-paper-500 transition-colors hover:border-accent-500/60"
               >
@@ -126,7 +137,7 @@ export function SceneMomentRow({
                   variant="primary"
                   className="w-full"
                   busy={recovering.has(img.id)}
-                  aria-label={selfie ? `Recover the photo from ${name}` : "Recover this scene image"}
+                  aria-label={recoverLabel}
                   onClick={() => void recover(img)}
                 >
                   {imageRecoverActionLabel}
@@ -140,9 +151,9 @@ export function SceneMomentRow({
           <button
             key={img.id}
             type="button"
-            onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null })}
-            aria-label={failed ? "Selfie failed — enlarge for details" : selfie ? `Photo from ${name}` : "Enlarge scene moment"}
-            title={selfie ? `A photo from ${name}` : undefined}
+            onClick={() => setEnlarged({ id: img.id, prompt: img.prompt || null, alt: imageName })}
+            aria-label={failed ? "Selfie failed — enlarge for details" : selfieText ? selfieText.ariaLabel : "Enlarge scene moment"}
+            title={selfieText ? selfieText.title : undefined}
             className={`block w-36 shrink-0 cursor-pointer overflow-hidden border transition-colors hover:border-accent-500/60 ${borderClass}`}
           >
             {failed ? (
@@ -154,14 +165,14 @@ export function SceneMomentRow({
                 <span className="px-2 text-center text-[10px] text-paper-600">the photo never arrived</span>
               </div>
             ) : (
-              <EntityImage imageId={img.id} name={name} className="aspect-[3/4] w-full" />
+              <EntityImage imageId={img.id} name={imageName} className="aspect-[3/4] w-full" />
             )}
           </button>
         );
       })}
       <ImageLightbox
         imageId={enlarged?.id ?? null}
-        alt={name}
+        alt={enlarged?.alt ?? name}
         prompt={enlarged?.prompt ?? null}
         onClose={() => setEnlarged(null)}
       />
