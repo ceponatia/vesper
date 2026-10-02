@@ -33,6 +33,7 @@ type RunFinalizationAgentsInput = Pick<
   | "sink"
   | "roster"
   | "priorSummary"
+  | "traceId"
 >;
 
 export async function runFinalizationAgents(
@@ -129,7 +130,7 @@ export async function runFinalizationAgents(
           activeSocialCards: input.scenario.activeSocialCards,
           scope: input.pulseScope,
           commitmentsDue,
-          trace: { chatId: input.chatId, messageId: input.assistantMessageId },
+          trace: { chatId: input.chatId, messageId: input.assistantMessageId, traceId: input.traceId },
           sink: input.sink,
           // P1 minor fence (#301 review): the SAME determination already made
           // above for the archivist's trait/intimate fencing, not a second one.
@@ -157,7 +158,7 @@ export async function runFinalizationAgents(
       // beat used to file a dangling referent).
       priorSummary: input.priorSummary,
       // Failure telemetry only — never reaches a prompt (agent-failure.ts).
-      trace: { chatId: input.chatId, messageId: input.assistantMessageId },
+      trace: { chatId: input.chatId, messageId: input.assistantMessageId, traceId: input.traceId },
       sink: input.sink,
     }),
   ]);

@@ -23,6 +23,9 @@ const classifier = vi.hoisted(() => ({
   calls: 0,
 }));
 
+/** The telemetry object the leg's call actually handed to `withGenerateTimeout` (#637 correlation). */
+const telemetrySeen = vi.hoisted(() => ({ last: undefined as { traceId?: string } | undefined }));
+
 const dbState = vi.hoisted(() => ({
   assistant: null as { readonly role: string; readonly content: string } | null,
   chat: null as { readonly clockMinutes: number } | null,
@@ -52,7 +55,12 @@ vi.mock("../ai", () => ({
   withGenerateTimeout: <T,>(
     work: Promise<GenerateCheckedResult<T>>,
     controller: AbortController,
+    _timeoutMs: number,
+    _timeoutCode: string,
+    _sink: unknown,
+    telemetry?: { traceId?: string },
   ): Promise<{ value: T | null; degraded: boolean }> => {
+    telemetrySeen.last = telemetry;
     if (classifier.timeout) {
       controller.abort();
       return Promise.resolve({ value: null, degraded: true });
@@ -181,6 +189,7 @@ beforeEach(() => {
   classifier.degraded = false;
   classifier.timeout = false;
   classifier.calls = 0;
+  telemetrySeen.last = undefined;
   dbState.assistant = { role: "assistant", content: GRANT_REPLY };
   dbState.chat = { clockMinutes: 42 };
   dbState.loads = [];
@@ -452,5 +461,34 @@ describe("runChatRomanticPermissionDecision", () => {
         grantingTargetId: affordanceSubjectId(MARA_ID),
       }),
     ]);
+  });
+
+  // #637: the classifier's own telemetry (recorded as an `agent_run`/`agent_failure`
+  // row by the real `withGenerateTimeout`, mocked here) must carry the caller's
+  // exchange trace id when it has one, and stay absent when it does not — so the
+  // inspector's trace read can join this leg's outcome onto the right exchange.
+  it("threads the caller's traceId into the classifier's telemetry", async () => {
+    const sink = new DiagnosticCollector();
+    await runChatRomanticPermissionDecision({
+      chatId: CHAT_ID,
+      assistantMessageId: MESSAGE_ID,
+      reply: GRANT_REPLY,
+      roster: roster(),
+      traceId: "trace-abc123",
+      sink,
+    });
+    expect(telemetrySeen.last?.traceId).toBe("trace-abc123");
+  });
+
+  it("leaves the classifier's telemetry traceId absent when the caller has none", async () => {
+    const sink = new DiagnosticCollector();
+    await runChatRomanticPermissionDecision({
+      chatId: CHAT_ID,
+      assistantMessageId: MESSAGE_ID,
+      reply: GRANT_REPLY,
+      roster: roster(),
+      sink,
+    });
+    expect(telemetrySeen.last?.traceId).toBeUndefined();
   });
 });

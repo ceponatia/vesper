@@ -176,6 +176,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     legId: "chat_state.pulse",
     chatId: input.trace?.chatId,
     messageId: input.trace?.messageId,
+    traceId: input.trace?.traceId,
     modelId,
     promptChars: CHAT_PULSE_SYSTEM.length + prompt.length,
     maxOutputTokens: reasoning.maxOutputTokens,

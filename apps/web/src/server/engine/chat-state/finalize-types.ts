@@ -15,6 +15,8 @@ import type { ChatSurfaceTransferInput } from "./surface-transfer";
 export interface FinalizeChatStateInput {
   chatId: string;
   characterId: string;
+  /** The exchange trace (#637) this finalize ran under, when the caller has one — threaded into every post-turn leg's failure telemetry. */
+  traceId?: string;
   /** Chat owner — loads worn/pool items when the archivist proposes garment-level changes. */
   ownerId: string;
   /** The participant's memory group. */
