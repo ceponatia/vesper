@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NarratorCompletion } from "@/server/ai";
 import type { ExchangeStageResult, ExchangeTrace } from "./chat-exchange-trace";
+import { CHAT_STREAM_OVERALL_MS } from "./constants";
 import { saveReplyFailure } from "./chat-reply-store";
 import { stopChatReply, streamExchange } from "./chat-reply-stream";
 
@@ -253,6 +254,48 @@ describe("the exchange trace's narrator.stream stage and finish() verdict", () =
     expect(trace.stageEnds[0]?.result?.status).toBe("success");
     expect(trace.stageEnds[0]?.result?.reason).toBe("player_stop");
     expect(trace.finishes).toEqual([{ kind: "stopped" }]);
+  });
+
+  it("records narrator.stream degraded/watchdog_timeout + finish stopped on an overall-timeout trip that kept text", async () => {
+    // `withStreamTimeouts` hardcodes CHAT_STREAM_FIRST_TOKEN_MS/CHAT_STREAM_OVERALL_MS
+    // (both tens of seconds), so this is only cheap to exercise with fake timers —
+    // no new production seam needed. A source that yields once and then trickles
+    // forever stands in for a provider that goes quiet mid-stream: the overall
+    // watchdog trips, the kept fragment still settles, and the stage reads
+    // `degraded`/`watchdog_timeout` (never `failed`) because the generation did not
+    // run to its own end — see the status table in chat-reply-stream.ts.
+    vi.useFakeTimers();
+    try {
+      const trace = fakeExchangeTrace();
+      const controller = new AbortController();
+      const settle = vi.fn(async () => {});
+      const release = vi.fn();
+      async function* source(): AsyncGenerator<string> {
+        yield "kept fragment";
+        // Never resolves — the provider trickles on past the overall deadline.
+        await new Promise<never>(() => {});
+      }
+      const stream = streamExchange(source(), {
+        chatId: "watchdog-overall", abortController: controller, settle, release,
+        completion: () => null, modelId: "test-model", exchangeTrace: trace,
+      });
+
+      expect(await stream.next()).toEqual({ value: "kept fragment", done: false });
+      const trippedNext = stream.next();
+      await vi.advanceTimersByTimeAsync(CHAT_STREAM_OVERALL_MS + 5_000);
+      expect(await trippedNext).toEqual({ value: undefined, done: true });
+
+      expect(controller.signal.aborted).toBe(true);
+      expect(settle).toHaveBeenCalledWith("kept fragment", true);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(trace.stageEnds).toHaveLength(1);
+      expect(trace.stageEnds[0]?.stage).toBe("narrator.stream");
+      expect(trace.stageEnds[0]?.result?.status).toBe("degraded");
+      expect(trace.stageEnds[0]?.result?.reason).toBe("watchdog_timeout");
+      expect(trace.finishes).toEqual([{ kind: "stopped" }]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("flushes even when the recorder is a no-op (no exchangeTrace supplied)", async () => {
