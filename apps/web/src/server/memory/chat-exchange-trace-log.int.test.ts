@@ -18,13 +18,14 @@ import { loadChatExchangeTraces } from "./chat-exchange-trace-log";
  * row rather than sleeping a fixed amount — the same pattern
  * `identity-pack-lifecycle.int.test.ts` uses for its own fire-and-forget writer.
  *
- * Two suites below prove the correction-round fix directly (#637 slice A):
- * correlated rows and trace lookups are now filtered in SQL by the selected
- * trace id(s), so a busy chat's newer, unrelated activity can no longer crowd
- * an older selected trace's own rows out of a bounded scan window. Each
- * bulk-inserts enough noise (one multi-row INSERT, not many round trips) to
- * exceed the read model's private per-type caps, with the noise landing AFTER
- * the target's own rows so it is provably newer.
+ * Correlated rows and trace lookups are filtered in SQL by the selected
+ * trace id(s), so a busy chat's newer, unrelated activity cannot crowd an
+ * older selected trace's own rows out of a bounded scan window; two suites
+ * below bulk-insert noise (one multi-row INSERT, not many round trips) past
+ * the read model's private per-type caps, landing after the target's own
+ * rows, and assert the target still surfaces. A further suite proves
+ * ordering is by when each exchange STARTED, not by its last flush, so a
+ * late part on an older trace cannot outrank a genuinely newer one.
  */
 
 const ready = await probeIntegrationDb("chat-exchange-trace-log.int.test", "events");
@@ -230,5 +231,31 @@ describe.skipIf(!ready)("chat exchange trace log (integration)", () => {
     expect(traces).toHaveLength(1);
     expect(traces[0]?.traceId).toBe(traceId);
     expect(traces[0]?.header.promptMessageId).toBe("msg-old-window");
+  });
+
+  it("orders by when each exchange STARTED, not by its last flush — a late part on an older trace must not outrank a genuinely newer one", async () => {
+    const [orderingChat] = await db().insert(characterChats).values({ ownerId }).returning({ id: characterChats.id });
+    if (!orderingChat) throw new Error("failed to create test chat");
+    const orderingChatId = orderingChat.id;
+
+    const older = startExchangeTrace({ chatId: orderingChatId, operation: "send", authority: "legacy_chat", lane: "legacy_chat" });
+    older.finish({ kind: "ok" });
+    older.flush(); // `older`'s part 0 — its genuine start time.
+    await waitForEventRows("chat_trace", orderingChatId, 1);
+
+    const newer = startExchangeTrace({ chatId: orderingChatId, operation: "send", authority: "legacy_chat", lane: "legacy_chat" });
+    newer.finish({ kind: "ok" });
+    newer.flush(); // `newer`'s part 0 — strictly later than `older`'s, by a real wall-clock gap.
+    await waitForEventRows("chat_trace", orderingChatId, 2);
+
+    // `older` now gets a LATE part (e.g. a post-turn job landing after the NEXT exchange already
+    // started), so its own rows' `max(created_at)` is now AFTER `newer`'s part 0 — but `older`'s
+    // `min(created_at)` (and its `header.startedAt`) are still from before `newer` ever started.
+    older.record({ stage: "post_turn.shadow", phase: "post_turn", status: "success" });
+    older.flush();
+    await waitForEventRows("chat_trace", orderingChatId, 3);
+
+    const traces = await loadChatExchangeTraces({ chatId: orderingChatId, limit: 2 });
+    expect(traces.map((t) => t.traceId)).toEqual([newer.traceId, older.traceId]);
   });
 });
