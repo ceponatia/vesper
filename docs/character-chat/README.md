@@ -29,6 +29,7 @@ the chat lane must never re-fork it.
 | [physical-legs.md](physical-legs.md)         | The optional contact, guidance and `romantic_touch` permission legs                       |
 | [post-turn.md](post-turn.md)                 | The fan-out (pulse ‖ three extraction legs), the folds it writes, and the detached jobs   |
 | [reply-failures.md](reply-failures.md)       | How a zero-token reply is classified, persisted, and surfaced                             |
+| [exchange-trace.md](exchange-trace.md)       | The durable per-exchange trace: stages, context coverage, correlation, inspector and CLI  |
 | [prompts.md](prompts.md)                     | Prompt assembly: the cache split, the "Right now" digest, state-as-narration, RAG         |
 | [narrator-craft.md](narrator-craft.md)       | Reply discipline, narration shape, viewpoint, dialogue tagging, output cleanup            |
 | [perception-gates.md](perception-gates.md)   | The intimate gate, sensory allowance, physical consistency, the minor fence               |
@@ -78,6 +79,7 @@ the chat lane must never re-fork it.
 - **Scene image** — `server/images/character-scene.ts` ([images/pipelines/scene-images.md](../images/pipelines/scene-images.md)); queue + anchor + dedupe in `app/api/chats/[chatId]/scene/queue.ts` (`queueChatScene`)
 - **Admin agent-reasoning experiment** — `lib/agent-reasoning.ts` + `server/ai/agent-reasoning.ts`; owner-admin API in `app/api/admin/agent-reasoning/[chatId]/route.ts`; selector in `components/chat/agent-reasoning-select.tsx`; attribution in `components/chat/chat-inspector-agent-health.tsx` ([agent-reasoning.md](agent-reasoning.md))
 - **Admin inspector** — `app/api/admin/chat-inspector/*` (role-gated routes) + `components/chat/chat-inspector-{page,facts,episodes}.tsx` behind `/chat/[chatId]/inspector` (admin-gated)
+- **Exchange traces** ([exchange-trace.md](exchange-trace.md)) — contract `contracts/turns/chat-exchange-trace.ts`, recorder `server/engine/chat-exchange-trace.ts`, read model `server/memory/chat-exchange-trace-log.ts`, panel `components/chat/chat-inspector-exchange-trace.tsx`, CLI `scripts/chat-trace.ts` (`pnpm trace:chat`)
 - **Retrieval eval harness** — `scripts/eval/retrieval/` (`pnpm eval:retrieval` — never in `verify`; see its README)
 - **UI — the conversation** — `components/chat/chat-conversation.tsx` (full-screen `/chat/[chatId]`, [ui/conversation.md](../ui/conversation.md)) + `components/chat/` (`chat-relationship-panel`, `chat-pickup-strip`, `chat-scene-moments`) + siblings in `components/characters/` (`chat-message`, `chat-scene-strip`, `chat-status`, `chat-state-tools`, `chat-scenario-modal`)
 - **UI — editor Chat tab** — `components/characters/character-chat.tsx` — a summary surface only (Chat defaults + conversation list), never the transcript

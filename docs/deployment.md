@@ -247,6 +247,9 @@ which header is trustworthy, and both limiters named there have to be re-checked
   exit 137 appears instead, give the builder more RAM rather than more heap).
 - **Images vanish after restart** — the `[[mounts]]` volume is missing or
   `DATA_ROOT` doesn't point at it.
+- **A chat reply ran strangely and the logs have rotated** — read the exchange's
+  durable trace on the machine with `pnpm trace:chat`
+  ([character-chat/exchange-trace.md](character-chat/exchange-trace.md) §Reading a trace).
 - **React error #418 (hydration mismatch) in the console on loads right after a
   deploy** — deploy skew, not an app bug: a browser with cached assets from the
   previous build straddles the Machine cutover, React logs #418, discards the

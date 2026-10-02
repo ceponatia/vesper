@@ -176,6 +176,9 @@ deployed build) and owner-scoped**:
 - **Overview** — all facts including superseded/retracted, each labeled with its `channel`
   (`perceived`/`private`/`ooc`, the RAG visibility fence — [memory.md](../memory.md) §Fact
   channel), plus episodes + summary.
+- **Exchange traces** (`traces?limit=&traceId=&messageId=`) — the per-exchange timeline,
+  narrator-context coverage and correlated agent rows, in the versioned output the
+  `trace:chat` CLI also prints ([exchange-trace.md](exchange-trace.md)).
 - **Facts / episodes / summary** — facts create/PATCH (pin/retract/restore,
   re-embed-on-edit) · episodes PATCH/DELETE + `score?q=` · summary PATCH.
 - **Prompt preview** (`chat-prompt-preview.ts` `previewChatPrompt`) — "what reaches the narrator": it re-derives the
