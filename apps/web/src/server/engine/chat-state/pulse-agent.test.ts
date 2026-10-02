@@ -146,7 +146,12 @@ describe("runChatPulse threads the caller's traceId into its telemetry (#637)", 
       trace: { chatId: "chat-1", messageId: "msg-1", traceId: "trace-pulse-1" },
       clockMinutes: 0,
     });
-    expect(telemetrySeen.last?.traceId).toBe("trace-pulse-1");
+    // Explicitly typed capture: `telemetrySeen.last` was reset to the
+    // literal `undefined` above, and TS's control-flow narrowing doesn't see
+    // the mock's reassignment across the awaited call, so reading the
+    // property directly here would (wrongly) type as `never` (#637 CI fix).
+    const telemetry: { traceId?: string } | undefined = telemetrySeen.last;
+    expect(telemetry?.traceId).toBe("trace-pulse-1");
   });
 
   it("leaves the telemetry traceId absent when the caller has none", async () => {
@@ -162,6 +167,7 @@ describe("runChatPulse threads the caller's traceId into its telemetry (#637)", 
       trace: { chatId: "chat-1", messageId: "msg-1" },
       clockMinutes: 0,
     });
-    expect(telemetrySeen.last?.traceId).toBeUndefined();
+    const telemetry: { traceId?: string } | undefined = telemetrySeen.last;
+    expect(telemetry?.traceId).toBeUndefined();
   });
 });

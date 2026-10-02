@@ -549,7 +549,12 @@ describe("beginChatNpcSceneDecision — classifier telemetry carries the caller'
     if (handle.kind !== "live") throw new Error("expected a live handle — the trigger should have fired");
     expect(handle.triggered).toBe(true);
     await handle.classifier;
-    expect(telemetrySeen.last?.traceId).toBe("trace-npc-1");
+    // Explicitly typed capture: `telemetrySeen.last` was reset to the literal
+    // `undefined` above, and TS's control-flow narrowing doesn't see the
+    // mock's reassignment across the awaited call, so reading the property
+    // directly here would (wrongly) type as `never` (#637 CI fix).
+    const telemetry: { traceId?: string } | undefined = telemetrySeen.last;
+    expect(telemetry?.traceId).toBe("trace-npc-1");
   });
 
   it("leaves the classifier's telemetry traceId absent when the caller has none", async () => {
@@ -558,6 +563,7 @@ describe("beginChatNpcSceneDecision — classifier telemetry carries the caller'
     if (handle.kind !== "live") throw new Error("expected a live handle — the trigger should have fired");
     expect(handle.triggered).toBe(true);
     await handle.classifier;
-    expect(telemetrySeen.last?.traceId).toBeUndefined();
+    const telemetry: { traceId?: string } | undefined = telemetrySeen.last;
+    expect(telemetry?.traceId).toBeUndefined();
   });
 });

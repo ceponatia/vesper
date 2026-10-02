@@ -5,6 +5,7 @@ import type { AgentLegTrace } from "./chat-memory";
 import { seedChatScenario, seedChatState } from "./chat-state/seed";
 import type { ChatTurnMember } from "./chat-turn-types";
 import type { FinalizeChatStateResult } from "./chat-state/finalize-types";
+import { noopExchangeTrace } from "./chat-exchange-trace";
 
 /**
  * `settleChatTurnMembers` hands each present/referenced ensemble member's own
@@ -88,6 +89,9 @@ function baseArgs(overrides: { traceId?: string } = {}) {
     scenario: seedChatScenario(primaryProfile),
     others: [wren],
     input: {},
+    // #637: this suite never asserts on `onSelfie`'s payload, so the noop
+    // trace is enough to satisfy settle's (now required) exchangeTrace.
+    exchangeTrace: noopExchangeTrace(),
     promptMessageId: "prompt-1",
     playerContent: "hi there",
     assistantMessageId: "msg-1",
@@ -117,7 +121,13 @@ describe("settleChatTurnMembers threads the caller's traceId into both member le
     seen.pulseTrace = undefined;
     seen.personalTrace = undefined;
     await settleChatTurnMembers(baseArgs());
-    expect(seen.pulseTrace?.traceId).toBeUndefined();
-    expect(seen.personalTrace?.traceId).toBeUndefined();
+    // Explicitly typed capture: TS's control-flow narrowing of these
+    // properties doesn't see the mocks' reassignment across the awaited
+    // call, so reading them directly here would (wrongly) type as `never`
+    // (#637 CI fix).
+    const pulseTrace: AgentLegTrace | undefined = seen.pulseTrace;
+    const personalTrace: AgentLegTrace | undefined = seen.personalTrace;
+    expect(pulseTrace?.traceId).toBeUndefined();
+    expect(personalTrace?.traceId).toBeUndefined();
   });
 });

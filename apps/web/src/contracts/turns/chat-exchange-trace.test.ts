@@ -276,7 +276,7 @@ describe("deriveExchangeOutcome — the outcome table", () => {
   it("finish ok with a correlated agent failure ⇒ degraded", () => {
     const result = deriveExchangeOutcome({
       ...base,
-      agentFailures: [{ legId: "x", kind: "timeout", cause: "model_slow", chatId: null, messageId: null, modelId: "", provider: null, promptChars: 0, maxOutputTokens: 0, timeoutMs: 0, latencyMs: 0, reasoningProfile: "off", reasoningEnabled: false, httpStatus: 0, detail: "", at: "" }],
+      agentFailures: [{ legId: "x", kind: "timeout", cause: "model_slow", chatId: null, messageId: null, traceId: null, modelId: "", provider: null, promptChars: 0, maxOutputTokens: 0, timeoutMs: 0, latencyMs: 0, reasoningProfile: "off", reasoningEnabled: false, httpStatus: 0, detail: "", at: "" }],
       finish: exchangeFinishRecordSchema.parse({ kind: "ok" }),
     });
     expect(result.outcome).toBe("degraded");
