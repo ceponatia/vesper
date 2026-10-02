@@ -75,6 +75,12 @@ export const agentFailureSchema = z.object({
   chatId: z.string().nullish().catch(null).transform((v) => v ?? null),
   /** The exchange this failure belongs to, when known — so a row points at a beat. */
   messageId: z.string().nullish().catch(null).transform((v) => v ?? null),
+  /**
+   * The exchange trace (#637) this failure correlates to, when the caller ran
+   * under one. Nullable, defaulted to null, so an old row (minted before this
+   * field existed) parses exactly as it always did.
+   */
+  traceId: z.string().nullish().catch(null).transform((v) => v ?? null),
   modelId: z.string().catch(""),
   /** The upstream OpenRouter routed to, when a call completed. */
   provider: z.string().nullish().catch(null).transform((v) => v ?? null),
@@ -252,6 +258,8 @@ export const agentRunSchema = z.object({
   legId: z.string().catch("unknown"),
   chatId: z.string().nullish().catch(null).transform((v) => v ?? null),
   messageId: z.string().nullish().catch(null).transform((v) => v ?? null),
+  /** The exchange trace (#637) this run correlates to, when the caller ran under one. */
+  traceId: z.string().nullish().catch(null).transform((v) => v ?? null),
   modelId: z.string().catch(""),
   provider: z.string().nullish().catch(null).transform((v) => v ?? null),
   promptChars: z.number().int().nonnegative().catch(0),

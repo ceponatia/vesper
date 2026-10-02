@@ -35,6 +35,7 @@ export * from "./chat-authority";
 export * from "./engine-comparison";
 export * from "./sim-beats";
 export * from "./composition-diagnostics";
+export * from "./chat-exchange-trace";
 export * from "./sim-time-jobs";
 export { runSimChatExchange } from "./sim-exchange";
 export type { SimChatExchangeMode, SimChatExchangeResult } from "./sim-exchange/types";

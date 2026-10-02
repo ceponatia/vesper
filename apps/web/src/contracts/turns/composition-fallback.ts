@@ -72,6 +72,8 @@ export const compositionFallbackSchema = z.object({
   chatId: z.string().nullish().catch(null).transform((v) => v ?? null),
   /** The beat/reply this degradation is attached to, when known. */
   messageId: z.string().nullish().catch(null).transform((v) => v ?? null),
+  /** The exchange trace (#637) this degradation correlates to, when the caller ran under one. */
+  traceId: z.string().nullish().catch(null).transform((v) => v ?? null),
   /**
    * The private cause — events-row ONLY, never surfaced to a player (ruling 2).
    * Truncated, and **absent on a production row**: it can quote the turn, so the

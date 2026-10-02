@@ -36,6 +36,8 @@ export interface AgentTelemetry {
   chatId?: string | null;
   /** The exchange this leg was running for, when known. */
   messageId?: string | null;
+  /** The exchange trace (#637) this leg ran under, when the caller has one. */
+  traceId?: string | null;
   modelId?: string;
   /** Characters of system + prompt — the "was it too big?" signal for a timeout. */
   promptChars?: number;
@@ -80,6 +82,7 @@ export function buildAgentFailure(input: RecordAgentFailureInput): AgentFailure 
     }),
     chatId: input.chatId ?? null,
     messageId: input.messageId ?? null,
+    traceId: input.traceId ?? null,
     modelId: input.modelId ?? "",
     provider: input.provider ?? null,
     promptChars: input.promptChars ?? 0,
@@ -143,6 +146,7 @@ export function buildAgentRun(input: RecordAgentRunInput): AgentRun {
     legId: input.legId,
     chatId: input.chatId ?? null,
     messageId: input.messageId ?? null,
+    traceId: input.traceId ?? null,
     modelId: input.modelId ?? "",
     provider: input.provider ?? null,
     promptChars: input.promptChars ?? 0,

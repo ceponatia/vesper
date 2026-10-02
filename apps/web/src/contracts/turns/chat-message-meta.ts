@@ -169,6 +169,13 @@ const FIELD_SCHEMAS = {
    * disk. The vocabulary's owners are the render legs that emit the codes.
    */
   renderDiagnostics: z.array(z.string().min(1)),
+  /**
+   * The exchange trace (#637) this reply belongs to, when the writer ran one.
+   * An id, not free text, so it stays on every reader's typed view unlike
+   * `compositionFallbacks` / `renderDiagnostics` above: a bare id string has
+   * no shape to drift, so this module does not own a separate vocabulary for it.
+   */
+  traceId: z.string().min(1),
 } satisfies Record<string, z.ZodType>;
 
 type KnownKey = keyof typeof FIELD_SCHEMAS;
@@ -212,6 +219,7 @@ export interface ChatMessageMeta {
   narratorRun?: NarratorRunProvenance;
   compositionFallbacks?: string[];
   renderDiagnostics?: string[];
+  traceId?: string;
   /** Unmodelled keys, carried through every read-modify-write untouched. */
   extra: Record<string, unknown>;
 }

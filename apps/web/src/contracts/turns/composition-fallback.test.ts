@@ -24,6 +24,11 @@ describe("compositionFallbackSchema", () => {
     const parsed = fallback();
     expect(parsed.chatId).toBeNull();
     expect(parsed.messageId).toBeNull();
+    expect(parsed.traceId).toBeNull();
+  });
+
+  it("carries an exchange trace id through (#637 correlation)", () => {
+    expect(fallback({ traceId: "trace-1" }).traceId).toBe("trace-1");
   });
 });
 

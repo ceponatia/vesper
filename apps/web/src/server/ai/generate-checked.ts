@@ -308,6 +308,7 @@ export async function generateChecked<T>(opts: GenerateCheckedOptions<T>): Promi
     legId: opts.telemetry?.legId ?? opts.code,
     chatId: opts.telemetry?.chatId,
     messageId: opts.telemetry?.messageId,
+    traceId: opts.telemetry?.traceId,
     kind: isTransport ? "api_error" : "parse_failed",
     providerCode: providerClassification?.code,
     httpStatus: providerClassification?.status,

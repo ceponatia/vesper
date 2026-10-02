@@ -31,6 +31,8 @@ export interface RecordCompositionFallbackInput {
   chatId?: string | null;
   /** The beat/reply this attaches to, when known (often null — minted after the warn site). */
   messageId?: string | null;
+  /** The exchange trace (#637) this degradation correlates to, when the caller ran under one. */
+  traceId?: string | null;
   /** The private cause — events-row ONLY, never surfaced to a player. */
   detail?: string;
   /** Injectable for tests; defaults to now. */
@@ -44,6 +46,7 @@ export function buildCompositionFallback(input: RecordCompositionFallbackInput):
     code: input.code,
     chatId: input.chatId ?? null,
     messageId: input.messageId ?? null,
+    traceId: input.traceId ?? null,
     detail: (input.detail ?? "").slice(0, DETAIL_CAP),
     at: (input.at ?? new Date()).toISOString(),
   });
@@ -73,7 +76,15 @@ export function recordCompositionFallback(input: RecordCompositionFallbackInput)
 export class CompositionFallbackCollector {
   private readonly accumulated: CompositionFallbackCode[] = [];
 
-  constructor(private readonly chatId: string) {}
+  /**
+   * `traceId` is optional and carried automatically onto every `note()` call —
+   * the same way `chatId` already is — so a caller that has an exchange trace
+   * (#637) running sets it once here instead of at every call site.
+   */
+  constructor(
+    private readonly chatId: string,
+    private readonly traceId?: string | null,
+  ) {}
 
   /** Record a degradation on both surfaces: durable events row now, code for the reply meta. */
   note(entry: { site: CompositionFallbackSite; code: CompositionFallbackCode; detail?: string }): void {
@@ -82,6 +93,7 @@ export class CompositionFallbackCollector {
       site: entry.site,
       code: entry.code,
       chatId: this.chatId,
+      ...(this.traceId === undefined ? {} : { traceId: this.traceId }),
       ...(entry.detail === undefined ? {} : { detail: entry.detail }),
     });
   }

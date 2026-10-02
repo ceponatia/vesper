@@ -15,6 +15,14 @@ import {
 const failure = (overrides: Partial<AgentFailure> = {}): AgentFailure =>
   agentFailureSchema.parse({ legId: "chat_continuity", kind: "timeout", cause: "model_slow", ...overrides });
 
+describe("traceId correlation (#637)", () => {
+  it("carries an exchange trace id through, and normalizes absent/invalid to null", () => {
+    expect(failure({ traceId: "trace-1" }).traceId).toBe("trace-1");
+    expect(failure().traceId).toBeNull();
+    expect(agentRunSchema.parse({ legId: "x", traceId: 42 }).traceId).toBeNull();
+  });
+});
+
 describe("classifyAgentFailure", () => {
   it("a provider error is not a guess — the provider's own class passes through", () => {
     expect(classifyAgentFailure({ kind: "api_error", providerCode: "rate_limited" })).toBe("rate_limited");
