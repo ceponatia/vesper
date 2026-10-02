@@ -1,9 +1,11 @@
+import { DEFAULT_ENGINE_AUTHORITY } from "@vesper/simulation-core/contracts/authority";
 import { prepareChatTurnRecall, prepareChatTurnBeats, prepareChatTurnPresentation } from "./chat-turn-prepare";
 import { commitChatTurnRecognition, commitChatTurnVisualCues, settleChatTurnMembers } from "./chat-turn-settle";
 import type { ChatExchangeKind, SubmitChatMessageInput, SubmitChatMessageResult } from "./chat-turn-types";
 import { prepareChatTurnContact } from "./chat-turn-contact";
 import { prepareChatTurnGuidance } from "./chat-turn-guidance";
 import { prepareChatTurnPrompt } from "./chat-turn-prompt";
+import { noopExchangeTrace, startExchangeTrace, type ExchangeTrace } from "./chat-exchange-trace";
 import { and, eq, or } from "drizzle-orm";
 import {
   affordanceSubjectId,
@@ -43,6 +45,7 @@ import { resolveChatPersona } from "../players";
 import { streamCharacterChat } from "./character-chat";
 import { stopChatReply, streamExchange } from "./chat-reply-stream";
 import {
+  buildNarratorPromptFingerprint,
   buildNarratorRunProvenance,
   currentReplyTakes,
   loadMessageAttachments,
@@ -184,11 +187,27 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
   const { chatId, memoryGroupId, kind } = input;
   const { id: characterId, name: characterName } = input.character;
   const lockKey = chatExchangeLockKey(chatId);
+  // The chat's engine authority (#637) — the route already read it; absent
+  // (every caller that predates the trace) degrades to the honest default.
+  const authority = input.authority ?? DEFAULT_ENGINE_AUTHORITY;
+  // The exchange's durable trace (#637), minted the instant the lock is held —
+  // "admitted" per the issue's acceptance. A `chat_busy` 409 returns before
+  // this point and never sees a trace at all. The pre-kind-switch rejections
+  // below (`nothing_to_regenerate`, a rejected rerun target) DO mint one, but
+  // deliberately never flush it — flush() is the only place a part is ever
+  // written, so an un-flushed trace is, in every observable sense, no trace.
+  let exchangeTrace: ExchangeTrace = noopExchangeTrace();
+  // Reassigned inside `prepareExchange` once `collected` exists (its very
+  // first statement), so by the time anything in that function can throw,
+  // this already attaches the delta. The no-op default is only reachable if
+  // the function is never entered at all.
+  let attachDiagnostics: () => void = () => {};
 
   let releaseChatLock!: () => void;
   const chatLockGate = new Promise<void>((resolve) => {
     releaseChatLock = resolve;
   });
+  const lockAttemptStartedAt = new Date();
   // Rerun is the ONE kind that reconciles with an in-flight reply instead of
   // bouncing off it (data-loss-rerun fix): stop that reply so its exchange settles
   // and drops the lock, then wait a bounded window to re-acquire — re-issuing the
@@ -221,9 +240,33 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
   }
   void chatLock; // resolves via releaseChatLock; never rejects
 
+  // Admitted: mint the trace and record the lock's own wait (rerun's bounded
+  // re-acquire can be real wall-clock time; every other kind's `tryKeyedLock`
+  // is synchronous, so this reads ~0ms — still worth recording, since a
+  // regressed lock-wait would show up here first).
+  exchangeTrace = startExchangeTrace({ chatId, operation: kind, authority, lane: "legacy_chat", at: lockAttemptStartedAt });
+  exchangeTrace.record({
+    stage: "admission.lock",
+    phase: "admission",
+    startedAt: lockAttemptStartedAt,
+    durationMs: Math.max(0, Date.now() - lockAttemptStartedAt.getTime()),
+    status: "success",
+  });
+
   try {
     return await prepareExchange();
   } catch (err) {
+    // A crash anywhere in preparation (before the stream is even handed back)
+    // still gets its diagnostics attached (#637 — an operator investigating a
+    // crash needs these first), exactly one finish() — "failed" with the
+    // generic code, since nothing more specific applies before the narrator
+    // even ran — and its partial trace flushed: the stages recorded so far
+    // read back as a real record of how far the exchange got, and any stage
+    // still open when this flush runs is written provisionally per slice A's
+    // design.
+    attachDiagnostics();
+    exchangeTrace.finish({ kind: "failed", failureCode: "unknown" });
+    exchangeTrace.flush();
     releaseChatLock();
     throw err;
   }
@@ -234,6 +277,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // and tees to the caller's observer when one was passed — so threading a sink
     // in adds a reader without changing what the turn records.
     const collected = new DiagnosticCollector();
+    // How many of `collected.items` have already reached the trace (#637) —
+    // a watermark so a path that already attached (settle) and a path that
+    // attaches because settle never ran (streamExchange's `attachDiagnostics`,
+    // or `submitChatMessage`'s own crash catch above) can both call this
+    // freely without ever duplicating an entry.
+    let diagnosticsAttached = 0;
+    attachDiagnostics = () => {
+      if (collected.items.length > diagnosticsAttached) {
+        exchangeTrace.diagnostics(collected.items.slice(diagnosticsAttached));
+        diagnosticsAttached = collected.items.length;
+      }
+    };
     const sink: DiagnosticSink = input.sink ? teeSink(input.sink, collected) : collected;
 
     // --- Resolve the exchange's rows per kind -------------------------------
@@ -275,28 +330,35 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     switch (kind) {
       case "send": {
         promptMessageId = newId();
+        // Captured into a stable `const` for the closure below — `promptMessageId`
+        // itself stays `string | null` by declared type, and a mutable `let`
+        // loses its narrowing once captured by a nested function.
+        const mintedPromptMessageId = promptMessageId;
         playerContent = input.content ?? "";
-        // Claim attachments against this chat's ready uploads BEFORE the insert
-        // (anchor_message_id carries no FK, so order is free) — foreign/unknown ids
-        // drop silently, and the surviving ids ride the line's meta for the client.
-        attachmentFiles = await claimChatAttachments(
-          chatId,
-          promptMessageId,
-          (input.attachmentIds ?? []).slice(0, CHAT_ATTACHMENTS_MAX),
-        );
-        const sendMeta = userLineMeta({
-          attachmentIds: attachmentFiles.map((f) => f.id),
-          ...(narratorInput ? { inputMode: "narrator" as const } : {}),
-        });
-        await db()
-          .insert(characterChatMessages)
-          .values({
-            id: promptMessageId,
+        await exchangeTrace.time("admission.user_line", "admission", async () => {
+          // Claim attachments against this chat's ready uploads BEFORE the insert
+          // (anchor_message_id carries no FK, so order is free) — foreign/unknown ids
+          // drop silently, and the surviving ids ride the line's meta for the client.
+          attachmentFiles = await claimChatAttachments(
             chatId,
-            role: "user",
-            content: playerContent,
-            ...(isEmptyChatMessageMeta(sendMeta) ? {} : { meta: serializeChatMessageMeta(sendMeta) }),
+            mintedPromptMessageId,
+            (input.attachmentIds ?? []).slice(0, CHAT_ATTACHMENTS_MAX),
+          );
+          const sendMeta = userLineMeta({
+            attachmentIds: attachmentFiles.map((f) => f.id),
+            ...(narratorInput ? { inputMode: "narrator" as const } : {}),
+            traceId: exchangeTrace.traceId,
           });
+          await db()
+            .insert(characterChatMessages)
+            .values({
+              id: mintedPromptMessageId,
+              chatId,
+              role: "user",
+              content: playerContent,
+              ...(isEmptyChatMessageMeta(sendMeta) ? {} : { meta: serializeChatMessageMeta(sendMeta) }),
+            });
+        });
         break;
       }
       case "open": {
@@ -368,6 +430,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       }
     }
 
+    // The header's prompt AND reply ids, as soon as both are known (#637): every
+    // kind above has either minted or resolved a `promptMessageId` except
+    // open/continue/a chip-less action_beat, which carry none; `assistantMessageId`
+    // is always known by now (freshly minted, or the regenerate target's row).
+    exchangeTrace.annotate({ promptMessageId, replyMessageId: assistantMessageId });
+
     // --- Attached photos -----------------------------------------------------
     // Regenerate/rerun reuse the prompting line's stored attachments (+ any stored
     // vision read); a fresh send described them here. ONE batched vision call per
@@ -412,6 +480,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
      * before the recognition memory reads it.
      */
     const exchangeGuardMessageId = promptMessageId ?? assistantMessageId;
+    exchangeTrace.annotate({ guardMessageId: exchangeGuardMessageId });
 
     // --- State: load (or roll back), then drift -----------------------------
     // Regenerate restores the pre-exchange snapshot so the old take's
@@ -423,33 +492,59 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // applicable rerun. A found `state: null` means the anchor was `{}` — a first
     // exchange with no prior state — so drift re-seeds from the authored defaults below,
     // exactly as the original first exchange did.
-    const restoreOrDegrade = async (targetCharacterId: string): Promise<ChatState | null> => {
+    /** Returns the restored snapshot plus whether it had to degrade to live state (#637 `actor_state`). */
+    const restoreOrDegrade = async (targetCharacterId: string): Promise<{ state: ChatState | null; degraded: boolean }> => {
       const restored = await loadPreExchangeState(chatId, targetCharacterId);
-      if (restored.found) return restored.state;
+      if (restored.found) return { state: restored.state, degraded: false };
       sink.push(
         diag("warn", "chat_state.snapshot.missing", "no pre-exchange snapshot; regenerating without state rollback"),
       );
-      return loadChatState(chatId, targetCharacterId, sink);
+      return { state: await loadChatState(chatId, targetCharacterId, sink), degraded: true };
     };
 
     let storedState: ChatState | null;
+    /** Did the primary's state load degrade (#637 `actor_state` coverage)? */
+    let actorStateDegraded = false;
     if (regenerateTarget) {
-      storedState = await restoreOrDegrade(characterId);
+      const restored = await exchangeTrace.time("state.rollback", "prepare", () => restoreOrDegrade(characterId));
+      storedState = restored.state;
+      actorStateDegraded = restored.degraded;
       await reconcileMessageMemory(regenerateTarget.id, sink);
     } else if (kind === "rerun" && rerunSnapshotApplies) {
       // A successful rerun is necessarily the latest exchange: older targets are
       // rejected before mutation because this one-exchange anchor cannot restore them.
       // (A failed-reply rerun — no successors — skips the restore entirely: that
       // exchange never settled, so the live state IS the correct starting point.)
-      storedState = await restoreOrDegrade(characterId);
+      const restored = await exchangeTrace.time("state.rollback", "prepare", () => restoreOrDegrade(characterId));
+      storedState = restored.state;
+      actorStateDegraded = restored.degraded;
       // Retract the extracted memory of every assistant reply this rerun deleted,
       // like regenerate does for the single old take.
       for (const deletedId of rerunDeletedAssistantIds) {
         await reconcileMessageMemory(deletedId, sink);
       }
     } else {
-      storedState = await loadChatState(chatId, characterId, sink);
+      if (kind === "rerun") {
+        // The zero-successor rerun: no rollback to do — the failed exchange
+        // never settled, so live state is already the right starting point.
+        exchangeTrace.record({
+          stage: "state.rollback",
+          phase: "prepare",
+          status: "skipped",
+          reason: "policy:zero_successor_rerun",
+        });
+      }
+      storedState = await exchangeTrace.time("state.load", "prepare", () => loadChatState(chatId, characterId, sink));
     }
+    // `actor_state` coverage (#637): a fresh chat's null row seeds defaults —
+    // that is a legitimately EMPTY state, never missing; a degraded rollback
+    // (no pre-exchange snapshot found) is the one case this lane can actually
+    // tell apart from an ordinary load.
+    exchangeTrace.coverage(
+      actorStateDegraded
+        ? { family: "actor_state", status: "degraded", reason: "chat_state.snapshot.missing" }
+        : { family: "actor_state", status: storedState === null ? "empty" : "present", count: storedState === null ? 0 : 1 },
+    );
 
     const profile = parseOr(
       characterProfileSchema,
@@ -571,11 +666,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
 
     // Meters catch up by the story minutes elapsed since they were stamped; the
     // feeling takes its separate per-exchange beat.
-    let driftedState = decayExchangeFeeling(
-      driftChatState(
-        await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
-        profile,
-        { clockMinutes: tickedClock, calendarStart: baseScenario.calendarStart },
+    let driftedState = await exchangeTrace.time("state.drift", "prepare", async () =>
+      decayExchangeFeeling(
+        driftChatState(
+          await resolveSeededOutfit(storedState ?? seedChatState(profile), owner, profile, sink),
+          profile,
+          { clockMinutes: tickedClock, calendarStart: baseScenario.calendarStart },
+        ),
       ),
     );
 
@@ -609,16 +706,44 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       (Boolean(nextSceneMemory.current) && !samePlaceName(preSceneCurrent, nextSceneMemory.current)) ||
       Boolean(baseScenario.pendingSkipNote);
     let scenario: ChatScenario = { ...baseScenario, clockMinutes: tickedClock, sceneMemory: nextSceneMemory };
+    // `scene` coverage (#637): a known current place is `present`; a chat that
+    // has never established one yet (no movement ever recorded) is a
+    // legitimately `empty` scene memory, not a missing one.
+    exchangeTrace.coverage(
+      nextSceneMemory.current
+        ? { family: "scene", status: "present", count: 1, chars: nextSceneMemory.current.length }
+        : { family: "scene", status: "empty", count: 0 },
+    );
 
     // --- Window + summary ----------------------------------------------------
     const summaryState = await loadChatSummary(chatId);
-    const history = await loadVerbatimWindow(chatId, summaryState?.watermark ?? null, sink);
+    // `summary` coverage (#637): a fresh chat's rolling summary legitimately
+    // does not exist yet until the unsummarized tail first crosses the fold
+    // trigger below — `empty`, never `missing`.
+    exchangeTrace.coverage(
+      summaryState?.summary
+        ? { family: "summary", status: "present", count: 1, chars: summaryState.summary.length }
+        : { family: "summary", status: "empty", count: 0 },
+    );
+    const history = await exchangeTrace.time(
+      "history.window",
+      "prepare",
+      () => loadVerbatimWindow(chatId, summaryState?.watermark ?? null, sink),
+      (h) => ({ count: h.length }),
+    );
     // The regenerated reply must not see itself: it is the newest message, so it
     // is the window's last row — drop it (its prompting user line stays).
     if (regenerateTarget && history.length && history.at(-1)?.role === "assistant") history.pop();
+    // `history` coverage (#637): the verbatim window since the summary's
+    // watermark, AFTER the regenerate pop above — present whenever it still
+    // carries any messages, legitimately empty on the very first exchange.
+    exchangeTrace.coverage({ family: "history", status: history.length > 0 ? "present" : "empty", count: history.length });
 
     if (history.length >= CHARACTER_CHAT_SUMMARIZE_AT * 2) {
       void enqueueChatSummary({ chatId });
+      // Fire-and-forget (#637): records that the job was ENQUEUED, not that it
+      // ran — the same honesty the call site itself already has (`void`).
+      exchangeTrace.record({ stage: "jobs.summary_enqueue", phase: "prepare", status: "success" });
     }
 
     // What the post-turn agents read as the player's turn: the message plus a
@@ -643,44 +768,50 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
     // members take the exchange's feeling beat.
     const ensembleActive = (input.roster?.length ?? 0) > 1;
     const others = ensembleActive
-      ? await Promise.all(
-          (input.roster ?? [])
-            .filter((m) => m.characterId !== characterId)
-            .map(async (member) => {
-              const memberProfile = parseOr(
-                characterProfileSchema,
-                member.profile ?? {},
-                emptyCharacterProfile(),
-                undefined,
-                "characters.profile",
-              );
-              // Regenerate/rerun is roster-wide: every participant restores the same
-              // exchange boundary before any drift or member-specific fan-out can run.
-              const storedMember =
-                regenerateTarget || (kind === "rerun" && rerunSnapshotApplies)
-                  ? await restoreOrDegrade(member.characterId)
-                  : await loadChatState(chatId, member.characterId, sink);
-              const preExchangeState = storedMember;
-              const seededMember = storedMember ?? seedChatState(memberProfile);
-              const resolved = await resolveSeededOutfit(seededMember, owner, memberProfile, sink);
-              const caughtUp = driftChatState(resolved, memberProfile, {
-                clockMinutes: tickedClock,
-                calendarStart: baseScenario.calendarStart,
-              });
-              const state = caughtUp.presence === "present" ? decayExchangeFeeling(caughtUp) : caughtUp;
-              return {
-                characterId: member.characterId,
-                memoryGroupId: member.memoryGroupId,
-                name: member.name,
-                profile: memberProfile,
-                preExchangeState,
-                state,
-              };
-            }),
+      ? await exchangeTrace.time(
+          "ensemble.load",
+          "prepare",
+          () =>
+            Promise.all(
+              (input.roster ?? [])
+                .filter((m) => m.characterId !== characterId)
+                .map(async (member) => {
+                  const memberProfile = parseOr(
+                    characterProfileSchema,
+                    member.profile ?? {},
+                    emptyCharacterProfile(),
+                    undefined,
+                    "characters.profile",
+                  );
+                  // Regenerate/rerun is roster-wide: every participant restores the same
+                  // exchange boundary before any drift or member-specific fan-out can run.
+                  const storedMember =
+                    regenerateTarget || (kind === "rerun" && rerunSnapshotApplies)
+                      ? (await restoreOrDegrade(member.characterId)).state
+                      : await loadChatState(chatId, member.characterId, sink);
+                  const preExchangeState = storedMember;
+                  const seededMember = storedMember ?? seedChatState(memberProfile);
+                  const resolved = await resolveSeededOutfit(seededMember, owner, memberProfile, sink);
+                  const caughtUp = driftChatState(resolved, memberProfile, {
+                    clockMinutes: tickedClock,
+                    calendarStart: baseScenario.calendarStart,
+                  });
+                  const state = caughtUp.presence === "present" ? decayExchangeFeeling(caughtUp) : caughtUp;
+                  return {
+                    characterId: member.characterId,
+                    memoryGroupId: member.memoryGroupId,
+                    name: member.name,
+                    profile: memberProfile,
+                    preExchangeState,
+                    state,
+                  };
+                }),
+            ),
+          (loaded) => ({ count: loaded.length }),
         )
       : [];
 
-    const { queryEmbeddings, memory, otherMemories, cueHint, intimateBeat, recentReplies, sensoryFocus, sensoryFocusMember, primarySensoryFocus, firstExchange } = await prepareChatTurnRecall({
+    const { queryEmbeddings, memory, otherMemories, cueHint, intimateBeat, recentReplies, sensoryFocus, sensoryFocusMember, primarySensoryFocus, firstExchange } = await exchangeTrace.time("prepare.recall", "prepare", () => prepareChatTurnRecall({
       memoryGroupId,
       playerContent,
       driftedState,
@@ -693,9 +824,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       profile,
       opening,
       sink,
-    });
+      exchangeTrace,
+    }));
 
-    const { driftedState: beatState, syntheticCue: beatCue, selfieRequested, selfieTargetOther, selfieOfferEligible, initiativeOpener, openerSelfieEligible, callback, ensembleCallback, recentShift } = await prepareChatTurnBeats({
+    const { driftedState: beatState, syntheticCue: beatCue, selfieRequested, selfieTargetOther, selfieOfferEligible, initiativeOpener, openerSelfieEligible, callback, ensembleCallback, recentShift } = await exchangeTrace.time("prepare.beats", "prepare", () => prepareChatTurnBeats({
       chatId,
       characterName,
       sink,
@@ -719,12 +851,13 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       recentReplies,
       sensoryFocus,
       firstExchange,
-    });
+      exchangeTrace,
+    }));
 
     driftedState = beatState;
     syntheticCue = beatCue;
 
-    const { wardrobe, playerWardrobe, memberWardrobe, garmentNarration, affordanceReadInput, physicalConstraintsEnabled, affordanceRead, recognitionPerception, recognition, bodyCues } = await prepareChatTurnPresentation({
+    const { wardrobe, playerWardrobe, memberWardrobe, garmentNarration, affordanceReadInput, physicalConstraintsEnabled, affordanceRead, recognitionPerception, recognition, bodyCues } = await exchangeTrace.time("prepare.presentation", "prepare", () => prepareChatTurnPresentation({
       characterId,
       characterName,
       sink,
@@ -735,9 +868,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       scenario,
       player,
       exchangeGuardMessageId,
-    });
+      exchangeTrace,
+    }));
 
-    const { scenario: contactScenario, contactActionOutcomes, currentContactAttempt, contactUnresolvedPremise, contactTurnFacts, contactCoverageCaptures, contactEffectProposals } = await prepareChatTurnContact({
+    const { scenario: contactScenario, contactActionOutcomes, currentContactAttempt, contactUnresolvedPremise, contactTurnFacts, contactCoverageCaptures, contactEffectProposals } = await exchangeTrace.time("prepare.contact", "prepare", () => prepareChatTurnContact({
       chatId,
       characterId,
       characterName,
@@ -757,11 +891,11 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       memberWardrobe,
       physicalConstraintsEnabled,
       affordanceRead,
-    });
+    }));
 
     scenario = contactScenario;
 
-    const { physicalGuidanceLines, visualStateBuild, visualStateLines, visualStateNarrationOn } = await prepareChatTurnGuidance({
+    const { physicalGuidanceLines, visualStateBuild, visualStateLines, visualStateNarrationOn } = await exchangeTrace.time("prepare.guidance", "prepare", () => prepareChatTurnGuidance({
       chatId,
       characterId,
       characterName,
@@ -787,7 +921,8 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       contactActionOutcomes,
       contactUnresolvedPremise,
       contactTurnFacts,
-    });
+      exchangeTrace,
+    }));
 
     const commitRecognitionMemory = () => commitChatTurnRecognition({ memoryGroupId, owner, characterId, exchangeGuardMessageId, recognition });
     const commitVisualStateCues = () => commitChatTurnVisualCues({ memoryGroupId, owner, characterId, exchangeGuardMessageId, visualStateNarrationOn, visualStateBuild });
@@ -891,6 +1026,41 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       ...(physicalGuidanceLines.length > 0 ? { physicalGuidance: physicalGuidanceLines } : {}),
     };
 
+    // `schedule_time` coverage (#637): the authored daily-rhythm text
+    // (`formatScheduleRhythm`) — present whenever the profile's schedule
+    // renders anything, legitimately empty for a character authored with no
+    // schedule at all.
+    {
+      const rhythm = formatScheduleRhythm(profile.schedule);
+      exchangeTrace.coverage(
+        rhythm
+          ? { family: "schedule_time", status: "present", count: 1, chars: rhythm.length }
+          : { family: "schedule_time", status: "empty", count: 0 },
+      );
+    }
+
+    // `directives` coverage (#637): the tail's one-turn directive bundle
+    // (selfie license, cue invite, the reply-discipline gate notes, the
+    // notation/comms tail note) — present whenever any of it survived
+    // `chatCallbackEligible`-style crowding onto this turn's promptInput,
+    // empty when none did. Distinct from `physical_guidance`, which already
+    // has its own family above.
+    exchangeTrace.coverage(
+      promptInput.selfie !== undefined ||
+        promptInput.cueInvite !== undefined ||
+        promptInput.gateNotes !== undefined ||
+        promptInput.notationNote !== undefined
+        ? { family: "directives", status: "present" }
+        : { family: "directives", status: "empty", count: 0 },
+    );
+
+    // The `narrator.prompt` stage (#637): spans the actual assembly work, and
+    // ends with the narrator-received fingerprint annotated onto the header —
+    // the rendered prompt-node unit ids with chars/hash, plus the same
+    // instruction/assembled-system hashes the eventual take's provenance uses
+    // (`buildNarratorPromptFingerprint`, shared with `buildNarratorRunProvenance`
+    // in `chat-reply-store.ts`). No prompt text.
+    const promptStage = exchangeTrace.begin("narrator.prompt", "narrator");
     const { system, modelHistory, assembledNarratorPrompt, narratorPromptNodes } = await prepareChatTurnPrompt({
       chatId,
       characterId,
@@ -918,7 +1088,25 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       wardrobe,
       memberWardrobe,
       garmentNarration,
+      exchangeTrace,
     });
+    // Computed once here and reused by `settle()` below, rather than calling the
+    // (deliberately lazy) `narratorPromptNodes()` a second time — same pure tree
+    // walk, same result, one fewer walk on the happy path.
+    const promptNodeTree = narratorPromptNodes();
+    const promptFingerprint = buildNarratorPromptFingerprint({
+      source: instructionSource,
+      nodes: promptNodeTree,
+      assembled: assembledNarratorPrompt,
+    });
+    exchangeTrace.annotate({
+      narrator: {
+        instructionHash: promptFingerprint.instructionHash,
+        assembledSystemHash: promptFingerprint.assembledSystemHash,
+        promptUnits: promptFingerprint.promptUnits,
+      },
+    });
+    promptStage.end({ status: "success", inputChars: assembledNarratorPrompt.length });
 
     const abortController = new AbortController();
     // How the narrator generation actually finished (server/ai/narrator-completion.ts).
@@ -960,7 +1148,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         lane: "legacy_chat",
         modelId: narratorCompletion?.modelId ?? narratorModelId,
         source: instructionSource,
-        nodes: narratorPromptNodes(),
+        // The same tree the `narrator.prompt` stage already fingerprinted above —
+        // one pure tree walk, not two.
+        nodes: promptNodeTree,
         assembled: assembledNarratorPrompt,
         ...(narratorCompletion === null
           ? {}
@@ -985,13 +1175,23 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         actionBeat: actionBeatId,
         narratorRun,
         ...(stopped ? { stopped: true } : {}),
+        traceId: exchangeTrace.traceId,
       });
+      const replyPersistStage = exchangeTrace.begin("reply.persist", "settle");
       if (regenerateTarget) {
         // Update the row in place: the old take stays browsable, the new one is
         // active. Row-existence is the guard — a delete landing
         // mid-stream makes this a no-op.
         const takes = await currentReplyTakes(chatId, regenerateTarget.id);
-        if (takes === null) return; // row deleted mid-stream
+        if (takes === null) {
+          // row deleted mid-stream: the reply never actually persisted, so
+          // this is a genuine failure, not a deliberate skip — the derived
+          // outcome must not read back "ok" over an unpersisted reply.
+          replyPersistStage.end({ status: "failed", reason: "row_deleted_mid_stream" });
+          attachDiagnostics();
+          exchangeTrace.flush();
+          return;
+        }
         const next = pushReplyTake(takes, regenerateTarget.content, full, now.toISOString(), {
           // The take being displaced keeps the run that wrote it; a row from before
           // provenance existed has none, and that take is simply unlabelled.
@@ -1011,6 +1211,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 actionBeat: replyMeta.actionBeat,
                 narratorRun: replyMeta.narratorRun,
                 stopped: replyMeta.stopped,
+                // #637: a regenerate re-derives the trace key too — omitting
+                // it would leave the REPLACED take's traceId on the row,
+                // naming an exchange that no longer wrote what's displayed.
+                traceId: replyMeta.traceId,
                 // Row-TYPE markers this render contradicts: the legacy lane wrote the
                 // prose now on the row, so it is neither a successor turn nor a world
                 // beat, and leaving either marker would render a normal reply as a
@@ -1031,6 +1235,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           meta: replyMeta,
         });
       }
+      replyPersistStage.end({ refs: { rowIds: [assistantMessageId] } });
 
       // --- NPC reply-scene decision leg: launch (actor-control step 3, SHADOW) --
       // Started HERE — after the reply row is durable, before the state fan-out —
@@ -1048,6 +1253,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
       const npcSceneMode = chatNpcSceneDecisionMode();
       let npcSceneDecision: ChatNpcSceneDecisionHandle | null = null;
       if (npcSceneMode !== null) {
+        const npcBeginStage = exchangeTrace.begin("settle.npc_decision_begin", "settle");
         try {
           npcSceneDecision = await beginChatNpcSceneDecision({
             chatId,
@@ -1079,10 +1285,24 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             ...(player.profile === undefined ? {} : { playerPersona: player.profile }),
             scene: scenario.scene,
             sink,
+            // #637: correlates this leg's own telemetry with the exchange trace.
+            traceId: exchangeTrace.traceId,
           });
+          // `beginChatNpcSceneDecision` always returns a handle (it reuses an
+          // existing envelope or launches the classifier); a throw is the only
+          // failure, handled below.
+          npcBeginStage.end({ status: "success" });
         } catch (error) {
           log.error("engine.chat", "npc scene decision launch failed", { error: describeError(error) });
+          npcBeginStage.end({ status: "degraded", reason: "exception", detail: describeError(error) });
         }
+      } else {
+        exchangeTrace.record({
+          stage: "settle.npc_decision_begin",
+          phase: "settle",
+          status: "skipped",
+          reason: "policy:npc_scene_decision_off",
+        });
       }
 
       if (opening) {
@@ -1120,7 +1340,9 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // An opening beat writes no wardrobe at all, so its settle report is
         // explicitly empty rather than defaulted.
         if (npcSceneDecision !== null) {
-          await finishChatNpcSceneDecision(npcSceneDecision, emptyChatNpcSceneSettleReport());
+          await exchangeTrace.time("settle.npc_decision_finish", "settle", () =>
+            finishChatNpcSceneDecision(npcSceneDecision, emptyChatNpcSceneSettleReport()),
+          );
         }
         // The romantic-permission decision leg (permission spec step 3) runs
         // strictly AFTER the beat's last scene writer above: it never writes
@@ -1128,20 +1350,26 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // settled column. Flag-gated and trigger-gated internally; fenced
         // whole — a failure is diagnostics and zero events, never a failed
         // opening beat.
-        await runChatRomanticPermissionDecision({
-          chatId,
-          assistantMessageId,
-          reply: full,
-          roster: [
-            { characterId, name: characterName, aliases: profile.aliases },
-            ...others.map((member) => ({
-              characterId: member.characterId,
-              name: member.name,
-              aliases: member.profile.aliases,
-            })),
-          ],
-          sink,
-        });
+        await exchangeTrace.time("settle.permission", "settle", () =>
+          runChatRomanticPermissionDecision({
+            chatId,
+            assistantMessageId,
+            reply: full,
+            roster: [
+              { characterId, name: characterName, aliases: profile.aliases },
+              ...others.map((member) => ({
+                characterId: member.characterId,
+                name: member.name,
+                aliases: member.profile.aliases,
+              })),
+            ],
+            sink,
+            // #637: correlates this leg's own telemetry with the exchange trace.
+            traceId: exchangeTrace.traceId,
+          }),
+        );
+        attachDiagnostics();
+        exchangeTrace.flush();
         return;
       }
 
@@ -1177,7 +1405,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           : {}),
       };
       try {
-        const finalized = await finalizeChatState({
+        const finalized = await exchangeTrace.time("settle.finalize", "settle", () => finalizeChatState({
           chatId,
           characterId,
           ownerId: owner,
@@ -1276,14 +1504,16 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 .map((o) => ({ groupId: o.memoryGroupId, characterId: o.characterId }))
             : undefined,
           sink,
-        });
+          // #637: correlates this leg's own telemetry with the exchange trace.
+          traceId: exchangeTrace.traceId,
+        }));
         // The exchange has committed (`finalizeChatState` writes the rollback
         // anchors last, under the same prompting-message guard this uses), so the
         // observer's memory may advance — and only now. PRIMARY only, for the same
         // reason the cue block is: this is the subject the prompt described.
         await commitRecognitionMemory();
         await commitVisualStateCues();
-        const { memberWornChanges, wardrobeChanged } = await settleChatTurnMembers({
+        const { memberWornChanges, wardrobeChanged } = await exchangeTrace.time("settle.members", "settle", () => settleChatTurnMembers({
           chatId,
           characterName,
           sink,
@@ -1303,7 +1533,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           selfieTargetOther,
           referencedOthers,
           finalized,
-        });
+          // #637: correlates this leg's own telemetry with the exchange trace.
+          traceId: exchangeTrace.traceId,
+          exchangeTrace,
+        }));
 
         // Fold the members' new looks into the chat-wide garment
         // store. Sequential and after the settle, on the
@@ -1312,6 +1545,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // the store needs the write. Fenced: a failed reconcile costs the store's
         // freshness for these members, never the exchange.
         if (memberWornChanges.length > 0) {
+          const wardrobeStage = exchangeTrace.begin("settle.wardrobe", "settle");
           try {
             const settled = await loadChatScenario(chatId, sink);
             if (settled) {
@@ -1324,8 +1558,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
               });
               await saveChatScenario(chatId, { ...settled, garments });
             }
+            wardrobeStage.end({ count: memberWornChanges.length });
           } catch (error) {
             log.error("engine.chat", "ensemble garment reconcile failed", { error: describeError(error) });
+            wardrobeStage.end({ status: "degraded", reason: "exception", detail: describeError(error) });
           }
         }
         // --- The exchange's LAST scene writer ---------------------------------
@@ -1356,7 +1592,17 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // own pass adds nothing new to report.
           if (finalized.wardrobeChanged.character) wardrobeChanged.add(affordanceSubjectId(characterId));
           if (finalized.wardrobeChanged.player) wardrobeChanged.add(CHAT_CONTACT_PLAYER_SUBJECT);
-          await finishChatNpcSceneDecision(npcSceneDecision, { wardrobeChanged });
+          await exchangeTrace.time("settle.npc_decision_finish", "settle", () =>
+            finishChatNpcSceneDecision(npcSceneDecision, { wardrobeChanged }),
+          );
+          // The common reply-scene leg owns contact/ending for this exchange —
+          // the legacy block below never runs on this path.
+          exchangeTrace.record({
+            stage: "settle.contact_events",
+            phase: "settle",
+            status: "skipped",
+            reason: "policy:npc_decision_leg_active",
+          });
         } else if (chatContactActionsEnabled()) {
           // --- Reply-side NPC contact ending (chat-contact-reply.ts) ----------
           // The legacy block: the ends and the projection land in one verified
@@ -1366,6 +1612,7 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
           // fails closed with the projection unchanged. Gated on the contact
           // flag with the rest of the leg; fenced whole (docs/resilience.md) —
           // a failed ending costs nothing but itself.
+          const contactEventsStage = exchangeTrace.begin("settle.contact_events", "settle");
           try {
             const npcRoster: ChatNpcEndingCharacter[] = [
               ...(driftedState.presence === "present"
@@ -1416,9 +1663,18 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
                 }
               }
             }
+            contactEventsStage.end();
           } catch (error) {
             log.error("engine.chat", "chat reply-side contact ending failed", { error: describeError(error) });
+            contactEventsStage.end({ status: "degraded", reason: "exception", detail: describeError(error) });
           }
+        } else {
+          exchangeTrace.record({
+            stage: "settle.contact_events",
+            phase: "settle",
+            status: "skipped",
+            reason: "flag_off:CHAT_CONTACT_ACTIONS",
+          });
         }
         // --- Romantic-permission decision leg (permission spec step 3) --------
         // Strictly AFTER the exchange's last scene writer (whichever block above
@@ -1428,48 +1684,65 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         // it clear of the scene CAS. Flag-gated and trigger-gated internally;
         // fenced whole (docs/resilience.md) — any failure is diagnostics and
         // zero permission events, never a failed reply.
-        await runChatRomanticPermissionDecision({
-          chatId,
-          assistantMessageId,
-          reply: full,
-          roster: [
-            { characterId, name: characterName, aliases: profile.aliases },
-            ...others.map((member) => ({
-              characterId: member.characterId,
-              name: member.name,
-              aliases: member.profile.aliases,
-            })),
-          ],
-          ...(currentContactAttempt === undefined
-            ? {}
-            : {
-                currentAttemptActionId: currentContactAttempt.actionId,
-                ...(currentContactAttempt.contactId === undefined
-                  ? {}
-                  : { currentAttemptContactId: currentContactAttempt.contactId }),
-              }),
-          sink,
-        });
+        await exchangeTrace.time("settle.permission", "settle", () =>
+          runChatRomanticPermissionDecision({
+            chatId,
+            assistantMessageId,
+            reply: full,
+            roster: [
+              { characterId, name: characterName, aliases: profile.aliases },
+              ...others.map((member) => ({
+                characterId: member.characterId,
+                name: member.name,
+                aliases: member.profile.aliases,
+              })),
+            ],
+            ...(currentContactAttempt === undefined
+              ? {}
+              : {
+                  currentAttemptActionId: currentContactAttempt.actionId,
+                  ...(currentContactAttempt.contactId === undefined
+                    ? {}
+                    : { currentAttemptContactId: currentContactAttempt.contactId }),
+                }),
+            sink,
+            // #637: correlates this leg's own telemetry with the exchange trace.
+            traceId: exchangeTrace.traceId,
+          }),
+        );
         // Selfie first (more specific than a big-moment scene — the shared
         // one-live-render-per-chat dedupe keeps only whichever queues first).
         if (finalized.selfieSend) {
-          input.onSelfie?.({ assistantMessageId, characterId });
+          input.onSelfie?.({ assistantMessageId, characterId, exchangeTrace });
         }
         // "Auto at big moments" (slice 9): opt-in per chat, fire-and-forget — a failed
         // or skipped render never touches the settled reply.
         if (finalized.bigMoment && scenario.sceneAuto === "milestones") {
-          input.onBigMoment?.({ assistantMessageId });
+          input.onBigMoment?.({ assistantMessageId, exchangeTrace });
         }
         // R4 shadow signal: every settled exchange, unconditional — the route
         // decides whether a shadow leg runs (authority-gated there).
-        input.onSettled?.({ assistantMessageId, content: (input.content ?? "").trim() });
+        input.onSettled?.({ assistantMessageId, content: (input.content ?? "").trim(), exchangeTrace });
       } catch (error) {
         log.error("engine.chat", "chat-state finalize failed", { error: describeError(error) });
       }
       if (collected.items.length) {
         log.info("engine.chat", "chat-state diagnostics", { codes: collected.items.map((d) => d.code) });
       }
+      // The coordinator's own diagnostic record, handed to the trace (#637) —
+      // on BOTH the success and failure path above, since this runs after
+      // either outcome. The existing `log.info` stays untouched.
+      attachDiagnostics();
+      // "End of settle" flush (#637) — the common path's end; the opening
+      // beat's own early return above flushes itself the same way.
+      exchangeTrace.flush();
     };
+
+    // The narrator handoff flush (#637): everything recorded up to and
+    // including the prompt fingerprint lands now, just before the stream
+    // starts — so an inspector watching this exchange can see the admission
+    // and prepare phases without waiting for settle.
+    exchangeTrace.flush();
 
     return {
       ok: true,
@@ -1481,6 +1754,12 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
         modelId: narratorModelId,
         // The coordinator owns the lock; the stream releases it on every terminal path.
         release: releaseChatLock,
+        exchangeTrace,
+        // #637: attach the diagnostics collected so far before `finish()`
+        // when settle never runs (no-text, length-stub, zero-text provider
+        // error) — the watermark above means this is also safe to call when
+        // settle already attached them.
+        attachDiagnostics,
       }),
     };
   }

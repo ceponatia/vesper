@@ -59,6 +59,8 @@ const INVENTORY: ReadonlyArray<{ role: "user" | "assistant"; key: string; value:
   // Stored as stable CODES, exactly like `compositionFallbacks` — never as
   // `Diagnostic` records, which would put a message and context on a client-read row.
   { role: "assistant", key: "renderDiagnostics", value: ["sim.solo.degraded", "attempt1.presentation.id_leak"] },
+  // The exchange trace (#637) this reply belongs to — a bare id, so both roles may carry it.
+  { role: "assistant", key: "traceId", value: "trace_abc123" },
 ];
 
 describe("parseChatMessageMeta — the inventory", () => {
@@ -385,6 +387,26 @@ describe("write constructors", () => {
     expect(
       serializeChatMessageMeta(successorReplyMeta({ compositionFallbacks: [], renderDiagnostics: [] })),
     ).toEqual({ simTurn: true });
+  });
+
+  it("userLineMeta/assistantReplyMeta/successorReplyMeta carry the optional #637 traceId, and an empty id writes nothing", () => {
+    // `input.traceId ? {...} : {}` at each constructor: a writer with no live
+    // trace (or one that only has an empty placeholder) must not stamp a
+    // `traceId` key at all — never an empty string on the row.
+    expect(serializeChatMessageMeta(userLineMeta({ traceId: "trace_abc123" }))).toEqual({ traceId: "trace_abc123" });
+    expect(serializeChatMessageMeta(userLineMeta({ traceId: "" }))).toEqual({});
+    expect(serializeChatMessageMeta(userLineMeta({}))).toEqual({});
+
+    expect(serializeChatMessageMeta(assistantReplyMeta({ traceId: "trace_abc123" }))).toEqual({
+      traceId: "trace_abc123",
+    });
+    expect(serializeChatMessageMeta(assistantReplyMeta({ traceId: "" }))).toEqual({});
+
+    expect(serializeChatMessageMeta(successorReplyMeta({ traceId: "trace_abc123" }))).toEqual({
+      simTurn: true,
+      traceId: "trace_abc123",
+    });
+    expect(serializeChatMessageMeta(successorReplyMeta({ traceId: "" }))).toEqual({ simTurn: true });
   });
 
   it("worldBeatMeta marks the row as a beat for any kind", () => {

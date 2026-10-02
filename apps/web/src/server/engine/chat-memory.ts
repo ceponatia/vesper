@@ -209,6 +209,8 @@ export async function retrieveChatCallback(input: {
 export interface AgentLegTrace {
   chatId?: string;
   messageId?: string | null;
+  /** The exchange trace (#637) this leg ran under, when the caller has one. */
+  traceId?: string;
 }
 
 export interface ChatExtractionInput extends Omit<ChatExtractorContext, "personal"> {
@@ -268,6 +270,7 @@ async function runExtractorLeg<T>(args: {
     legId: args.code,
     chatId: args.trace?.chatId,
     messageId: args.trace?.messageId,
+    traceId: args.trace?.traceId,
     modelId,
     promptChars: system.length + prompt.length,
     maxOutputTokens: reasoning.maxOutputTokens,

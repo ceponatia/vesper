@@ -13,6 +13,7 @@ import { db, simItemHoldings, simItems } from "@/server/db";
 import { and, asc, eq } from "drizzle-orm";
 import { readBranchClock } from "../sim-beats";
 import type { SpaceProjection } from "@vesper/simulation-core/contracts/space";
+import type { ExchangeTrace } from "../chat-exchange-trace";
 import type { CompositionFallbackCollector } from "../composition-diagnostics";
 import { buildNarratorRunProvenance, persistAssistantReply } from "../chat-reply-store";
 import { enqueueChatSummary } from "../chat-summary";
@@ -34,6 +35,7 @@ import {
   loadSimConversationContext,
   simLoadWarn,
   loadSimPresentationInputs,
+  simContextCoverage,
 } from "./context";
 import type { SimChatExchangeResult } from "./types";
 
@@ -205,8 +207,10 @@ export async function runSimSoloTurn(input: {
   settledSpace?: SpaceProjection;
   /** C15: composition-fallback collector threaded from the turn entry (may be absent). */
   fallbacks?: CompositionFallbackCollector;
+  /** The exchange trace (#637) threaded from the turn entry. */
+  exchangeTrace: ExchangeTrace;
 }): Promise<SimChatExchangeResult> {
-  const { chatId, ctx } = input;
+  const { chatId, ctx, exchangeTrace } = input;
   const { branchId, playerActorId, primaryActorId, actorNames, playerName } = ctx;
   const primaryName = actorNames[primaryActorId] ?? "them";
 
@@ -221,11 +225,13 @@ export async function runSimSoloTurn(input: {
   const before = await readBranchClock(branchId);
   if (input.departure === undefined) {
     try {
-      await advanceBranchStoryTime(branchId, (before?.storySecond ?? 0) + 60, {
-        workerId: `sim-solo-${chatId}`,
-        database: db(),
-        targetMode: "at_least",
-      });
+      await exchangeTrace.time("sim.time", "prepare", () =>
+        advanceBranchStoryTime(branchId, (before?.storySecond ?? 0) + 60, {
+          workerId: `sim-solo-${chatId}`,
+          database: db(),
+          targetMode: "at_least",
+        }),
+      );
     } catch (error) {
       simLoadWarn(chatId, "solo story-time advance degraded", error);
     }
@@ -239,28 +245,55 @@ export async function runSimSoloTurn(input: {
   // read fresh.
   const settledSpace = input.departure !== undefined ? input.settledSpace : undefined;
 
-  const [{ memory, conversationSummary }, presentation, solo] = await Promise.all([
-    loadSimConversationContext({
-      chatId,
-      branchId,
-      viewpointActorId: playerActorId,
-      message: input.message,
-      ragEligibility: ctx.ragEligibility,
-      atStorySecond,
+  const [{ memory, conversationSummary }, presentation, solo] = await exchangeTrace.time(
+    "sim.context",
+    "prepare",
+    () =>
+      Promise.all([
+        loadSimConversationContext({
+          chatId,
+          branchId,
+          viewpointActorId: playerActorId,
+          message: input.message,
+          ragEligibility: ctx.ragEligibility,
+          atStorySecond,
+        }),
+        loadSimPresentationInputs({ chatId, userId: input.userId, branchId, primaryActorId, actorNames, playerName }),
+        buildSoloCutContext({
+          chatId,
+          branchId,
+          playerActorId,
+          primaryActorId,
+          playerName,
+          primaryName,
+          actorNames,
+          atStorySecond,
+          ...(settledSpace ? { settledSpace } : {}),
+        }),
+      ]),
+    ([, , soloResult]) => ({
+      status: soloResult.context === null ? "degraded" : soloResult.diagnostics.length > 0 ? "degraded" : "success",
+      ...(soloResult.diagnostics.length > 0 ? { reason: soloResult.diagnostics.join(",") } : {}),
     }),
-    loadSimPresentationInputs({ chatId, userId: input.userId, branchId, primaryActorId, actorNames, playerName }),
-    buildSoloCutContext({
-      chatId,
-      branchId,
-      playerActorId,
-      primaryActorId,
-      playerName,
-      primaryName,
-      actorNames,
-      atStorySecond,
-      ...(settledSpace ? { settledSpace } : {}),
-    }),
-  ]);
+  );
+  for (const entry of simContextCoverage({
+    dialogueTail: input.dialogueTail,
+    conversationSummary,
+    memory,
+    ragEligibility: ctx.ragEligibility,
+    hadUtterance: input.message.length > 0,
+    presentation,
+    clock,
+  })) {
+    exchangeTrace.coverage(entry);
+  }
+  exchangeTrace.coverage(
+    solo.context === null
+      ? { family: "scene", status: "missing", reason: solo.diagnostics[0] ?? "engine.sim.solo.space_read_failed" }
+      : solo.diagnostics.length > 0
+        ? { family: "scene", status: "degraded", reason: solo.diagnostics.join(",") }
+        : { family: "scene", status: "present", count: 1 },
+  );
 
   // buildSoloCutContext resolves zone labels from the space projection's zone
   // kinds itself (no raw ids), so nothing more is needed to ground the prompt.
@@ -299,10 +332,36 @@ export async function runSimSoloTurn(input: {
   };
   const { system, prompt } = buildSimSoloRenderPrompt(soloRenderContext);
 
-  const rendered = await renderSoloNarration({ system, prompt, fallbackProse });
+  const rendered = await exchangeTrace.time(
+    "sim.narrator",
+    "narrator",
+    () => renderSoloNarration({ system, prompt, fallbackProse }),
+    (result) => {
+      const status: "failed" | "degraded" | "retried" | "success" =
+        result.status !== "rendered"
+          ? "failed"
+          : result.degraded
+            ? "degraded"
+            : result.attempts > 1
+              ? "retried"
+              : "success";
+      const reason = status === "success" ? undefined : result.diagnostics.at(-1);
+      return {
+        status,
+        ...(reason ? { reason } : {}),
+        attempt: result.attempts,
+        model: { modelId: result.modelId, ...(result.provider ? { provider: result.provider } : {}) },
+      };
+    },
+  );
   if (rendered.status !== "rendered" || rendered.prose === undefined) {
+    exchangeTrace.finish({ kind: "failed" });
+    exchangeTrace.flush();
     return { ok: false, code: "render_withheld", message: "the narrator could not render this turn; try again", status: 503 };
   }
+  // Narrowed here so the closure below (a separate function scope) keeps the
+  // `string` type — `rendered.prose`'s narrowing does not carry into it.
+  const prose = rendered.prose;
 
   const narratorRun = buildNarratorRunProvenance({
     lane: "successor",
@@ -313,32 +372,50 @@ export async function runSimSoloTurn(input: {
     attempts: rendered.attempts,
     ...(rendered.latencyMs === undefined ? {} : { latencyMs: rendered.latencyMs }),
   });
+  exchangeTrace.annotate({
+    narrator: {
+      modelId: narratorRun.modelId,
+      ...(rendered.provider ? { provider: rendered.provider } : {}),
+      ...(narratorRun.attempts === undefined ? {} : { attempts: narratorRun.attempts }),
+      ...(narratorRun.finishReason ? { finishReason: narratorRun.finishReason } : {}),
+      ...(narratorRun.inputTokens === undefined ? {} : { inputTokens: narratorRun.inputTokens }),
+      ...(narratorRun.outputTokens === undefined ? {} : { outputTokens: narratorRun.outputTokens }),
+      ...(narratorRun.instructionHash ? { instructionHash: narratorRun.instructionHash } : {}),
+      ...(narratorRun.assembledSystemHash ? { assembledSystemHash: narratorRun.assembledSystemHash } : {}),
+    },
+  });
   const diagnostics = [...ctx.instructionDiagnostics, ...solo.diagnostics, ...rendered.diagnostics];
   const fallbackCodes = input.fallbacks?.codes() ?? [];
   const assistantMessageId = newId();
-  await persistAssistantReply({
-    id: assistantMessageId,
-    chatId,
-    speakerCharacterId: input.speakerCharacterId,
-    promptMessageId: input.userMessageId,
-    content: rendered.prose,
-    meta: successorReplyMeta({
-      solo: true,
-      modelId: rendered.modelId,
-      attempts: rendered.attempts,
-      narratorRun,
-      ...(input.mode === "open" ? { simOpening: true } : {}),
-      // C15 surface a: the composed-flow codes (public-safe), plus the solo render's own
-      // stable diagnostic codes — both were previously returned then dropped at persist.
-      compositionFallbacks: fallbackCodes,
-      renderDiagnostics: diagnostics,
+  exchangeTrace.annotate({ replyMessageId: assistantMessageId });
+  await exchangeTrace.time("sim.persist", "settle", () =>
+    persistAssistantReply({
+      id: assistantMessageId,
+      chatId,
+      speakerCharacterId: input.speakerCharacterId,
+      promptMessageId: input.userMessageId,
+      content: prose,
+      meta: successorReplyMeta({
+        solo: true,
+        modelId: rendered.modelId,
+        attempts: rendered.attempts,
+        narratorRun,
+        ...(input.mode === "open" ? { simOpening: true } : {}),
+        // C15 surface a: the composed-flow codes (public-safe), plus the solo render's own
+        // stable diagnostic codes — both were previously returned then dropped at persist.
+        compositionFallbacks: fallbackCodes,
+        renderDiagnostics: diagnostics,
+        traceId: exchangeTrace.traceId,
+      }),
     }),
-  });
+  );
   void enqueueChatSummary({ chatId });
+  exchangeTrace.finish({ kind: "ok" });
+  exchangeTrace.flush();
   return {
     ok: true,
     messageId: assistantMessageId,
-    prose: rendered.prose,
+    prose,
     cutId: "",
     modelId: rendered.modelId,
     attempts: rendered.attempts,

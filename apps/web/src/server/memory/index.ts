@@ -1,5 +1,6 @@
 export * from "./agent-failure-log";
 export * from "./composition-fallback-log";
+export * from "./chat-exchange-trace-log";
 export * from "./constants";
 export * from "./episodes";
 export * from "./facts";

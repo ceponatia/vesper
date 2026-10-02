@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  exchangeTraceJsonOutputSchema,
+  type ExchangeTraceJsonOutput,
+} from "@/contracts/turns/chat-exchange-trace";
 import { apiDelete, apiGet, apiPatch, apiPost, withQuery } from "@/lib/client/api";
 
 /** Client data layer for the explicitly self-scoped owner-admin chat inspector. */
@@ -621,4 +625,21 @@ export const chatInspectorApi = {
     apiGet(episodeScoresSchema, withQuery(`${base(chatId)}/episodes/score`, { q: query })),
   updateSummary: (chatId: string, summary: string) =>
     apiPatch(inspectorSummarySchema, `${base(chatId)}/summary`, { summary }),
+  /**
+   * Exchange traces (#637): parsed with slice A's own versioned-output schema
+   * rather than one of this file's forgiving local schemas, so a field this
+   * module doesn't yet know about survives the client seam instead of being
+   * stripped by an unrelated zod shape.
+   */
+  traces: (chatId: string, query?: { limit?: number; traceId?: string; messageId?: string }) =>
+    apiGet(
+      exchangeTraceJsonOutputSchema,
+      withQuery(`${base(chatId)}/traces`, {
+        limit: query?.limit,
+        traceId: query?.traceId,
+        messageId: query?.messageId,
+      }),
+    ),
 };
+
+export type { ExchangeTraceJsonOutput };

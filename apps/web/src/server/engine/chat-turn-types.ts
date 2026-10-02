@@ -1,3 +1,4 @@
+import type { EngineAuthority } from "@vesper/simulation-core/contracts/authority";
 import type {
   CharacterProfile,
   ChatActionId,
@@ -8,6 +9,7 @@ import type {
 } from "@/contracts";
 import type { ChatContactPremiseKind } from "./chat-contact/presentation";
 import type { ChatContactAct } from "./chat-contact/identity";
+import type { ExchangeTrace } from "./chat-exchange-trace";
 import type { ChatState } from "./chat-state/types";
 
 export type ChatExchangeKind = "send" | "open" | "continue" | "action_beat" | "regenerate" | "rerun";
@@ -69,6 +71,15 @@ export interface SubmitChatMessageInput {
   chatId: string;
   /** The participant's memory group — the RAG scope for recall + writes. */
   memoryGroupId: string;
+  /**
+   * The chat's engine authority (#637), as the route already read it for routing.
+   * Optional so every existing caller that predates the exchange trace keeps
+   * compiling unchanged; absent degrades to `legacy_chat` (the honest default —
+   * every pre-existing caller IS legacy_chat). Carried onto the exchange trace's
+   * header only — it never changes routing or behavior here, since a sim-routed
+   * authority never reaches this coordinator at all (the route forks first).
+   */
+  authority?: EngineAuthority;
   /** The (v1 single) participant character row slice. */
   character: { id: string; name: string; profile: unknown };
   /**
@@ -136,9 +147,11 @@ export interface SubmitChatMessageInput {
    * "Auto at big moments" hook: fired fire-and-forget after the finalizer
    * when the exchange landed a stage crossing / strong reaction AND the chat's
    * `sceneAuto` mode is "milestones". The route owns what happens (queue a scene
-   * render anchored to this reply) — the engine only signals.
+   * render anchored to this reply) — the engine only signals. `exchangeTrace`
+   * (#637) rides every hook below so the route can record its own `jobs.*`
+   * stages on THIS exchange's trace rather than needing a second handle.
    */
-  onBigMoment?: (info: { assistantMessageId: string }) => void;
+  onBigMoment?: (info: { assistantMessageId: string; exchangeTrace: ExchangeTrace }) => void;
   /**
    * Selfie hook: fired fire-and-forget after the finalizer
    * when the reply actually sent a photo (pulse-read + gate-armed). The route
@@ -146,7 +159,7 @@ export interface SubmitChatMessageInput {
    * SENDER: in a group the addressed member sends it, so
    * the render must use that character, not always the primary.
    */
-  onSelfie?: (info: { assistantMessageId: string; characterId: string }) => void;
+  onSelfie?: (info: { assistantMessageId: string; characterId: string; exchangeTrace: ExchangeTrace }) => void;
   /**
    * Post-settle hook (the successor shadow leg): fired fire-and-forget
    * after the finalizer on EVERY successfully settled exchange. The route owns
@@ -154,7 +167,7 @@ export interface SubmitChatMessageInput {
    * engine only signals. `content` is the player's line ("" for synthetic-cue
    * kinds) so the consumer never re-reads the transcript for it.
    */
-  onSettled?: (info: { assistantMessageId: string; content: string }) => void;
+  onSettled?: (info: { assistantMessageId: string; content: string; exchangeTrace: ExchangeTrace }) => void;
   /**
    * Contact-turn observer: fired once, AFTER the physical-guidance block for this
    * exchange is rendered and BEFORE the reply streams, with what the narrator was

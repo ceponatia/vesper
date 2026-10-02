@@ -1,11 +1,47 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DiagnosticCollector } from "@/contracts/diagnostics";
+import { makeProfile } from "@/server/test-support";
+import type { GenerateCheckedOptions, GenerateCheckedResult } from "../../ai";
+
+/** The telemetry object the pulse's own call actually handed to `withGenerateTimeout` (#637 correlation). */
+const telemetrySeen = vi.hoisted(() => ({ last: undefined as { traceId?: string } | undefined }));
+
+// Out of demo mode (the global `AI_FAKE=1` test setup would otherwise degrade
+// before any telemetry is built at all) and with the model call stubbed to
+// its OWN degraded-fallback shape — real, schema-shaped data the pulse
+// already builds for its failure path — so these tests check only the
+// telemetry object the pulse hands to `withGenerateTimeout`, never a real
+// provider call or the `loadChatAgentReasoningProfile` DB read.
+vi.mock("../../ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../ai")>();
+  return {
+    ...actual,
+    isDemoMode: () => false,
+    loadChatAgentReasoningProfile: () => Promise.resolve("off" as const),
+    generateChecked: <T,>(options: GenerateCheckedOptions<T>): Promise<GenerateCheckedResult<T>> =>
+      Promise.resolve({ value: (options.fallback ? options.fallback() : ({} as T)), degraded: false }),
+    withGenerateTimeout: <T,>(
+      work: Promise<GenerateCheckedResult<T>>,
+      _controller: AbortController,
+      _timeoutMs: number,
+      _timeoutCode: string,
+      _sink: unknown,
+      telemetry?: { traceId?: string },
+    ): Promise<{ value: T | null; degraded: boolean }> => {
+      telemetrySeen.last = telemetry;
+      return work.then((result) => ({ value: result.value, degraded: result.degraded })).catch(() => ({ value: null, degraded: true }));
+    },
+  };
+});
+
 import {
   chatPulseWithIntimateSceneDiagnosisSchema,
   INTIMATE_SCENE_UNREADABLE_DIAGNOSTIC,
   reportIntimateSceneIfUnreadable,
+  runChatPulse,
   type ChatPulseWithIntimateSceneDiagnosis,
 } from "./pulse-agent";
+import { seedChatState } from "./seed";
 
 /**
  * `chatPulseSchema`'s own `.catch(null)` on `intimateScene` (correct resilience
@@ -93,5 +129,45 @@ describe("reportIntimateSceneIfUnreadable — the pulse-boundary diagnostic (#30
 
   it("tolerates no sink at all", () => {
     expect(() => reportIntimateSceneIfUnreadable(pulse(true))).not.toThrow();
+  });
+});
+
+describe("runChatPulse threads the caller's traceId into its telemetry (#637)", () => {
+  it("hands the pulse's own call the caller's traceId", async () => {
+    telemetrySeen.last = undefined;
+    const state = seedChatState(makeProfile());
+    await runChatPulse({
+      state,
+      profile: makeProfile(),
+      characterName: "Mara",
+      playerName: "Theo",
+      exchange: { player: "hi", assistant: "[Mara] \"hi\"" },
+      activeSocialCards: [],
+      trace: { chatId: "chat-1", messageId: "msg-1", traceId: "trace-pulse-1" },
+      clockMinutes: 0,
+    });
+    // Widening read: `telemetrySeen.last` was reset to the
+    // literal `undefined` above, and TS's control-flow narrowing doesn't see
+    // the mock's reassignment across the awaited call, so reading the
+    // property directly here would (wrongly) type as `never` (#637 CI fix).
+    const telemetry = telemetrySeen.last as { traceId?: string } | undefined;
+    expect(telemetry?.traceId).toBe("trace-pulse-1");
+  });
+
+  it("leaves the telemetry traceId absent when the caller has none", async () => {
+    telemetrySeen.last = undefined;
+    const state = seedChatState(makeProfile());
+    await runChatPulse({
+      state,
+      profile: makeProfile(),
+      characterName: "Mara",
+      playerName: "Theo",
+      exchange: { player: "hi", assistant: "[Mara] \"hi\"" },
+      activeSocialCards: [],
+      trace: { chatId: "chat-1", messageId: "msg-1" },
+      clockMinutes: 0,
+    });
+    const telemetry = telemetrySeen.last as { traceId?: string } | undefined;
+    expect(telemetry?.traceId).toBeUndefined();
   });
 });

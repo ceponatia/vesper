@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   type SocialReactionCard,
   type CharacterProfile,
+  type DiagnosticSeverity,
   type DiagnosticSink,
   type ChatPulse,
   chatIntimateSceneSchema,
@@ -151,7 +152,12 @@ function describeChatPulse(p: ChatPulse): AgentRunDescription {
  */
 export async function runChatPulse(input: ChatPulseInput): Promise<{ state: ChatState; degraded: boolean }> {
   const { state, profile, characterName, sink } = input;
-  if (isDemoMode()) return { state: degradeState(state, sink, "demo mode"), degraded: true };
+  // Demo mode is an intentional stub, never a genuine problem — `info`, like
+  // every other demo-mode degrade (`generateChecked`'s own `degrade()`,
+  // `chat_archivist.degraded`), so a healthy demo-mode exchange still reads
+  // "ok" (#637 CI fix: this used to share the real-failure path's "warn" and
+  // permanently degraded every exchange trace taken under `AI_FAKE=1`).
+  if (isDemoMode()) return { state: degradeState(state, sink, "demo mode", "info"), degraded: true };
 
   const controller = new AbortController();
   const prompt = buildChatPulsePrompt({
@@ -176,6 +182,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     legId: "chat_state.pulse",
     chatId: input.trace?.chatId,
     messageId: input.trace?.messageId,
+    traceId: input.trace?.traceId,
     modelId,
     promptChars: CHAT_PULSE_SYSTEM.length + prompt.length,
     maxOutputTokens: reasoning.maxOutputTokens,
@@ -210,7 +217,7 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
     telemetry,
     describeChatPulse,
   );
-  if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded"), degraded: true };
+  if (!value || degraded) return { state: degradeState(state, sink, "pulse degraded", "warn"), degraded: true };
   reportIntimateSceneIfUnreadable(value, sink);
   if (input.scope === "opener") return { state: applyOpenerPulse(state, value).state, degraded: false };
   return {
@@ -222,9 +229,18 @@ export async function runChatPulse(input: ChatPulseInput): Promise<{ state: Chat
   };
 }
 
-/** Drift-only fallback: keep the drifted state, stamp a degraded trace + the mandated diagnostic. */
-function degradeState(state: ChatState, sink: DiagnosticSink | undefined, reason: string): ChatState {
-  sink?.push(diag("warn", "chat_state.pulse.degraded", `pulse degraded (${reason}); persisting drift-only state`));
+/**
+ * Drift-only fallback: keep the drifted state, stamp a degraded trace + the
+ * mandated diagnostic. `severity` is the caller's call: demo mode is an
+ * expected stub (`info`), a genuine timeout/parse failure is not (`warn`).
+ */
+function degradeState(
+  state: ChatState,
+  sink: DiagnosticSink | undefined,
+  reason: string,
+  severity: DiagnosticSeverity,
+): ChatState {
+  sink?.push(diag(severity, "chat_state.pulse.degraded", `pulse degraded (${reason}); persisting drift-only state`));
   return {
     ...state,
     lastPulseTrace: {

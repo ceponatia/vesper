@@ -25,7 +25,11 @@ import {
 import type { detectSensoryFocus } from "./chat-intent";
 import type { ChatScenario, ChatState } from "./chat-state/types";
 import type { ResolvedChatWardrobe } from "./chat-wardrobe";
-import { chatRomanticPermissionEnabled, chatVisualStateShadowEnabled } from "./prompts/constants";
+import {
+  chatContactActionsEnabled,
+  chatRomanticPermissionEnabled,
+  chatVisualStateShadowEnabled,
+} from "./prompts/constants";
 import {
   safeBuildVisualStateShadow,
   visualStateShadowLogSummary,
@@ -33,6 +37,7 @@ import {
   type VisualStateShadowInput,
 } from "@/server/visual-state";
 import type { PlayerPersona } from "../players";
+import type { ExchangeTrace } from "./chat-exchange-trace";
 import type { ChatTurnMember, ChatContactTurnRecord, SubmitChatMessageInput } from "./chat-turn-types";
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -63,6 +68,8 @@ export async function prepareChatTurnGuidance(args: {
   contactActionOutcomes: readonly PhysicalActionOutcome[];
   contactUnresolvedPremise: ChatContactUnresolvedPremise | null;
   contactTurnFacts: Omit<ChatContactTurnRecord, "guidanceLines"> | null;
+  /** The exchange's durable trace (#637) — `physical_guidance` / `visual_state` / `contact` coverage. */
+  exchangeTrace: ExchangeTrace;
 }) {
   const {
     chatId,
@@ -90,6 +97,7 @@ export async function prepareChatTurnGuidance(args: {
     contactActionOutcomes,
     contactUnresolvedPremise,
     contactTurnFacts,
+    exchangeTrace,
   } = args;
 
   // --- Pending revocation stop (`chat-permission-guidance.ts`) -------------
@@ -131,6 +139,8 @@ export async function prepareChatTurnGuidance(args: {
   // it — and the stop transitions above are a fold over durable rows the retake
   // prunes, so they reproduce with everything else.
   let physicalGuidanceLines: readonly string[] = [];
+  /** Did the build throw (#637 `physical_guidance` coverage: nothing reached the narrator)? */
+  let physicalGuidanceFailed = false;
   if ((physicalConstraintsEnabled && affordanceRead !== null) || permissionStopTransitions.length > 0) {
     try {
       // General constraints take the full affordance path only under their
@@ -184,9 +194,42 @@ export async function prepareChatTurnGuidance(args: {
       });
     } catch (error) {
       log.error("engine.chat", "chat physical guidance failed", { error: describeError(error) });
+      physicalGuidanceFailed = true;
       if (permissionStopTransitions.length > 0) throw error;
     }
   }
+
+  // `physical_guidance` / `contact` coverage (#637): recorded at the point each
+  // is actually decided — `CHAT_PHYSICAL_CONSTRAINTS` is the only door onto the
+  // prompt for BOTH (docs/character-chat/physical-legs.md "Constraint-first
+  // narrator guidance" — "contact still commits and still persists [with the
+  // flag off]; the prompt is byte-identical"), so a committed contact that
+  // never reaches the narrator is `suppressed`, never `present`.
+  exchangeTrace.coverage(
+    !physicalConstraintsEnabled && permissionStopTransitions.length === 0
+      ? { family: "physical_guidance", status: "suppressed", reason: "flag_off:CHAT_PHYSICAL_CONSTRAINTS" }
+      : physicalGuidanceFailed
+        // Nothing reached the narrator — the build threw and nothing
+        // substituted a fallback value (`physicalGuidanceLines` stayed []).
+        ? { family: "physical_guidance", status: "missing", reason: "exception" }
+        : physicalGuidanceLines.length > 0
+          ? {
+              family: "physical_guidance",
+              status: "present",
+              count: physicalGuidanceLines.length,
+              chars: physicalGuidanceLines.join("\n").length,
+            }
+          : { family: "physical_guidance", status: "empty", count: 0 },
+  );
+  exchangeTrace.coverage(
+    !chatContactActionsEnabled()
+      ? { family: "contact", status: "suppressed", reason: "flag_off:CHAT_CONTACT_ACTIONS" }
+      : !physicalConstraintsEnabled
+        ? { family: "contact", status: "suppressed", reason: "policy:guidance_flag_off" }
+        : contactActionOutcomes.length > 0 || contactUnresolvedPremise !== null
+          ? { family: "contact", status: "present", count: contactActionOutcomes.length }
+          : { family: "contact", status: "empty", count: 0 },
+  );
 
   // The contact-turn record ships here — after the guidance exists, before the
   // model sees it. Fire-and-forget: a throwing observer costs a log line and
@@ -220,6 +263,9 @@ export async function prepareChatTurnGuidance(args: {
   let visualStateBuild: VisualStateShadowBuild | null = null;
   /** The rendered pair the prompt carries. Null unless this chat's switch is on and the selection spoke. */
   let visualStateLines: ChatVisualStateLines | null = null;
+  /** Did the build/render come back empty because something FAILED, not because it legitimately found nothing (#637 `visual_state` coverage)? Only meaningful when `visualStateNarrationOn` — the deferred (shadow-only) arm never reaches coverage through this flag. */
+  let visualStateFailed = false;
+  let visualStateFailureReason: string | undefined;
   // PER CHAT, not per deploy (owner ruling 2026-08-17). Fenced: a failed read
   // answers "off", which leaves the prompt byte-identical to today.
   const visualStateNarrationOn = await chatVisualStateNarrationOn(chatId).catch((error: unknown) => {
@@ -318,10 +364,16 @@ export async function prepareChatTurnGuidance(args: {
             chatId,
             codes: shadowSink.items.map((entry) => entry.code),
           });
+          // #637: nothing reached the narrator — distinct from a legitimate
+          // empty result, which this branch is not (the build itself gave up).
+          visualStateFailed = true;
+          visualStateFailureReason = "degraded_to_nothing";
         }
         return shadow;
       } catch (error) {
         log.error("engine.chat", "visual-state shadow failed", { error: describeError(error) });
+        visualStateFailed = true;
+        visualStateFailureReason = "exception";
         return null;
       }
     };
@@ -348,6 +400,8 @@ export async function prepareChatTurnGuidance(args: {
           // A rendering failure costs the block, never the turn — the same
           // fence the shadow build carries (docs/resilience.md).
           log.error("engine.chat", "visual-state cue render failed", { error: describeError(error) });
+          visualStateFailed = true;
+          visualStateFailureReason = "exception";
         }
       }
     } else {
@@ -359,5 +413,29 @@ export async function prepareChatTurnGuidance(args: {
       void runVisualState();
     }
   }
+
+  // `visual_state` coverage (#637): the shadow build measures regardless, but
+  // only the per-chat narration switch makes it COMMITTABLE and lets it reach
+  // the prompt (`visualStateLines`) — a shadow-only measurement never does, so
+  // it reads `suppressed` here exactly like the flag being off, never `present`.
+  exchangeTrace.coverage(
+    !chatVisualStateShadowEnabled() && !visualStateNarrationOn
+      ? { family: "visual_state", status: "suppressed", reason: "flag_off:CHAT_VISUAL_STATE_SHADOW" }
+      : !visualStateNarrationOn
+        ? { family: "visual_state", status: "suppressed", reason: "policy:narration_off" }
+        : visualStateFailed
+          // Nothing reached the narrator — a thrown build/render, or the
+          // build legitimately giving up ("degraded to nothing"); neither is
+          // the same as a clean read that found nothing to say.
+          ? { family: "visual_state", status: "missing", reason: visualStateFailureReason ?? "exception" }
+          : visualStateLines && (visualStateLines.constraints.length > 0 || visualStateLines.cues.length > 0)
+            ? {
+                family: "visual_state",
+                status: "present",
+                count: visualStateLines.constraints.length + visualStateLines.cues.length,
+              }
+            : { family: "visual_state", status: "empty", count: 0 },
+  );
+
   return { physicalGuidanceLines, visualStateBuild, visualStateLines, visualStateNarrationOn };
 }

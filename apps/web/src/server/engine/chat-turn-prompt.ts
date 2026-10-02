@@ -24,6 +24,7 @@ import {
 import { chatPromptLayout } from "./prompts/constants";
 import { promptStateSlice } from "./chat-prompt-input";
 import type { PlayerPersona } from "../players";
+import type { ExchangeTrace } from "./chat-exchange-trace";
 import type { ChatTurnMember } from "./chat-turn-types";
 
 export async function prepareChatTurnPrompt(args: {
@@ -53,6 +54,8 @@ export async function prepareChatTurnPrompt(args: {
   wardrobe: ResolvedChatWardrobe;
   memberWardrobe: (member: ChatTurnMember) => Promise<ResolvedChatWardrobe>;
   garmentNarration: ReturnType<typeof buildChatGarmentNarration> | null;
+  /** The exchange's durable trace (#637) — `relationship` coverage (ensemble only). */
+  exchangeTrace: ExchangeTrace;
 }) {
   const {
     chatId,
@@ -81,6 +84,7 @@ export async function prepareChatTurnPrompt(args: {
     wardrobe,
     memberWardrobe,
     garmentNarration,
+    exchangeTrace,
   } = args;
 
   // The relationship matrix: tier-1 pair lines for
@@ -129,6 +133,15 @@ export async function prepareChatTurnPrompt(args: {
         ? { sensoryFocus: { hint: sensoryFocus, memberName: sensoryFocusMember.name } }
         : {}),
     };
+    // `relationship` coverage (#637): ensemble-only — a solo chat has no pair
+    // matrix at all, so that case is `suppressed` rather than an empty fetch.
+    exchangeTrace.coverage(
+      pairs.length > 0 || awayPairs.length > 0
+        ? { family: "relationship", status: "present", count: pairs.length + awayPairs.length }
+        : { family: "relationship", status: "empty", count: 0 },
+    );
+  } else {
+    exchangeTrace.coverage({ family: "relationship", status: "suppressed", reason: "policy:solo" });
   }
 
   // The ensemble prompt inputs (roster > 1): the primary first, then the others,

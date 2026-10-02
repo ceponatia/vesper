@@ -1,18 +1,54 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   affordanceSubjectId,
   buildNpcSceneDigest,
   DiagnosticCollector,
+  emptySceneState,
   parseNpcSceneDecisionOutput,
   type NpcSceneDecisionParse,
   type NpcSceneDigest,
 } from "@/contracts";
 import { codes, expectDiagnostic } from "@/test/diagnostics";
+import { makeProfile } from "@/server/test-support";
+import type { GenerateCheckedOptions, GenerateCheckedResult } from "../ai";
+
+/** The telemetry object the classifier's own launch actually handed to `withGenerateTimeout` (#637 correlation). */
+const telemetrySeen = vi.hoisted(() => ({ last: undefined as { traceId?: string } | undefined }));
+
+// Only `beginChatNpcSceneDecision`'s classifier launch exists in this suite's
+// correlation tests below; every pure evaluator test above never reaches
+// `../ai` at all. The reuse check's own DB read is mocked to "no existing
+// envelope" so the begin half proceeds to the trigger/classifier without a
+// database.
+vi.mock("../ai", () => ({
+  agentModelId: (): string => "agent-test-model",
+  generateChecked: <T,>(_options: GenerateCheckedOptions<T>): Promise<GenerateCheckedResult<T>> =>
+    Promise.resolve({ value: {} as T, degraded: false }),
+  withGenerateTimeout: <T,>(
+    work: Promise<GenerateCheckedResult<T>>,
+    _controller: AbortController,
+    _timeoutMs: number,
+    _timeoutCode: string,
+    _sink: unknown,
+    telemetry?: { traceId?: string },
+  ): Promise<{ value: T | null; degraded: boolean }> => {
+    telemetrySeen.last = telemetry;
+    return work.then((result) => ({ value: result.value, degraded: result.degraded })).catch(() => ({ value: null, degraded: true }));
+  },
+}));
+
+vi.mock("./chat-npc-scene-envelope", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./chat-npc-scene-envelope")>();
+  return { ...actual, loadChatNpcSceneDecision: () => Promise.resolve(null) };
+});
+
 import {
+  beginChatNpcSceneDecision,
   chatNpcSceneDecisionMode,
   evaluateNpcSceneDecision,
   npcSceneDecisionTelemetry,
   npcSceneDecisionTriggered,
+  type BeginChatNpcSceneDecisionInput,
   type NpcSceneClassifierResult,
   type NpcSceneFloorInput,
 } from "./chat-npc-scene-decision";
@@ -473,5 +509,62 @@ describe("npcSceneDecisionTelemetry — the figures the cost gate is stated in",
     );
     const parsed = parseNpcSceneDecisionPayload({ ...emptyNpcSceneDecisionPayload(), telemetry });
     expect(parsed.telemetry).toEqual(telemetry);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #637 correlation: the classifier launch threads the caller's traceId
+// ---------------------------------------------------------------------------
+
+/** A roster that reliably trips `npcSceneDecisionTriggered` (mirrors the trigger suite above). */
+function wrenRoster() {
+  return [
+    {
+      characterId: "char-wren",
+      name: "Wren",
+      aliases: [] as readonly string[],
+      presence: "present" as const,
+      profile: makeProfile(),
+    },
+  ];
+}
+
+function beginInput(overrides: Partial<BeginChatNpcSceneDecisionInput> = {}): BeginChatNpcSceneDecisionInput {
+  return {
+    chatId: "chat-1",
+    assistantMessageId: "msg-1",
+    reply: "Wren steps closer to the window.",
+    mode: "shadow",
+    ownerId: "owner-1",
+    roster: wrenRoster(),
+    scene: emptySceneState(),
+    ...overrides,
+  };
+}
+
+describe("beginChatNpcSceneDecision — classifier telemetry carries the caller's traceId (#637)", () => {
+  it("threads traceId into the launched classifier's telemetry", async () => {
+    telemetrySeen.last = undefined;
+    const handle = await beginChatNpcSceneDecision(beginInput({ traceId: "trace-npc-1" }));
+    if (handle.kind !== "live") throw new Error("expected a live handle — the trigger should have fired");
+    expect(handle.triggered).toBe(true);
+    await handle.classifier;
+    // Widening read: `telemetrySeen.last` was reset to the literal
+    // `undefined` above, and TS's control-flow narrowing doesn't see the
+    // mock's reassignment across the awaited call, so reading the property
+    // directly would (wrongly) type as `never`. A type annotation does not
+    // help — a const narrows to its initializer — so the read is asserted wide.
+    const telemetry = telemetrySeen.last as { traceId?: string } | undefined;
+    expect(telemetry?.traceId).toBe("trace-npc-1");
+  });
+
+  it("leaves the classifier's telemetry traceId absent when the caller has none", async () => {
+    telemetrySeen.last = undefined;
+    const handle = await beginChatNpcSceneDecision(beginInput());
+    if (handle.kind !== "live") throw new Error("expected a live handle — the trigger should have fired");
+    expect(handle.triggered).toBe(true);
+    await handle.classifier;
+    const telemetry = telemetrySeen.last as { traceId?: string } | undefined;
+    expect(telemetry?.traceId).toBeUndefined();
   });
 });

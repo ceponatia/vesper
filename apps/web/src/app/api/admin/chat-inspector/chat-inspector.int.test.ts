@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@/lib/ids";
@@ -11,10 +11,12 @@ const authState = vi.hoisted(() => ({
 vi.mock("@/server/auth", async () => (await import("@/server/test-support")).routeAuthModule(authState));
 
 import { recordAgentFailure } from "@/server/ai";
+import { startExchangeTrace } from "@/server/engine";
 import {
   apiRequest,
   bindAuthUser,
   endTestPool,
+  expectApiError,
   expectJson,
   probeIntegrationDb,
   purgeOwnerRows,
@@ -25,6 +27,7 @@ import {
 import { POST as chatsCreate } from "../../chats/route";
 import { GET as inspectorGet } from "./[chatId]/route";
 import { GET as failuresGet } from "./[chatId]/agent-failures/route";
+import { GET as tracesGet } from "./[chatId]/traces/route";
 import { GET as promptGet } from "./[chatId]/prompt/route";
 import { POST as factCreate } from "./[chatId]/facts/route";
 import { PATCH as factPatch } from "./[chatId]/facts/[factId]/route";
@@ -121,6 +124,7 @@ afterAll(async () => {
   await db()
     .delete(events)
     .where(sql`${events.type} = 'agent_failure' and ${events.payload} ->> 'chatId' in (${ids.chat}, ${ids.otherChat})`);
+  await db().delete(events).where(and(eq(events.type, "chat_trace"), inArray(events.chatId, [ids.chat, ids.otherChat])));
   await purgeOwnerRows([authState.user.id, ids.otherUser]);
   await endTestPool();
 });
@@ -289,3 +293,143 @@ describe.runIf(ready)("self-scoped agent telemetry", () => {
     });
   });
 });
+
+interface TraceRowShape {
+  traceId: string;
+  header: { operation: string; promptMessageId: string | null; replyMessageId: string | null };
+  coverage: { family: string; status: string; reason?: string }[];
+  agentFailures: { legId: string; traceId: string | null }[];
+  outcome: string;
+}
+
+interface TracesResponseShape {
+  schemaVersion: number;
+  chatId: string;
+  traces: TraceRowShape[];
+}
+
+describe.runIf(ready)("exchange traces (#637)", () => {
+  const traceIds = { older: "", newer: "" };
+
+  it("assembles the newest trace first, with a missing-coverage entry and a correlated agent failure, in the versioned schema shape", async () => {
+    const older = startExchangeTrace({
+      chatId: ids.chat,
+      operation: "send",
+      authority: "legacy_chat",
+      lane: "legacy_chat",
+      promptMessageId: "msg-trace-older-prompt",
+    });
+    older.begin("state.load", "admission").end({ status: "success" });
+    older.finish({ kind: "ok" });
+    older.flush();
+
+    // `flush()` is fire-and-forget, so wait for the OLDER trace's row to actually
+    // land before minting the newer one — otherwise the two inserts could race
+    // and the "newest first" assertion below would be timing-dependent.
+    await vi.waitFor(async () => {
+      const response = await tracesGet(
+        getReq(`${inspectorPath(ids.chat, "/traces")}?traceId=${older.traceId}`),
+        ctx(ids.chat),
+      );
+      const body = await expectJson<TracesResponseShape>(response, 200);
+      expect(body.traces).toHaveLength(1);
+    });
+
+    const newer = startExchangeTrace({
+      chatId: ids.chat,
+      operation: "continue",
+      authority: "legacy_chat",
+      lane: "legacy_chat",
+      promptMessageId: "msg-trace-newer-prompt",
+    });
+    newer.begin("narrator.prompt", "narrator").end({ status: "success" });
+    // The missing-context case (#637's "distinguishes missing from valid empty"): a
+    // coverage check that never ran, not one that ran and found nothing.
+    newer.coverage({ family: "memory.facts", status: "missing", reason: "recall_skipped" });
+    newer.annotate({ replyMessageId: "msg-trace-newer-reply" });
+    newer.finish({ kind: "ok" });
+    newer.flush();
+
+    recordAgentFailure({
+      legId: "chat_memory_scribe",
+      chatId: ids.chat,
+      traceId: newer.traceId,
+      kind: "timeout",
+      timeoutMs: 4000,
+      modelId: "test/trace-model",
+    });
+
+    // `flush()` and `recordAgentFailure` are both fire-and-forget (the recorder
+    // never awaits a write on the caller's path), so poll the read surface
+    // itself rather than sleeping a fixed amount — the same pattern slice A's
+    // own `chat-exchange-trace-log.int.test.ts` uses.
+    await vi.waitFor(async () => {
+      const response = await tracesGet(getReq(inspectorPath(ids.chat, "/traces")), ctx(ids.chat));
+      const body = await expectJson<TracesResponseShape>(response, 200);
+      expect(body.schemaVersion).toBe(1);
+      expect(body.chatId).toBe(ids.chat);
+      expect(body.traces.length).toBeGreaterThanOrEqual(2);
+      // Newest first: the trace flushed second comes back before the one flushed first.
+      expect(body.traces[0]?.traceId).toBe(newer.traceId);
+
+      const newerRow = body.traces.find((trace) => trace.traceId === newer.traceId);
+      expect(newerRow?.header.promptMessageId).toBe("msg-trace-newer-prompt");
+      expect(newerRow?.header.replyMessageId).toBe("msg-trace-newer-reply");
+      expect(newerRow?.coverage).toContainEqual(
+        expect.objectContaining({ family: "memory.facts", status: "missing", reason: "recall_skipped" }),
+      );
+      expect(
+        newerRow?.agentFailures.some(
+          (failure) => failure.legId === "chat_memory_scribe" && failure.traceId === newer.traceId,
+        ),
+      ).toBe(true);
+    });
+
+    traceIds.older = older.traceId;
+    traceIds.newer = newer.traceId;
+  });
+
+  it("filters to exactly the trace named by traceId", async () => {
+    const response = await tracesGet(
+      getReq(`${inspectorPath(ids.chat, "/traces")}?traceId=${traceIds.older}`),
+      ctx(ids.chat),
+    );
+    const body = await expectJson<TracesResponseShape>(response, 200);
+    expect(body.traces).toHaveLength(1);
+    expect(body.traces[0]?.traceId).toBe(traceIds.older);
+  });
+
+  it("filters to the trace whose header names messageId as its prompt, reply, or guard line", async () => {
+    const response = await tracesGet(
+      getReq(`${inspectorPath(ids.chat, "/traces")}?messageId=msg-trace-newer-reply`),
+      ctx(ids.chat),
+    );
+    const body = await expectJson<TracesResponseShape>(response, 200);
+    expect(body.traces.some((trace) => trace.traceId === traceIds.newer)).toBe(true);
+  });
+
+  it("clamps an out-of-range limit instead of erroring", async () => {
+    const response = await tracesGet(getReq(`${inspectorPath(ids.chat, "/traces")}?limit=0`), ctx(ids.chat));
+    const body = await expectJson<TracesResponseShape>(response, 200);
+    // Clamped up to the minimum of 1, not rejected and not defaulted to the full 10.
+    expect(body.traces).toHaveLength(1);
+    expect(body.traces[0]?.traceId).toBe(traceIds.newer);
+  });
+
+  it("400s on a limit that cannot be read as a number at all", async () => {
+    const response = await tracesGet(getReq(`${inspectorPath(ids.chat, "/traces")}?limit=abc`), ctx(ids.chat));
+    await expectApiError(response, 400, "invalid_query");
+  });
+
+  it("denies a non-owner and a non-admin exactly like the other inspector panels", async () => {
+    const foreign = await tracesGet(getReq(inspectorPath(ids.otherChat, "/traces")), ctx(ids.otherChat));
+    expect(foreign.status).toBe(404);
+
+    await withAuthUser(authState, { role: "user" }, async () => {
+      const denied = await tracesGet(getReq(inspectorPath(ids.chat, "/traces")), ctx(ids.chat));
+      expect(denied.status).toBe(404);
+    });
+    expect((await tracesGet(getReq(inspectorPath(ids.chat, "/traces")), ctx(ids.chat))).status).toBe(200);
+  });
+});
+

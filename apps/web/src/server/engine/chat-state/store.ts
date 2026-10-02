@@ -20,6 +20,7 @@ import {
   supportingCastSchema,
   chatPlansSchema,
   CHAT_DEFAULT_CALENDAR_START,
+  parseChatCalendarStart,
   type DiagnosticSink,
   type SceneState,
   emptySceneState,
@@ -183,7 +184,9 @@ export async function loadChatScenario(chatId: string, sink?: DiagnosticSink): P
     supportingCast: parseOr(supportingCastSchema, row.supportingCast, [], sink, "character_chats.supporting_cast"),
     plans: parseOr(chatPlansSchema, row.plans, [], sink, "character_chats.plans"),
     clockMinutes: row.clockMinutes,
-    calendarStart: parseOr(calendarStartSchema, row.calendarStart, CHAT_DEFAULT_CALENDAR_START, sink, "character_chats.calendar_start"),
+    // The column default `{}` is "no anchor authored yet" and reads as the default
+    // anchor without a diagnostic; a malformed anchor still files one.
+    calendarStart: parseChatCalendarStart(row.calendarStart, sink, "character_chats.calendar_start"),
     pendingSkipNote: row.pendingSkipNote,
     pendingMeanwhileNote: row.pendingMeanwhileNote,
     meanwhilePassAtMinutes: Math.max(0, row.meanwhilePassAtMinutes),

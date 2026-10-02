@@ -1,14 +1,17 @@
 import {
   currentScenePlace,
   derivePlanSalience,
+  DiagnosticCollector,
   garmentActorForCharacter,
   hasSalientPlan,
+  teeSink,
   unseenMilestoneReason,
   type CharacterProfile,
   type DiagnosticSink,
 } from "@/contracts";
 import { log } from "../log";
 import { QueryEmbeddings } from "../memory";
+import type { ExchangeTrace } from "./chat-exchange-trace";
 import { buildActionBeatCue } from "./chat-action-beat";
 import { renderChatAffordanceCues } from "./chat-affordance-cues";
 import { buildChatAffordanceRead } from "./chat-affordances";
@@ -51,6 +54,8 @@ export async function prepareChatTurnRecall(args: {
   profile: CharacterProfile;
   opening: boolean;
   sink: DiagnosticSink;
+  /** The exchange's durable trace (#637) — `memory.facts` / `memory.episodes` coverage. */
+  exchangeTrace: ExchangeTrace;
 }) {
   const {
     memoryGroupId,
@@ -65,6 +70,7 @@ export async function prepareChatTurnRecall(args: {
     profile,
     opening,
     sink,
+    exchangeTrace,
   } = args;
 
   // --- RAG recall: per-participant memory groups ---------------------------
@@ -83,9 +89,18 @@ export async function prepareChatTurnRecall(args: {
   // the input). This is the only agent-adjacent cost on the PRE-reply path, so it is the
   // one worth de-duplicating. A failed embed degrades each leg exactly as its own failure
   // would (facts → pinned-only, episodes → [], callback → null).
+  // A private collector, teed alongside the turn's own sink: this is how
+  // `memory.facts` / `memory.episodes` coverage (#637) is derived from the SAME
+  // diagnostics `chat-memory.ts` / `server/memory` already push on a degraded
+  // leg (`memory.facts.embed_failed`, `memory.episodes.embed_failed`,
+  // `memory.queries.embed_failed`), rather than inferring coverage from the
+  // assembled prompt — without editing `chat-memory.ts` (slice B2 owns it). The
+  // turn's real sink still sees every diagnostic exactly as before.
+  const recallDiagnostics = new DiagnosticCollector();
+  const recallSink = teeSink(sink, recallDiagnostics);
   const queryEmbeddings = await QueryEmbeddings.embed(
     [playerContent, ...driftedState.memoryQueries, ...activeOthers.flatMap((o) => o.state.memoryQueries)],
-    sink,
+    recallSink,
   );
   const memory = await retrieveChatMemory({
     groupId: memoryGroupId,
@@ -93,8 +108,39 @@ export async function prepareChatTurnRecall(args: {
     input: playerContent,
     ...(legLimit !== undefined ? { limit: legLimit } : {}),
     embeddings: queryEmbeddings,
-    sink,
+    sink: recallSink,
   });
+  const recallCodes = new Set(recallDiagnostics.items.map((d) => d.code));
+  const queryEmbedFailed = recallCodes.has("memory.queries.embed_failed");
+  const factsEmbedFailed = recallCodes.has("memory.facts.embed_failed");
+  const episodesEmbedFailed = recallCodes.has("memory.episodes.embed_failed");
+  exchangeTrace.coverage(
+    recallCodes.has("chat_memory.facts_failed")
+      ? { family: "memory.facts", status: "missing", reason: "chat_memory.facts_failed" }
+      : queryEmbedFailed || factsEmbedFailed
+        ? {
+            family: "memory.facts",
+            status: "degraded",
+            // The ACTUAL code that fired, not a guess: the shared per-turn embed
+            // (`memory.queries.embed_failed`) fails this leg exactly like its own
+            // fallback embed (`memory.facts.embed_failed`) would.
+            reason: queryEmbedFailed ? "memory.queries.embed_failed" : "memory.facts.embed_failed",
+            count: memory.facts.length,
+          }
+        : { family: "memory.facts", status: memory.facts.length > 0 ? "present" : "empty", count: memory.facts.length },
+  );
+  exchangeTrace.coverage(
+    recallCodes.has("chat_memory.episodes_failed")
+      ? { family: "memory.episodes", status: "missing", reason: "chat_memory.episodes_failed" }
+      : queryEmbedFailed || episodesEmbedFailed
+        ? {
+            family: "memory.episodes",
+            status: "degraded",
+            reason: queryEmbedFailed ? "memory.queries.embed_failed" : "memory.episodes.embed_failed",
+            count: memory.episodes.length,
+          }
+        : { family: "memory.episodes", status: memory.episodes.length > 0 ? "present" : "empty", count: memory.episodes.length },
+  );
   const otherMemories = new Map(
     await Promise.all(
       activeOthers.map(
@@ -171,6 +217,8 @@ export async function prepareChatTurnBeats(args: {
   recentReplies: string[];
   sensoryFocus: Exclude<ReturnType<typeof detectSensoryFocus>, null> | undefined;
   firstExchange: boolean;
+  /** The exchange's durable trace (#637) — `memory.callback` coverage. */
+  exchangeTrace: ExchangeTrace;
 }) {
   const {
     chatId,
@@ -194,6 +242,7 @@ export async function prepareChatTurnBeats(args: {
     recentReplies,
     sensoryFocus,
     firstExchange,
+    exchangeTrace,
   } = args;
   let {
     driftedState,
@@ -281,8 +330,13 @@ export async function prepareChatTurnBeats(args: {
       }, undefined))
     : undefined;
   const callbackState = callbackSourceOther?.state ?? driftedState;
-  if (
-    playerContent &&
+  // `memory.callback` coverage (#637): the gate runs first (pure, no cost — see
+  // `chatCallbackEligible`'s own doc on why), so a turn with no player line or
+  // one a higher-priority one-turn note already owns is `suppressed`, never
+  // `empty` — this family's "nothing happened" IS a policy decision, not an
+  // empty fetch.
+  const callbackEligible =
+    Boolean(playerContent) &&
     chatCallbackEligible({
       clockMinutes: scenario.clockMinutes,
       callbackHistory: callbackState.callbackHistory,
@@ -300,8 +354,9 @@ export async function prepareChatTurnBeats(args: {
       photoBeat: selfieRequested || selfieOfferEligible || openerSelfieEligible,
       // A commitment near this turn owns the beat — the callback yields.
       planSalient: hasSalientPlan(derivePlanSalience(scenario.plans, scenario.clockMinutes, scenario.calendarStart)),
-    })
-  ) {
+    });
+  if (callbackEligible) {
+    const callbackDiagnostics = new DiagnosticCollector();
     const chosen = await retrieveChatCallback({
       groupId: callbackSourceOther?.memoryGroupId ?? memoryGroupId,
       input: playerContent,
@@ -309,7 +364,7 @@ export async function prepareChatTurnBeats(args: {
       usedRefs: callbackState.callbackHistory.map((e) => e.ref),
       // The input's vector is already in hand from the recall legs (slice 3).
       embeddings: queryEmbeddings,
-      sink,
+      sink: teeSink(sink, callbackDiagnostics),
     });
     if (chosen) {
       if (ensembleActive) {
@@ -330,7 +385,18 @@ export async function prepareChatTurnBeats(args: {
       } else {
         driftedState = { ...driftedState, callbackHistory: burned };
       }
+      exchangeTrace.coverage({ family: "memory.callback", status: "present", count: 1, chars: chosen.summary.length });
+    } else if (callbackDiagnostics.items.some((d) => d.code === "chat_memory.callback.failed")) {
+      exchangeTrace.coverage({ family: "memory.callback", status: "missing", reason: "chat_memory.callback.failed" });
+    } else {
+      exchangeTrace.coverage({ family: "memory.callback", status: "empty", count: 0 });
     }
+  } else {
+    exchangeTrace.coverage({
+      family: "memory.callback",
+      status: "suppressed",
+      reason: playerContent ? "policy:callback_ineligible" : "policy:no_player_line",
+    });
   }
   // An initiative opener may
   // acknowledge what shifted since the player last OPENED the chat — the
@@ -353,6 +419,8 @@ export async function prepareChatTurnPresentation(args: {
   scenario: ChatScenario;
   player: PlayerPersona;
   exchangeGuardMessageId: string;
+  /** The exchange's durable trace (#637) — `garments` / `affordances` coverage. */
+  exchangeTrace: ExchangeTrace;
 }) {
   const {
     characterId,
@@ -365,6 +433,7 @@ export async function prepareChatTurnPresentation(args: {
     scenario,
     player,
     exchangeGuardMessageId,
+    exchangeTrace,
   } = args;
 
   // Structured wardrobe: resolve the drifted worn state into its
@@ -540,5 +609,25 @@ export async function prepareChatTurnPresentation(args: {
   // is happening to this body right now, and a recognizable feature is standing
   // truth — it reads as the added detail rather than competing for the beat.
   const bodyCues = recognition?.cueLine ? [...affordanceCues, recognition.cueLine] : affordanceCues;
+
+  // `garments` / `affordances` coverage (#637): recorded at the point each is
+  // actually computed (or gated off), never inferred from the assembled prompt
+  // object — `promptStateSlice`'s conditional spreads collapse absent, empty
+  // and flag-off into the same missing key.
+  exchangeTrace.coverage(
+    !chatGarmentCuesEnabled()
+      ? { family: "garments", status: "suppressed", reason: "flag_off:CHAT_GARMENT_CUES" }
+      : garmentNarration && (garmentNarration.digest || garmentNarration.cues.length > 0)
+        ? { family: "garments", status: "present", count: garmentNarration.cues.length, chars: garmentNarration.digest?.length ?? 0 }
+        : { family: "garments", status: "empty", count: 0 },
+  );
+  exchangeTrace.coverage(
+    !chatAffordanceCuesEnabled()
+      ? { family: "affordances", status: "suppressed", reason: "flag_off:CHAT_AFFORDANCE_CUES" }
+      : affordanceCues.length > 0
+        ? { family: "affordances", status: "present", count: affordanceCues.length, chars: affordanceCues.join("").length }
+        : { family: "affordances", status: "empty", count: 0 },
+  );
+
   return { wardrobe, playerWardrobe, memberWardrobe, garmentNarration, affordanceReadInput, physicalConstraintsEnabled, affordanceRead, recognitionPerception, recognition, bodyCues };
 }

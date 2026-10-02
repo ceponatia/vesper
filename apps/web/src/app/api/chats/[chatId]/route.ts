@@ -294,7 +294,8 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
     // continue/open run an utterance-free turn (time advances).
     // Retakes/reruns, attachments, and legacy action chips are refused until the
     // capability manifest can advertise honest successor semantics for them.
-    const simRouted = isSimRoutedAuthority(await readChatEngineAuthority(chatId));
+    const chatAuthorityState = await readChatEngineAuthority(chatId);
+    const simRouted = isSimRoutedAuthority(chatAuthorityState);
     if (simRouted) {
       const decision = decideSimOperation({
         kind: body.value.kind,
@@ -415,6 +416,10 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
     const result = await submitChatMessage({
       chatId,
       memoryGroupId: owned.participant.memoryGroupId,
+      // The chat's engine authority (#637), already read above for routing —
+      // carried onto the exchange trace's header, never used for routing here
+      // (a sim-routed authority already forked above and never reaches this call).
+      authority: chatAuthorityState?.authority,
       character: { id: owned.character.id, name: owned.character.name, profile: owned.character.profile },
       // The full roster: length 1 keeps the 1-on-1 path byte-identical; more
       // flips the pipeline to the ensemble frame.
@@ -442,20 +447,34 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
       action: body.value.action,
       // "Auto at big moments": the engine signals, this route queues — a scene
       // render anchored to the exchange's reply, deduped against live renders.
-      onBigMoment: ({ assistantMessageId }) => {
+      // `jobs.scene_enqueue` (#637) records the returned job id once the queue
+      // settles, then flushes — fire-and-forget, same as the queue call itself.
+      onBigMoment: ({ assistantMessageId, exchangeTrace }) => {
         void queueChatScene({
           userId: user.id,
           chatId,
           character: owned.character,
           roster: owned.roster.map((member) => member.character),
           anchorMessageId: assistantMessageId,
+        }).then((jobId) => {
+          exchangeTrace.record({
+            stage: "jobs.scene_enqueue",
+            phase: "post_turn",
+            status: jobId ? "success" : "skipped",
+            // `null` conflates three causes this call site cannot tell apart:
+            // a dedupe against a live job, the concurrency cap, or a caught
+            // queue failure — "not_enqueued" is the honest, non-specific code
+            // rather than guessing which one actually happened.
+            ...(jobId === null ? { reason: "not_enqueued" } : { refs: { jobId } }),
+          });
+          exchangeTrace.flush();
         });
       },
       // The reply sent a selfie: queue the subject's-own-camera render anchored
       // to it — same dedupe, always the identity-locked route. The engine names
       // the SENDER: in a group the addressed member sends it, so the render uses
       // their identity, not always the primary's.
-      onSelfie: ({ assistantMessageId, characterId: senderId }) => {
+      onSelfie: ({ assistantMessageId, characterId: senderId, exchangeTrace }) => {
         const sender = owned.roster.find((m) => m.characterId === senderId)?.character ?? owned.character;
         void queueChatScene({
           userId: user.id,
@@ -465,15 +484,28 @@ export const POST = withOwnedChat<Params, NonNullable<Awaited<ReturnType<typeof 
           roster: owned.roster.map((member) => member.character),
           anchorMessageId: assistantMessageId,
           flavor: "selfie",
+        }).then((jobId) => {
+          exchangeTrace.record({
+            stage: "jobs.scene_enqueue",
+            phase: "post_turn",
+            status: jobId ? "success" : "skipped",
+            // `null` conflates three causes this call site cannot tell apart:
+            // a dedupe against a live job, the concurrency cap, or a caught
+            // queue failure — "not_enqueued" is the honest, non-specific code
+            // rather than guessing which one actually happened.
+            ...(jobId === null ? { reason: "not_enqueued" } : { refs: { jobId } }),
+          });
+          exchangeTrace.flush();
         });
       },
       // Shadow comparison: after a plain send settles on a `successor_shadow`
       // chat, the comparison leg runs detached — the runner re-reads authority
       // and no-ops for every other lane, so this stays one cheap read per
-      // settled exchange.
-      onSettled: ({ assistantMessageId, content }) => {
+      // settled exchange. `exchangeTrace` (#637) rides through so slice C's
+      // shadow leg can record `post_turn.shadow` on this same exchange's trace.
+      onSettled: ({ assistantMessageId, content, exchangeTrace }) => {
         if (body.value.kind !== "send" || content.length === 0) return;
-        void runShadowChatExchange({ chatId, userId: user.id, assistantMessageId, content });
+        void runShadowChatExchange({ chatId, userId: user.id, assistantMessageId, content, exchangeTrace });
       },
     });
     if (!result.ok) return jsonError(result.code, result.message, result.code === "chat_busy" ? 409 : 400);

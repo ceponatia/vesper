@@ -51,6 +51,13 @@ describe("buildAgentFailure", () => {
       timeoutMs: 6000,
     });
   });
+
+  it("carries the exchange trace id through when the caller has one (#637 correlation)", () => {
+    expect(buildAgentFailure({ legId: "chat_continuity", kind: "timeout", traceId: "trace-1" }).traceId).toBe(
+      "trace-1",
+    );
+    expect(buildAgentFailure({ legId: "chat_continuity", kind: "timeout" }).traceId).toBeNull();
+  });
 });
 
 describe("withGenerateTimeout — a trip is recorded, not just logged", () => {

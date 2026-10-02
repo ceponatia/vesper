@@ -35,6 +35,7 @@ export async function finalizeChatState(input: FinalizeChatStateInput): Promise<
     sink: input.sink,
     roster: input.roster,
     priorSummary: input.priorSummary,
+    traceId: input.traceId,
   });
   await writeFinalizationMemory({
     memoryGroupId: input.memoryGroupId,

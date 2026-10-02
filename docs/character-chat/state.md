@@ -80,8 +80,10 @@ for the whole roster; away members never fork it, and their meters drift on it l
 + **`meanwhile_pass_at_minutes`** — the meanwhile pass's narrator line and its
 cumulative-gate origin / idempotency CAS, migration 0050), the **story-calendar anchor**
 (`calendar_start` jsonb, migration 0049 — minute 0 of the chat =
-this date+time; `parseOr` heals `{}`/bad rows to `CHAT_DEFAULT_CALENDAR_START` = Jan 1,
-8:00am; author-editable via `ChatStateEdit.calendarStart` from the clock card, and
+this date+time; `parseChatCalendarStart` reads the column default `{}` — no anchor
+authored yet — as `CHAT_DEFAULT_CALENDAR_START` = Jan 1, 8:00am without a diagnostic, and
+heals a malformed row to it with `parse.boundary_failed`; author-editable via
+`ChatStateEdit.calendarStart` from the clock card, and
 rebasing is safe because nothing stores derived dates), and `pre_exchange_scenario`
 (the rollback anchor's chat-wide half).
 

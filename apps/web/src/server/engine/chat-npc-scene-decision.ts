@@ -358,6 +358,8 @@ function describeNpcSceneDecision(value: Record<string, unknown>): AgentRunDescr
 function launchNpcSceneClassifier(input: {
   readonly chatId: string;
   readonly assistantMessageId: string;
+  /** The exchange trace (#637) this leg ran under, when the caller has one. */
+  readonly traceId?: string;
   readonly digest: NpcSceneDigest;
   readonly reply: string;
   readonly sink?: DiagnosticSink;
@@ -369,6 +371,7 @@ function launchNpcSceneClassifier(input: {
     legId: CLASSIFY_LEG_ID,
     chatId: input.chatId,
     messageId: input.assistantMessageId,
+    traceId: input.traceId,
     modelId,
     promptChars: CHAT_NPC_SCENE_DECISION_SYSTEM.length + prompt.length,
     maxOutputTokens: CHAT_NPC_SCENE_DECISION_MAX_OUTPUT_TOKENS,
@@ -757,6 +760,8 @@ export interface ChatNpcSceneRosterMemberInput {
 export interface BeginChatNpcSceneDecisionInput {
   readonly chatId: string;
   readonly assistantMessageId: string;
+  /** The exchange trace (#637) this leg ran under, when the caller has one. */
+  readonly traceId?: string;
   /** The persisted reply bytes — settle's `full`, exactly as inserted/updated. */
   readonly reply: string;
   readonly mode: NpcSceneDecisionMode;
@@ -904,6 +909,7 @@ export async function beginChatNpcSceneDecision(
     ? launchNpcSceneClassifier({
         chatId: input.chatId,
         assistantMessageId: input.assistantMessageId,
+        traceId: input.traceId,
         digest: build.digest,
         reply: input.reply,
         ...(input.sink === undefined ? {} : { sink: input.sink }),

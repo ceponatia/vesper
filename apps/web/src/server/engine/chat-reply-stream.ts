@@ -7,6 +7,7 @@ import {
   type NarratorCompletion,
 } from "../ai";
 import { log } from "../log";
+import { noopExchangeTrace, type ExchangeTrace } from "./chat-exchange-trace";
 import { saveReplyFailure } from "./chat-reply-store";
 import { CHAT_STREAM_FIRST_TOKEN_MS, CHAT_STREAM_OVERALL_MS } from "./constants";
 
@@ -125,9 +126,28 @@ export function streamExchange(
     completion: () => NarratorCompletion | null;
     modelId: string;
     release: () => void;
+    /**
+     * The exchange's durable trace (#637). Optional so this module's own unit
+     * tests (which exercise the stream/stop/timeout mechanics, not the trace)
+     * keep compiling unchanged; absent degrades to the no-op recorder, which
+     * makes every call below a cheap no-op exactly as if this parameter did
+     * not exist.
+     */
+    exchangeTrace?: ExchangeTrace;
+    /**
+     * Attach the coordinator's collected diagnostics to `exchangeTrace` (#637).
+     * `settle()` already does this when it runs; this covers every path where
+     * it does NOT (no-text, a withheld length stub, a zero-text provider
+     * error) by calling it here too, right before `finish()`. The coordinator
+     * implements this with its own watermark, so calling it whether or not
+     * settle already did is always safe — never a duplicate entry.
+     */
+    attachDiagnostics?: () => void;
   },
 ): AsyncGenerator<string, void, unknown> {
   const { chatId, settle, abortController, completion, modelId, release } = options;
+  const exchangeTrace = options.exchangeTrace ?? noopExchangeTrace();
+  const attachDiagnostics = options.attachDiagnostics ?? (() => {});
   // Register synchronously, before returning the generator to its consumer, so
   // Stop and rerun find this same controller even before the first next().
   inflightReplyAborts.set(chatId, abortController);
@@ -147,6 +167,10 @@ export function streamExchange(
     let full = "";
     let stopped = false;
     let streamError: { code: ChatReplyFailureCode; detail: string } | null = null;
+    // The `narrator.stream` stage (#637): spans the whole token stream, from the
+    // handoff to the resolved verdict — ended once, right beside the verdict
+    // itself, so the stage and the verdict can never disagree.
+    const streamStage = exchangeTrace.begin("narrator.stream", "narrator");
     try {
       try {
         for await (const delta of gen) {
@@ -171,15 +195,92 @@ export function streamExchange(
       const hasText = Boolean(full.trim());
       const narrator = completion();
       const failure = resolveReplyFailure({ hasText, stopped, streamError, timedOut, completion: narrator });
+      // The trace's own verdict (#637), derived from the exact same evidence
+      // `resolveReplyFailure` just read — never a second, possibly-divergent
+      // classification. The stage-status vocabulary is CLOSED (success |
+      // degraded | failed | skipped | retried | blocked — no "stopped"), so a
+      // player Stop or a watchdog trip cannot end the stage `stopped`: that
+      // outcome rides `finish({kind:"stopped"})` below instead, unchanged.
+      // Here: any failure ends the stage `failed` with the failure's own
+      // stable code; a mid-stream provider error that still kept text
+      // (`streamError` set but `failure === null`, since `resolveReplyFailure`
+      // withholds a failure whenever text was kept) is `degraded` with the
+      // provider's own code — a fallback (the partial) reached the player,
+      // not a clean run; a watchdog trip that still kept text (`timedOut` set,
+      // same reasoning) is `degraded` too, since the generation did not run to
+      // its own end; a genuine player Stop is a clean `success` (the stream
+      // behaved exactly as asked) with a reason naming why; otherwise
+      // `success` — upgraded to `retried` when the narrator itself spent more
+      // than one attempt (the hidden silent-stop retry), so a retry is visible
+      // without inventing a status the contract does not have.
+      const streamStatus: "success" | "degraded" | "failed" | "retried" =
+        failure !== null
+          ? "failed"
+          : streamError !== null
+            ? "degraded"
+            : timedOut !== null
+              ? "degraded"
+              : stopped
+                ? "success"
+                : narrator && narrator.attempts > 1
+                  ? "retried"
+                  : "success";
+      const streamReason: string | undefined =
+        failure !== null
+          ? failure.code
+          : streamError !== null
+            ? streamError.code
+            : timedOut !== null
+              ? "watchdog_timeout"
+              : stopped
+                ? "player_stop"
+                : undefined;
+      streamStage.end({
+        status: streamStatus,
+        ...(streamReason === undefined ? {} : { reason: streamReason }),
+        ...(narrator === null ? {} : { attempt: narrator.attempts }),
+        ...(narrator === null ? (modelId ? { model: { modelId } } : {}) : { model: { modelId: narrator.modelId, provider: narrator.provider } }),
+        outputChars: full.length,
+      });
+      exchangeTrace.annotate({
+        narrator: {
+          modelId: narrator?.modelId ?? modelId,
+          ...(narrator?.provider === undefined ? {} : { provider: narrator.provider }),
+          ...(narrator === null ? {} : { attempts: narrator.attempts }),
+          ...(narrator?.finishReason === undefined ? {} : { finishReason: narrator.finishReason }),
+          ...(narrator?.inputTokens === undefined ? {} : { inputTokens: narrator.inputTokens }),
+          ...(narrator?.outputTokens === undefined ? {} : { outputTokens: narrator.outputTokens }),
+        },
+      });
       // Only a reply the verdict accepts settles. With text that is every exchange
       // except the `length` stub, which is withheld here exactly like an empty reply.
+      // `finish()` is deliberately called AFTER this — settle's own `settle.*`
+      // stages (chat-pipeline.ts) must land before the exchange is reported
+      // finished, or the trace would close itself on work still in flight.
       if (hasText && failure === null) {
         try {
           await settle(full, stopped);
         } catch (error) {
           log.error("engine.chat", "failed to persist assistant reply", { error: describeError(error) });
+          // #637: a thrown settle leaves the reply unpersisted and the whole
+          // post-turn fan-out un-run — the outcome must not read back "ok".
+          exchangeTrace.record({ stage: "settle.error", phase: "settle", status: "failed", reason: "exception" });
         }
       }
+      // #637: attach whatever diagnostics were collected before finish() —
+      // settle (when it ran) already did this with the same watermarked
+      // helper, so calling it again here is always safe.
+      attachDiagnostics();
+      // Finish() is called exactly once per admitted exchange (#637), after
+      // settle has had its chance to run. "failed" whenever the verdict
+      // recorded one — including a no-text watchdog trip, whose own code is
+      // "timeout", never "stopped". "stopped" covers every other case where
+      // the stream was interrupted and produced no failure: a genuine player
+      // Stop (with or without kept text), or a watchdog trip that still kept
+      // text. "ok" otherwise.
+      exchangeTrace.finish(
+        failure !== null ? { kind: "failed", failureCode: failure.code } : stopped ? { kind: "stopped" } : { kind: "ok" },
+      );
       // An exchange that kept no reply logs the generation's own numbers — the
       // structured half of the truthful story, and the only place the raw-versus-
       // visible split is recorded. Counts and finish state only.
@@ -200,6 +301,12 @@ export function streamExchange(
     } finally {
       inflightReplyAborts.delete(chatId);
       release();
+      // Catch-all flush (#637): every path through this generator — settled,
+      // stopped, failed, or thrown before a verdict even resolved — ends here,
+      // so this is where "flushes on every early-return or failure path" is
+      // actually guaranteed. `flush()` is idempotent (writes only unflushed
+      // items), so this never duplicates what settle's own flush already wrote.
+      exchangeTrace.flush();
     }
   }
 }

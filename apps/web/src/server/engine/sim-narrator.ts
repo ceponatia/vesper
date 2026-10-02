@@ -87,6 +87,10 @@ export interface RenderCutOptions {
 export interface RenderedCut {
   status: "rendered" | "withheld";
   cutId: string;
+  /** The cut's own branch version + sequence range (#637 trace header `sim.*`), once loaded. */
+  branchVersion?: number;
+  fromSequence?: number;
+  throughSequence?: number;
   modelId: string;
   attempts: number;
   /** Present iff status is "rendered": audited prose incl. any bridge. */
@@ -320,6 +324,9 @@ export async function renderCommittedCut(
     return {
       status: "rendered",
       cutId,
+      branchVersion: cut.branchVersion,
+      fromSequence: cut.fromSequence,
+      throughSequence: cut.throughSequence,
       modelId,
       attempts,
       prose,

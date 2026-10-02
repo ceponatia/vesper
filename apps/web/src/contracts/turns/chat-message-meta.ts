@@ -169,6 +169,13 @@ const FIELD_SCHEMAS = {
    * disk. The vocabulary's owners are the render legs that emit the codes.
    */
   renderDiagnostics: z.array(z.string().min(1)),
+  /**
+   * The exchange trace (#637) this reply belongs to, when the writer ran one.
+   * An id, not free text, so it stays on every reader's typed view unlike
+   * `compositionFallbacks` / `renderDiagnostics` above: a bare id string has
+   * no shape to drift, so this module does not own a separate vocabulary for it.
+   */
+  traceId: z.string().min(1),
 } satisfies Record<string, z.ZodType>;
 
 type KnownKey = keyof typeof FIELD_SCHEMAS;
@@ -212,6 +219,7 @@ export interface ChatMessageMeta {
   narratorRun?: NarratorRunProvenance;
   compositionFallbacks?: string[];
   renderDiagnostics?: string[];
+  traceId?: string;
   /** Unmodelled keys, carried through every read-modify-write untouched. */
   extra: Record<string, unknown>;
 }
@@ -389,6 +397,8 @@ export function userLineMeta(input: {
   attachmentDescriptions?: readonly string[];
   inputMode?: ChatMessageInputMode;
   simTurn?: boolean;
+  /** The exchange trace that admitted this line (#637); an empty id (no trace) writes nothing. */
+  traceId?: string;
 }): ChatMessageMeta {
   const ids = input.attachmentIds ?? [];
   return compact({
@@ -406,6 +416,7 @@ export function userLineMeta(input: {
     // register is worth a durable key.
     ...(input.inputMode === "narrator" ? { inputMode: "narrator" as const } : {}),
     ...(input.simTurn ? { simTurn: true } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   });
 }
 
@@ -414,11 +425,14 @@ export function assistantReplyMeta(input: {
   actionBeat?: ChatActionId | null;
   narratorRun?: NarratorRunProvenance;
   stopped?: boolean;
+  /** The exchange trace that generated this take (#637); an empty id (no trace) writes nothing. */
+  traceId?: string;
 }): ChatMessageMeta {
   return compact({
     ...(input.actionBeat ? { actionBeat: input.actionBeat } : {}),
     ...(input.narratorRun === undefined ? {} : { narratorRun: input.narratorRun }),
     ...(input.stopped ? { stopped: true } : {}),
+    ...(input.traceId ? { traceId: input.traceId } : {}),
   });
 }
 
@@ -433,9 +447,12 @@ export function successorReplyMeta(input: {
   narratorRun?: NarratorRunProvenance;
   compositionFallbacks?: readonly CompositionFallbackCode[] | readonly string[];
   renderDiagnostics?: readonly string[];
+  /** The exchange trace that generated this reply (#637); an empty id (no trace) writes nothing. */
+  traceId?: string;
 }): ChatMessageMeta {
   return compact({
     simTurn: true,
+    ...(input.traceId ? { traceId: input.traceId } : {}),
     ...(input.cutId === undefined || input.cutId === "" ? {} : { cutId: input.cutId }),
     ...(input.modelId === undefined ? {} : { modelId: input.modelId }),
     ...(input.attempts === undefined ? {} : { attempts: input.attempts }),

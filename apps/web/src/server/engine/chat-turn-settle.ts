@@ -9,6 +9,7 @@ import {
 import { lifeStageForAge } from "@/contracts/world/life-stage";
 import { log } from "../log";
 import type { ChatRecognitionRead } from "./chat-recognition-adapter";
+import type { ExchangeTrace } from "./chat-exchange-trace";
 import { saveChatVisualMemory } from "./visual-memory-store";
 import { saveChatVisualCues } from "./visual-cue-store";
 import { mentionsCharacter, spokeInReply } from "./chat-intent";
@@ -30,6 +31,11 @@ const describeError = (error: unknown): string => (error instanceof Error ? erro
 export async function settleChatTurnMembers(args: {
   chatId: string;
   characterName: string;
+  /** The exchange trace (#637) this settle ran under, when the caller has one. */
+  traceId?: string;
+  /** The full exchange trace (#637) — threaded into `onSelfie` so the route
+   * can record its own `jobs.*` stages on THIS exchange's trace. */
+  exchangeTrace: ExchangeTrace;
   sink: DiagnosticSink;
   driftedState: ChatState;
   scenario: ChatScenario;
@@ -51,6 +57,8 @@ export async function settleChatTurnMembers(args: {
   const {
     chatId,
     characterName,
+    traceId,
+    exchangeTrace,
     sink,
     driftedState,
     scenario,
@@ -124,7 +132,7 @@ export async function settleChatTurnMembers(args: {
                 playerName: player.name,
                 exchange: { player: agentPlayerContent, assistant: full },
                 activeSocialCards: scenario.activeSocialCards,
-                trace: { chatId, messageId: assistantMessageId },
+                trace: { chatId, messageId: assistantMessageId, traceId },
                 sink,
                 // P1 minor fence (#301 review): each member's OWN age, mirroring
                 // the primary's determination in finalize-agents.ts.
@@ -139,7 +147,7 @@ export async function settleChatTurnMembers(args: {
                 exchange: { player: agentPlayerContent, assistant: full },
                 openLoops: member.state.openLoops,
                 drives: member.state.drives,
-                trace: { chatId, messageId: assistantMessageId },
+                trace: { chatId, messageId: assistantMessageId, traceId },
                 sink,
               })
             : Promise.resolve(null),
@@ -229,7 +237,7 @@ export async function settleChatTurnMembers(args: {
         // The addressed member actually sent the photo (their pulse read it) —
         // queue the render with THEIR identity (ruling 12).
         if (isSelfieTarget && pulsed && !pulsed.state.lastPulseTrace.degraded && pulsed.state.lastPulseTrace.sentPhoto) {
-          input.onSelfie?.({ assistantMessageId, characterId: member.characterId });
+          input.onSelfie?.({ assistantMessageId, characterId: member.characterId, exchangeTrace });
         }
       } catch (error) {
         log.error("engine.chat", "ensemble member state persist failed", {

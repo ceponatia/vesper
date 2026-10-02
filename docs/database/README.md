@@ -66,7 +66,8 @@ is optional there.
   summary and detail, a fallback's private cause). Outside production that text is merged into the
   stored payload, which is the detail the dev chat inspector renders. Rows expire 30 days after
   `created_at`. The chat inspector reads `agent_failure` / `agent_run` / `composition_fallback`
-  events by created-at window.
+  events by created-at window, and `chat_trace` rows — the per-exchange trace parts — by the
+  `traceId` in their payload ([character-chat/exchange-trace.md](../character-chat/exchange-trace.md)).
 
 ## Retention
 

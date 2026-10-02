@@ -297,6 +297,9 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "const instructionSource = await resolveNarratorInstructionSource(owner, chatId, sink);",
     // Take provenance for the legacy lane.
     "const narratorRun = buildNarratorRunProvenance( :: source: instructionSource,",
+    // The `narrator.prompt` stage's trace fingerprint (#637) — hashes/unit ids
+    // only, annotated onto the exchange trace; it feeds no helper agent.
+    "const promptFingerprint = buildNarratorPromptFingerprint( :: source: instructionSource,",
     // The exchange's prose-narrator build inputs (1:1 + ensemble).
     "const promptInput: CharacterChatPromptInput = { :: instructionSource,",
     'import { resolveNarratorInstructionSource } from "@/server/narrator-prompts";',
@@ -310,6 +313,10 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "ensembleExtras = { :: instructionSource: promptInput.instructionSource,",
   ],
   "apps/web/src/server/engine/chat-reply-store.ts": [
+    // The shared fingerprint builder (#637) — hashes/unit ids only, no prompt
+    // text; the `narrator.prompt` trace stage and the take's own provenance
+    // both call it, and it feeds no helper agent.
+    "export function buildNarratorPromptFingerprint(args: { :: source: NarratorInstructionSource | undefined;",
     "export function buildNarratorRunProvenance(args: { :: source: NarratorInstructionSource | undefined;",
     "import { :: type NarratorInstructionSource,",
   ],
@@ -321,10 +328,16 @@ const PINNED_USE_SITES: Readonly<Record<string, readonly string[]>> = {
     "return { > ctx: { :: instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/dialogue.ts": [
-    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
+    // The render call now runs inside the exchange trace's `sim.narrator` stage
+    // (`exchangeTrace.time(…, () => renderCommittedCut({…}))`); the source still
+    // reaches only the narrator render, and the trace wrapper reads none of it.
+    "renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/retake.ts": [
-    "const rendered = await renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
+    // The render call now runs inside the exchange trace's `sim.narrator` stage
+    // (`exchangeTrace.time(…, () => renderCommittedCut({…}))`); the source still
+    // reaches only the narrator render, and the trace wrapper reads none of it.
+    "renderCommittedCut( > conversation: { :: instructionSource: ctx.instructionSource,",
   ],
   "apps/web/src/server/engine/sim-exchange/solo.ts": [
     "const narratorRun = buildNarratorRunProvenance( :: source: ctx.instructionSource,",

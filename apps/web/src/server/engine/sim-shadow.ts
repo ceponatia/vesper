@@ -11,6 +11,7 @@ import {
   simShadowDivergences,
 } from "@/server/db";
 import { readChatEngineAuthority } from "./chat-authority";
+import type { ExchangeStageHandle, ExchangeTrace } from "./chat-exchange-trace";
 import { loadChatScenario } from "./chat-state/store";
 import { tryKeyedLock } from "./keyed-lock";
 import { readBranchClock } from "./sim-beats";
@@ -36,6 +37,14 @@ export interface ShadowExchangeInput {
   assistantMessageId: string;
   /** The player's line this exchange answered. */
   content: string;
+  /**
+   * The LEGACY exchange's trace (#637), when the caller ran one (slice B passes it
+   * from the route's `onSettled`). The shadow pass records itself as the `post_turn.shadow`
+   * stage on THIS trace — it never starts a trace of its own, and this is unrelated to
+   * whatever sim-lane trace (if any) exists for OTHER chats; a `successor_shadow` chat
+   * never runs `runSimChatExchange`, so there is no sim trace to confuse this with.
+   */
+  exchangeTrace?: ExchangeTrace;
 }
 
 export interface ShadowExchangeResult {
@@ -57,15 +66,21 @@ interface ShadowRow {
  * queue — the next exchange compares fresher state anyway), or the leg failed.
  */
 export async function runShadowChatExchange(input: ShadowExchangeInput): Promise<ShadowExchangeResult> {
+  const trace = input.exchangeTrace;
+  // Begun only once the real comparison work starts (below), so a duration is
+  // captured for it; the authority/lock short-circuits above stay instantaneous
+  // `record()` calls — there is nothing to time for those.
+  let shadowHandle: ExchangeStageHandle | undefined;
   try {
     const authority = await readChatEngineAuthority(input.chatId);
-    if (
-      !authority ||
-      authority.authority !== "successor_shadow" ||
-      !authority.simBranchId ||
-      !authority.simPlayerActorId ||
-      !authority.simPrimaryActorId
-    ) {
+    if (!authority || authority.authority !== "successor_shadow") {
+      // Not a shadow-routed chat (almost always `legacy_chat`): the absence of this
+      // stage is not meaningful there, so nothing is recorded (#637 ruling).
+      return { ran: false, rows: 0 };
+    }
+    if (!authority.simBranchId || !authority.simPlayerActorId || !authority.simPrimaryActorId) {
+      trace?.record({ stage: "post_turn.shadow", phase: "post_turn", status: "skipped", reason: "unmapped_actors" });
+      trace?.flush();
       return { ran: false, rows: 0 };
     }
     const branchId = authority.simBranchId;
@@ -77,14 +92,26 @@ export async function runShadowChatExchange(input: ShadowExchangeInput): Promise
     );
     if (run === null) {
       log.info("engine.shadow", "shadow run already in flight; skipped", { chatId: input.chatId });
+      trace?.record({ stage: "post_turn.shadow", phase: "post_turn", status: "skipped", reason: "already_in_flight" });
+      trace?.flush();
       return { ran: false, rows: 0 };
     }
-    return await run;
+    shadowHandle = trace?.begin("post_turn.shadow", "post_turn");
+    const result = await run;
+    shadowHandle?.end({ status: "success", count: result.rows });
+    trace?.flush();
+    return result;
   } catch (error) {
     log.error("engine.shadow", "shadow exchange failed", {
       chatId: input.chatId,
       error: error instanceof Error ? error.message : String(error),
     });
+    if (shadowHandle) {
+      shadowHandle.end({ status: "failed", reason: "shadow_exchange_exception" });
+    } else {
+      trace?.record({ stage: "post_turn.shadow", phase: "post_turn", status: "failed", reason: "shadow_exchange_exception" });
+    }
+    trace?.flush();
     return { ran: false, rows: 0 };
   }
 }
