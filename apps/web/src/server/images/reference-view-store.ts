@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { imageModelProvider } from "@vesper/image-models";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -44,10 +43,12 @@ import {
   mergeMetaSql,
   READY_RETIRED_META_KEYS,
   readImageBytes,
+  reclaimAbandonedRenderRows,
   type ImageRow,
   type WrittenImageInfo,
 } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
+import { paidOutputOffer, type PaidOutput } from "./paid-output";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
 import { log } from "@/server/log";
 import { currentSendableBodyReferences } from "./body-reference-store";
@@ -191,6 +192,22 @@ async function lockLiveReferenceViewLeaseJob(
   return job && payloadLeases(job.payload).length > 0 ? job : null;
 }
 
+/**
+ * Fail every expired build job for this character, then every pending attempt
+ * no live lease owns — under the character lock, on its transaction. An
+ * abandoned attempt ends one of three ways, by what its render's own row says
+ * ({@link abandonedViewRenders}):
+ *
+ * - the render still holds a live render lease: it is running, so the attempt
+ *   stays `pending` and the next read judges it again;
+ * - the render was paid for and its output never arrived — it recorded both
+ *   ids before downloading, or failed undelivered before its build could say
+ *   so: the attempt fails LINKED to that row, as `failReferenceView` would
+ *   leave it, and the slot projects `recoverable`;
+ * - anything else: the attempt fails with no link, retryable.
+ *
+ * Returns how many attempts it failed.
+ */
 async function reconcileReferenceViewLeasesInTransaction(
   tx: ReferenceViewTransaction,
   characterId: string,
@@ -225,19 +242,139 @@ async function reconcileReferenceViewLeasesInTransaction(
     ));
   const orphaned = pending.filter((row) => !leasedAttempts.has(row.id)).map((row) => row.id);
   if (orphaned.length === 0) return 0;
-  await tx
-    .update(characterReferenceViews)
-    .set({
-      status: "failed",
-      // An abandoned attempt never settled a render, so unlike a failed one
-      // (`failReferenceView`) it keeps no link to an asset and offers nothing
-      // to recover.
-      imageId: null,
-      failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
-      failureMessage: "The previous build was interrupted. This slot is ready to retry.",
-    })
-    .where(inArray(characterReferenceViews.id, orphaned));
-  return orphaned.length;
+  const renders = await abandonedViewRenders(tx, characterId, orphaned, now);
+  const cleared: string[] = [];
+  let linked = 0;
+  for (const attemptId of orphaned) {
+    const render = renders.get(attemptId);
+    // The render itself still beats its own lease: it is running, so the
+    // attempt stays pending — building — until that lease lapses or the render
+    // settles, exactly as the image sweep never fails a live render's row.
+    if (render?.status === "pending") continue;
+    if (render === undefined || paidOutputOffer(render).state !== "on_offer") {
+      cleared.push(attemptId);
+      continue;
+    }
+    // The render was paid for and its output never arrived: the attempt fails
+    // linked to that render's row, with the upstream lineage it actually sent,
+    // exactly as `failReferenceView` leaves an ordinary undelivered failure —
+    // so the slot projects `recoverable` and Build never pays for it again.
+    const sentUpstream = sentUpstreamLineage(render.meta);
+    await tx
+      .update(characterReferenceViews)
+      .set({
+        status: "failed",
+        imageId: render.id,
+        ...(sentUpstream === undefined ? {} : { upstreamViewId: sentUpstream }),
+        failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+        failureMessage: REFERENCE_VIEW_INTERRUPTED_PAID_MESSAGE,
+      })
+      .where(and(eq(characterReferenceViews.id, attemptId), eq(characterReferenceViews.status, "pending")));
+    linked += 1;
+  }
+  if (cleared.length > 0) {
+    await tx
+      .update(characterReferenceViews)
+      .set({
+        status: "failed",
+        // An abandoned attempt with no paid output to offer keeps no link: its
+        // render never ran, never succeeded, or is already gone.
+        imageId: null,
+        failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
+        failureMessage: "The previous build was interrupted. This slot is ready to retry.",
+      })
+      .where(and(inArray(characterReferenceViews.id, cleared), eq(characterReferenceViews.status, "pending")));
+  }
+  return cleared.length + linked;
+}
+
+/**
+ * The stored failure message of an attempt whose build died after its render
+ * was paid for, while the output was still downloading. True whether or not the
+ * output can still be recovered: while it can, the slot projects `recoverable`.
+ *
+ * It names `civitai_output_undelivered` exactly as an ordinary undelivered
+ * failure's message does, because that is what the output is, and because the
+ * studio reads the code in the stored message to tell an offer that has since
+ * lapsed — withdrawn, gone with the failed row, or stale — from an ordinary
+ * failure, and says so instead of this text.
+ */
+const REFERENCE_VIEW_INTERRUPTED_PAID_MESSAGE =
+  "The previous build was interrupted while its paid image was downloading (civitai_output_undelivered).";
+
+/** The failure an abandoned view render's own row records when reconciliation reclaims it. */
+const REFERENCE_VIEW_RENDER_ABANDONED_ERROR = "render abandoned with its reference view build; reclaimed on read";
+
+/** One view render's row, as reconciliation reads it. */
+type ViewRenderRow = Pick<ImageRow, "id" | "status" | "meta">;
+
+/**
+ * The render rows of attempts whose build lease expired, by attempt id, each
+ * settled as far as the build's death allows.
+ *
+ * A view render's row names its attempt (`meta.referenceView.attemptId`, written
+ * when the build reserves it), so this needs no link on the pending attempt. A
+ * render row still `pending` is reclaimed here, on the caller's transaction,
+ * through the image sweep's own guarded shape (`reclaimAbandonedRenderRows`) —
+ * the build that ran it is gone, so its silence is not waited on for the next
+ * scheduled sweep — unless the row still holds a live render lease, which
+ * leaves it `pending`. The reclaim keeps `meta.render`, so a render that
+ * recorded its paid output's ids before it downloaded now offers that output.
+ */
+async function abandonedViewRenders(
+  tx: ReferenceViewTransaction,
+  characterId: string,
+  attemptIds: readonly string[],
+  now: Date,
+): Promise<Map<string, ViewRenderRow>> {
+  // Owner-, kind- and entity-scoped like every asset read here: the character's
+  // owner owns its views' renders.
+  const [character] = await tx.select({ ownerId: characters.ownerId }).from(characters).where(eq(characters.id, characterId)).limit(1);
+  if (character === undefined) return new Map();
+  const attemptKey = sql<string>`(${images.meta} -> 'referenceView' ->> 'attemptId')`;
+  const rows = await tx
+    .select({ id: images.id, status: images.status, meta: images.meta, attemptId: attemptKey })
+    .from(images)
+    .where(and(
+      eq(images.ownerId, character.ownerId),
+      eq(images.kind, "reference_view"),
+      eq(images.entityKind, "character"),
+      eq(images.entityId, characterId),
+      inArray(attemptKey, [...attemptIds]),
+    ))
+    .orderBy(desc(images.createdAt));
+  const byAttempt = new Map<string, ViewRenderRow>();
+  // One render per attempt; were there ever more, the newest is the one that ran last.
+  for (const row of rows) {
+    if (!byAttempt.has(row.attemptId)) byAttempt.set(row.attemptId, { id: row.id, status: row.status, meta: row.meta });
+  }
+  const pendingIds = [...byAttempt.values()].filter((row) => row.status === "pending").map((row) => row.id);
+  const reclaimed = new Map(
+    (await reclaimAbandonedRenderRows(tx, pendingIds, REFERENCE_VIEW_RENDER_ABANDONED_ERROR, now)).map((row) => [row.id, row]),
+  );
+  for (const imageId of reclaimed.keys()) {
+    log.warn("images", "abandoned reference view render marked failed", { characterId, imageId });
+  }
+  return new Map([...byAttempt].map(([attemptId, row]) => [attemptId, reclaimed.get(row.id) ?? row]));
+}
+
+/** What a view render's row says it sent upstream (`meta.referenceView.upstream`, recorded only when sent). */
+const renderedViewMetaSchema = z.object({
+  referenceView: z.object({
+    upstream: z.object({ lineageId: z.string().min(1) }).optional(),
+  }),
+});
+
+/**
+ * The upstream lineage a view render actually sent, read off its own row: the
+ * lineage when the render recorded one, null when it recorded a view meta with
+ * none — it sent no upstream — and undefined when the meta is unreadable, which
+ * leaves the reservation's record standing.
+ */
+function sentUpstreamLineage(meta: unknown): string | null | undefined {
+  const parsed = parseOrNull(renderedViewMetaSchema, meta);
+  if (parsed === null) return undefined;
+  return parsed.referenceView.upstream?.lineageId ?? null;
 }
 
 /** Reconcile expired leases and their abandoned pending attempts under the character lock. */
@@ -364,7 +501,8 @@ export function claimReferenceViewLeases(input: {
     const occupied = new Set(others.map(slotKey));
     // Every slot building now, as the lock serializes it: other live leases,
     // and pending attempts (reconciliation above has already failed every
-    // pending attempt no live lease owns).
+    // pending attempt no live lease owns, but for one whose render still
+    // holds its own live render lease — still running, so still building).
     const building = [...others, ...(await pendingReferenceViewSlots(tx, input.characterId))];
     const claimed: ReferenceViewLease[] = [];
     const busy: ReferenceView[] = [];
@@ -736,66 +874,6 @@ async function readViewImageStatuses(
 // ---------------------------------------------------------------------------
 
 /**
- * The meta key that withdraws a recovery offer: an ISO timestamp stamped on the
- * failed render's row once the provider has shown its output can never be
- * fetched. Retention's own clock (`failedAt`) is left alone.
- */
-export const REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY = "recoveryUnavailableAt";
-
-/**
- * What a failed render's row records when the provider rendered and billed an
- * output Vesper could not download: the workflow, the output blob, and the
- * model (`meta.render`, written with the failure). Parsed at the trust
- * boundary; anything less is a failure with nothing to recover.
- */
-const undeliveredRenderSchema = z.object({
-  predictionId: z.string().min(1),
-  undeliveredOutputId: z.string().min(1),
-  modelSlug: z.string().min(1),
-});
-
-const assetMetaSchema = z.record(z.string(), z.unknown());
-
-/** A paid output a failed render could not deliver, as a recovery fetches it again. */
-export interface ReferenceViewPaidOutput {
-  /** The failed render's own images row — the offer, and what the view row links. */
-  readonly imageId: string;
-  /** The provider workflow that rendered and billed it. */
-  readonly workflowId: string;
-  /** The output that workflow produced. */
-  readonly blobId: string;
-}
-
-/**
- * What a failed view's linked asset offers: a paid output still to be fetched,
- * an output the provider has shown is gone for good (`withdrawn`), or nothing —
- * a failure that never had a paid output, such as a moderated render, or a
- * render on a model whose outputs cannot be fetched again.
- */
-export type ReferenceViewOutputOffer =
-  | { readonly state: "on_offer"; readonly output: ReferenceViewPaidOutput }
-  | { readonly state: "withdrawn" }
-  | { readonly state: "none" };
-
-/**
- * The one reading of a failed render's row as a recovery offer. Only a `failed`
- * row offers anything, only a Civitai render can be fetched again from its
- * workflow, and a stamped row has been withdrawn. Never throws.
- */
-export function referenceViewOutputOffer(asset: Pick<ImageRow, "id" | "status" | "meta">): ReferenceViewOutputOffer {
-  if (asset.status !== "failed") return { state: "none" };
-  const meta = parseOr(assetMetaSchema, asset.meta, {});
-  const stamp = meta[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY];
-  if (stamp !== undefined && stamp !== null) return { state: "withdrawn" };
-  const render = parseOrNull(undeliveredRenderSchema, meta.render);
-  if (render === null || imageModelProvider(render.modelSlug) !== "civitai") return { state: "none" };
-  return {
-    state: "on_offer",
-    output: { imageId: asset.id, workflowId: render.predictionId, blobId: render.undeliveredOutputId },
-  };
-}
-
-/**
  * The image ids, among a sheet's failed rows' linked assets, that still offer a
  * paid output. A failed row's link is its failed render's own row
  * (`failReferenceView`), and nothing else carries an offer, so no other row is
@@ -812,7 +890,7 @@ async function readOfferedOutputs(
     .select({ id: images.id, status: images.status, meta: images.meta })
     .from(images)
     .where(and(inArray(images.id, ids), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
-  return new Set(assets.flatMap((asset) => (referenceViewOutputOffer(asset).state === "on_offer" ? [asset.id] : [])));
+  return new Set(assets.flatMap((asset) => (paidOutputOffer(asset).state === "on_offer" ? [asset.id] : [])));
 }
 
 /**
@@ -1693,7 +1771,7 @@ export type RecoverReferenceViewResult =
 
 /** A recovery the pre-read admits: the failed attempt, its failed render's row, and the output to fetch. */
 export type ReferenceViewRecoveryRead =
-  | { readonly ok: true; readonly attempt: ReferenceViewRow; readonly asset: ImageRow; readonly output: ReferenceViewPaidOutput }
+  | { readonly ok: true; readonly attempt: ReferenceViewRow; readonly asset: ImageRow; readonly output: PaidOutput }
   | { readonly ok: false; readonly refusal: ReferenceViewWriteRefusal };
 
 /**
@@ -1744,7 +1822,7 @@ export async function readReferenceViewRecovery(input: {
     eq(images.entityKind, "character"), eq(images.entityId, characterId),
   )).limit(1);
   if (asset === undefined) return refuse("unavailable");
-  const offer = referenceViewOutputOffer(asset);
+  const offer = paidOutputOffer(asset);
   if (offer.state === "withdrawn") return refuse("expired");
   if (offer.state === "none") return refuse("unavailable");
   if (!summary.recoverable) return refuse("incompatible");
@@ -1752,28 +1830,6 @@ export async function readReferenceViewRecovery(input: {
   if (!source.ok) return refuse(source.reason === "not_found" ? "not_found" : "incompatible");
   if (source.imageId !== attempt.sourceImageId || source.contentHash !== attempt.sourceContentHash) return refuse("incompatible");
   return { ok: true, attempt, asset, output: offer.output };
-}
-
-/**
- * Withdraw a failed render's recovery offer: stamp
- * {@link REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY} into its meta once the
- * provider has shown the output can never be fetched, so the sheet stops
- * offering it. A SQL-side merge scoped to the owner and to a row that is still
- * `failed`, so it writes that one key and nothing else, and leaves retention's
- * `failedAt` clock where it was. True when the row took the stamp.
- */
-export async function withdrawReferenceViewOutputOffer(imageId: string, ownerId: string, at: Date = new Date()): Promise<boolean> {
-  const stamped = await db()
-    .update(images)
-    .set({ meta: mergeMetaSql({ [REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]: at.toISOString() }) })
-    .where(and(
-      eq(images.id, imageId),
-      eq(images.ownerId, ownerId),
-      eq(images.kind, "reference_view"),
-      eq(images.status, "failed"),
-    ))
-    .returning({ id: images.id });
-  return stamped.length > 0;
 }
 
 /**

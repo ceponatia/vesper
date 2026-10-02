@@ -6,7 +6,7 @@ import { runInBatches } from "@/lib/batches";
 import { parseAspectValue } from "@vesper/image-core";
 import type { DiagnosticSink } from "@/contracts/diagnostics";
 import { purgeImagesWhere } from "./asset-deletion";
-import { runImagePipeline } from "./assets";
+import { ImageProduceError, runImagePipeline } from "./assets";
 import { resolveImageProfileForTask } from "./model-profiles";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { monogramSvg } from "./monogram";
@@ -92,7 +92,9 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
     // registry serves them through the same shape negotiation as everything
     // else: the ratio is requested, the closest offered shape is used, and any
     // remainder is cropped. A failure still THROWS (this lane's ruled failure
-    // shape), so provenance is recorded only on success.
+    // shape), as an `ImageProduceError` carrying the attempt's provenance, so
+    // the failed row records it — and an attempt record replaces any paid-output
+    // ids the transport recorded before a download that then failed for good.
     produce: async () => {
       if (demo || !resolved) return { ok: true, image: monogramSvg(compiled?.name ?? "") };
       const result = await renderImageIntent(
@@ -111,7 +113,12 @@ export async function generateEntityImage(input: GenerateEntityImageInput): Prom
         },
         input.sink,
       );
-      if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
+      if (!result.ok || !result.image) {
+        throw new ImageProduceError(
+          result.error ?? `${resolved.model.slug} returned no image`,
+          renderAttemptMeta(result.attempt, result.advisories).meta,
+        );
+      }
       return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt, result.advisories) };
     },
     onReady: async (asset) => {

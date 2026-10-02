@@ -87,6 +87,15 @@ the inline transcript moments render from the page's one shared scene list, the 
 — and the Gallery — at once; failed tiles are deletable too, clearing the clutter of a dead
 render.
 
+A failed tile whose render was paid for but could not be downloaded is **recoverable**: it reads
+"Rendered and paid for, but the download failed. Recover it without paying again," with
+**Recover image** as its primary action in place of the error text, and its own **✕** disabled
+while that tile's recovery is in flight. This strip is the only place a recoverable scene whose
+anchor message was deleted or rerun-snipped can still be recovered, since the inline transcript
+moments only ever show an anchored one. The same recovery offer and copy
+(`components/images/recovery-copy.ts`) also back the portrait studio's failed tiles and the
+inline scene moments' ([transcript.md](transcript.md)).
+
 The conversation page owns **one** scene fetch and poll shared by the strip and the inline
 transcript moments; `SceneStrip` is presentational over that list — it renders and queues, never
 fetches. The poll arms while the GET's **`rendering`** flag is true (a live `chat_scene_image`

@@ -29,6 +29,16 @@ intimate phrasing stripped, including `staging`; a transient failure as-is — d
 first row, and let a second failure stand as a debuggable `failed` row. Diagnostic:
 `images.selfie.retry` (info).
 
+**A paid scene or selfie is recovered, never rendered again.** A failure that already declares a
+non-automatic disposition — an undelivered paid output among them — is not retried. A failed
+scene or selfie whose render was billed but whose output never arrived keeps the workflow and the
+output under `meta.render`, and reads `recoverable: true` in `GET /api/chats/:chatId/scene`, for as
+long as the output can be recovered. `POST /api/images/:id/recover` stores that output on the same
+row, free and with no new render
+([../asset-registry.md](../asset-registry.md) §Recovering a paid output in place); while it runs the
+row reads `pending`, and once it lands the scene is drawn under its anchor message like any ready
+scene. The Gallery lists only ready scenes, so it shows the recovered image and never the offer.
+
 ## The look anchor
 
 `kind: "chat_look"` is an identity-locked reference edit wearing the archivist-tracked outfit,

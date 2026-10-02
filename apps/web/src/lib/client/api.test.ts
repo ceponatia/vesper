@@ -90,6 +90,19 @@ describe("imageRecordSchema", () => {
     expect(parsed.meta.variantKind).toBe("pose");
   });
 
+  /**
+   * PROTECTS (#686): the server projects `recoverable` on the portraits and
+   * chat scenes lists, and the recover action is offered on it. A schema
+   * without the field strips it (zod drops unknown keys), so no failed tile
+   * would ever offer a recovery; one that requires it fails an older server's
+   * whole list.
+   */
+  it("keeps the server's recoverable flag, and reads an absent or malformed one as false", () => {
+    expect(imageRecordSchema.parse({ id: "img-paid", kind: "scene", status: "failed", recoverable: true }).recoverable).toBe(true);
+    expect(imageRecordSchema.parse({ id: "img-old", kind: "scene", status: "failed" }).recoverable).toBe(false);
+    expect(imageRecordSchema.parse({ id: "img-odd", kind: "avatar", status: "failed", recoverable: "yes" }).recoverable).toBe(false);
+  });
+
   it("carries the render provenance through the parse instead of stripping it", () => {
     const render = { seed: 42, predictionId: "pred-1", droppedControls: [] };
     const parsed = imageRecordSchema.parse({

@@ -42,9 +42,16 @@ export async function purgeImagesWhere(where: SQL | undefined): Promise<number> 
   // invalidation round trip on every cleanup pass.
   const sources = rows.filter((row) => !HIDDEN_IMAGE_KINDS.some((kind) => kind === row.kind));
   if (sources.length > 0) await invalidateDerivedState(sources.map((row) => row.id));
-  await db().delete(images).where(where);
-  await Promise.all(rows.map((row) => unlinkImageFile(row)));
-  return rows.length;
+  // Only the rows the DELETE itself removed lose their files, and only they are
+  // counted: `where` is evaluated again by the delete, so a row that stopped
+  // matching after the select above (a failed row a paid-output recovery
+  // claimed back to `pending`, say) keeps both its row and its file.
+  const removed = await db()
+    .delete(images)
+    .where(where)
+    .returning({ id: images.id, ownerId: images.ownerId, path: images.path });
+  await Promise.all(removed.map((row) => unlinkImageFile(row)));
+  return removed.length;
 }
 
 /** Best-effort file removal for a purged row — never throws; image_sweep reconciles stragglers. */

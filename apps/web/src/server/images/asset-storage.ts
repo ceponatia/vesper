@@ -2,9 +2,9 @@ import { constants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { db, images } from "../db";
+import { db, images, JOB_STALE_MS } from "../db";
 import { newId } from "@/lib/ids";
 import { parseOr } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
@@ -145,8 +145,22 @@ const metaSchema = z.record(z.string(), z.unknown());
  */
 export const RENDER_LEASE_META_KEY = "renderLeaseAtMs";
 
-/** What a `ready` row never carries: a failure it no longer has, and a lease nobody holds. */
-export const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY] as const;
+/**
+ * Which attempt a pending row's render is running right now, for a lane that
+ * runs more than one provider attempt on one row (the scene chain's rungs). A
+ * paid output's early record names the attempt that started it, and lands only
+ * while the row still names that attempt ({@link recordPendingRenderOutput}),
+ * so a slow record from an attempt the lane has moved past can never overwrite
+ * the ids of the attempt now running. A lane with one attempt per row writes
+ * none.
+ */
+export const RENDER_ATTEMPT_META_KEY = "renderAttempt";
+
+/**
+ * What a `ready` row never carries: a failure it no longer has, a lease nobody
+ * holds, and an attempt fence no render is writing through any more.
+ */
+export const READY_RETIRED_META_KEYS = ["error", "failedAt", RENDER_LEASE_META_KEY, RENDER_ATTEMPT_META_KEY] as const;
 
 /**
  * The write-path merge: the stored jsonb re-parsed at the trust boundary, minus
@@ -201,6 +215,114 @@ export async function refreshRenderLease(imageId: string, atMs: number): Promise
     .where(and(eq(images.id, imageId), eq(images.status, "pending")))
     .returning({ id: images.id });
   return touched.length > 0;
+}
+
+/**
+ * The ids a paid output is fetched again by, as a render's row records them
+ * under `meta.render` — the keys `renderAttemptMeta` writes for an undelivered
+ * output when the render settles.
+ */
+export interface PaidRenderOutputRecord {
+  predictionId: string;
+  undeliveredOutputId: string;
+  modelSlug: string;
+}
+
+/**
+ * The SQL-side merge of `patch` into the row's `meta.render` object — the
+ * nested counterpart of {@link mergeMetaSql}, which merges top-level keys only.
+ * Anything but an object at `meta` or at `meta.render` reads as `{}`, and every
+ * other key of both survives.
+ */
+function mergeRenderMetaSql(patch: Record<string, unknown>): SQL {
+  const base: SQL = sql`(case when jsonb_typeof(${images.meta}) = 'object' then ${images.meta} else '{}'::jsonb end)`;
+  const render: SQL = sql`(case when jsonb_typeof(${base} -> 'render') = 'object' then ${base} -> 'render' else '{}'::jsonb end)`;
+  return sql`jsonb_set(${base}, '{render}', ${render} || ${JSON.stringify(patch)}::jsonb)`;
+}
+
+/**
+ * Record a paid output's ids on its render's row BEFORE the output downloads
+ * (docs/images/asset-registry.md §The sweep): the workflow, the output, and the
+ * model, merged into `meta.render` in SQL while, and only while, the row is
+ * still `pending` — the render-lease heartbeat's guard, so a row a save or a
+ * failure has already settled is left exactly as that write left it, and a
+ * concurrent heartbeat is never lost. True when the pending row took the ids.
+ *
+ * A settle that carries the attempt's provenance replaces `meta.render` whole,
+ * so these ids outlive the render only where nothing replaced them: a process
+ * that died mid-download (the sweep's reclaim keeps `meta.render`), or a
+ * produce that threw. Either way the row then offers the output for recovery
+ * (`paidOutputOffer`).
+ *
+ * **Fenced to the attempt that started it.** The lane stops waiting for this
+ * write after a few seconds while the UPDATE runs on, so a slow record can land
+ * after its lane has moved on to another attempt on the same row. `attempt` is
+ * the attempt the record belongs to, and the write lands only while the row
+ * still names that attempt ({@link RENDER_ATTEMPT_META_KEY}); with no
+ * `attempt`, only while the row names none — every lane with one attempt per
+ * row, whose rows never carry the key.
+ */
+export async function recordPendingRenderOutput(
+  imageId: string,
+  output: PaidRenderOutputRecord,
+  attempt?: string,
+): Promise<boolean> {
+  const touched = await db()
+    .update(images)
+    .set({
+      meta: mergeRenderMetaSql({
+        predictionId: output.predictionId,
+        undeliveredOutputId: output.undeliveredOutputId,
+        modelSlug: output.modelSlug,
+      }),
+    })
+    .where(and(
+      eq(images.id, imageId),
+      eq(images.status, "pending"),
+      sql`coalesce(${images.meta} ->> ${RENDER_ATTEMPT_META_KEY}::text, '') = ${attempt ?? ""}`,
+    ))
+    .returning({ id: images.id });
+  return touched.length > 0;
+}
+
+type ImageRowTransaction = Parameters<Parameters<ReturnType<typeof db>["transaction"]>[0]>[0];
+
+/** A connection or a transaction, for a write that must ride the caller's lock. */
+export type ImageRowExecutor = ReturnType<typeof db> | ImageRowTransaction;
+
+/**
+ * Fail the `pending` rows among `imageIds` whose render is known to be
+ * abandoned — the caller has positive evidence its owner died, such as the
+ * reference-view build lease that ran it expiring — unless a row still holds a
+ * live render lease (beaten within `JOB_STALE_MS` of `now`), which says the
+ * render itself is still running and is left alone.
+ *
+ * The sweep's guarded reclaim shape (`reclaimStalePendingRows`): one UPDATE
+ * whose own WHERE re-checks `status = 'pending'` and the lease against the row
+ * it writes, the failure stamp merged in SQL, the lease retired, and every
+ * other key — `meta.render` with a paid output's ids included — kept. A lease
+ * that is not a JSON number reads as no lease. Returns the rows it failed, as
+ * they now read.
+ */
+export async function reclaimAbandonedRenderRows(
+  executor: ImageRowExecutor,
+  imageIds: readonly string[],
+  error: string,
+  now: Date,
+): Promise<Array<Pick<ImageRow, "id" | "status" | "meta">>> {
+  if (imageIds.length === 0) return [];
+  const lease = sql`${images.meta} -> ${RENDER_LEASE_META_KEY}::text`;
+  const leaseAtMs = sql`(${images.meta} ->> ${RENDER_LEASE_META_KEY}::text)::numeric`;
+  const abandoned = sql`case
+    when jsonb_typeof(${lease}) = 'number' then ${leaseAtMs} < ${now.getTime() - JOB_STALE_MS}::numeric
+    else true
+  end`;
+  const reclaimed = await executor
+    .update(images)
+    .set({ status: "failed", meta: mergeMetaSql(failureStamp(error, now), [RENDER_LEASE_META_KEY]) })
+    .where(and(inArray(images.id, [...imageIds]), eq(images.status, "pending"), abandoned))
+    .returning({ id: images.id, status: images.status, meta: images.meta });
+  return reclaimed;
 }
 
 /**

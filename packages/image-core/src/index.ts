@@ -767,6 +767,7 @@ export {
   declaresNonAutomaticRetry,
   imageFailureHealthOutcome,
   isBillingFailureMessage,
+  providerWorkSpent,
   routeSceneAttempts,
 } from "./provider-interface";
 export type {

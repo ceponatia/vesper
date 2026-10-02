@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageFailureHealthOutcome, isBillingFailureMessage } from "./failures";
+import { classifyImageFailureMessage, declaresNonAutomaticRetry, imageFailureHealthOutcome, isBillingFailureMessage, providerWorkSpent } from "./failures";
 
 describe("classifyImageFailureMessage", () => {
   it("classifies provider content-policy strings as content rejections", () => {
@@ -90,6 +90,60 @@ describe("declaresNonAutomaticRetry", () => {
     expect(declaresNonAutomaticRetry("civitai lora metadata failed (civitai_http_503; retry=automatic).")).toBe(false);
     expect(declaresNonAutomaticRetry("replicate prediction abc never started: startup timed out")).toBe(false);
     expect(declaresNonAutomaticRetry("blocked by content policy")).toBe(false);
+  });
+});
+
+/**
+ * PROTECTS (#685, PR #692 review): the scene chain's paid-stop rule reads
+ * exactly this predicate to decide whether a rung's final failure spent
+ * provider work that may still deliver. It must stop on structured evidence
+ * only — a workflow id beside `retry=reconcile`, or a lost submit answer
+ * (`submit_unconfirmed`) — and must fall through on everything else. The bad
+ * implementation this kills reads the message alone: the Civitai transport
+ * declares an HTTP 409 `retry=reconcile` at every stage, so a 409 from the
+ * LoRA read, the zero-cost preflight or a rejected submit (none of which ever
+ * created a workflow) used to stop an otherwise renderable scene.
+ */
+describe("providerWorkSpent", () => {
+  const UNDELIVERED =
+    "Civitai output download failed (civitai_output_undelivered; retry=reconcile). The workflow succeeded and was already paid for, but its output could not be downloaded after 4 attempts. It can be recovered from that output without rendering again.";
+  const LOCAL_DEADLINE =
+    "Civitai workflow status failed (civitai_async_timeout; retry=reconcile). Refresh workflow status before deciding whether to replace it.";
+  const CATCH_ALL =
+    "Civitai returned a different workflow while polling Civitai workflow abc-123 was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.";
+  const UNCONFIRMED =
+    "Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as civitai_http_503, and no workflow in the list carried this externalId after 2 lookup rounds.";
+  const PREFLIGHT_409 = "Civitai preflight failed (civitai_http_409; retry=reconcile). Refresh workflow status before deciding whether to replace it.";
+  const SUBMIT_409 = "Civitai submit failed (civitai_http_409; retry=reconcile). Refresh workflow status before deciding whether to replace it.";
+  const LORA_409 = "Civitai lora metadata failed (civitai_http_409; retry=reconcile). Refresh workflow status before deciding whether to replace it.";
+
+  it.each([
+    ["an undelivered output, naming its workflow", UNDELIVERED, "wf-1"],
+    ["Vesper's own poll deadline on a submitted workflow", LOCAL_DEADLINE, "wf-1"],
+    ["the post-submit catch-all, naming its workflow", CATCH_ALL, "abc-123"],
+    ["a lost submit answer, whose workflow id is unknown by definition", UNCONFIRMED, undefined],
+    ["a lost submit answer that says so explicitly", UNCONFIRMED, null],
+  ] as const)("stops on %s", (_label, message, predictionId) => {
+    expect(providerWorkSpent({ message, ...(predictionId === undefined ? {} : { predictionId }) })).toBe(true);
+  });
+
+  it.each([
+    ["a preflight 409 reconcile, with no workflow", PREFLIGHT_409, undefined],
+    ["a submit 409 Civitai rejected outright, with no workflow", SUBMIT_409, null],
+    ["a LoRA metadata 409, with no workflow", LORA_409, undefined],
+    ["a reconcile naming an empty workflow id", LOCAL_DEADLINE, ""],
+    ["a preflight retry=never refusal", "Civitai preflight failed (civitai_http_400; retry=never). Do not repeat this request with the same input.", undefined],
+    [
+      "a preflight retry=deliberate refusal, its automatic repeat spent and nothing paid",
+      "Civitai preflight failed (civitai_http_503; retry=deliberate). Vesper already reposted this preflight once automatically; that retry is spent, so start one deliberate replacement only after reviewing the request.",
+      undefined,
+    ],
+    ["a provider-reported expiry on a submitted workflow (deliberate)", "Civitai workflow terminal failed (civitai_async_timeout; retry=deliberate).", "wf-1"],
+    ["another provider's failed prediction, naming its id but no reconcile", "replicate prediction failed: CUDA out of memory", "pred-1"],
+    ["a content rejection", "blocked by content policy", undefined],
+    ["an ordinary transient failure", "fetch failed: ETIMEDOUT", undefined],
+  ] as const)("falls through on %s", (_label, message, predictionId) => {
+    expect(providerWorkSpent({ message, ...(predictionId === undefined ? {} : { predictionId }) })).toBe(false);
   });
 });
 

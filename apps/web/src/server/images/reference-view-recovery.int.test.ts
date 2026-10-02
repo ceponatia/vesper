@@ -66,6 +66,7 @@ import {
 } from "@/server/test-support";
 import { createImageAsset, failImage, imageMeta, mergeMetaSql, readImageBytes, saveImageBuffer } from "./asset-storage";
 import { listCharacterMediaJobs } from "./character-media-jobs";
+import { PAID_OUTPUT_UNAVAILABLE_KEY } from "./paid-output";
 import { imagesDirectoryPath } from "./paths";
 import { loadConsumableReferenceView } from "./reference-view-consume";
 import {
@@ -83,7 +84,6 @@ import {
   getReferenceViewSummary,
   plannedReferenceViewsForCharacter,
   readAcceptedPortraitSource,
-  REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY,
   referenceViewHistoryEntries,
   referenceViewSlotBusy,
   referenceViewsToRebuild,
@@ -303,7 +303,7 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
   it("offers nothing once the output is withdrawn, or for a render no provider can be asked again", async () => {
     const withdrawn = await failedRender(FRONT);
     await db().update(images)
-      .set({ meta: mergeMetaSql({ [REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]: new Date().toISOString() }) })
+      .set({ meta: mergeMetaSql({ [PAID_OUTPUT_UNAVAILABLE_KEY]: new Date().toISOString() }) })
       .where(eq(images.id, withdrawn.failedImageId));
     expect(await getReferenceViewSummary(withdrawn.characterId, ownerId, FRONT)).toMatchObject({ state: "failed", recoverable: false });
     const set = await getReferenceViewSet(withdrawn.characterId, ownerId);
@@ -509,7 +509,7 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
     const original = await imageRow(state.failedImageId);
     expect(original?.status).toBe("failed");
     const meta = imageMeta(original?.meta);
-    expect(typeof meta[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]).toBe("string");
+    expect(typeof meta[PAID_OUTPUT_UNAVAILABLE_KEY]).toBe("string");
     // Retention's clock is untouched: the row still goes when it always would.
     expect(meta.failedAt).toBe(failedAt);
     expect(await getReferenceViewSummary(state.characterId, ownerId, FRONT)).toMatchObject({ state: "failed", recoverable: false });
@@ -529,7 +529,7 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
     expect((await recoverReferenceView({ ...state.request, sink })).status).toBe("expired");
 
     expectDiagnostic(sink, REFERENCE_VIEW_OUTPUT_EXPIRED);
-    expect(typeof imageMeta((await imageRow(state.failedImageId))?.meta)[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]).toBe("string");
+    expect(typeof imageMeta((await imageRow(state.failedImageId))?.meta)[PAID_OUTPUT_UNAVAILABLE_KEY]).toBe("string");
     expect(await getReferenceViewSummary(state.characterId, ownerId, FRONT)).toMatchObject({ state: "failed", recoverable: false });
     expect(await referenceViewAssets(state.characterId)).toEqual([state.failedImageId]);
     expect(await referenceViewSlotBusy(state.characterId, ownerId, FRONT)).toBe(false);
@@ -544,7 +544,7 @@ describe.skipIf(!ready)("a failed render's paid output", () => {
 
     expectDiagnostic(sink, REFERENCE_VIEW_OUTPUT_UNAVAILABLE);
     const meta = imageMeta((await imageRow(state.failedImageId))?.meta);
-    expect(meta).not.toHaveProperty(REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY);
+    expect(meta).not.toHaveProperty(PAID_OUTPUT_UNAVAILABLE_KEY);
     expect(await getReferenceViewSummary(state.characterId, ownerId, FRONT)).toMatchObject({ state: "failed", recoverable: true });
     expect(await referenceViewAssets(state.characterId)).toEqual([state.failedImageId]);
     // The refused run gave the slot back, and says how it ended.

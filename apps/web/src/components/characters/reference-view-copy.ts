@@ -6,6 +6,12 @@ import type {
   ReferenceViewState,
 } from "@/contracts";
 import type { TagTone } from "@/components/ui/tag";
+import {
+  imageRecoverableHint,
+  imageRecoverActionLabel,
+  imageRecoverFailedTitle,
+  imageRecoveredToastTitle,
+} from "@/components/images/recovery-copy";
 
 /**
  * The reference-view vocabulary in English.
@@ -225,21 +231,26 @@ export const referenceViewRestoreUnavailableCopy = {
  * A failed tile whose render was paid for and can be recovered without a new
  * charge — shown in place of the ordinary failure message
  * ({@link referenceViewStateCopy}'s `failed` hint) when `recoverable` is true.
+ *
+ * The underlying strings live in the neutral `components/images/recovery-copy`
+ * module (issue #686): the portrait studio and chat's inline scene moments
+ * offer the same recovery action and must say the same thing about it, so the
+ * wording is defined once and re-exported here under reference views' own
+ * names, for behavior identical to before that module existed.
  */
-export const referenceViewRecoverableHint =
-  "Rendered and paid for, but the download failed. Recover it without paying again.";
+export const referenceViewRecoverableHint = imageRecoverableHint;
 
 /** The recoverable failed tile's primary action. */
-export const referenceViewRecoverActionLabel = "Recover image";
+export const referenceViewRecoverActionLabel = imageRecoverActionLabel;
 
 /** The toast once a recover request installs the image as a new candidate. */
 export const referenceViewRecoveredToast = {
-  title: "Image recovered",
+  title: imageRecoveredToastTitle,
   description: "Review it to use it.",
 } as const;
 
 /** The toast title on a refused recovery; the description is the server's own message. */
-export const referenceViewRecoverFailedTitle = "Could not recover that image";
+export const referenceViewRecoverFailedTitle = imageRecoverFailedTitle;
 
 /**
  * A failed tile whose recovery offer has lapsed: the paid render still cannot

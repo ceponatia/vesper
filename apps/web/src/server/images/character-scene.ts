@@ -16,6 +16,7 @@ import { db, images } from "../db";
 import { logEvent } from "../events";
 import { deleteOwnedImage } from "./asset-deletion";
 import { imageMeta, readImageBytes } from "./asset-storage";
+import { paidOutputOffer } from "./paid-output";
 import { identityPackRenderReferences } from "./identity-pack-consume";
 import { latestChatLook } from "./chat-look";
 import type { SceneComposerContext, ScenePresentCharacter } from "./prompts-scene-composer";
@@ -666,10 +667,24 @@ async function renderCharacterSceneWithSink(input: RenderCharacterSceneInput, si
   // refusal; return the record.
   if (!selfie || identityRefusal !== null || visualRefusal !== null) return first;
 
-  const firstError = await imageFailure(first);
-  if (firstError === null) return first;
-  const message = firstError || "render failed";
+  const firstFailure = await imageFailure(first);
+  if (firstFailure === null) return first;
+  const message = firstFailure.error || "render failed";
   const reason = classifyImageFailure(new Error(message));
+  // A first attempt whose row still OFFERS a paid output was rendered and
+  // billed, and its output can be recovered onto that row for free — whatever
+  // its error text says, which may declare no disposition at all (a produce
+  // that threw after the transport recorded the output's ids, say). Retrying
+  // would pay for a second selfie, and deleting the first row below would
+  // throw away the recoverable one.
+  if (firstFailure.offersPaidOutput) {
+    sink.push(
+      diag("info", "images.selfie.retry_skipped", `first selfie attempt failed (${reason}) after its render was paid for, and its output can still be recovered — not retrying`, {
+        context: { reason, skipped: "paid_output_on_offer" },
+      }),
+    );
+    return first;
+  }
   // A failure that already declares its own non-automatic retry disposition
   // (civitai_submit_unconfirmed, an exhausted post-submit read reporting
   // reconcile, an async timeout, and the like — all `retry=deliberate`,
@@ -737,11 +752,22 @@ function intimateContentWanted(
   return playerExposure !== undefined && intimateRegionsBare(playerExposure);
 }
 
-async function imageFailure(imageId: string): Promise<string | null> {
-  const [row] = await db().select({ status: images.status, meta: images.meta }).from(images).where(eq(images.id, imageId)).limit(1);
+/**
+ * A failed row's error text, and whether it still offers a paid output for
+ * recovery (`paidOutputOffer`); null when the row did not fail.
+ */
+async function imageFailure(imageId: string): Promise<{ error: string; offersPaidOutput: boolean } | null> {
+  const [row] = await db()
+    .select({ id: images.id, status: images.status, meta: images.meta })
+    .from(images)
+    .where(eq(images.id, imageId))
+    .limit(1);
   if (!row || row.status !== "failed") return null;
   const error = imageMeta(row.meta).error;
-  return typeof error === "string" ? error : "";
+  return {
+    error: typeof error === "string" ? error : "",
+    offersPaidOutput: paidOutputOffer(row).state === "on_offer",
+  };
 }
 
 /**

@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import {
   imageModelProfileSchema,
   imageModelSchema,
@@ -60,10 +62,10 @@ vi.mock("@/server/log", () => ({
   logDiagnostics: vi.fn(),
 }));
 
-import { classifyImageFailure, isDemoMode } from "../ai";
+import { classifyImageFailure, isDemoMode, recordPaidRenderOutput } from "../ai";
 import { db } from "../db";
 import { runImagePipeline, type ImagePipelineOptions, type ImageProduceResult } from "./assets";
-import type { ImageRow } from "./asset-storage";
+import { RENDER_ATTEMPT_META_KEY, type ImageRow } from "./asset-storage";
 import { renderImageIntent } from "./render-intent";
 import { renderResolvedScene, type RenderResolvedSceneInput, type SceneRenderReferenceView } from "./scene";
 
@@ -75,6 +77,8 @@ const pipelineCalls: ImagePipelineOptions[] = [];
 const rowQueue: unknown[][] = [];
 /** Every `db().update().set(payload)` lands here — the meta-correction writes. */
 const updateCalls: Record<string, unknown>[] = [];
+/** The WHERE condition of each of those writes, index-parallel with `updateCalls`. */
+const whereCalls: unknown[] = [];
 
 const MODEL_SLUG = "qwen/qwen-image-edit-2511";
 
@@ -155,6 +159,7 @@ beforeEach(() => {
   pipelineCalls.length = 0;
   rowQueue.length = 0;
   updateCalls.length = 0;
+  whereCalls.length = 0;
   vi.mocked(isDemoMode).mockReturnValue(false);
   vi.mocked(classifyImageFailure).mockReturnValue("other");
   vi.mocked(db).mockImplementation(() => {
@@ -168,7 +173,14 @@ beforeEach(() => {
       update: () => chain,
       set: (payload: Record<string, unknown>) => {
         updateCalls.push(payload);
-        return { where: () => Promise.resolve([]) };
+        return {
+          where: (condition: unknown) => {
+            whereCalls.push(condition);
+            // Awaitable as is (the corrections) and with `.returning()` (a
+            // paid output's early record).
+            return Object.assign(Promise.resolve([]), { returning: () => Promise.resolve([]) });
+          },
+        };
       },
     };
     return chain as unknown as ReturnType<typeof db>;
@@ -265,6 +277,81 @@ describe("renderResolvedScene identity provenance", () => {
     expect(corrected).toBeDefined();
     const correctedMeta = corrected?.meta as Record<string, unknown>;
     expect("identityReferences" in correctedMeta).toBe(false);
+  });
+
+  /**
+   * PROTECTS (#687 review): a fallback rung is described on the row BEFORE it
+   * runs, and the row loses any paid-output ids the previous rung recorded
+   * before its download. The bad implementations: correcting only after the
+   * chain ends, so a process that dies during the fallback rung's download
+   * leaves a reclaimed row offering that rung's output under the primary
+   * rung's prompt and provenance; and keeping the primary rung's early ids
+   * after its download failed for good, so a death during the fallback rung
+   * leaves an offer for an output that is gone. The write is guarded on the
+   * row still being `pending`, so a row a sweep or a settle already left is
+   * never rewritten from here.
+   */
+  it("describes a fallback rung on the row, without the previous rung's paid-output ids, before that rung runs", async () => {
+    const updatesAtRun: number[] = [];
+    mockIntent
+      .mockImplementationOnce(async () => {
+        updatesAtRun.push(updateCalls.length);
+        return { ok: false, error: "Civitai output download failed (civitai_output_http_404; retry=deliberate)." };
+      })
+      .mockImplementationOnce(async () => {
+        updatesAtRun.push(updateCalls.length);
+        return { ok: true, image: Buffer.from("rendered") };
+      });
+    // The row as the primary rung left it: its paid-output ids, recorded
+    // before a download that then failed for good.
+    rowQueue.push([
+      { meta: { model: `replicate/${MODEL_SLUG}`, render: { predictionId: "wf-multi", undeliveredOutputId: "blob-multi", modelSlug: MODEL_SLUG } } },
+    ]);
+
+    await renderResolvedScene(baseInput({}));
+
+    // The row was rewritten after the primary rung and before the fallback ran.
+    expect(updatesAtRun).toEqual([0, 1]);
+    const described = updateCalls[0];
+    expect(described?.prompt).not.toBe(pipelineCalls[0]?.asset.prompt);
+    expect(described?.meta as Record<string, unknown>).not.toHaveProperty("render");
+    expect((described?.meta as Record<string, unknown>)[RENDER_ATTEMPT_META_KEY]).toBe("edit");
+    const guard = new PgDialect().sqlToQuery(whereCalls[0] as SQL);
+    expect(guard.sql).toContain('"status"');
+    expect(guard.params).toContain("pending");
+  });
+
+  /**
+   * PROTECTS (PR #692 review): each rung records its paid output through its
+   * OWN recorder, naming the rung, and the row names the rung that is running —
+   * the primary at reserve, each fallback in its correction — so a slow record
+   * from a rung the chain moved past is refused by the write's own guard
+   * (`recordPendingRenderOutput`, whose SQL `assets.int.test.ts` owns). The
+   * bad implementation records every rung through the pipeline's one
+   * recorder, which names no rung, so nothing tells a late record apart.
+   */
+  it("records each rung's paid output under that rung's own attempt", async () => {
+    mockIntent
+      .mockImplementationOnce(async () => {
+        await recordPaidRenderOutput({ predictionId: "wf-multi", outputId: "blob-multi", modelSlug: MODEL_SLUG });
+        return { ok: false, error: "Civitai output download failed (civitai_output_http_404; retry=deliberate)." };
+      })
+      .mockImplementationOnce(async () => {
+        await recordPaidRenderOutput({ predictionId: "wf-edit", outputId: "blob-edit", modelSlug: MODEL_SLUG });
+        return { ok: true, image: Buffer.from("rendered") };
+      });
+    rowQueue.push([{ meta: { model: `replicate/${MODEL_SLUG}`, [RENDER_ATTEMPT_META_KEY]: "multi_edit" } }]);
+
+    await renderResolvedScene(baseInput({}));
+
+    expect(pipelineCalls[0]?.asset.meta?.[RENDER_ATTEMPT_META_KEY]).toBe("multi_edit");
+    const dialect = new PgDialect();
+    const params = whereCalls.map((condition) => dialect.sqlToQuery(condition as SQL).params);
+    // In order: the primary rung's record, the fallback's correction, the fallback's record.
+    expect(params[0]).toContain("multi_edit");
+    expect((updateCalls[1]?.meta as Record<string, unknown>)[RENDER_ATTEMPT_META_KEY]).toBe("edit");
+    expect(params[2]).toContain("edit");
+    expect(params[2]).not.toContain("multi_edit");
   });
 
   it("an exhausted chain still records the LAST rung's attempt on the failed row", async () => {

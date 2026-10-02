@@ -13,12 +13,14 @@ import {
   type ImageGeneratorRunInputs,
   type ImageGeneratorRunPurpose,
   imageGeneratorRunPurposeSchema,
+  type ImageGeneratorRunStatus,
   type ImageGeneratorVersionPolicy,
   imageGeneratorVersionPolicySchema,
 } from "@/contracts/images/image-generator";
 import {
   imageGeneratorRunOutputImageIds,
   imageGeneratorRunOutputs,
+  type ImageGeneratorRunOutput,
 } from "@/contracts/images/image-generator-outputs";
 import {
   type ImageGeneratorUpload,
@@ -30,6 +32,7 @@ import { db, imageGeneratorRuns, images } from "../db";
 import { deleteOwnedImages, purgeImagesWhere } from "./asset-deletion";
 import { imageMeta } from "./asset-storage";
 import { loadImageModel } from "./models";
+import { undeliveredRenderOutput } from "./paid-output";
 
 /**
  * The Image Generator's run service: row↔wire, create, list, detail,
@@ -190,7 +193,54 @@ function storedRunResult(row: ImageGeneratorRunRow, sink?: DiagnosticSink): Reco
   const result = storedMetaRecord(row, "result", sink);
   const outputs = imageGeneratorRunOutputs(imageMeta(row.meta)["outputs"]);
   if (outputs.length === 0) return result;
-  return { ...result, outputs };
+  const projected = outputs.map((output) => ({ ...output, recoverable: imageGeneratorOutputRecoverable(row, output) }));
+  return { ...result, outputs: projected };
+}
+
+/**
+ * A run whose provider lane has finished one way or another — the only
+ * statuses {@link recoverImageGeneratorOutput} (`image-generator-recovery.ts`)
+ * and the wire's own `recoverable` below act on. A `pending`/`running` row
+ * answers `busy` in the service instead of being judged by this rule.
+ */
+export function imageGeneratorRunSettled(status: ImageGeneratorRunStatus): boolean {
+  return status === "succeeded" || status === "failed";
+}
+
+/**
+ * The Civitai paid-output offer one output record still names, ignoring
+ * settlement and withdrawal: null once the output already carries an image —
+ * there is nothing left to fetch — or when its ids and the run's model do not
+ * describe a fetchable Civitai render. Shared by the recovery service's own
+ * eligibility check and the wire's `recoverable` below, so the two can never
+ * disagree about what counts as an offer.
+ */
+export function imageGeneratorOutputOffer(
+  row: Pick<ImageGeneratorRunRow, "modelSlug">,
+  output: ImageGeneratorRunOutput,
+): ReturnType<typeof undeliveredRenderOutput> {
+  if (output.imageId !== null) return null;
+  return undeliveredRenderOutput({
+    predictionId: output.predictionId,
+    undeliveredOutputId: output.undeliveredOutputId,
+    modelSlug: row.modelSlug,
+  });
+}
+
+/**
+ * The wire's `recoverable`: a settled run's output that still offers an
+ * unwithdrawn paid Civitai render. The same rule the recovery service checks
+ * before it fetches, plus the run being settled.
+ */
+export function imageGeneratorOutputRecoverable(
+  row: Pick<ImageGeneratorRunRow, "status" | "modelSlug">,
+  output: ImageGeneratorRunOutput,
+): boolean {
+  return (
+    imageGeneratorRunSettled(row.status) &&
+    output.recoveryUnavailableAt === null &&
+    imageGeneratorOutputOffer(row, output) !== null
+  );
 }
 
 /** One loose per-run record out of the meta bag, on the same forgiving terms. */

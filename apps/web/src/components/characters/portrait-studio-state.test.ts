@@ -85,6 +85,24 @@ describe("isAvatarGenerationComplete", () => {
     const rows = [row("img-variant", "ready", REQUEST_ID, "portrait_variant")];
     expect(isAvatarGenerationComplete(req, { rows })).toBe(false);
   });
+
+  /**
+   * Issue #686: `POST /api/images/:id/recover` flips a failed row to `ready`
+   * IN PLACE, keeping its `meta.request.id` — it is not a new row and not a
+   * new request. That means a row recovered after this request already
+   * settled is indistinguishable, to this check, from a row that rendered
+   * successfully the first time: both read as "ready, stamped with this
+   * request's id". Nothing here needs to special-case recovery, and this
+   * test exists to say so on purpose rather than leave it an accident of two
+   * other tests happening to agree.
+   */
+  it("a row recovered from failed to ready reads as any other ready row — recovery changes a row's status in place, never its identity", () => {
+    const req = request({ candidates: 2 });
+    // img-1 was failed and is now recovered; img-2 rendered and succeeded normally.
+    const rows = [row("img-2", "ready", REQUEST_ID), row("img-1", "ready", REQUEST_ID)];
+    expect(isAvatarGenerationComplete(req, { rows })).toBe(true);
+    expect(avatarGenerationRows(req, rows).every((r) => r.status === "ready")).toBe(true);
+  });
 });
 
 describe("avatarGenerationRows", () => {

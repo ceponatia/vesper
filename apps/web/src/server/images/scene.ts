@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, imageReferences, images } from "../db";
 import {
   classifyImageFailure,
@@ -8,6 +8,7 @@ import {
   isDemoMode,
   qualifiedImageModelIdentity,
   sceneComposerModelId,
+  withPaidRenderOutputRecorder,
 } from "../ai";
 import { renderAttemptMeta, renderImageIntent } from "./render-intent";
 import { logDiagnostics } from "@/server/log";
@@ -21,6 +22,7 @@ import {
   type ImageReferenceRole,
   type ImageRenderReference,
   type ProviderRenderResult,
+  providerWorkSpent,
   referenceCapacity,
   type RenderAdvisory,
   type ResolvedImageAttempt,
@@ -34,8 +36,8 @@ import {
   type SceneVisualReferenceKind,
 } from "@vesper/image-core";
 import type { SceneGenState } from "@/contracts/state/scene-gen";
-import { imageMeta, type ImageEntityKind } from "./asset-storage";
-import { runImagePipeline } from "./assets";
+import { imageMeta, RENDER_ATTEMPT_META_KEY, type ImageEntityKind } from "./asset-storage";
+import { paidOutputRecorderForRow, runImagePipeline } from "./assets";
 import {
   buildCharacterPromptProgram,
   characterPromptTransport,
@@ -944,6 +946,10 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
         sourceImageId: anchorRef?.imageId,
         meta: {
           demo,
+          // The rung this row's render is running, which a paid output's early
+          // record must still match to land (`recordPendingRenderOutput`): the
+          // primary rung until a fallback rung is described below.
+          ...(primary === undefined ? {} : { [RENDER_ATTEMPT_META_KEY]: primary }),
           focalName: plan.focal?.name ?? null,
           referenceName: anchorRef?.name ?? null,
           model: primary ? modelFor(primary) : "none",
@@ -995,7 +1001,42 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
       failedPrecondition: input.failedPrecondition ?? castRefusal,
       afterReserve: (asset) => recordImageReferences(asset.id, references, sink),
       produce: async (asset) => {
-        const outcome = await executeSceneChain(runnableChain, (id) => runSceneProvider(id, ctx), sink);
+        // Set only when the chain stopped on a rung whose provider work was
+        // already paid for (#685) — `executeSceneChain` calls this at most
+        // once, and only right before it returns null for that rung, never
+        // on a fallback or an exhausted ladder.
+        let paidStopRung: SceneAttemptId | null = null;
+        // The rung the row describes right now: the primary's reserve-time
+        // provenance until a fallback rung is about to run. Before that rung
+        // spends anything, the row is rewritten to describe it and loses any
+        // paid-output ids an earlier rung recorded before its download
+        // (`correctProviderMeta`'s `beforeRung`), so a process that dies during this
+        // rung leaves a row whose offer and provenance are this rung's.
+        let described: SceneAttemptId | undefined = primary;
+        const runRung = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+          if (id !== described) {
+            await correctProviderMeta(
+              asset.id,
+              transportFor(id).prompt,
+              modelFor(id),
+              provenanceFor(id),
+              referenceViewsFor(id),
+              compiledFor(id)?.meta,
+              { beforeRung: id },
+            );
+            described = id;
+          }
+          // This rung's own paid-output recorder, overriding the pipeline's:
+          // its early record lands only while the row still names this rung,
+          // so a slow record from a rung the chain has moved past can never
+          // overwrite the ids of the rung now running. A rung that recorded
+          // ids gets no same-rung retry — a failure after the record is
+          // undelivered (the chain stops) or final (the chain moves on).
+          return withPaidRenderOutputRecorder(paidOutputRecorderForRow(asset.id, id), () => runSceneProvider(id, ctx));
+        };
+        const outcome = await executeSceneChain(runnableChain, runRung, sink, (rung) => {
+          paidStopRung = rung;
+        });
         if (!outcome) {
           // The whole chain exhausted. The failed row still records the LAST
           // rung's attempt — the failure its error text describes — so a failed
@@ -1006,6 +1047,23 @@ export async function renderResolvedScene(input: RenderResolvedSceneInput): Prom
             .reverse()
             .map((id) => ctx.attempts.get(id))
             .find((entry) => entry !== undefined);
+          if (paidStopRung !== null && paidStopRung !== primary) {
+            // The same correction the success path below makes for a
+            // fallback rung that WON: the reserve-time row described the
+            // PRIMARY rung's request, and the chain instead stopped on a
+            // later rung whose provider work was paid for, so the failed
+            // row's prompt, model, provenance, reference views and program
+            // meta are corrected to describe THAT rung — the one actually
+            // billed — rather than the primary rung's abandoned plan.
+            await correctProviderMeta(
+              asset.id,
+              transportFor(paidStopRung).prompt,
+              modelFor(paidStopRung),
+              provenanceFor(paidStopRung),
+              referenceViewsFor(paidStopRung),
+              compiledFor(paidStopRung)?.meta,
+            );
+          }
           return {
             ok: false,
             error: sceneFailureMessage(collected.items),
@@ -1101,11 +1159,23 @@ export interface SceneRenderOutcome {
 
 const MAX_TRANSIENT_RETRIES = 1;
 
+/**
+ * Reports the rung whose FINAL failure already spent provider work (#685),
+ * right before {@link executeSceneChain} returns null for it — the one
+ * piece of information a caller needs beyond "the chain produced no image"
+ * to correct the failed row's provenance onto the rung that was actually
+ * billed, the same way it already does for a fallback rung that WON. Never
+ * called on any other failure path (a fallback, an exhausted ladder) and
+ * never called more than once.
+ */
+type PaidStopReporter = (rung: SceneAttemptId) => void;
+
 /** Walk the ordered attempt chain with one same-attempt transient retry. */
 export async function executeSceneChain(
   chain: SceneAttemptId[],
   run: (id: SceneAttemptId) => Promise<ProviderRenderResult>,
   sink?: DiagnosticSink,
+  onPaidStop?: PaidStopReporter,
 ): Promise<SceneRenderOutcome | null> {
   let sawTransient = false;
   let sawNonTransient = false;
@@ -1130,6 +1200,30 @@ export async function executeSceneChain(
     lastFailure = failure;
     if (failure.reason === "transient") sawTransient = true;
     else sawNonTransient = true;
+    // A rung's FINAL failure (its own same-rung transient retry already
+    // spent, above) whose provider work was PAID FOR on this attempt and may
+    // still deliver ends the chain right here (#685): no further rung,
+    // because a fallback would risk a second paid render racing a workflow
+    // that may still be running or may still deliver. Judged on structured
+    // evidence (`providerWorkSpent`): the failure names the workflow and
+    // declares `retry=reconcile`, or the submit's answer was lost
+    // (`submit_unconfirmed`). A `reconcile` with no workflow id — an HTTP 409
+    // before any workflow existed — falls through like any other failure.
+    // Checked before the ordinary fallback diagnostic below, so a paid stop
+    // never also logs a `provider_fallback` it never took, and never reaches
+    // the generic `all_failed`/`service_outage` terminal after the loop.
+    if (providerWorkSpent(failure)) {
+      sink?.push(
+        diag(
+          "warn",
+          "images.scene_render.paid_attempt_stop",
+          `scene render stopped at ${id}: its provider work was already paid for — ${failure.message.slice(0, 200)}`,
+          { context: { rung: id, workflowId: failure.predictionId ?? null, message: failure.message.slice(0, 200) } },
+        ),
+      );
+      onPaidStop?.(id);
+      return null;
+    }
     const next = chain[i + 1];
     if (next) {
       sink?.push(
@@ -1187,7 +1281,11 @@ async function runSceneProvider(id: SceneAttemptId, ctx: SceneAttemptContext): P
   if (result.attempt) ctx.attempts.set(id, { attempt: result.attempt, advisories: result.advisories });
   if (result.ok && result.image) return { ok: true, image: result.image };
   const message = result.error ?? `${ctx.profile.model.slug} returned no image`;
-  return { ok: false, failure: { reason: classifyImageFailure(message), message } };
+  // The provider's own id for THIS attempt, when one exists even on a
+  // failure (`RenderImageIntentResult.predictionId`, `render-intent.ts`) —
+  // so a chain that stops on a paid failure (#685) can name the workflow
+  // the diagnostic is about.
+  return { ok: false, failure: { reason: classifyImageFailure(message), message, predictionId: result.predictionId ?? null } };
 }
 
 async function recordImageReferences(
@@ -1236,6 +1334,8 @@ async function correctProviderMeta(
   identityReferences: IdentityReferenceProvenance[],
   referenceViews: SceneReferenceViewProvenance[],
   program?: Record<string, unknown>,
+  /** `beforeRung`: the fallback rung about to run, which the row is rewritten to describe. */
+  options: { beforeRung?: SceneAttemptId } = {},
 ): Promise<void> {
   const [row] = await db().select({ meta: images.meta }).from(images).where(eq(images.id, assetId)).limit(1);
   const meta: Record<string, unknown> = { ...imageMeta(row?.meta), model, ...(program ?? {}) };
@@ -1244,6 +1344,24 @@ async function correctProviderMeta(
   // Same rule, same reason: a rung that dropped the view claims none.
   if (referenceViews.length > 0) meta.referenceViews = referenceViews;
   else delete meta.referenceViews;
+  if (options.beforeRung !== undefined) {
+    // Before a fallback rung runs, nothing has rendered for it yet, so the row
+    // holds no attempt record — only the paid-output ids a previous rung may
+    // have recorded before its download (`recordPendingRenderOutput`). That
+    // rung did not fail undelivered: an undelivered failure stops the chain
+    // (`providerWorkSpent`), so its download failed for good, and a
+    // death during THIS rung must not leave an offer for an output that is
+    // gone. Written only while the row is still `pending`: a row a sweep or a
+    // settle already left is never rewritten from here.
+    delete meta.render;
+    // The attempt fence: from here only this rung's early record lands.
+    meta[RENDER_ATTEMPT_META_KEY] = options.beforeRung;
+    await db()
+      .update(images)
+      .set({ prompt, meta })
+      .where(and(eq(images.id, assetId), eq(images.status, "pending")));
+    return;
+  }
   await db().update(images).set({ prompt, meta }).where(eq(images.id, assetId));
 }
 
@@ -1253,7 +1371,14 @@ function sceneFailureMessage(items: readonly Diagnostic[]): string {
     .find((diagnostic) =>
       diagnostic.code === "images.scene_render.all_failed" ||
       diagnostic.code === "images.scene_render.service_outage" ||
-      diagnostic.code === "images.scene_render.no_attempt",
+      diagnostic.code === "images.scene_render.no_attempt" ||
+      // The chain's paid-stop rule (#685) is also a terminal: it ends the
+      // render exactly as the other three do, and its message carries the
+      // stopped rung's own disposition text (`retry=reconcile` /
+      // `civitai_submit_unconfirmed`), which the character-chat selfie
+      // retry's guard (`declaresNonAutomaticRetry` on this row's stored
+      // error) must still see to keep refusing to re-render this row.
+      diagnostic.code === "images.scene_render.paid_attempt_stop",
     );
   return terminal?.message ?? "scene image generation failed";
 }

@@ -36,7 +36,7 @@ vi.mock("./standalone-subject-visual", async (importOriginal) => {
 
 import { isDemoMode } from "../ai";
 import { db } from "../db";
-import { runImagePipeline } from "./assets";
+import { ImageProduceError, runImagePipeline } from "./assets";
 import type { ImageRow } from "./asset-storage";
 import {
   AVATAR_CUT_FAILED,
@@ -313,6 +313,47 @@ describe("generateAvatar program wiring", () => {
     // no pointer write to assert against.
     expect(firstOpts?.onReady).toBeUndefined();
     expect(secondOpts?.onReady).toBeUndefined();
+  });
+
+  /**
+   * PROTECTS (#686): a failed avatar render keeps this lane's ruled THROW
+   * shape (the shell's warn diagnostic and the error-carrying event line) and
+   * still hands the pipeline its attempt record, so the failed row records
+   * `meta.render` exactly as a failed variant row does. The bad implementation
+   * this kills throws a plain Error: the row then keeps no attempt record, and
+   * the ids a Civitai transport records before its download outlive a failure
+   * that already proved the output unrecoverable — a false recovery offer.
+   * That the pipeline merges this meta into the row is `assets.int.test.ts`'s.
+   */
+  it.each([
+    ["a definite failure, naming no undelivered output", "Civitai output download failed (civitai_output_too_large; retry=never)", {}],
+    [
+      "an undelivered output, naming it",
+      "Civitai output download failed (civitai_output_undelivered; retry=reconcile)",
+      { undeliveredOutputId: "blob-1" },
+    ],
+  ] as const)("a failed render throws its attempt record with it: %s", async (_label, error, undelivered) => {
+    prime({ demo: false, profile: lindaProfile(), name: "Linda", picked: bound });
+    const attempt = { modelSlug: "civitai/qwen-image-2.1", predictionId: "wf-1", ...undelivered, shape: null };
+    vi.mocked(renderImageIntent).mockResolvedValue(
+      { ok: false, error, predictionId: "wf-1", attempt } as unknown as Awaited<ReturnType<typeof renderImageIntent>>,
+    );
+    let thrown: unknown;
+    vi.mocked(runImagePipeline).mockImplementation(async (opts) => {
+      try {
+        await opts.produce({ id: "img-1" } as unknown as ImageRow);
+      } catch (caught) {
+        thrown = caught;
+      }
+      return { imageId: "img-1", status: "failed" };
+    });
+
+    await generateAvatar({ characterId: "chr-1", userId: "u-1" });
+
+    expect(thrown).toBeInstanceOf(ImageProduceError);
+    if (!(thrown instanceof ImageProduceError)) throw new Error("expected an ImageProduceError");
+    expect(thrown.message).toBe(error);
+    expect(thrown.meta).toEqual({ render: attempt });
   });
 
   it("stamps no meta.request at all when the caller sends no requestId", async () => {

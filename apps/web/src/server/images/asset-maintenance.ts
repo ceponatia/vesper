@@ -292,12 +292,6 @@ export async function sweepOrphans(opts: SweepOptions = {}): Promise<SweepResult
 /**
  * Hard-delete the rows {@link planFailedImageRetirement} judges expired — the IO
  * half of retention, owner-scoped exactly like the pass around it.
- *
- * It goes through `purgeImagesWhere` like every other delete path, so a retired
- * row takes its identity-pack derivations and any stray file with it, and the
- * soft pointers entity rows keep are cleared the way the Gallery's own delete
- * clears them: a character whose avatar failed a day ago must not be left
- * pointing at a row that no longer exists.
  */
 async function retireFailedRows(now: Date, opts: SweepOptions, result: SweepResult): Promise<void> {
   const ownerScope = opts.ownerId === undefined ? undefined : eq(images.ownerId, opts.ownerId);
@@ -313,13 +307,39 @@ async function retireFailedRows(now: Date, opts: SweepOptions, result: SweepResu
     });
     return;
   }
-  if (plan.ids.length === 0) return;
-  const removed = await purgeImagesWhere(and(inArray(images.id, plan.ids), ownerScope));
-  if (removed > 0) {
-    await clearEntityImagePointers(plan.ids);
-    log.warn("images", "retired rows that failed over a day ago", { removed });
-  }
-  result.failedRowsRetired += removed;
+  const removed = await purgeRetiredFailedRows(plan.ids, opts.ownerId);
+  if (removed.length > 0) log.warn("images", "retired rows that failed over a day ago", { removed: removed.length });
+  result.failedRowsRetired += removed.length;
+}
+
+/**
+ * Purge the failed rows retention planned to retire, and return the ids it
+ * actually removed.
+ *
+ * It goes through `purgeImagesWhere` like every other delete path, so a retired
+ * row takes its identity-pack derivations and any stray file with it. The
+ * predicate that helper both selects and deletes by is guarded on
+ * `status = 'failed'`: the plan was read a moment earlier, and a row an
+ * in-place recovery claims in between (`failed → pending`,
+ * `image-output-recovery.ts`) is a live render again — neither its row nor the
+ * file the recovery is writing may go. The soft pointers entity rows keep are
+ * cleared the way the Gallery's own delete clears them, for the rows actually
+ * removed and no others: a character whose avatar failed a day ago must not be
+ * left pointing at a row that no longer exists, nor lose a pointer to one that
+ * survived.
+ */
+export async function purgeRetiredFailedRows(ids: readonly string[], ownerId?: string): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const ownerScope = ownerId === undefined ? undefined : eq(images.ownerId, ownerId);
+  await purgeImagesWhere(and(inArray(images.id, [...ids]), ownerScope, eq(images.status, "failed")));
+  // What actually went, read back rather than taken from the helper's count:
+  // a planned row that survived is still there.
+  const surviving = new Set(
+    (await db().select({ id: images.id }).from(images).where(inArray(images.id, [...ids]))).map((row) => row.id),
+  );
+  const removed = ids.filter((id) => !surviving.has(id));
+  if (removed.length > 0) await clearEntityImagePointers(removed);
+  return removed;
 }
 
 async function fileExists(absolute: string): Promise<boolean> {

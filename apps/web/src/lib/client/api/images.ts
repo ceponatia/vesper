@@ -189,6 +189,13 @@ export const imageRecordSchema = z.object({
   references: arrayOf(sceneReferenceSchema),
   /** Row meta — `source: "upload"` marks uploads; failed rows carry `error`. */
   meta: imageRowMetaSchema,
+  /**
+   * A failed render whose paid output can be recovered onto this row with no
+   * new render (`ownedImagesApi.recover`). Projected by the portraits and chat
+   * scenes lists; absent — an older server, or a list that does not project
+   * it — reads as false.
+   */
+  recoverable: z.boolean().catch(false),
 });
 export type ImageRecord = z.infer<typeof imageRecordSchema>;
 
@@ -231,7 +238,18 @@ export const ownedImageSourceSchema = z.object({
 });
 export type OwnedImageSourceRecord = z.infer<typeof ownedImageSourceSchema>;
 
+/** `POST /api/images/:id/recover`'s answer: the recovered row, now `ready`. */
+const recoveredImageResponseSchema = z.object({ image: imageRecordSchema });
+
 export const ownedImagesApi = {
+  /**
+   * Recover a failed portrait, avatar or scene's already-paid-for render onto
+   * its own row — no new render, no new charge. Answers `{ image }`, parsed by
+   * the same lenient record schema the lists use; a refusal is the route's own
+   * code (`not_found`, `ineligible`, `busy`, `expired`, `unavailable`).
+   */
+  recover: (imageId: string) =>
+    apiPost(recoveredImageResponseSchema, `/api/images/${encodeURIComponent(imageId)}/recover`),
   /**
    * Ready owned images, newest first; `kinds` filters within the allowlist.
    * Paging is a compound (createdAt, id) cursor: `before` is the last row's

@@ -24,7 +24,7 @@ import { IMAGE_ITEM_PROJECTION_OWNER } from "@/contracts/images/world-projection
 import { resolveGarmentVisibility } from "@/contracts/items/visibility";
 import { clothingSubtypeLabel, hairOcclusionForItem } from "@/contracts/items/subtypes";
 import { HAIR_OCCLUSION_NONE, hairOcclusionSchema } from "@/contracts/items/hair-occlusion";
-import { runImagePipeline } from "./assets";
+import { ImageProduceError, runImagePipeline } from "./assets";
 import type { ImageRow } from "./asset-storage";
 import {
   buildCharacterPromptProgram,
@@ -506,9 +506,13 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
       failedPrecondition,
       // Text-to-image at Vesper's 3:4, with no references — the simplest intent
       // there is. A failure still THROWS (this lane's ruled failure shape: the
-      // shell's warn diagnostic plus the error-carrying event line), which is why
-      // render provenance is recorded only on success — a thrown produce has no
-      // meta channel. The cut provenance already landed at reserve time.
+      // shell's warn diagnostic plus the error-carrying event line), as an
+      // `ImageProduceError` carrying the attempt's provenance, so a failed
+      // avatar row records `meta.render` exactly as a failed variant row does:
+      // the prediction id an operator traces, and a paid output's ids only
+      // when the output was actually undelivered — an attempt record replaces
+      // the ids the transport recorded before its download. The cut provenance
+      // already landed at reserve time.
       produce: async () => {
         if (demo || !resolved) return { ok: true, image: monogramSvg(monogramLabel) };
         // Every other answer failed the row above, so a production render reaches
@@ -537,7 +541,12 @@ export async function generateAvatar(input: GenerateAvatarInput): Promise<Genera
           },
           input.sink,
         );
-        if (!result.ok || !result.image) throw new Error(result.error ?? `${resolved.model.slug} returned no image`);
+        if (!result.ok || !result.image) {
+          throw new ImageProduceError(
+            result.error ?? `${resolved.model.slug} returned no image`,
+            renderAttemptMeta(result.attempt, result.advisories).meta,
+          );
+        }
         return { ok: true, image: result.image, ...renderAttemptMeta(result.attempt, result.advisories) };
       },
       // The CANDIDATE pointer, and nothing else — and only for a single-candidate
