@@ -80,8 +80,23 @@ export async function shapeProviderOutput(
   if (request.expectedAspect !== null && Math.abs(request.expectedAspect - target) < SAME_SHAPE_TOLERANCE) return untouched();
 
   const before = await pixelSize(original);
+  // The uncropped image beats no image: a crop that cannot run keeps the
+  // original, with the render's own diagnostic.
+  const uncropped = (reason: string): ShapedProviderOutput => {
+    sink?.push(
+      diag("warn", "image_model.crop_failed", "could not crop the render to the requested shape", {
+        path: "image_models",
+        context: {
+          ...(request.modelSlug === undefined ? {} : { slug: request.modelSlug }),
+          targetRatio: target,
+          error: reason,
+        },
+      }),
+    );
+    return { image: original, crop: null, providerSize: null, returned: before };
+  };
+  if (before === null) return uncropped("could not read image dimensions");
   try {
-    if (before === null) throw new Error("could not read image dimensions");
     const placement = chooseCropPlacement({
       task: request.task,
       outputWidth: before.width,
@@ -103,16 +118,6 @@ export async function shapeProviderOutput(
           };
     return { image: shaped, crop, providerSize: before, returned: await pixelSize(shaped) };
   } catch (error) {
-    sink?.push(
-      diag("warn", "image_model.crop_failed", "could not crop the render to the requested shape", {
-        path: "image_models",
-        context: {
-          ...(request.modelSlug === undefined ? {} : { slug: request.modelSlug }),
-          targetRatio: target,
-          error: error instanceof Error ? error.message : String(error),
-        },
-      }),
-    );
-    return { image: original, crop: null, providerSize: null, returned: before };
+    return uncropped(error instanceof Error ? error.message : String(error));
   }
 }
