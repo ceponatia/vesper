@@ -92,9 +92,17 @@ describe.runIf(ready)("the #637 exchange trace, end to end through submitChatMes
     expect(traceId).toBeTruthy();
     if (traceId === undefined) throw new Error("expected a traceId on the persisted reply");
 
-    const [trace] = await loadChatExchangeTraces({ chatId: chat.chatId, traceId });
-    expect(trace).toBeDefined();
-    if (!trace) throw new Error("expected the trace to load by its own id");
+    // `flush()` is fire-and-forget (the recorder's own contract): the LAST part —
+    // the one carrying `finish` — can still be in flight right after `drive()`
+    // resolves. Poll until the assembled trace actually carries it, rather than
+    // reading once and racing the flush (the same pattern
+    // `chat-exchange-trace-log.int.test.ts` and the inspector int test use).
+    const trace = await vi.waitFor(async () => {
+      const [loaded] = await loadChatExchangeTraces({ chatId: chat.chatId, traceId });
+      expect(loaded?.finish).toBeDefined();
+      if (!loaded) throw new Error("expected the trace to load by its own id");
+      return loaded;
+    });
 
     // Header.
     expect(trace.header.chatId).toBe(chat.chatId);
@@ -166,8 +174,14 @@ describe.runIf(ready)("the #637 exchange trace, end to end through submitChatMes
     const replyMeta = await latestAssistantMeta(chat.chatId);
     const traceId = replyMeta.traceId;
     if (traceId === undefined) throw new Error("expected a traceId on the persisted reply");
-    const [trace] = await loadChatExchangeTraces({ chatId: chat.chatId, traceId });
-    if (!trace) throw new Error("expected the trace to load by its own id");
+    // Poll until the flush carrying `finish` has actually landed — see the
+    // sibling test above for why a single read races the fire-and-forget flush.
+    const trace = await vi.waitFor(async () => {
+      const [loaded] = await loadChatExchangeTraces({ chatId: chat.chatId, traceId });
+      expect(loaded?.finish).toBeDefined();
+      if (!loaded) throw new Error("expected the trace to load by its own id");
+      return loaded;
+    });
 
     const coverage = (family: string) => trace.coverage.find((c) => c.family === family);
     const facts = coverage("memory.facts");
