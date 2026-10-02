@@ -69,6 +69,8 @@ function sheet(state: ReferenceViewState, imageId: string | null = VIEW_ASSET): 
         uploadBuilds: [],
         lineageId: target ? VIEW_LINEAGE : null,
         downstreamBuilding: false,
+        // This suite is about consumability, not recovery: never recoverable.
+        recoverable: false,
       };
     }),
   };
