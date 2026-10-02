@@ -33,7 +33,7 @@ import {
 } from "./asset-storage";
 import { deleteOwnedImage, deleteOwnedImages } from "./asset-deletion";
 import { reclaimStalePendingRows, sweepOrphans } from "./asset-maintenance";
-import { runImagePipeline } from "./assets";
+import { ImageProduceError, runImagePipeline } from "./assets";
 import { paidOutputOffer } from "./paid-output";
 import { monogramSvg } from "./monogram";
 import { generateAvatar, generateAvatarsBatch } from "./avatar";
@@ -778,12 +778,25 @@ describe.skipIf(!ready)("a paid output recorded before its download (#687)", () 
         return { ok: true, image: monogramSvg("Paid"), meta: { render: attempt } };
       },
     });
+    // A lane whose ruled failure shape is a THROW (the avatar lane) hands its
+    // attempt record over on the error itself (#686), and the failed row
+    // records it exactly as a returned failure's.
+    const thrown = await runImagePipeline({
+      asset: { ownerId, kind: "entity", entityKind: "world" },
+      produce: async () => {
+        await recordPaidRenderOutput(PAID);
+        throw new ImageProduceError("civitai_output_too_large; retry=never", { render: attempt });
+      },
+    });
 
     const failedRow = await imageRow(failed.imageId);
     const savedRow = await imageRow(saved.imageId);
+    const thrownRow = await imageRow(thrown.imageId);
     expect(failedRow?.status).toBe("failed");
     expect(savedRow?.status).toBe("ready");
-    for (const row of [failedRow, savedRow]) {
+    expect(thrownRow?.status).toBe("failed");
+    expect(imageMeta(thrownRow?.meta).error).toBe("civitai_output_too_large; retry=never");
+    for (const row of [failedRow, savedRow, thrownRow]) {
       expect(imageMeta(row?.meta).render).toEqual(attempt);
       if (row !== undefined) expect(paidOutputOffer(row).state).toBe("none");
     }
