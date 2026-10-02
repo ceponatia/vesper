@@ -48,8 +48,11 @@ vi.mock("./reference-view-store", async (importOriginal) => {
     beatReferenceViewRecoveryClaim: vi.fn(),
     releaseReferenceViewRecoveryClaim: vi.fn(),
     installRecoveredReferenceView: vi.fn(),
-    withdrawReferenceViewOutputOffer: vi.fn(),
   };
+});
+vi.mock("./paid-output", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./paid-output")>();
+  return { ...actual, withdrawPaidOutputOffer: vi.fn() };
 });
 vi.mock("./asset-storage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./asset-storage")>();
@@ -79,6 +82,7 @@ import { recoverCivitaiOutput } from "../ai";
 import { JOB_HEARTBEAT_INTERVAL_MS } from "../db";
 import { deleteOwnedImage } from "./asset-deletion";
 import { createImageAsset, writeWebpAtomic, type ImageRow } from "./asset-storage";
+import { withdrawPaidOutputOffer } from "./paid-output";
 import { shapeProviderOutput } from "./provider-output-shape";
 import {
   recoverReferenceView,
@@ -91,7 +95,6 @@ import {
   installRecoveredReferenceView,
   readReferenceViewRecovery,
   releaseReferenceViewRecoveryClaim,
-  withdrawReferenceViewOutputOffer,
 } from "./reference-view-store";
 
 const VIEW: ReferenceView = { angle: "front_full", wardrobe: "clothed" };
@@ -171,7 +174,7 @@ describe("recoverReferenceView and a failed withdrawal stamp (#682)", () => {
   it("still answers expired, with the diagnostic recording that the stamp did not take", async () => {
     admitRecovery();
     vi.mocked(recoverCivitaiOutput).mockResolvedValue({ ok: false, permanent: true, error: "the blob is gone for good" });
-    vi.mocked(withdrawReferenceViewOutputOffer).mockRejectedValue(new Error("the update timed out"));
+    vi.mocked(withdrawPaidOutputOffer).mockRejectedValue(new Error("the update timed out"));
     const sink = new DiagnosticCollector();
 
     const result = await recoverReferenceView({ ...INPUT, sink });
@@ -193,13 +196,13 @@ describe("recoverReferenceView and the decode rule (#682)", () => {
   it("withdraws the offer for fetched bytes sharp cannot decode, before any copy exists", async () => {
     admitRecovery();
     vi.mocked(recoverCivitaiOutput).mockResolvedValue({ ok: true, image: Buffer.from("not an image at all") });
-    vi.mocked(withdrawReferenceViewOutputOffer).mockResolvedValue(true);
+    vi.mocked(withdrawPaidOutputOffer).mockResolvedValue(true);
     const sink = new DiagnosticCollector();
 
     const result = await recoverReferenceView({ ...INPUT, sink });
 
     expect(result).toEqual({ status: "expired" });
-    expect(withdrawReferenceViewOutputOffer).toHaveBeenCalledWith("img-failed", "owner-1");
+    expect(withdrawPaidOutputOffer).toHaveBeenCalledWith({ imageId: "img-failed", ownerId: "owner-1", kind: "reference_view" });
     expectDiagnostic(sink, REFERENCE_VIEW_OUTPUT_EXPIRED);
     expect(shapeProviderOutput).not.toHaveBeenCalled();
     expect(createImageAsset).not.toHaveBeenCalled();
@@ -215,7 +218,7 @@ describe("recoverReferenceView and the decode rule (#682)", () => {
     const result = await recoverReferenceView({ ...INPUT, sink });
 
     expect(result).toEqual({ status: "unavailable" });
-    expect(withdrawReferenceViewOutputOffer).not.toHaveBeenCalled();
+    expect(withdrawPaidOutputOffer).not.toHaveBeenCalled();
     expectDiagnostic(sink, REFERENCE_VIEW_OUTPUT_UNAVAILABLE);
     expect(sink.items.find((item) => item.code === REFERENCE_VIEW_OUTPUT_UNAVAILABLE)?.context).toMatchObject({ stage: "error" });
     expect(deleteOwnedImage).toHaveBeenCalledWith("copy-1", "owner-1", { kind: "reference_view" });

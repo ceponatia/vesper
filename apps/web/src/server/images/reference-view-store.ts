@@ -1,8 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
-import { z } from "zod";
-import { imageModelProvider } from "@vesper/image-models";
 import { parseOr, parseOrNull } from "@/lib/parse";
 import { diag, type DiagnosticSink } from "@/contracts/diagnostics";
 import {
@@ -48,6 +46,7 @@ import {
   type WrittenImageInfo,
 } from "./asset-storage";
 import { deleteOwnedImage } from "./asset-deletion";
+import { paidOutputOffer, type PaidOutput } from "./paid-output";
 import { absoluteImagePath, containedAbsoluteImagePath } from "./paths";
 import { log } from "@/server/log";
 import { currentSendableBodyReferences } from "./body-reference-store";
@@ -736,66 +735,6 @@ async function readViewImageStatuses(
 // ---------------------------------------------------------------------------
 
 /**
- * The meta key that withdraws a recovery offer: an ISO timestamp stamped on the
- * failed render's row once the provider has shown its output can never be
- * fetched. Retention's own clock (`failedAt`) is left alone.
- */
-export const REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY = "recoveryUnavailableAt";
-
-/**
- * What a failed render's row records when the provider rendered and billed an
- * output Vesper could not download: the workflow, the output blob, and the
- * model (`meta.render`, written with the failure). Parsed at the trust
- * boundary; anything less is a failure with nothing to recover.
- */
-const undeliveredRenderSchema = z.object({
-  predictionId: z.string().min(1),
-  undeliveredOutputId: z.string().min(1),
-  modelSlug: z.string().min(1),
-});
-
-const assetMetaSchema = z.record(z.string(), z.unknown());
-
-/** A paid output a failed render could not deliver, as a recovery fetches it again. */
-export interface ReferenceViewPaidOutput {
-  /** The failed render's own images row — the offer, and what the view row links. */
-  readonly imageId: string;
-  /** The provider workflow that rendered and billed it. */
-  readonly workflowId: string;
-  /** The output that workflow produced. */
-  readonly blobId: string;
-}
-
-/**
- * What a failed view's linked asset offers: a paid output still to be fetched,
- * an output the provider has shown is gone for good (`withdrawn`), or nothing —
- * a failure that never had a paid output, such as a moderated render, or a
- * render on a model whose outputs cannot be fetched again.
- */
-export type ReferenceViewOutputOffer =
-  | { readonly state: "on_offer"; readonly output: ReferenceViewPaidOutput }
-  | { readonly state: "withdrawn" }
-  | { readonly state: "none" };
-
-/**
- * The one reading of a failed render's row as a recovery offer. Only a `failed`
- * row offers anything, only a Civitai render can be fetched again from its
- * workflow, and a stamped row has been withdrawn. Never throws.
- */
-export function referenceViewOutputOffer(asset: Pick<ImageRow, "id" | "status" | "meta">): ReferenceViewOutputOffer {
-  if (asset.status !== "failed") return { state: "none" };
-  const meta = parseOr(assetMetaSchema, asset.meta, {});
-  const stamp = meta[REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY];
-  if (stamp !== undefined && stamp !== null) return { state: "withdrawn" };
-  const render = parseOrNull(undeliveredRenderSchema, meta.render);
-  if (render === null || imageModelProvider(render.modelSlug) !== "civitai") return { state: "none" };
-  return {
-    state: "on_offer",
-    output: { imageId: asset.id, workflowId: render.predictionId, blobId: render.undeliveredOutputId },
-  };
-}
-
-/**
  * The image ids, among a sheet's failed rows' linked assets, that still offer a
  * paid output. A failed row's link is its failed render's own row
  * (`failReferenceView`), and nothing else carries an offer, so no other row is
@@ -812,7 +751,7 @@ async function readOfferedOutputs(
     .select({ id: images.id, status: images.status, meta: images.meta })
     .from(images)
     .where(and(inArray(images.id, ids), eq(images.ownerId, ownerId), eq(images.kind, "reference_view")));
-  return new Set(assets.flatMap((asset) => (referenceViewOutputOffer(asset).state === "on_offer" ? [asset.id] : [])));
+  return new Set(assets.flatMap((asset) => (paidOutputOffer(asset).state === "on_offer" ? [asset.id] : [])));
 }
 
 /**
@@ -1693,7 +1632,7 @@ export type RecoverReferenceViewResult =
 
 /** A recovery the pre-read admits: the failed attempt, its failed render's row, and the output to fetch. */
 export type ReferenceViewRecoveryRead =
-  | { readonly ok: true; readonly attempt: ReferenceViewRow; readonly asset: ImageRow; readonly output: ReferenceViewPaidOutput }
+  | { readonly ok: true; readonly attempt: ReferenceViewRow; readonly asset: ImageRow; readonly output: PaidOutput }
   | { readonly ok: false; readonly refusal: ReferenceViewWriteRefusal };
 
 /**
@@ -1744,7 +1683,7 @@ export async function readReferenceViewRecovery(input: {
     eq(images.entityKind, "character"), eq(images.entityId, characterId),
   )).limit(1);
   if (asset === undefined) return refuse("unavailable");
-  const offer = referenceViewOutputOffer(asset);
+  const offer = paidOutputOffer(asset);
   if (offer.state === "withdrawn") return refuse("expired");
   if (offer.state === "none") return refuse("unavailable");
   if (!summary.recoverable) return refuse("incompatible");
@@ -1752,28 +1691,6 @@ export async function readReferenceViewRecovery(input: {
   if (!source.ok) return refuse(source.reason === "not_found" ? "not_found" : "incompatible");
   if (source.imageId !== attempt.sourceImageId || source.contentHash !== attempt.sourceContentHash) return refuse("incompatible");
   return { ok: true, attempt, asset, output: offer.output };
-}
-
-/**
- * Withdraw a failed render's recovery offer: stamp
- * {@link REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY} into its meta once the
- * provider has shown the output can never be fetched, so the sheet stops
- * offering it. A SQL-side merge scoped to the owner and to a row that is still
- * `failed`, so it writes that one key and nothing else, and leaves retention's
- * `failedAt` clock where it was. True when the row took the stamp.
- */
-export async function withdrawReferenceViewOutputOffer(imageId: string, ownerId: string, at: Date = new Date()): Promise<boolean> {
-  const stamped = await db()
-    .update(images)
-    .set({ meta: mergeMetaSql({ [REFERENCE_VIEW_RECOVERY_UNAVAILABLE_KEY]: at.toISOString() }) })
-    .where(and(
-      eq(images.id, imageId),
-      eq(images.ownerId, ownerId),
-      eq(images.kind, "reference_view"),
-      eq(images.status, "failed"),
-    ))
-    .returning({ id: images.id });
-  return stamped.length > 0;
 }
 
 /**
