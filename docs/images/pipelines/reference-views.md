@@ -176,12 +176,13 @@ approval and opening the bytes.
 - Accepting a portrait writes the identity pointer only. It starts no reference-view job and spends
   no image budget. Re-accepting the current portrait remains a no-op.
 - **Build N reference views** is a separate disclosed action. It claims every planned slot that is
-  `missing`, `failed` or `stale` and not waiting on its upstream (`referenceViewsReadyToBuild`), and
-  charges the daily image budget for exactly the slots the request newly claims. Reference views
-  are a hidden kind, so the storage leg is skipped; backpressure and the daily provider budget still
-  apply.
+  `missing`, `failed` or `stale`, not waiting on its upstream, and not `recoverable`
+  (`referenceViewsReadyToBuild`), and charges the daily image budget for exactly the slots the
+  request newly claims. Reference views are a hidden kind, so the storage leg is skipped;
+  backpressure and the daily provider budget still apply.
 - **Approval is a spending action.** Approving a view, or uploading one, queues the views built
-  from it that are then `missing`, `failed` or `stale` — never `rejected` — as one build, admitted
+  from it that are then `missing`, `failed` or `stale` — never `rejected`, and never a
+  `recoverable` failed view (§Recovering a paid output) — as one build, admitted
   and charged by the same helper the build action uses. The Approve control and the upload dialog
   state the count beforehand from each slot's `approvalBuilds` / `uploadBuilds`, computed by the
   same projection with that approval assumed (`referenceViewBuildsOnApproval`), so the disclosed
@@ -220,7 +221,12 @@ approval and opening the bytes.
   simultaneous attempts on one slot would supersede each other mid-render, and the second render's
   only product would be a charge.
 - A view render that fails — a moderated `bare` view is the expected instance — fails its own row
-  with a classified failure code and the provider's words, and the other views carry on.
+  with a classified failure code and the provider's words, and the other views carry on. The row
+  keeps its failed render's own `images` row as its `image_id`, with the upstream lineage that
+  render actually sent, because a render can be billed and still fail its download
+  (§Recovering a paid output). The sheet reports a failed row's `imageId` as null, whatever it
+  projects, and nothing draws, consumes, restores or lists it. An attempt that lease
+  reconciliation fails never rendered, and keeps no link.
 
 ## Lifecycle
 
@@ -324,6 +330,54 @@ approval and opening the bytes.
   (unless uploaded) against the character's current body-image set, with a `ready` asset, reviewed,
   and still present in the character's current age-gated plan.
 
+## Recovering a paid output
+
+A Civitai render can succeed and be billed while its output download fails. The failed render's
+`images` row then records the workflow (`meta.render.predictionId`), the output it never delivered
+(`meta.render.undeliveredOutputId`) and the model (`meta.render.modelSlug`), and the failed view
+row keeps that row linked (§Cost and slot leases). Recovery fetches that output again and installs
+it as the same attempt, with no new render.
+
+- **Recoverable** is one function, `isRecoverableReferenceView`, computed inside the projection
+  from one fact the store reads off the linked row (`outputRecoverable`): that row is `failed`,
+  records both ids, ran on a Civitai model (`imageModelProvider`), and carries no
+  `recoveryUnavailableAt`. The slot must also be in the plan, its current row `failed`, and the
+  render still current by the staleness comparison — the accepted portrait, the generation
+  version, the upstream slot's approved lineage when the row records one, and the body-image set.
+  An approval or upload what-if therefore answers it against the assumed upstream. A recoverable
+  slot still reads `failed`: nothing about it is drawn or consumed until the recovery lands.
+- **A paid render is never bought twice in bulk.** Build, its disclosed count, and the builds an
+  approval or an upload queues all skip a recoverable slot (`referenceViewsReadyToBuild`). The
+  slot's own Regenerate, single or batch, still renders it again when the owner asks by name.
+- **Recovery is restoration's shape** (`recoverReferenceView`). Outside any lock it checks, in
+  order: the owned character has an accepted portrait, the slot is in the plan, the current row is
+  the named attempt and still `failed`, nothing builds on the slot or below it, the output is still
+  on offer and the slot projects `recoverable`, and the accepted portrait's bytes hash to the
+  attempt's `source_content_hash`. It then downloads read-only from the stored workflow and output,
+  outside any lock, and never submits a workflow.
+- **A permanent answer withdraws the offer.** When the provider shows the output can never be
+  fetched, the failed `images` row gets `recoveryUnavailableAt`, written owner-scoped and only
+  while the row is still `failed`; retention's `failedAt` clock is untouched. The answer is
+  `expired`. Any other failed fetch answers `unavailable` and leaves the offer standing.
+- **The bytes take the render's own shape.** They are the provider's original, so they cross the
+  output-shape decision a live render of the same request makes (`shapeProviderOutput`, from the
+  failed row's recorded `meta.render.shape`), then the one webp writer, as a NEW `reference_view`
+  row. It carries the failed row's prompt, source image and meta minus its failure state (`error`,
+  `failedAt`, the render lease, `recoveryUnavailableAt`), plus `recoveredFrom` (`imageId`,
+  `workflowId`, `blobId`). The crop it performed is recorded in `meta.render.shape` the way a
+  render records one, or under `recoveredFrom` when the failed row recorded no shape.
+- **The commit re-checks everything under the character lock**, and that the failed `images` row
+  is still linked. The same attempt goes `failed` → `ready`, unreviewed, `method: rendered`, its
+  failure, verdict and review stamp cleared and its review revision advanced, its recorded
+  upstream and body-image set unchanged, pointing at the copy, which goes `ready` with its byte
+  count in the same transaction. A refusal or a throw after the copy exists deletes the copy; the
+  failed original is never deleted.
+- **It is free:** no admission, no budget charge, no job.
+- **The offer lasts as long as the failed `images` row.** The failed-row retention
+  ([../asset-registry.md](../asset-registry.md) §Retention) deletes it a day after the failure, the
+  foreign key nulls the link, and the offer ends; a download that lands after that answers
+  `expired`. It ends sooner when the provider no longer keeps the output.
+
 ## Selection — which view a render sends
 
 A scene render asks the sheet for the view that matches the shot it is about to make. The
@@ -420,10 +474,14 @@ studio's grid displays them. The body images the views are built with are the hi
 | `POST …/reference-views/:angle/:wardrobe/review`      | `{ attemptId, expectedRevision, verdict, feedback? }` ⇒ `{ view, dependents }`            |
 | `GET …/reference-views/:angle/:wardrobe/history`      | `{ entries, retentionDays, currentAttemptId, currentRevision }`                           |
 | `POST …/reference-views/:angle/:wardrobe/restore`     | `{ attemptId, expectedCurrentAttemptId, expectedCurrentRevision }` ⇒ unreviewed candidate |
+| `POST …/reference-views/:angle/:wardrobe/recover`     | `{ attemptId }` ⇒ the failed attempt's paid output, unreviewed; free                      |
 
 All routes are owner-only and rooted at the character. A slot the registry has no entry for is a 404.
-A plan-withheld regeneration is refused whole before anything is charged. A review, restoration, or
-upload that loses eligibility after its initial read returns a recoverable 409 `ineligible`.
+A plan-withheld regeneration is refused whole before anything is charged. A review, restoration,
+recovery, or upload that loses eligibility after its initial read returns a recoverable 409
+`ineligible`. A recovery's other refusals are `not_found`, `changed`, `busy`, `incompatible`,
+`unavailable` (transient: the offer stands, and the owner can try again) and `expired` (the paid
+output is gone and the offer is withdrawn) — §Recovering a paid output.
 `dependents` is the queue outcome of what that write unlocked (§Cost and slot leases): nothing
 queued for a rejection or an undo. Withheld slots read `ineligible`. `bodyReferences` is the
 character's body images with `routes` — whether the image model a build would use right now sends
@@ -445,6 +503,8 @@ them to dressed and to undressed views; their own routes are in
 | `images.reference_views.view_unavailable`     | A wanted view could not be sent; the render goes on unchanged |
 | `images.reference_views.dropped_for_capacity` | A consumable view did not fit the model's reference capacity  |
 | `images.reference_views.upstream_unapproved`  | A queued view's upstream is no longer approved; nothing ran   |
+| `images.reference_views.output_recovered`     | A failed view's paid output was installed with no new render  |
+| `images.reference_views.output_expired`       | A failed view's paid output is gone; its offer is withdrawn   |
 
 The body-image codes, `images.reference_views.body_reference_dropped` among them, are in
 [body-reference-images.md](body-reference-images.md) §Diagnostic codes.
