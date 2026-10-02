@@ -4,7 +4,7 @@ import { CIVITAI_FLUX2_KLEIN4B_SLUG } from "@vesper/image-models";
 import type { RegistryModelRequest, ReplicateImageResult } from "@vesper/image-replicate";
 import { log } from "@/server/log";
 import { civitaiApiToken } from "../images/lora-credentials";
-import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
+import { CivitaiError, civitaiAsyncFailure, civitaiGetRetryDelay, civitaiHttpFailure, civitaiInsufficientBuzzFailure, civitaiOutputFailure, civitaiOutputUndeliveredFailure, civitaiReasonCodes, civitaiRetryableStatus, civitaiSubmitUnconfirmedFailure, civitaiTransportFailure, civitaiValidationPaths, civitaiValidationReason } from "./civitai-errors";
 
 /** A documented variant selector, not an immutable numeric checkpoint revision. */
 export const CIVITAI_KLEIN_4B_VERSION_ID = "4b";
@@ -31,27 +31,55 @@ const BLOBS_URL = "https://orchestration.civitai.com/v2/consumer/blobs";
 const MODEL_VERSIONS_URL = "https://civitai.com/api/v1/model-versions";
 const REQUEST_TIMEOUT_MS = 30_000;
 /**
- * The per-attempt timeout shared by both workflow POSTs: the what-if
- * preflight and the paid submit.
+ * The per-attempt budget shared by both workflow POSTs — the what-if
+ * preflight (including its one automatic retry, #672) and the paid submit
+ * (#673) — SCALED to how many reference images are actually in the body
+ * being sent: {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS} plus
+ * {@link CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS} per reference,
+ * capped at {@link CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS}
+ * ({@link civitaiWorkflowPostTimeoutMs}). Every other stage keeps the 30 s
+ * {@link REQUEST_TIMEOUT_MS} budget.
  *
- * Every other stage keeps the 30 s {@link REQUEST_TIMEOUT_MS} budget. On
- * 2026-10-01 all 8 reference-view preflights in one production batch failed
- * together after 30.4-30.9 s against that shared budget, before any paid
- * submit. Zero-Buzz what-if probes against the Qwen Image 2.1 `editImage`
- * body measured the same day ranged 2.1-13.0 s, including concurrent
- * batches of 8 and prompts as long as 2,567 characters — see
- * docs/image-models/models/civitai-flux-2-klein-4b.md §Execution and
- * diagnostics for the full table and build/version provenance. Those probes
- * do not reproduce the production latency, so this ceiling is headroom over
- * the measured range, not a tuned minimum (#672).
+ * #672 fixed this at a flat 120 s after all 8 reference-view preflights in
+ * one production batch failed together at 30.4-30.9 s against the previous
+ * 30 s budget, before any paid submit. That flat rule then failed on its own
+ * reference-heavy requests: a 2026-10-01 zero-Buzz what-if probe sent the
+ * Qwen Image 2.1 lane's exact `editImage` body and measured latency scaling
+ * with reference count, independent of bytes — 1 reference 18.8 s, 3
+ * references 62.0, 67.0 and 62.4 s, about 20 s per reference — see
+ * eval-images/civitai-qwen-2-1/whatif-669-reference-count-2026-10-01.txt
+ * (#680). Production has measured slower than local probes (#672), so the
+ * per-reference allowance below is twice that measured cost. The base keeps
+ * #672's 120 s for a request with no references, and the 480 s ceiling binds
+ * only at 10 references — Qwen 2.1's `MAX_REFERENCES`
+ * (civitai-qwen21-runtime.ts); Klein's own 2-reference cap never reaches it.
  *
- * The paid submit (#673) gets the identical budget rather than its own,
- * smaller one: it carries the same data-URL references the preflight just
- * ingested, in the same body shape, so whatever makes a preflight run long can
- * equally make the submit run long. A submit that times out at this budget is
- * handled by the lost-answer lookup below, never by repeating the POST.
+ * The paid submit shares the identical budget rather than its own, smaller
+ * one: it carries the same references the preflight just ingested, in the
+ * same body shape, so whatever makes a preflight run long can equally make
+ * the submit run long. A submit that times out at this budget is handled by
+ * the lost-answer lookup below, never by repeating the POST.
  */
-const CIVITAI_WORKFLOW_POST_TIMEOUT_MS = 120_000;
+const CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS = 120_000;
+/** Twice the ~20 s/reference measured cost — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS} — since production has measured slower than the local probe that found it. */
+const CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS = 40_000;
+/** Binds only at 10 references, Qwen 2.1's own maximum — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS}. */
+const CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS = 480_000;
+
+/**
+ * The per-attempt POST budget for a workflow body carrying `referenceCount`
+ * reference images (#680) — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS}
+ * for the rule and its measurement. A negative or non-integer count is
+ * floored and clamped to zero rather than refused: a caller's own bug in
+ * counting references should not ALSO crash the timeout computation.
+ */
+export function civitaiWorkflowPostTimeoutMs(referenceCount: number): number {
+  const count = Number.isFinite(referenceCount) ? Math.max(0, Math.floor(referenceCount)) : 0;
+  return Math.min(
+    CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS + count * CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS,
+    CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS,
+  );
+}
 
 /**
  * The lost-submit-answer lookup (#673): how many read-only rounds Vesper
@@ -459,7 +487,19 @@ async function waitForCivitaiRetry(attempt: number, deadline?: number): Promise<
   return deadline === undefined || Date.now() < deadline;
 }
 
-async function requestJson(url: string, init: RequestInit, token: string, stage: "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status", deadline?: number): Promise<unknown> {
+async function requestJson(
+  url: string,
+  init: RequestInit,
+  token: string,
+  stage: "lora_metadata" | "preflight" | "submit" | "submit_lookup" | "workflow_status",
+  deadline?: number,
+  // #680: only a preflight/submit POST ever reads this — every GET stage
+  // falls through to REQUEST_TIMEOUT_MS below regardless of what is passed
+  // here. `sendWorkflow` is the only caller that passes a real value,
+  // computed from the reference count in the body it is actually sending;
+  // the default is the zero-reference base rate for any other caller.
+  postTimeoutMs: number = CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS,
+): Promise<unknown> {
   const method = init.method ?? "GET";
   // GET reads (lora metadata, the lost-submit-answer lookup, workflow-status
   // polls) get the shared bounded retry; the what-if preflight gets its own
@@ -467,9 +507,12 @@ async function requestJson(url: string, init: RequestInit, token: string, stage:
   // none — #673 keeps that rule: the submit's own transport/HTTP failures are
   // never reposted here, only looked up read-only, in `runCivitaiLane`.
   const maxRetries = method === "GET" ? MAX_GET_RETRIES : stage === "preflight" ? MAX_PREFLIGHT_RETRIES : 0;
-  // #673: the paid submit shares the preflight's 120 s budget, not the
-  // default 30 s one — see CIVITAI_WORKFLOW_POST_TIMEOUT_MS.
-  const timeoutMs = stage === "preflight" || stage === "submit" ? CIVITAI_WORKFLOW_POST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+  // #680: the preflight and the paid submit share one budget, scaled to the
+  // body's own reference count by the caller (`sendWorkflow`) — see
+  // CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS. The preflight's automatic retry
+  // below reuses this SAME `timeoutMs` on every attempt, so a retry can never
+  // silently fall back to a smaller budget than the attempt it repeats.
+  const timeoutMs = stage === "preflight" || stage === "submit" ? postTimeoutMs : REQUEST_TIMEOUT_MS;
   for (let attempt = 0; ; attempt += 1) {
     if (deadline !== undefined && Date.now() >= deadline) throw civitaiAsyncFailure("expired", ["timeout"]);
     const headers = new Headers(init.headers);
@@ -684,10 +727,14 @@ async function resolveLoras(
 }
 
 async function sendWorkflow(body: CivitaiWorkflow, token: string, whatif: boolean): Promise<unknown> {
+  // #680: scaled to how many references are ACTUALLY in this body, never a
+  // caller's claim — a lane that trimmed or never attached references cannot
+  // be charged a budget for a count it did not send.
+  const referenceCount = asArray(body.steps[0].input.images).length;
   return requestJson(`${WORKFLOWS_URL}?whatif=${String(whatif)}&wait=0`, {
     method: "POST",
     body: JSON.stringify(body),
-  }, token, whatif ? "preflight" : "submit");
+  }, token, whatif ? "preflight" : "submit", undefined, civitaiWorkflowPostTimeoutMs(referenceCount));
 }
 
 /**

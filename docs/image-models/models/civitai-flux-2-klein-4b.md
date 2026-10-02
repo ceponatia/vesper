@@ -178,11 +178,13 @@ characters unchanged.
   workflow id already exists and the failure does not already declare a
   disposition of its own; a failure that already declares one is left
   exactly as it is.
-- The what-if preflight and the paid submission share a 120 s per-attempt
-  timeout; every other stage keeps a 30 s budget. The submission carries the
-  same data-URL references the preflight already validated, in the same
-  body shape, so whatever makes a preflight run long can equally make the
-  submission run long.
+- The what-if preflight and the paid submission share a per-attempt timeout
+  that SCALES with how many reference images are in the body being sent: 120 s
+  base, plus 40 s per reference, capped at 480 s (`civitaiWorkflowPostTimeoutMs`
+  in `civitai-runtime.ts`). Every other stage keeps a 30 s budget. The
+  submission carries the same references the preflight already validated, in
+  the same body shape, so whatever makes a preflight run long can equally make
+  the submission run long.
 
   The automatic retry described next belongs to the PREFLIGHT alone; the
   submission still gets none, on this timeout or any other failure — an
@@ -191,17 +193,17 @@ characters unchanged.
   network error, an unreadable response body) or an HTTP 429/5xx on the
   preflight is POSTed again automatically exactly once, with the identical
   preflight body and its `externalId`, after the same jittered backoff as a
-  read retry. Any other 4xx — including the 400 `resource_not_enabled` — a
-  200 OK whose body is not JSON, and a failure surfaced only after a 200 OK
-  (insufficient Buzz, a failed or blocked workflow status, an echo refusal)
-  are never retried; a non-2xx with an unparseable body (an HTML gateway page
-  from a 502/503, say) is judged by status like any other response and is
-  retried if that status is 429/5xx too. When the repeat fails the same
-  transient way — another transport failure, or another 429/5xx — the
-  render fails with its stable code, `retry=deliberate`, and a message
-  saying the automatic retry already ran; a repeat that fails a different
-  way (a plain 4xx, or a 409) reports that failure's own disposition
-  instead.
+  read retry, and under the SAME scaled budget as the attempt it repeats. Any
+  other 4xx — including the 400 `resource_not_enabled` — a 200 OK whose body
+  is not JSON, and a failure surfaced only after a 200 OK (insufficient Buzz,
+  a failed or blocked workflow status, an echo refusal) are never retried; a
+  non-2xx with an unparseable body (an HTML gateway page from a 502/503, say)
+  is judged by status like any other response and is retried if that status
+  is 429/5xx too. When the repeat fails the same transient way — another
+  transport failure, or another 429/5xx — the render fails with its stable
+  code, `retry=deliberate`, and a message saying the automatic retry already
+  ran; a repeat that fails a different way (a plain 4xx, or a 409) reports
+  that failure's own disposition instead.
 
   Measured 2026-10-01 against the hosted Qwen Image 2.1 lane (checkpoint
   version `3352534`, `model: "2.1"`, `editImage`, one synthetic 768x1024 jpeg
@@ -218,9 +220,21 @@ characters unchanged.
 
   On Fly v284 (`a544edbe`) the same day, all 8 preflights of one
   reference-view batch failed at 30.4-30.9 s under a uniform 30 s budget,
-  before any paid submit. The probes do not reproduce the production
-  latency, so the 120 s ceiling is headroom over the measured range, not a
+  before any paid submit. The probes above do not reproduce the production
+  latency, so the 120 s BASE is headroom over the measured range, not a
   tuned minimum.
+
+  A separate 2026-10-01 probe measured latency against REFERENCE COUNT
+  instead of prompt length or concurrency: zero-Buzz what-ifs sent the Qwen
+  Image 2.1 lane's exact `editImage` body with 1 reference answered in
+  18.8 s, and three references answered in 62.0 s, 67.0 s and 62.4 s — about
+  20 s per reference, independent of bytes (a 275 KB body with downscaled
+  320x427 references measured the same as a 929 KB one at the same reference
+  count). Production has measured slower than local probes (the Fly v284
+  failure above), so the per-reference allowance is twice that measured
+  cost. The 480 s ceiling binds only at 10 references — Qwen 2.1's own
+  maximum; Klein's own 2-reference cap never reaches it. See
+  eval-images/civitai-qwen-2-1/whatif-669-reference-count-2026-10-01.txt.
 - **A submission whose own answer is unreadable is looked up, never
   reposted.** Civitai may still have accepted and billed the workflow even
   though this process could not read the submission's own answer — a

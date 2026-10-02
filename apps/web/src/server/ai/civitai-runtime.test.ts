@@ -13,6 +13,7 @@ import {
   CIVITAI_LORA_VERSION_FIELD,
   civitaiKleinDimensions,
   civitaiKleinWorkflow,
+  civitaiWorkflowPostTimeoutMs,
   parseCivitaiWorkflow,
   previewCivitaiKleinRequest,
   runCivitaiKleinImageModel,
@@ -264,6 +265,31 @@ describe("Civitai Klein v2 workflow responses", () => {
 
     expect(parsed.images).toEqual([{ id: "1e9a21c3-4961-459b-8401-b0908289560f-0.jpg", available: true, hidden: false, blocked: null }]);
     expect(parsed.errors).toEqual(["provider_error"]);
+  });
+});
+
+/**
+ * PROTECTS (#680): the preflight and the paid submit share ONE per-attempt
+ * POST budget, scaled to the body's own reference count rather than a flat
+ * constant. This table pins the pure function directly; the end-to-end cases
+ * below and in civitai-qwen21-runtime.test.ts (which can exercise more than
+ * Klein's own 2-reference cap) prove the transport actually uses it.
+ */
+describe("Civitai workflow POST budget (#680)", () => {
+  it.each([
+    [0, 120_000],
+    [1, 160_000],
+    [4, 280_000],
+    [10, 480_000],
+    [11, 480_000], // one count above the cap: Qwen 2.1's own MAX_REFERENCES is 10.
+  ] as const)("gives a body carrying %i reference image(s) a %i ms per-attempt budget", (referenceCount, expectedMs) => {
+    expect(civitaiWorkflowPostTimeoutMs(referenceCount)).toBe(expectedMs);
+  });
+
+  it("floors a non-integer count and clamps a negative or non-finite one to zero, rather than refusing", () => {
+    expect(civitaiWorkflowPostTimeoutMs(2.9)).toBe(civitaiWorkflowPostTimeoutMs(2));
+    expect(civitaiWorkflowPostTimeoutMs(-5)).toBe(civitaiWorkflowPostTimeoutMs(0));
+    expect(civitaiWorkflowPostTimeoutMs(Number.NaN)).toBe(civitaiWorkflowPostTimeoutMs(0));
   });
 });
 
@@ -1306,7 +1332,7 @@ describe("Civitai Klein v2 transport", () => {
     expect(result.error).not.toContain("read retries");
   });
 
-  it("gives the preflight and the paid submit the same 120 s per-attempt timeout (#673)", async () => {
+  it("gives the preflight and the paid submit the same per-attempt timeout, scaled to the body's reference count (#680)", async () => {
     // Proves the per-stage timeout split against the REAL AbortSignal.timeout
     // rather than faked wall time, since vitest's fake timers do not reliably
     // drive it. Nothing in this test actually waits out a timeout: the mocked
@@ -1316,6 +1342,12 @@ describe("Civitai Klein v2 transport", () => {
     // output download — each of which would add its own 30 s
     // AbortSignal.timeout call and make the exact-equality assertion below
     // fragile for reasons unrelated to what this test is proving.
+    //
+    // `request` sends zero references, so both calls resolve to the 120 s
+    // BASE rate (#672) rather than the flat constant it used to be — the
+    // scaling itself (#680) is covered by the pure-function table above and
+    // by the 4-reference end-to-end case in civitai-qwen21-runtime.test.ts,
+    // since Klein's own cap is 2 references.
     const timeoutCalls: number[] = [];
     const realTimeout = AbortSignal.timeout.bind(AbortSignal);
     vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
@@ -1336,20 +1368,23 @@ describe("Civitai Klein v2 transport", () => {
     const result = await runCivitaiKleinImageModel(MODEL, request);
 
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("civitai_async_insufficient_buzz") });
-    // Preflight (120 s), then the paid submit — now on the SAME 120 s budget
-    // (#673) rather than the default 30 s one; no status poll or download
-    // followed because the submit itself already reported insufficient Buzz.
+    // Preflight (120 s base, zero references), then the paid submit — still
+    // the SAME budget (#673) rather than the default 30 s one; no status
+    // poll or download followed because the submit itself already reported
+    // insufficient Buzz.
     expect(timeoutCalls).toEqual([120_000, 120_000]);
   });
 
-  it("also gives the preflight's automatic retry its own 120 s, while a lora_metadata GET stays at 30 s", async () => {
+  it("also gives the preflight's automatic retry its own scaled budget, while a lora_metadata GET stays at 30 s", async () => {
     // Companion to the test above, exercising every stage's timeout in one
     // request: the lora_metadata GET (30 s), a failed first preflight
-    // attempt (120 s), its automatic retry (120 s), then the paid submit
-    // (120 s, #673). The insufficient-Buzz trick again keeps the submit from
-    // reaching a status poll or output download, so these four calls are the
-    // complete sequence — proving the retry attempt is not silently left on
-    // the shared 30 s budget.
+    // attempt (120 s base, zero references), its automatic retry (120 s —
+    // #680's rule is computed once per `sendWorkflow` call and threaded
+    // through every attempt inside `requestJson`, so a retry can never
+    // silently fall back to a smaller budget than the attempt it repeats),
+    // then the paid submit (120 s, #673). The insufficient-Buzz trick again
+    // keeps the submit from reaching a status poll or output download, so
+    // these four calls are the complete sequence.
     vi.useFakeTimers();
     const timeoutCalls: number[] = [];
     const realTimeout = AbortSignal.timeout.bind(AbortSignal);
