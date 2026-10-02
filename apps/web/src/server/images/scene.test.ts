@@ -98,9 +98,10 @@ const okResult = (): ProviderRenderResult => ({ ok: true, image: Buffer.from("im
 const failResult = (
   reason: "transient" | "content_rejection" | "other",
   message: string = reason,
+  predictionId?: string | null,
 ): ProviderRenderResult => ({
   ok: false,
-  failure: { reason, message },
+  failure: { reason, message, ...(predictionId !== undefined ? { predictionId } : {}) },
 });
 
 describe("executeSceneChain (degradation ladder + reason-keyed retry)", () => {
@@ -159,5 +160,91 @@ describe("executeSceneChain (degradation ladder + reason-keyed retry)", () => {
     const terminal = sink.items.find((d) => d.code === "images.scene_render.all_failed");
     expect(terminal?.message).toContain("Sexual Content");
     expect(terminal?.context?.reason).toBe("content_rejection");
+  });
+
+  /**
+   * PROTECTS (#685): a rung's FINAL failure that already declares provider
+   * work on THIS attempt was paid for ends the chain outright — no fallback,
+   * no provider_fallback diagnostic, and not the generic all_failed/
+   * service_outage terminal — because a fallback would risk a second paid
+   * render racing a workflow that may still be running or may still deliver.
+   */
+  it("an undelivered-output failure (civitai_output_undelivered; retry=reconcile) stops the chain on rung 1 of 3, with the workflow id on the paid-stop diagnostic", async () => {
+    const sink = new DiagnosticCollector();
+    const calls: SceneAttemptId[] = [];
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+      calls.push(id);
+      return failResult(
+        "other",
+        "Civitai output download failed (civitai_output_undelivered; retry=reconcile). The workflow succeeded and was already paid for, but its output could not be downloaded after 3 attempts. It can be recovered from that output without rendering again.",
+        "wf-123",
+      );
+    };
+    const outcome = await executeSceneChain(["multi_edit", "edit", "generate"], run, sink);
+    expect(outcome).toBeNull();
+    expect(calls).toEqual(["multi_edit"]); // run exactly once — edit and generate never tried
+    const paidStop = sink.items.find((d) => d.code === "images.scene_render.paid_attempt_stop");
+    expect(paidStop?.context).toMatchObject({ rung: "multi_edit", workflowId: "wf-123" });
+    expect(sink.items.some((d) => d.code === "images.scene_render.provider_fallback")).toBe(false);
+    expect(sink.items.some((d) => d.code === "images.scene_render.all_failed")).toBe(false);
+    expect(sink.items.some((d) => d.code === "images.scene_render.service_outage")).toBe(false);
+  });
+
+  it("a civitai_submit_unconfirmed failure stops the chain with no known workflow id (workflowId null)", async () => {
+    const sink = new DiagnosticCollector();
+    const calls: SceneAttemptId[] = [];
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> => {
+      calls.push(id);
+      return failResult(
+        "other",
+        "Civitai submit failed (civitai_submit_unconfirmed; retry=deliberate). The submit's own answer was lost as civitai_http_503, and no workflow in the list carried this externalId after 2 lookup rounds. Civitai may still accept, or may already have accepted, this workflow under externalId=abc-123 — check the workflow list for it before starting one deliberate replacement.",
+        null,
+      );
+    };
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome).toBeNull();
+    expect(calls).toEqual(["edit"]);
+    const paidStop = sink.items.find((d) => d.code === "images.scene_render.paid_attempt_stop");
+    expect(paidStop?.context).toMatchObject({ rung: "edit", workflowId: null });
+  });
+
+  it("the post-submit catch-all's appended retry=reconcile sentence stops the chain the same way", async () => {
+    const sink = new DiagnosticCollector();
+    const run = async (): Promise<ProviderRenderResult> =>
+      failResult(
+        "other",
+        "Civitai returned a different workflow while polling Civitai workflow wf-999 was already submitted (retry=reconcile). Refresh workflow status before deciding whether to replace it.",
+        "wf-999",
+      );
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome).toBeNull();
+    const paidStop = sink.items.find((d) => d.code === "images.scene_render.paid_attempt_stop");
+    expect(paidStop?.context).toMatchObject({ rung: "edit", workflowId: "wf-999" });
+  });
+
+  it("a preflight retry=never refusal is not a paid stop — falls through to the next rung, unchanged", async () => {
+    const sink = new DiagnosticCollector();
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> =>
+      id === "edit"
+        ? failResult("other", "Civitai preflight failed (civitai_http_400; retry=never). Do not repeat this request with the same input.")
+        : okResult();
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome?.attemptId).toBe("generate");
+    expect(sink.items.some((d) => d.code === "images.scene_render.paid_attempt_stop")).toBe(false);
+    expect(sink.items.some((d) => d.code === "images.scene_render.provider_fallback")).toBe(true);
+  });
+
+  it("a preflight retry=deliberate refusal (the one automatic repeat already spent, nothing paid) is not a paid stop — falls through", async () => {
+    const sink = new DiagnosticCollector();
+    const run = async (id: SceneAttemptId): Promise<ProviderRenderResult> =>
+      id === "edit"
+        ? failResult(
+            "other",
+            "Civitai preflight failed (civitai_http_503; retry=deliberate). Vesper already reposted this preflight once automatically; that retry is spent, so start one deliberate replacement only after reviewing the request.",
+          )
+        : okResult();
+    const outcome = await executeSceneChain(["edit", "generate"], run, sink);
+    expect(outcome?.attemptId).toBe("generate");
+    expect(sink.items.some((d) => d.code === "images.scene_render.paid_attempt_stop")).toBe(false);
   });
 });
