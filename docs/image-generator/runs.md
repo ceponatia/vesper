@@ -13,7 +13,8 @@ One run is one row in `image_generator_runs`
 The row snapshots the model slug at create; the runner re-resolves it against the registry at run
 time and writes the exact pinned provider version and the post-preparation `final_prompt` **before**
 any provider spend. A settled row is never mutated or re-run — a rerun is a new row citing the
-original through `sourceRunId`.
+original through `sourceRunId` — with one exception: **a settled run is only ever amended by
+recovering an output it already paid for** (§Recovering a paid output), never by anything else.
 
 The `pending → running` claim is a conditional update, and every settle is guarded on `running`, so
 two deliveries of one job cannot both reach the provider and a settled row cannot be rewritten. Rows
@@ -75,6 +76,46 @@ This count is **not** a provider input, and the difference is the point. A nativ
 prediction answering with several pictures; a fan-out is several independent predictions asked for
 together. The image-set controls stay refused ([form.md](form.md)) so a request for the first is
 never quietly answered with the second.
+
+## Recovering a paid output
+
+A Civitai prediction inside a run can succeed and be billed while its output download fails.
+Unlike a reference view, a failed bench pass never gets an `images` row of its own — the settle
+loop above creates one only for a pass that returned bytes — so the whole offer lives on the run's
+own per-pass record in `meta.outputs[]`: `predictionId`, `undeliveredOutputId` and the run's
+`modelSlug` are what a fetchable Civitai render looks like, and `recoveryUnavailableAt` on that same
+record is this lane's own withdrawal stamp — the per-output counterpart of `paid-output.ts`'s
+`PAID_OUTPUT_UNAVAILABLE_KEY`. The offer, its withdrawal and the fetch, decode and shape step are
+the shared paid-output rules; this bench owns how a run applies them.
+
+Recovery fills that output's own record (`imageId`, `recoveredAt`) and appends a run-level
+`meta.recoveries[]` entry that keeps the original failure — status, failure code, error, finish
+time — rather than erasing it. A run that had stored nothing at all becomes `succeeded` and takes
+the recovered image as its `result_image_id`, per the rule above that a run which stored at least
+one image succeeded; a fan-out that already succeeded through another pass stays exactly as it
+was. No new run row, no new workflow, and no admission or budget charge — recovery only re-fetches
+a render Vesper already paid for.
+
+- **`recoverable`** is server-computed on every read (`toWireImageGeneratorRun`), never stored and
+  never re-derived by the client: a settled run (`succeeded` or `failed`) whose output still has no
+  image, still names both ids on a Civitai model, and carries no withdrawal stamp.
+- **The window is the blob's own lifetime on Civitai's side**, not a retention clock Vesper runs:
+  bench runs are not swept the way failed images rows are, so Vesper enforces no separate expiry of
+  its own — the offer stands until the provider itself can no longer serve the output.
+- **The route** (`POST /api/admin/self/image-generator/runs/[runId]/outputs/[index]/recover`,
+  [api.md](api.md)) answers `busy` while the run is `pending`/`running`, `not_found` for a bad index
+  or a foreign run, `ineligible` for an output that is not a live Civitai offer, `expired` once a
+  permanent fetch failure has withdrawn it, and `unavailable` for any other failed fetch — the offer
+  stands and a later attempt may still succeed.
+- **The install runs under the run row locked**, re-checking the output still has no image before
+  writing: a race lost to another recovery still answers `recovered` — whichever copy won is what
+  shows — and a run deleted mid-fetch discards the unused copy and answers `not_found`. A copy a
+  crash leaves `pending` between the fetch and the install is reclaimed by the image sweep's own
+  unleased-row rule ([../images/asset-registry.md](../images/asset-registry.md) §The sweep), exactly
+  like any other direct `createImageAsset` caller that does not beat a lease.
+- Deleting the run deletes the recovered output along with it, by the same `meta.outputs[].imageId`
+  sweep every other sibling output already goes through — recovery changes what that record names,
+  nothing about how it is read.
 
 ## Outputs are hidden assets
 

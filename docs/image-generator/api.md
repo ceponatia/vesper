@@ -10,6 +10,7 @@
 | `/api/admin/self/image-generator/runs`               | `withOwnerAdmin`         | GET list, POST (201) |
 | `/api/admin/self/image-generator/runs/delete`        | `withOwnerAdmin`         | POST bulk delete     |
 | `/api/admin/self/image-generator/runs/[runId]`       | `withOwnerAdminResource` | GET detail, DELETE   |
+| `/api/admin/self/image-generator/runs/[runId]/outputs/[index]/recover` | `withOwnerAdminResource` | POST            |
 | `/api/admin/self/owned-images`                       | `withOwnerAdmin`         | GET                  |
 
 Everything is self-scoped: models, images, and runs resolve against the requesting admin's own id,
@@ -59,6 +60,13 @@ applies, storage reservation skipped), creates the pending row, then starts the 
 job from the route — a refused job slot deletes the just-created row rather than stranding a
 `pending` record that never runs. The page's `?run=<id>` parameter deep-links one run's detail.
 
+The recover POST takes no body; `[index]` is the output's own 1-based `index` exactly as the wire
+and the stored record both carry it, and a value that is not a positive integer answers the same
+404 as a missing output. It never submits a workflow and never charges — see
+[runs.md](runs.md) §Recovering a paid output for the full rule. On success it answers `{ run }`,
+the same shape the detail GET returns; `not_found` answers 404 and every other refusal (`busy`,
+`ineligible`, `expired`, `unavailable`) answers 409, each as `{ error: { code, message } }`.
+
 ## Code map
 
 | Module                                                        | Owns                                                                                    |
@@ -71,6 +79,7 @@ job from the route — a refused job slot deletes the just-created row rather th
 | `apps/web/src/server/images/image-generator-request.ts`       | request validation, version, profile and pre-spend planning                             |
 | `apps/web/src/server/images/image-generator-provenance.ts`    | capability snapshot and sanitized effective request                                     |
 | `apps/web/src/server/images/image-generator-settle.ts`        | sequential renders, output storage and deletion-race cleanup                            |
+| `apps/web/src/server/images/image-generator-recovery.ts`      | recovering one output's paid Civitai render, with no new prediction                     |
 | `apps/web/src/server/images/image-generator-render.ts`        | injectable render seam (`renderImageIntent`)                                            |
 | `apps/web/src/server/images/upload.ts`                        | shared safe data-URL decode plus Generator upload storage                               |
 | `apps/web/src/server/images/owned-image-reads.ts`             | shared owner-scoped byte readers                                                        |
