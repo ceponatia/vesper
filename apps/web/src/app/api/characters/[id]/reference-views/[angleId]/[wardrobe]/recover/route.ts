@@ -4,9 +4,8 @@ import { ownedCharacter, parseSlot, referenceViewRecoverBodySchema, referenceVie
 
 /**
  * Recover a failed attempt's paid-for render. Free: the render already ran and
- * was already charged, so unlike every other write on this slot there is no
- * admission or budget call here — recovering is retrying the download, not
- * asking for a new image.
+ * was paid for, so recovery only re-downloads its output; there is no
+ * admission or budget call.
  */
 export const POST = withAuthorizedResource<ReferenceViewSlotParams, OwnedCharacter>(
   "character", ownedCharacter,

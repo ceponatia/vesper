@@ -442,6 +442,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
               size="sm"
               variant="primary"
               busy={submitting}
+              disabled={busySlot !== null}
               onClick={() => void regenerate(regenerableViews)}
             >
               {referenceViewSelectionActionLabel(regenerableViews.length)}
@@ -571,7 +572,7 @@ export function ReferenceViewsPanel({ characterId, name, planKey, acceptance, on
                         size="sm"
                         variant="ghost"
                         busy={slotBuilding}
-                        disabled={replacementBlocked}
+                        disabled={replacementBlocked || busySlot !== null}
                         title={replacementBlocked ? referenceViewRefusalCopy.busy : undefined}
                         onClick={() => void regenerate([view])}
                       >
