@@ -73,12 +73,13 @@ describe("runFinalizationAgents threads the caller's traceId into both fan-out l
     seen.pulseTrace = undefined;
     seen.extractionTrace = undefined;
     await runFinalizationAgents(baseInput());
-    // Explicitly typed capture: TS's control-flow narrowing of these
+    // Widening read: TS's control-flow narrowing of these
     // properties doesn't see the mocks' reassignment across the awaited
-    // call, so reading them directly here would (wrongly) type as `never`
-    // (#637 CI fix).
-    const pulseTrace: AgentLegTrace | undefined = seen.pulseTrace;
-    const extractionTrace: AgentLegTrace | undefined = seen.extractionTrace;
+    // call, so reading them directly would (wrongly) type as `never`. A type
+    // annotation does not help — a const narrows to its initializer — so the
+    // reads are asserted wide.
+    const pulseTrace = seen.pulseTrace as AgentLegTrace | undefined;
+    const extractionTrace = seen.extractionTrace as AgentLegTrace | undefined;
     expect(pulseTrace?.traceId).toBeUndefined();
     expect(extractionTrace?.traceId).toBeUndefined();
   });
