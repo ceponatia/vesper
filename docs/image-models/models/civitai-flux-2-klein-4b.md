@@ -389,13 +389,27 @@ characters unchanged.
   workflow shape — is `permanent: false`, since a wrong "permanent" withdraws
   the one free recovery for good while a wrong "transient" only costs
   trying again later.
+- **The workflow and output ids reach the render's record before the
+  download starts, and every surface offers the recovery.** Once a workflow
+  has succeeded and its output is chosen, the lane records the workflow id,
+  the output id and the model on the render's own pending `images` row
+  through a seam it calls without knowing the row
+  (`recordPaidRenderOutput`), so a process that restarts mid-download leaves
+  a failed row that still offers the output (#687). Reference views recover
+  onto a new copy ([reference views](../../images/pipelines/reference-views.md)); portrait
+  variants, avatars, scenes and selfies recover in place on their failed row
+  ([asset registry](../../images/asset-registry.md)); the admin Image Generator
+  bench fills the run's empty output record ([runs](../../image-generator/runs.md)). Each recovery is
+  free, never POSTs, and shapes and stores the bytes exactly as the render
+  would have.
 - **An output blob outlives Vesper's own 24 h failed-row retention, with no
   observed expiry.** A 2026-10-02 read-only probe (zero Buzz) found every
   output blob the account still lists serving through the blob endpoint,
   including the oldest, from 2026-09-16 (15.7 days old) — no workflow in the
   sample carried an expiry field. The 24 h failed-row retention
   (`FAILED_ROW_RETENTION_MS`, `apps/web/src/server/images/asset-maintenance.ts`)
-  is therefore the binding recovery window, not the blob's own lifetime. A
+  is therefore the binding recovery window for every surface that keeps a
+  failed `images` row, not the blob's own lifetime. A
   blob the provider has stopped serving is reported `available: false` by
   the workflow read itself, before any download is attempted. See
   eval-images/civitai-qwen-2-1/blob-lifetime-682-2026-10-02.txt.
