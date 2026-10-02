@@ -180,11 +180,14 @@ characters unchanged.
   exactly as it is.
 - The what-if preflight and the paid submission share a per-attempt timeout
   that SCALES with how many reference images are in the body being sent: 120 s
-  base, plus 40 s per reference, capped at 480 s (`civitaiWorkflowPostTimeoutMs`
-  in `civitai-runtime.ts`). Every other stage keeps a 30 s budget. The
-  submission carries the same references the preflight already validated, in
-  the same body shape, so whatever makes a preflight run long can equally make
-  the submission run long.
+  base, plus 40 s per reference, capped at 290 s (`civitaiWorkflowPostTimeoutMs`
+  in `civitai-runtime.ts`). The 290 s ceiling sits 10 s under Node's built-in
+  `fetch` (undici): its `headersTimeout`/`bodyTimeout` default to 300 s and
+  Vesper sets no dispatcher, so a longer budget could never actually apply —
+  Vesper's own ceiling has to bind first (owner ruling 2026-10-02). Every
+  other stage keeps a 30 s budget. The submission carries the same references
+  the preflight already validated, in the same body shape, so whatever makes
+  a preflight run long can equally make the submission run long.
 
   The automatic retry described next belongs to the PREFLIGHT alone; the
   submission still gets none, on this timeout or any other failure — an
@@ -232,8 +235,14 @@ characters unchanged.
   320x427 references measured the same as a 929 KB one at the same reference
   count). Production has measured slower than local probes (the Fly v284
   failure above), so the per-reference allowance is twice that measured
-  cost. The 480 s ceiling binds only at 10 references — Qwen 2.1's own
-  maximum; Klein's own 2-reference cap never reaches it. See
+  cost. The 290 s ceiling binds from 5 references, not 10: the linear
+  formula alone would reach 320 s there, above Node fetch's own limit.
+  Qwen 2.1's own reference-heavy edits (its `MAX_REFERENCES` is 10; Klein's
+  own cap is 2 and never reaches it) are capped rather than given the
+  latency headroom the formula would otherwise grant them — #681 (uploading
+  each reference once as a Civitai blob and sending its URL, instead of a
+  fresh data URL per request) is the path for those requests, not a larger
+  timeout undici would just cut anyway. See
   eval-images/civitai-qwen-2-1/whatif-669-reference-count-2026-10-01.txt.
 - **A submission whose own answer is unreadable is looked up, never
   reposted.** Civitai may still have accepted and billed the workflow even

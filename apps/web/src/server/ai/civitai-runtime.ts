@@ -49,10 +49,21 @@ const REQUEST_TIMEOUT_MS = 30_000;
  * references 62.0, 67.0 and 62.4 s, about 20 s per reference — see
  * eval-images/civitai-qwen-2-1/whatif-669-reference-count-2026-10-01.txt
  * (#680). Production has measured slower than local probes (#672), so the
- * per-reference allowance below is twice that measured cost. The base keeps
- * #672's 120 s for a request with no references, and the 480 s ceiling binds
- * only at 10 references — Qwen 2.1's `MAX_REFERENCES`
- * (civitai-qwen21-runtime.ts); Klein's own 2-reference cap never reaches it.
+ * per-reference allowance below is twice that measured cost, and the base
+ * keeps #672's 120 s for a request with no references.
+ *
+ * The 290 s ceiling (owner ruling 2026-10-02, #680) sits 10 s under Node's
+ * built-in `fetch` (undici): its `headersTimeout`/`bodyTimeout` default to
+ * 300 s and Vesper sets no dispatcher, so any budget at or above that limit
+ * would never actually apply — Vesper's own ceiling has to bind first. That
+ * puts the ceiling below the linear formula's natural value starting at 5
+ * references (120 + 5*40 = 320 s), not 10: Qwen 2.1's reference-heavy edits
+ * (its own `MAX_REFERENCES` in civitai-qwen21-runtime.ts is 10; Klein's own
+ * cap is 2 and never reaches it) are capped rather than given the latency
+ * headroom the formula would otherwise grant them. #681 (uploading each
+ * reference once as a Civitai blob and sending its URL, instead of a fresh
+ * data URL per request) is the path for those heavy-reference requests,
+ * not a larger timeout undici would just cut anyway.
  *
  * The paid submit shares the identical budget rather than its own, smaller
  * one: it carries the same references the preflight just ingested, in the
@@ -63,8 +74,13 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS = 120_000;
 /** Twice the ~20 s/reference measured cost — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS} — since production has measured slower than the local probe that found it. */
 const CIVITAI_WORKFLOW_POST_PER_REFERENCE_TIMEOUT_MS = 40_000;
-/** Binds only at 10 references, Qwen 2.1's own maximum — see {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS}. */
-const CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS = 480_000;
+/**
+ * 10 s under Node fetch's (undici) 300 s default header/body timeout, so
+ * Vesper's own ceiling always binds first — see
+ * {@link CIVITAI_WORKFLOW_POST_BASE_TIMEOUT_MS}. Binds from 5 references,
+ * not 10: the linear formula alone would reach 320 s there.
+ */
+const CIVITAI_WORKFLOW_POST_MAX_TIMEOUT_MS = 290_000;
 
 /**
  * The per-attempt POST budget for a workflow body carrying `referenceCount`

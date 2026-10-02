@@ -281,8 +281,12 @@ describe("Civitai workflow POST budget (#680)", () => {
     [0, 120_000],
     [1, 160_000],
     [4, 280_000],
-    [10, 480_000],
-    [11, 480_000], // one count above the cap: Qwen 2.1's own MAX_REFERENCES is 10.
+    // The cap (owner ruling 2026-10-02) binds from 5 references, not 10: the
+    // linear formula alone would reach 320_000 there, above Node fetch's
+    // (undici) 300 s default header/body timeout.
+    [5, 290_000],
+    [10, 290_000], // Qwen 2.1's own MAX_REFERENCES — still capped.
+    [11, 290_000], // one count above that maximum — still capped.
   ] as const)("gives a body carrying %i reference image(s) a %i ms per-attempt budget", (referenceCount, expectedMs) => {
     expect(civitaiWorkflowPostTimeoutMs(referenceCount)).toBe(expectedMs);
   });
