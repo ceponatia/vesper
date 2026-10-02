@@ -1288,15 +1288,10 @@ export async function submitChatMessage(input: SubmitChatMessageInput): Promise<
             // #637: correlates this leg's own telemetry with the exchange trace.
             traceId: exchangeTrace.traceId,
           });
-          // #637: a null handle (this slice does not own `beginChatNpcSceneDecision`'s
-          // exact semantics on the integrated branch) means the leg decided
-          // this reply needs no envelope — a policy decision, not an
-          // unexplained skip.
-          npcBeginStage.end(
-            npcSceneDecision !== null
-              ? { status: "success" }
-              : { status: "skipped", reason: "policy:not_triggered" },
-          );
+          // `beginChatNpcSceneDecision` always returns a handle (it reuses an
+          // existing envelope or launches the classifier); a throw is the only
+          // failure, handled below.
+          npcBeginStage.end({ status: "success" });
         } catch (error) {
           log.error("engine.chat", "npc scene decision launch failed", { error: describeError(error) });
           npcBeginStage.end({ status: "degraded", reason: "exception", detail: describeError(error) });
