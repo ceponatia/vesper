@@ -648,6 +648,9 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       }),
     );
   }
+  // What the row records as its upstream once the render settles, failed or
+  // ready: the lineage of the view it actually sent, or none.
+  const sentUpstreamViewId = upstream !== null && upstreamSent ? upstream.lineageId : null;
   // The same honesty rule for the body images: only those the render actually
   // carries are recorded, and every one it could not carry is said, with why.
   const sentReferences: readonly ImageRenderReference[] = compiled?.sentReferences ?? [];
@@ -764,6 +767,10 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
       ownerId,
       failureCode: classifyImageFailureMessage(message),
       failureMessage: message,
+      // The failed render's own row stays linked: a render that was billed but
+      // whose download failed offers its paid output from there for recovery.
+      imageId,
+      upstreamViewId: sentUpstreamViewId,
     });
     sink.push(
       diag("warn", REFERENCE_VIEW_BUILD_FAILED, message.slice(0, 300), {
@@ -781,7 +788,7 @@ async function buildOneReferenceView(context: BuildContext, view: ReferenceView)
     ownerId,
     imageId,
     method: "rendered",
-    upstreamViewId: upstream !== null && upstreamSent ? upstream.lineageId : null,
+    upstreamViewId: sentUpstreamViewId,
   });
   if (finalized === "fenced") {
     // This worker lost the lease before settlement. Its produced asset belongs

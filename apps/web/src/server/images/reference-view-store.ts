@@ -221,6 +221,9 @@ async function reconcileReferenceViewLeasesInTransaction(
     .update(characterReferenceViews)
     .set({
       status: "failed",
+      // An abandoned attempt never settled a render, so unlike a failed one
+      // (`failReferenceView`) it keeps no link to an asset and offers nothing
+      // to recover.
       imageId: null,
       failureCode: REFERENCE_VIEW_LEASE_EXPIRED,
       failureMessage: "The previous build was interrupted. This slot is ready to retry.",
@@ -1446,6 +1449,14 @@ export async function finalizeReferenceView(input: FinalizeReferenceViewInput): 
  * is a `bare` view a provider's moderation refused, and the row records the
  * refusal so the studio can offer an upload instead. The row stays current —
  * there is nothing better to be current — and a regenerate makes a new one.
+ *
+ * The row keeps its failed render's own images row as its `image_id`, with the
+ * upstream lineage that render actually sent — exactly what
+ * `finalizeReferenceView` would have recorded — because a render can succeed
+ * and be billed and still fail its download, and that failed row is what
+ * offers the paid output for recovery (`recoverable`). The sheet never draws or
+ * consumes a failed row; the offer ends when retention deletes that images row
+ * and the foreign key nulls the link.
  */
 export async function failReferenceView(input: {
   jobId: string;
@@ -1454,6 +1465,10 @@ export async function failReferenceView(input: {
   ownerId: string;
   failureCode: string;
   failureMessage: string;
+  /** The failed render's own images row (`runImagePipeline`'s `imageId`). */
+  imageId: string;
+  /** The upstream lineage the render actually SENT, or null when it sent none. */
+  upstreamViewId: string | null;
 }): Promise<"failed" | "fenced"> {
   return withReferenceViewLock(input.characterId, async (tx) => {
     const ownedLease = await liveLeaseForAttempt(tx, input);
@@ -1462,7 +1477,8 @@ export async function failReferenceView(input: {
       .update(characterReferenceViews)
       .set({
         status: "failed",
-        imageId: null,
+        imageId: input.imageId,
+        upstreamViewId: input.upstreamViewId,
         failureCode: input.failureCode,
         failureMessage: input.failureMessage.slice(0, 500),
       })

@@ -131,12 +131,22 @@ async function resultIdentifiers(
   }
 
   if (owned.referenceViewAttemptIds !== undefined && owned.referenceViewAttemptIds.length === 0) return [];
+  // An attempt's image is linked only while it is a ready asset of this owner's.
+  // A failed attempt keeps a link to its failed render's row so a paid output
+  // can be recovered, and keeps it after a newer attempt supersedes it; that
+  // row has no file, so it is never a result a client may open.
   const attempts = await db()
     .select({
       id: characterReferenceViews.id,
       imageId: characterReferenceViews.imageId,
+      imageStatus: images.status,
     })
     .from(characterReferenceViews)
+    .leftJoin(images, and(
+      eq(images.id, characterReferenceViews.imageId),
+      eq(images.ownerId, ownerId),
+      eq(images.kind, "reference_view"),
+    ))
     .where(
       and(
         eq(characterReferenceViews.characterId, characterId),
@@ -150,6 +160,6 @@ async function resultIdentifiers(
   return attempts.map((attempt) => ({
     kind: "reference_view_attempt" as const,
     id: attempt.id,
-    imageId: attempt.imageId,
+    imageId: attempt.imageStatus === "ready" ? attempt.imageId : null,
   }));
 }
