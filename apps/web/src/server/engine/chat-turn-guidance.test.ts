@@ -70,6 +70,7 @@ import {
 } from "./chat-permission-guidance";
 import { renderChatPhysicalGuidance } from "./chat-physical-guidance-render";
 import { buildChatPhysicalGuidance } from "./chat-physical-guidance";
+import { noopExchangeTrace } from "./chat-exchange-trace";
 import { prepareChatTurnGuidance } from "./chat-turn-guidance";
 
 const CHARACTER_ID = "char_wren";
@@ -146,6 +147,9 @@ function baseArgs(overrides: Partial<PrepareArgs> = {}): PrepareArgs {
     contactActionOutcomes: [],
     contactUnresolvedPremise: null,
     contactTurnFacts: null,
+    // #637: a no-op recorder — this suite asserts guidance/observer behavior,
+    // not trace content.
+    exchangeTrace: noopExchangeTrace(),
     ...overrides,
   };
 }

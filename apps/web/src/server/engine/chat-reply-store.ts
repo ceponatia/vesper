@@ -96,6 +96,39 @@ export function pushReplyTake(
 }
 
 /**
+ * The narrator-received fingerprint (#637 `narrator.prompt` stage): the rendered
+ * prompt-node unit ids with their char counts and per-unit hashes, plus the same
+ * `instructionHash` / `assembledSystemHash` {@link buildNarratorRunProvenance}
+ * computes — PURE, and extracted so the coordinator can record the fingerprint
+ * at the narrator handoff (before a reply exists at all) from the exact same
+ * computation the eventual take's provenance uses, rather than a second,
+ * possibly-drifting derivation. No prompt text — `chars`/`hash` only.
+ */
+export interface NarratorPromptFingerprint {
+  promptUnits: { id: string; chars: number; hash: string }[];
+  instructionHash: string;
+  assembledSystemHash: string;
+}
+
+export function buildNarratorPromptFingerprint(args: {
+  source: NarratorInstructionSource | undefined;
+  nodes: readonly NarratorPromptNode[];
+  assembled: string;
+}): NarratorPromptFingerprint {
+  const { source, nodes, assembled } = args;
+  const units = narratorPromptUnits(nodes);
+  const productionInstructionText = units
+    .filter((unit) => unit.authority === "behavior")
+    .map((unit) => unit.text)
+    .join("\n");
+  return {
+    promptUnits: units.map((unit) => ({ id: unit.id, chars: unit.text.length, hash: fnv1aHex(unit.text) })),
+    instructionHash: source?.kind === "test" ? source.bodyHash : fnv1aHex(productionInstructionText),
+    assembledSystemHash: fnv1aHex(assembled),
+  };
+}
+
+/**
  * Build one take's narrator-run provenance (PURE) — the record that answers
  * "which prompt and which model wrote this?" months later.
  *
@@ -103,7 +136,10 @@ export function pushReplyTake(
  * co-present, successor solo) so the four cannot drift into describing the same
  * fact three different ways. It lives beside the take ring because that carries it.
  *
- * Two hashes, no prompt text. `instructionHash` identifies the instruction body —
+ * Two hashes, no prompt text — shared with {@link buildNarratorPromptFingerprint}
+ * above, so the exchange trace's early fingerprint and this take's final
+ * provenance can never disagree about what either hash means.
+ * `instructionHash` identifies the instruction body —
  * the immutable revision's own `bodyHash` for a test source, and for production a
  * hash over the classified `behavior` units. `assembledSystemHash` identifies the
  * whole assembly, so takes from the same revision under different runtime state
@@ -126,10 +162,7 @@ export function buildNarratorRunProvenance(args: {
   latencyMs?: number;
 }): NarratorRunProvenance {
   const { source } = args;
-  const productionInstructionText = narratorPromptUnits(args.nodes)
-    .filter((unit) => unit.authority === "behavior")
-    .map((unit) => unit.text)
-    .join("\n");
+  const fingerprint = buildNarratorPromptFingerprint({ source, nodes: args.nodes, assembled: args.assembled });
   return {
     lane: args.lane,
     modelId: args.modelId,
@@ -143,8 +176,8 @@ export function buildNarratorRunProvenance(args: {
           templateLanguage: source.templateLanguage,
         }
       : {}),
-    instructionHash: source?.kind === "test" ? source.bodyHash : fnv1aHex(productionInstructionText),
-    assembledSystemHash: fnv1aHex(args.assembled),
+    instructionHash: fingerprint.instructionHash,
+    assembledSystemHash: fingerprint.assembledSystemHash,
     authorityWeights: narratorPromptAuthorityWeights(args.nodes),
     mode: "instruction_override_v1",
     ...(args.attempts === undefined ? {} : { attempts: args.attempts }),
