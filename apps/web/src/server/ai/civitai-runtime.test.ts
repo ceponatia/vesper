@@ -1566,6 +1566,56 @@ describe("Civitai Klein v2 transport", () => {
     },
   );
 
+  /**
+   * PROTECTS (Codex review, PR #688): a refused attempt's body is released —
+   * `cancel()`, best effort — before the retry's own request starts. The
+   * implementation this kills throws on a 429/5xx without consuming or
+   * cancelling the response body first, so during a provider outage every
+   * concurrent render leaves up to CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS unread
+   * response streams open for the timeout or garbage collection to reap.
+   */
+  it("releases a retryable refused attempt's body before the retry's own request, instead of leaking it through an outage (#682)", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const events: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+      const href = String(url);
+      if (href.includes("/consumer/workflows?")) {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const whatif = new URL(href).searchParams.get("whatif");
+        return Response.json(workflowFrom(body, whatif === "true" ? "estimate-release-body" : "submit-release-body", whatif === "true" ? "unassigned" : "succeeded", [{
+          id: "output.jpg", available: true,
+        }]));
+      }
+      if (href === blobUrl("output.jpg")) {
+        attempts += 1;
+        events.push("request");
+        if (attempts === 1) {
+          // A refused attempt's response, with a body whose release this
+          // test can observe — the production code calls only `.cancel()`
+          // on it, never `.getReader()`, so a duck-typed body is enough.
+          return {
+            ok: false,
+            status: 503,
+            body: { cancel: async () => { events.push("cancel"); } },
+          } as unknown as Response;
+        }
+        return new Response("image-bytes", { status: 200 });
+      }
+      throw new Error(`Unexpected fetch ${href}`);
+    });
+
+    const pending = runCivitaiKleinImageModel(MODEL, request);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(result).toMatchObject({ ok: true, predictionId: "submit-release-body" });
+    expect(attempts).toBe(2);
+    // Released between the two blob-endpoint requests: not skipped, and not
+    // deferred until after the retry had already started.
+    expect(events).toEqual(["request", "cancel", "request"]);
+  });
+
   it("redacts output-download transport sentinels, retrying from hop 0 up to the attempt cap, then reports the output as undelivered rather than lost, after exactly one paid POST (#682)", async () => {
     vi.useFakeTimers();
     let outputReads = 0;
