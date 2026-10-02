@@ -1063,6 +1063,18 @@ async function fetchOutput(blobId: string, token: string, deadline: number): Pro
 async function downloadOutputAttempt(blobId: string, token: string, deadline: number): Promise<Buffer> {
   const response = await fetchOutput(blobId, token, deadline);
   if (!response.ok) {
+    // A refused attempt's body is never read. Releasing it frees the socket
+    // before the next attempt starts, instead of leaving it open for the
+    // timeout or garbage collection to reap — during a provider outage every
+    // concurrent render retries up to CIVITAI_OUTPUT_DOWNLOAD_ATTEMPTS times
+    // (Codex review on PR #688). Best effort and silent, as for a redirect's
+    // body in `fetchOutput`: a body that cannot be released is not this
+    // render's failure.
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Deliberately silent; see above.
+    }
     const code = `civitai_output_http_${String(response.status)}` as `civitai_output_http_${number}`;
     throw civitaiOutputFailure(code, "deliberate", response.status);
   }
